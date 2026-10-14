@@ -1,6 +1,17 @@
 # The EasyCAD definition language (draft v0.1)
 
-*Status: draft for discussion. Syntax and node names will change. The ideas are what matter.*
+*Status: draft. The format itself was approved on 14 Oct 2026; syntax and node names will still
+change.*
+
+> **In plain words:** this is the *project file*. It has nothing to do with the chat commands
+> like `height 200`. When you save a project, this is what gets written:
+> - your settings (the values in the settings window);
+> - the recipe (the steps that turn them into a shape, curves, a toolpath and G-code);
+> - optionally, presets and your conversation with the agent.
+>
+> When you open it again, EasyCAD rebuilds the same window, shape and toolpath. You never have
+> to read or write this text yourself; the app and the agent do. It's simply there if you want
+> to look.
 
 An EasyCAD document (`*.easycad`) is a **Grasshopper definition written as text**:
 
@@ -207,6 +218,29 @@ comment   = "#" … end of line
 in a length slot is mm, in an angle slot degrees. Speeds and temperatures (`mm/s`, `°C`)
 arrive with the print nodes.
 
+### Project header, presets and conversation
+These statements make one file a complete project (decided 14 Oct 2026):
+
+```
+easycad 0.1
+project "E27 wavy lampshade"                 # name shown in the library and window title
+printer "Klipper pellet"                     # default printer profile for print/gcode
+note    "Tested 12 Oct: fit -0.2 is snug"    # free notes, any number of lines
+
+preset "tall"  { height = 240 mm, waves = 12 }   # named sets of settings
+preset "test"  { height = 40 mm }                # quick test print
+
+conversation {                               # optional; the engine ignores it
+  … the agent chat, stored so it can continue later …
+}
+```
+
+- **Opening a project** evaluates the recipe with the saved values and shows its settings
+  window.
+- **Choosing a preset** changes only the values.
+- **"Save settings"** writes only the values (a small `.json`, like EasyGCode). "Load settings"
+  puts them back into the open project.
+
 ---
 
 ## 3. Meaning
@@ -288,7 +322,11 @@ small as the library grows.
 | Regions (2D) | `region`, `region_union`, `region_difference`, `region_intersection` |
 | Surfaces | `extrude`, `revolve`, `loft`, `sweep`, `cap`, `thicken` |
 | Solids | `box`, `cylinder`, `sphere`, `union`, `difference`, `intersection`, `hull`, `split`, `bbox`, `volume` |
-| Print | `printers`, `vase_spiral`, `toolpath`, `wave`, `brim`, `layers`, `check_print` |
+| Shape → curves | `spiral_on`, `offset_rings`, `contours`, `isocurves`, `project`, `unroll`, `fill` |
+| Toolpath & G-code | `printers`, `vase_spiral`, `toolpath`, `order`, `travel`, `ramp`, `wave`, `brim`, `overhang_comp`, `gcode`, `check_print` |
+
+The printing nodes and how they chain are described in
+[toolpaths-and-skills.md](toolpaths-and-skills.md).
 
 ---
 

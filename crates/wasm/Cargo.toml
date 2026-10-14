@@ -1,0 +1,20 @@
+[package]
+name = "easycad-wasm"
+description = "WebAssembly facade the web app talks to (thin: converts values, nothing else)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+easycad-core = { workspace = true }
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+
+[lints]
+workspace = true

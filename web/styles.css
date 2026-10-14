@@ -1,0 +1,439 @@
+/* EasyCAD: phone-first, same look as EasyGCode (dark tokens below are EasyGCode's own).
+   Layout: phone = header · viewport · tabs + card; desktop = viewport left, panels right. */
+:root {
+  --bg: #0f1115;
+  --card: #181b22;
+  --card2: #1f232c;
+  --text: #e7eaf0;
+  --muted: #9aa3b2;
+  --accent: #4f9dff;
+  --accent2: #2bd9a0;
+  --warn: #ffb454;
+  --danger: #ff6b6b;
+  --border: #2a2f3a;
+  --view-bg: #0b0d11;
+  --view-grid: #232936;
+  --on-accent: #06121f;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f3f5f9;
+    --card: #ffffff;
+    --card2: #eef1f6;
+    --text: #141821;
+    --muted: #5d6677;
+    --accent: #2a74d6;
+    --accent2: #0f9a72;
+    --warn: #b8690c;
+    --danger: #d14343;
+    --border: #d8dde7;
+    --view-bg: #e8ecf2;
+    --view-grid: #c9d0dc;
+    --on-accent: #ffffff;
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* The HTML hidden attribute must win over display rules. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- header ---------- */
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 14px 16px 8px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: 0.5px;
+}
+
+.brand .sub {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.status {
+  font-size: 0.8rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.status.ok {
+  color: var(--accent2);
+  border-color: var(--accent2);
+}
+
+.status.bad {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ---------- layout ---------- */
+.layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 12px 24px;
+}
+
+@media (min-width: 960px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 420px;
+    align-items: start;
+  }
+  .viewport {
+    position: sticky;
+    top: 12px;
+    height: min(84vh, 860px) !important;
+  }
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ---------- viewport ---------- */
+.viewport {
+  position: relative;
+  height: min(56vh, 480px);
+  min-height: 280px;
+  background: var(--view-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.view-bar {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.seg {
+  display: inline-flex;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.view-hud {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.view-message {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ---------- tabs + cards (EasyGCode style) ---------- */
+.tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  flex: 1;
+  min-width: 80px;
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 8px;
+  font-weight: 600;
+}
+
+.tab[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 14px 16px;
+}
+
+.card h2 {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: var(--muted);
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.group + .group {
+  margin-top: 16px;
+}
+
+/* One setting: label and number on one line, slider underneath. */
+.setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 10px;
+  padding-block: 8px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.group h2 + .setting {
+  border-top: 0;
+}
+
+.setting label {
+  font-size: 0.95rem;
+}
+
+.setting .num {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.setting input[type="number"] {
+  width: 84px;
+  text-align: right;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.setting .unit {
+  color: var(--muted);
+  font-size: 0.85rem;
+  min-width: 2.2em;
+}
+
+.setting input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 6px 0 0;
+  accent-color: var(--accent);
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.field label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+select {
+  width: 100%;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.btn {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-weight: 600;
+}
+
+/* Print stats */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stat {
+  background: var(--card2);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.stat b {
+  display: block;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.checks {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.checks li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transform: translateY(-1px);
+  background: var(--accent2);
+}
+
+.dot.warn {
+  background: var(--warn);
+}
+
+.dot.bad {
+  background: var(--danger);
+}
+
+/* About */
+dl.info {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+dl.info dt {
+  color: var(--muted);
+}
+
+dl.info dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+a {
+  color: var(--accent);
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.9rem;
+  margin: 10px 0 0;
+}

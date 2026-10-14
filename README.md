@@ -1,65 +1,84 @@
 # EasyCAD
 
-**A lightweight, agent-first parametric modeller for makers and 3D printing.**
-Describe what you want → an AI agent builds a *parametric definition* (a Grasshopper-style
-system) → you tune it with sliders and handles → export it, or print it directly.
+**EasyGCode without fixed tabs:** a lightweight, agent-first parametric modeller for custom
+3D-printing toolpaths. Describe a project (or build it yourself) → an AI agent builds a
+*parametric recipe* with its own settings window → you tune it → shapes become curves, curves
+become toolpaths, toolpaths become G-code for your printer.
 
-> Status: **research & architecture phase.** No app yet. Start with the docs below; the next
-> step is Phase 0 of the [roadmap](docs/roadmap.md).
+> **Status:** decisions made (14 Oct 2026). **Phase 0 (walking skeleton) in progress.** See the
+> [roadmap](docs/roadmap.md).
 
 ---
 
 ## The idea
 
-CAD tools today were designed decades ago and have been extended ever since. EasyCAD starts
-from what 2026 makes possible:
+- **Every project has its own settings window,** like an EasyGCode tab, except you and the agent
+  create it inside the app. Save the project, reopen it, and the same window comes back with
+  the same settings.
+- **Shape first or curve first.** Shapes turn into curves with operations, not with a slicer:
+  - spiral along any surface;
+  - offset rings with zipper seams;
+  - non-planar patterns;
+  - unroll flat.
 
-- **The agent builds the system, you own the values.** The agent writes a small, readable
-  definition: parameters + named steps, like a Grasshopper definition as text. Every
-  meaningful dimension and tolerance becomes a slider. Tuning never calls the AI: it's
-  instant, free and offline.
-- **Rhino/Grasshopper thinking, not feature trees.** Curves and NURBS first. Dataflow with
-  automatic list handling (no loops). Some SolidWorks-style features (fits, shells,
-  constraints) come later.
-- **Made for 3D printing.** Watertight solids → 3MF for any slicer, and **curves can be
-  toolpaths** printed directly, bringing [EasyGCode](https://github.com/jasperkrebstc/easygcode)'s
-  engine inside.
-- **Light and local.** A Rust engine that runs on your phone (as a web app, no install) and as
-  a small desktop app. No account, no cloud kernel, works offline. AI is optional and uses
-  your own key or Claude via MCP.
+  Curves turn into toolpaths with EasyGCode's bead model, then into **custom G-code** for a
+  **Bambu P1P** or a **Klipper pellet** printer.
+- **The agent builds the system; you own the values.** The agent writes the recipe using
+  *skills* (your recurring ways of doing things). Every number becomes a setting. Tuning never
+  calls the AI: it's instant, free and works offline.
+- **Light and local.** A Rust engine compiled to WebAssembly runs on your phone and computer,
+  in the browser, installable like an app. No account, no cloud kernel. AI uses your own Claude
+  API key ([how to get one](docs/api-key.md)).
 
 ```
 easycad 0.1
+project "Twisted vase"
+printer "Bambu P1P"
+
 param height = 160 mm in 60..300 "Height"
 param twist  = 90 deg in 0..360  "Twist"
 
 base     = star(7, outer: 45 mm, inner: 37 mm) |> smooth(0.5)
 t        = range(0, 1, count: 32)
 sections = base |> rotate(twist * t) |> move(z: height * t)
-vase     = loft(sections) |> cap()
+wall     = loft(sections)
+path     = spiral_on(wall, pitch: 0.3 mm) |> toolpath(width: 0.6 mm, height: 0.3 mm)
 
-show vase
+print path
 ```
 
 ## Docs
 
 | | |
 |---|---|
-| [docs/research.md](docs/research.md) | What exists, what doesn't, what we build on, with sources and a measured kernel spike |
-| [docs/architecture.md](docs/architecture.md) | The proposed architecture: engine, language, agent, UI, printing, distribution |
-| [docs/definition-language.md](docs/definition-language.md) | Draft of the `.easycad` definition language, with examples |
-| [docs/roadmap.md](docs/roadmap.md) | Step-by-step phases and the **decisions needed now** |
-| [docs/mockup/index.html](docs/mockup/index.html) | Clickable UI mockup (open in a browser; works on a phone) |
-| [spikes/kernel-probe](spikes/kernel-probe/) | Measured: pure-Rust NURBS + solids in WebAssembly (0.44 MB gz, ~50 ms) |
+| [docs/roadmap.md](docs/roadmap.md) | Phases, decisions, what's next |
+| [docs/toolpaths-and-skills.md](docs/toolpaths-and-skills.md) | **The core workflow:** shapes → curves → toolpaths → G-code, skills, project files |
+| [docs/architecture.md](docs/architecture.md) | How it's built and why (incl. lessons from browser games) |
+| [docs/definition-language.md](docs/definition-language.md) | The `.easycad` project file / recipe language (draft) |
+| [docs/research.md](docs/research.md) | What exists, what doesn't, sources, measured kernel spike |
+| [docs/api-key.md](docs/api-key.md) | Getting and using your Claude API key |
+| [docs/devlog.md](docs/devlog.md) | What landed, what's open |
+| [docs/mockup/index.html](docs/mockup/index.html) | Clickable UI mockup |
 | [CLAUDE.md](CLAUDE.md) | Guidance for AI agents (and humans) working in this repo |
+
+## Develop
+
+Requirements: Rust (stable, with the `wasm32-unknown-unknown` target) and `wasm-bindgen-cli`
+(same version as the `wasm-bindgen` crate in `Cargo.lock`).
+
+```sh
+scripts/build-web.sh     # Rust → WebAssembly → web/pkg/
+scripts/serve.sh         # http://localhost:8080
+cargo test               # engine tests
+```
 
 ## Relationship to EasyGCode
 
-EasyGCode keeps working as it is. EasyCAD generalises it: each EasyGCode project (vessel,
-lampshade, thread, …) becomes an `.easycad` template, and its proven toolpath math is ported
-with byte-for-byte golden tests. After that, the agent can create new "projects" without new
-code.
+EasyGCode stays exactly as it is. EasyCAD reuses its proven math, ported to Rust with
+golden tests that require identical G-code. Each EasyGCode tab becomes a starter project, so
+new projects no longer need new code.
 
 ## License
 
-To be decided (recommended: MIT OR Apache-2.0; see the roadmap's decisions table).
+Private, all rights reserved. Third-party components are permissively licensed; see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

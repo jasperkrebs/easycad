@@ -1,8 +1,10 @@
 # EasyCAD architecture (proposal)
 
-*Status: proposal for review. Nothing is built yet. Items marked **(decide)** need your OK
-before we start; they are collected in [roadmap.md](roadmap.md#decisions-needed-now). The
-reasoning and sources behind each choice are in [research.md](research.md).*
+*Status: decisions answered on 14 Oct 2026 (see [roadmap.md](roadmap.md#decisions-answered-14-oct-2026)).
+Phase 0 is in progress. The owner's priority is **custom toolpaths and G-code**; the printing
+workflow is described in [toolpaths-and-skills.md](toolpaths-and-skills.md). Where this document
+mentions solids/3MF/slicers, treat those as "later". Reasoning and sources are in
+[research.md](research.md).*
 
 ---
 
@@ -36,16 +38,31 @@ Three rules hold everything together:
 
 ---
 
-## 2. Recommended stack (decide)
+## 2. Stack (decided 14 Oct 2026)
 
 | Layer | Choice | Why |
 |---|---|---|
-| **Engine** | Rust workspace, compiled **natively** (desktop, CLI) and to **WebAssembly** (browser, phone) | One engine everywhere. Fast, safe, and very agent-friendly (the compiler catches mistakes). Same pattern as ArtCraft. |
-| **Geometry** | `curvo` (NURBS curves/surfaces), `manifold-rust` (watertight solids, booleans), `i_overlay` (2D regions/offsets), `kurbo` (2D paths/SVG); later `fidget` (fields/lattices) | Pure Rust, permissive licenses, **verified to compile to WASM: 0.44 MB gzipped, ~50 ms for a twisted-vase solve** ([spike](../spikes/kernel-probe/)). |
+| **Engine** | Rust workspace, compiled to **WebAssembly** (browser, phone) and natively (tests, CLI, optional desktop app) | One engine everywhere. Fast, safe, and very agent-friendly (the compiler catches mistakes). Same pattern as ArtCraft. |
+| **Geometry** | `curvo` (NURBS curves/surfaces), `i_overlay` (2D regions/offsets), `kurbo` (2D paths/SVG); later `manifold-rust` (solids), `fidget` (fields) | Pure Rust, permissive licenses, **verified to compile to WASM: 0.44 MB gzipped, ~50 ms for a twisted-vase solve** ([spike](../spikes/kernel-probe/)). |
 | **UI** | Plain HTML + CSS + JavaScript ES modules, no framework, **no bundler** (like EasyGCode), **three.js** viewport | Best possible phone experience (native inputs, keyboard, share sheet). Easy to style like EasyGCode. Zero build step for UI code. |
-| **Phone** | **PWA** on GitHub Pages | No install, offline, Add to Home Screen, exactly like EasyGCode. |
-| **Desktop** | **Tauri 2** wrapping the same `web/` UI with the engine running natively | Small installers (a few MB, uses the system webview), real files, MCP server, printer networking. |
-| **Agent** | Claude API from inside the app (your own key), plus an **MCP server** on desktop for Claude Desktop / Claude Code | Optional and user-controlled. No backend, no account. |
+| **The app** | **A web app (PWA)**: the same app in the browser on computer, tablet and phone, installable from the browser, works offline | No installers, no app stores, updates arrive automatically. This is how EasyGCode already works. |
+| **Desktop wrapper** | Optional, later: **Tauri 2** around the same `web/` UI | Only for what browsers can't do well: talking to printers on the local network, real file folders. |
+| **Agent** | Claude API from inside the app with **your own key** (decided). MCP for Claude Desktop/Code is optional and much later | Standalone: no backend, no account. |
+
+### 2.1 Lessons from browser games (why browser-first is the right call)
+Today's browser games use exactly the ingredients this plan uses. Details in
+[research §9](research.md#9-lessons-from-browser-games).
+
+| Game technique | What EasyCAD does with it |
+|---|---|
+| Heavy code compiled to **WebAssembly** | The Rust engine (geometry, toolpaths, G-code) runs as WASM: near-native speed on the phone. |
+| **GPU rendering** (WebGL2 → WebGPU) | three.js draws on the GPU. We start with WebGL2 (works on every phone), and the three.js `WebGPURenderer` (with automatic WebGL2 fallback) arrives when we need GPU compute or multi-million-segment toolpaths. |
+| **Keep the main thread free** (workers) | The engine runs in a Web Worker; the UI and 3D view never stutter. Only the newest request counts (latest wins), as games drop stale frames. |
+| **Multi-threading** (shared memory) | Later: needs "cross-origin isolation" headers. GitHub Pages can't set them (a known service-worker workaround exists); Cloudflare Pages can. |
+| **Stream and lazy-load assets** | The core engine loads first (small). Heavy extras (Rhino file support, fonts, big skill libraries) load only when used. |
+| **Local storage for big data** (OPFS) | The project library lives on the device (Origin Private File System / IndexedDB), with export/import as files. |
+| **Frame budget thinking** | A slider drag must update the preview within ~1–2 frames: coarse preview while dragging, full quality on release. |
+| **AI-assisted porting with verification** | The viral browser ports translate old code and check it against the original. We port EasyGCode's math the same way: translate, then golden-test against EasyGCode's own output. |
 
 **Alternatives considered:**
 - **Pure Rust UI with egui** (ArtCraft/Halfspace style). Great on desktop, but weak on phones:
@@ -212,6 +229,10 @@ is cheap and can be kept forever. That also enables *variants* ("save as variant
 ## 8. The agent
 
 ### 8.1 Where it runs
+*Decided 14 Oct 2026: option 1 (in the app, your own key) is the way. Options 2–3 are optional
+and much later. Getting a key: [api-key.md](api-key.md). Agent "skills":
+[toolpaths-and-skills.md](toolpaths-and-skills.md#skills-how-the-agent-learns-your-ways).*
+
 1. **In the app** (phone, web, desktop):
    - A chat panel calls the Claude API directly with **your own API key**, stored only on the
      device (OS keychain on desktop). No server, no account.
@@ -347,12 +368,20 @@ viewport, like Rhino + Grasshopper.
 
 ## 10. Files and interop
 
+**Project files** (decided 14 Oct 2026):
+- One project is one `.easycad` file with project info, settings, the recipe, optional presets
+  and the optional agent conversation.
+- Opening it brings back the same settings window. Details in
+  [toolpaths-and-skills.md](toolpaths-and-skills.md#project-files-save-and-reopen-exactly-where-you-were).
+- Projects live in an on-device library (OPFS/IndexedDB) and can be exported/imported as
+  files.
+
 | Format | Direction | Notes |
 |---|---|---|
-| `.easycad` | open/save | The definition (text, diffable, git-friendly). A trailing optional `layout` block stores graph-node positions. |
-| **3MF** | export | Default for printing (units, multiple objects, names). |
-| STL, OBJ, GLB | export | GLB is for sharing/viewing. |
-| G-code | export/send | From toolpaths (§11). |
+| `.easycad` | open/save | The project (text, diffable, git-friendly). A trailing optional `layout` block stores graph-node positions. |
+| **G-code** | export/send | **The main output** (§11): custom toolpaths for Bambu P1P and Klipper pellet. |
+| Settings presets (`.json`) | export/import | Values only, like EasyGCode's "Save settings". |
+| 3MF, STL, OBJ, GLB | export | Later, only when needed. |
 | SVG, DXF | export/import | 2D curves for laser cutting, plotting, references. |
 | **`.3dm` (Rhino)** | export/import | Via **rhino3dm.js** (MIT), loaded only when used. Curves and NURBS surfaces export as real NURBS; meshes as meshes. Import brings curves in as reference parameters. |
 | STL/3MF | import | As reference meshes or boolean inputs (manifold-rust's robust engine repairs messy meshes). |
@@ -362,7 +391,11 @@ viewport, like Rhino + Grasshopper.
 
 ## 11. 3D printing
 
-### 11.1 Solid path
+**Decided 14 Oct 2026: custom toolpaths come first** (§11.2, and the full workflow in
+[toolpaths-and-skills.md](toolpaths-and-skills.md)). No slicing logic, no slicer round-trips.
+The solid path below stays as a later option.
+
+### 11.1 Solid path (later)
 Definition → watertight solid → **printability checks**:
 - overhang map against the printer's max angle;
 - walls thinner than two line widths;
@@ -404,7 +437,7 @@ The preview colours toolpaths by feed, exactly as EasyGCode does.
 
 | Target | How |
 |---|---|
-| **Web / phone** | GitHub Actions builds the WASM, then deploys `web/` to **GitHub Pages**. Installable PWA, works offline. |
+| **Web / phone** (the app) | GitHub Actions builds the WASM, then deploys `web/` to static hosting. Installable PWA, works offline. **The repo is private:** GitHub Pages then needs GitHub Pro. Alternatives are a public repo or Cloudflare Pages (free, and can send the headers needed for multi-threading). The deploy job is ready and switched on by a repo variable. |
 | **Desktop** | Tauri 2 builds macOS (`.dmg`), Windows (`.msi`/`.exe`) and Linux (AppImage/`.deb`) installers on GitHub Releases. A few MB each. Code signing (Apple Developer account for macOS notarisation; optional Windows signing) avoids "unknown developer" warnings. |
 | **App Store / Play Store** | Optional, later, via Tauri 2 mobile from the same code. Needs Xcode on a Mac and an Apple Developer account to build and sign, but no Swift code. The PWA covers the phone until then. |
 
@@ -427,6 +460,9 @@ The preview colours toolpaths by feed, exactly as EasyGCode does.
   every new session can pick up where the last one stopped.
 - **Small, boring dependencies.** Pinned, permissive licenses only (MIT/Apache/BSD/0BSD;
   MPL-2.0 acceptable; no GPL/AGPL in the shipped app).
+  - EasyCAD itself is **private (all rights reserved)**, decided 14 Oct 2026. Permissive licenses
+    allow that.
+  - Their notices are listed in `THIRD-PARTY-NOTICES.md` and shipped with the app.
 
 ---
 

@@ -333,6 +333,47 @@ and pull reference curves in. That beats any live-link plugin for a first versio
 
 ---
 
+## 9. Lessons from browser games
+
+*(Added 14 Oct 2026, from the owner's question: "a lot of people are creating AAA games that
+work in the browser. How is that possible, and can we learn from it?")*
+
+**How it works:**
+- **WebAssembly (WASM):** game engines written in C/C++/Rust are compiled to WASM, which runs
+  at near-native speed in any modern browser. Tools like Emscripten map threads, memory and
+  file systems onto browser APIs.
+- **WebGPU:** the successor to WebGL, built on the same modern GPU APIs as native games
+  (Direct3D 12, Metal, Vulkan). Since late 2025 it's on by default in Chrome, Edge, Firefox and
+  Safari, including **Safari on iOS 26**. Compute shaders let physics and other heavy maths
+  run on the GPU; one reported case went from 8 to 60 fps by moving an algorithm to a compute
+  shader.
+- **Demos:**
+  - Unreal Engine 5's *Lyra* demo reportedly runs fully in WASM + WebGPU.
+  - The viral 2026 "browser ports" (Halo, Skate 3 and others) were made by decompiling the
+    games, translating the code with AI, and **checking the translation against the original**.
+    Many were taken down for using copyrighted assets.
+- **Forecasts:** full-scale commercial AAA games in the browser are forecast for ~2027. The
+  blockers are business and asset size as much as technology.
+
+**What we take from it** (applied in [architecture.md §2.1](architecture.md#21-lessons-from-browser-games-why-browser-first-is-the-right-call)):
+1. **Browser-first is viable even for heavy 3D.** EasyCAD is a web app; installers are optional.
+2. **Compiled core + GPU drawing.** Rust → WASM for the engine; three.js on the GPU.
+   - WebGL2 now (universal).
+   - **WebGPU** via three.js's `WebGPURenderer` when we need compute or huge toolpaths. It
+     falls back to WebGL2 automatically on devices without WebGPU.
+3. **Never block the main thread.** Engine in a Web Worker; newest request wins.
+4. **Threads need "cross-origin isolation" headers** (COOP/COEP) for shared memory.
+   - GitHub Pages can't set headers. The `coi-serviceworker` workaround adds them from a
+     service worker.
+   - Hosts like Cloudflare Pages or Netlify set them natively.
+   - Single-threaded is plenty for Phase 0–2.
+5. **Lazy-load the heavy parts and keep big data on the device** (OPFS / IndexedDB), like
+   games stream assets and cache them.
+6. **Port with verification.** The same "translate, then compare against the original" loop
+   the browser ports use is how we bring EasyGCode's math into Rust (golden tests).
+
+---
+
 ## Sources
 
 **ArtCraft / Rust apps**
@@ -387,6 +428,13 @@ and pull reference curves in. That beats any live-link plugin for a first versio
 - Moonraker configuration (`cors_domains`, `trusted_clients`): https://moonraker.readthedocs.io/en/latest/configuration/
 - Chrome Local Network Access: https://developer.chrome.com/blog/local-network-access
 - Bambu third-party integration / Developer Mode: https://wiki.bambulab.com/en/software/third-party-integration
+
+**Browser games (§9)**
+- WebGPU in all major browsers: https://videocardz.com/newz/webgpu-is-now-supported-by-all-major-browsers
+- "AI browser games" ports explained (WASM, Emscripten, decompile + verify): https://dev.to/jacksam/playing-halo-in-a-browser-tab-deconstructing-the-viral-ai-browser-games-phenomenon-70l
+- AAA in the browser / Lyra demo claims (agency article, June 2025): https://riven.ch/en/news/jeux-aaa-dans-le-navigateur-web-webgpu
+- Cross-origin isolation without server headers (coi-serviceworker): https://dev.to/stefnotch/enabling-coop-coep-without-touching-the-server-2d3n · GitHub Pages header request: https://github.com/orgs/community/discussions/13309
+- three.js WebGPURenderer (automatic WebGL2 fallback): https://threejs.org/manual/en/webgpurenderer
 
 **AI platform**
 - Anthropic TypeScript SDK (browser use via `dangerouslyAllowBrowser`): https://github.com/anthropics/anthropic-sdk-typescript

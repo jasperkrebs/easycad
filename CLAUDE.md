@@ -4,21 +4,48 @@ Guidance for Claude Code (and humans) working in this repo. Read this first.
 
 ## What this is
 
-EasyCAD is a lightweight, agent-first parametric modeller for makers and 3D printing. An agent
-writes a small dataflow definition (`*.easycad`, a Grasshopper definition as text); the human
-tunes it with sliders; the Rust engine evaluates it to curves, solids and toolpaths.
+EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric modeller for
+**custom 3D-printing toolpaths**.
+- An agent (or the user) writes a small dataflow project (`*.easycad`, a Grasshopper definition
+  as text).
+- The user tunes it in the project's settings window.
+- The Rust engine turns shapes into curves, curves into toolpaths, and toolpaths into G-code
+  (Bambu P1P filament, Klipper pellet).
 
-**Current phase:** research and architecture are done (see `docs/`). Next is **Phase 0** in
-`docs/roadmap.md`. Don't start building before the "Decisions needed now" in the roadmap are
-answered by the owner.
+**Current phase:** decisions answered (14 Oct 2026, see `docs/roadmap.md`). **Phase 0 (walking
+skeleton) is in progress.** Priorities:
+- custom toolpaths and G-code;
+- project files that reopen with their settings window;
+- the agent with the user's own API key.
+
+Slicers, 3MF and solids are "later".
 
 ## Read in this order
 
 1. `README.md`: the idea
-2. `docs/architecture.md`: how it's built and why
-3. `docs/definition-language.md`: the document format the whole app revolves around
-4. `docs/roadmap.md`: current phase, what's next, open decisions
-5. `docs/research.md`: background and sources, when you need the "why"
+2. `docs/roadmap.md`: current phase, decisions, what's next
+3. `docs/toolpaths-and-skills.md`: the core workflow (shapes → curves → toolpaths → G-code,
+   skills, project files)
+4. `docs/architecture.md`: how it's built and why
+5. `docs/definition-language.md`: the project file / recipe language
+6. `docs/devlog.md`: what landed recently, what's open
+7. `docs/research.md`: background and sources, when you need the "why"
+
+## Build and run
+
+```sh
+cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+scripts/build-web.sh               # wasm32 build + wasm-bindgen → web/pkg/ (fails over the size budget)
+scripts/serve.sh                   # serves web/ at http://localhost:8080 (WASM can't load from file://)
+node scripts/smoke-test.cjs [dir]  # headless Chromium, phone + desktop; screenshots into [dir]
+python3 scripts/third-party-notices.py   # after adding/updating a dependency (CI runs --check)
+```
+
+CI (`.github/workflows/ci.yml`) runs all of the above. Look at the smoke-test screenshots for
+any UI change.
+
+- `web/pkg/` is generated; never edit it or commit it.
+- `wasm-bindgen-cli` must match the `wasm-bindgen` version in `Cargo.lock` exactly.
 
 ## Non-negotiables
 
@@ -38,8 +65,12 @@ answered by the owner.
 - **Phone-first UI in the EasyGCode style** (see `docs/architecture.md` §9.4 for the tokens).
   Plain HTML/CSS/ES modules, no framework, no bundler. Third-party UI code is vendored and
   pinned in `web/vendor/`.
-- **Licenses.** Dependencies must be permissive (MIT/Apache/BSD/0BSD; MPL-2.0 OK). No
-  GPL/AGPL in the shipped app.
+- **Licenses.** EasyCAD is private (all rights reserved). Dependencies must be permissive
+  (MIT/Apache/BSD/0BSD; MPL-2.0 OK). No GPL/AGPL in the shipped app. Add every new runtime
+  dependency (Rust crate or vendored JS) to `THIRD-PARTY-NOTICES.md` in the same change.
+- **G-code safety.** G-code drives real machines. Never emit printable G-code from a node
+  unless it's golden-tested against EasyGCode (or a hand-checked fixture), and keep start/end
+  blocks identical to EasyGCode's proven ones.
 
 ## Conventions (once code exists)
 
