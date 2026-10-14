@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Standalone copy of the published mockup. Open this file in any browser; no build, no dependencies. -->
+<title>EasyCAD UI Mockup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: phone = header · viewport · tabbed panel · chat (composer pinned to the bottom);
+   desktop = viewport left, panel + chat right — Rhino + Grasshopper side by side. */
+:root {
+  /* Dark-first: EasyGCode's own palette, so both apps feel like one family. */
+  --bg: #0f1115;
+  --card: #181b22;
+  --card2: #1f232c;
+  --text: #e7eaf0;
+  --muted: #9aa3b2;
+  --accent: #4f9dff;
+  --accent2: #2bd9a0;
+  --warn: #ffb454;
+  --danger: #ff6b6b;
+  --border: #2a2f3a;
+  --view-bg: #0b0d11;
+  --view-grid: #232936;
+  --on-accent: #06121f;
+  --code-kw: #c792ea;
+  --code-num: #ffb454;
+  --code-str: #2bd9a0;
+  --code-com: #6b7385;
+  --code-fn: #4f9dff;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f3f5f9; --card: #ffffff; --card2: #eef1f6; --text: #141821; --muted: #5d6677;
+    --accent: #2a74d6; --accent2: #0f9a72; --warn: #b8690c; --danger: #d14343; --border: #d8dde7;
+    --view-bg: #e8ecf2; --view-grid: #cdd4df; --on-accent: #ffffff;
+    --code-kw: #8a3fd1; --code-num: #b8690c; --code-str: #0f8a66; --code-com: #8a93a3; --code-fn: #2a74d6;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f3f5f9; --card: #ffffff; --card2: #eef1f6; --text: #141821; --muted: #5d6677;
+  --accent: #2a74d6; --accent2: #0f9a72; --warn: #b8690c; --danger: #d14343; --border: #d8dde7;
+  --view-bg: #e8ecf2; --view-grid: #cdd4df; --on-accent: #ffffff;
+  --code-kw: #8a3fd1; --code-num: #b8690c; --code-str: #0f8a66; --code-com: #8a93a3; --code-fn: #2a74d6;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.45;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px 96px;
+}
+@media (min-width: 960px) { .app { padding-block: 14px 28px; } }
+
+/* ---------- header ---------- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 4px 12px; }
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.brand h1 { margin: 0; font-size: 1.3rem; letter-spacing: .4px; }
+.brand .doc { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.icon-btn {
+  display: inline-grid; place-items: center; width: 36px; height: 36px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+}
+.icon-btn:disabled { opacity: .4; cursor: default; }
+.icon-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pill {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .8px; font-weight: 700;
+  color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 3px 8px;
+}
+
+/* ---------- layout ---------- */
+.layout { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 960px) {
+  .layout { grid-template-columns: minmax(0, 1fr) 430px; align-items: start; }
+  .viewport { position: sticky; top: 14px; height: min(84vh, 860px) !important; }
+  .layout.wide { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); }
+}
+.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* ---------- viewport ---------- */
+.viewport {
+  position: relative; height: min(56vh, 470px); min-height: 280px;
+  background: var(--view-bg); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+}
+#view { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+#view:active { cursor: grabbing; }
+.view-bar {
+  position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; flex-wrap: wrap;
+}
+.seg { display: inline-flex; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: transparent; color: var(--muted); padding: 5px 10px; border-radius: 7px; font-size: .85rem; font-weight: 600; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.view-hud {
+  position: absolute; left: 10px; bottom: 10px; right: 10px; display: flex; justify-content: space-between; gap: 10px;
+  font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; flex-wrap: wrap;
+}
+.view-hud span { background: color-mix(in srgb, var(--view-bg) 75%, transparent); padding: 2px 6px; border-radius: 6px; }
+
+/* ---------- tabs + panels ---------- */
+.tabs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex: 1; min-width: 72px; background: var(--card); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px 8px; font-weight: 600;
+}
+.tab[aria-selected="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+.card h2 { margin: 0 0 6px; font-size: .78rem; text-transform: uppercase; letter-spacing: .9px; color: var(--muted); }
+.panel-note { margin: 0 0 10px; color: var(--muted); font-size: .86rem; }
+
+/* params */
+.group + .group { margin-top: 14px; }
+.param { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px 8px; padding-block: 8px 6px; border-top: 1px solid var(--border); }
+.group h2 + .param { border-top: 0; }
+.param label { font-size: .93rem; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.param output { font-variant-numeric: tabular-nums; font-weight: 650; }
+.param input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+.lock { width: 30px; height: 30px; display: inline-grid; place-items: center; border: 1px solid transparent; background: transparent; border-radius: 8px; color: var(--muted); }
+.lock[aria-pressed="true"] { color: var(--accent); border-color: var(--border); background: var(--card2); }
+.lock svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.assumed { display: inline-flex; align-items: center; gap: 6px; font-size: .74rem; color: var(--warn); }
+.assumed button { border: 1px solid var(--warn); color: var(--warn); background: transparent; border-radius: 999px; padding: 1px 8px; font-size: .72rem; }
+
+/* graph */
+.graph-scroll { overflow-x: auto; margin-inline: -4px; }
+.graph-scroll svg { display: block; min-width: 880px; width: 100%; height: auto; }
+.g-node rect { fill: var(--card2); stroke: var(--border); }
+.g-node .t { fill: var(--text); font-size: 13px; font-weight: 650; font-family: var(--font-ui); }
+.g-node .s { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); }
+.g-node .v { fill: var(--accent); font-size: 12px; font-weight: 650; font-family: var(--font-ui); }
+.g-node.param rect { fill: var(--card); }
+.g-node.out rect { fill: none; stroke-dasharray: 4 3; }
+.g-wire { fill: none; stroke-width: 2; opacity: .85; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: .8rem; color: var(--muted); }
+.legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+
+/* code */
+.code-wrap { overflow-x: auto; background: var(--card2); border-radius: 10px; }
+pre.code { margin: 0; padding: 12px 14px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; tab-size: 2; }
+.k { color: var(--code-kw); } .n { color: var(--code-num); } .str { color: var(--code-str); }
+.c { color: var(--code-com); font-style: italic; } .f { color: var(--code-fn); } .a { color: var(--warn); }
+.op { color: var(--muted); }
+.flash { background: color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 3px; }
+
+/* print */
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.stat { background: var(--card2); border-radius: 10px; padding: 10px 12px; }
+.stat b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.stat span { font-size: .78rem; color: var(--muted); }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.checks li { display: flex; align-items: baseline; gap: 8px; font-size: .9rem; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; transform: translateY(-1px); }
+.dot.ok { background: var(--accent2); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--danger); }
+.field { display: grid; gap: 4px; }
+.field label { font-size: .85rem; color: var(--muted); }
+select { width: 100%; background: var(--card2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.btn { background: var(--card2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-weight: 600; }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* chat */
+.msgs { display: flex; flex-direction: column; gap: 8px; max-height: 340px; overflow-y: auto; padding-right: 2px; }
+.msg { padding: 9px 12px; border-radius: 12px; max-width: 94%; font-size: .93rem; }
+.msg.user { align-self: flex-end; background: var(--accent); color: var(--on-accent); }
+.msg.agent { align-self: flex-start; background: var(--card2); }
+.msg.local { align-self: center; max-width: 100%; border: 1px dashed var(--border); color: var(--muted); font-size: .84rem; text-align: center; }
+.msg .who { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 2px; }
+.msg.user .who { color: color-mix(in srgb, var(--on-accent) 70%, transparent); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-size: .78rem; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; color: var(--muted); background: var(--card); }
+.chip.warn { color: var(--warn); border-color: var(--warn); }
+.chip.btn-like { cursor: pointer; color: var(--text); }
+.suggest { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.suggest button { font-size: .8rem; border: 1px solid var(--border); background: var(--card2); border-radius: 999px; padding: 4px 10px; color: var(--muted); }
+
+.composer { display: flex; gap: 8px; margin-top: 10px; }
+.composer input {
+  flex: 1; min-width: 0; background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 11px 12px;
+}
+.composer button { background: var(--accent); color: var(--on-accent); border: 0; border-radius: 12px; padding: 0 16px; font-weight: 700; }
+@media (max-width: 959px) {
+  .composer {
+    position: fixed; left: 0; right: 0; bottom: 0; margin: 0; z-index: 5;
+    background: var(--card); border-top: 1px solid var(--border);
+    padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  }
+}
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 6;
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px)); max-width: min(92vw, 520px);
+  background: var(--card2); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 14px; border-radius: 12px; font-size: .88rem; box-shadow: 0 6px 24px rgb(0 0 0 / .25);
+}
+@media (min-width: 960px) { .toast { bottom: 24px; } }
+
+.foot { margin-top: 16px; color: var(--muted); font-size: .84rem; max-width: 72ch; }
+.foot a { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>EasyCAD</h1>
+      <span class="doc">twisted-vase.easycad</span>
+    </div>
+    <div class="top-actions">
+      <span class="pill" title="This page is a design mockup, not the app">Mockup</span>
+      <button class="icon-btn" id="undoBtn" aria-label="Undo" title="Undo">
+        <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+      </button>
+      <button class="icon-btn" id="redoBtn" aria-label="Redo" title="Redo">
+        <svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="viewport" aria-label="3D view">
+      <canvas id="view"></canvas>
+      <div class="view-bar">
+        <div class="seg" role="group" aria-label="Display">
+          <button type="button" id="modeSolid" aria-pressed="true">Solid</button>
+          <button type="button" id="modePath" aria-pressed="false">Toolpath</button>
+        </div>
+      </div>
+      <div class="view-hud"><span id="hudLeft">—</span><span>drag to orbit · pinch or scroll to zoom</span></div>
+    </section>
+
+    <div class="side">
+      <nav class="tabs" role="tablist" aria-label="Panels">
+        <button class="tab" role="tab" id="tab-params" aria-controls="panel-params" aria-selected="true">Params</button>
+        <button class="tab" role="tab" id="tab-graph" aria-controls="panel-graph" aria-selected="false">Graph</button>
+        <button class="tab" role="tab" id="tab-code" aria-controls="panel-code" aria-selected="false">Code</button>
+        <button class="tab" role="tab" id="tab-print" aria-controls="panel-print" aria-selected="false">Print</button>
+      </nav>
+
+      <section class="card" role="tabpanel" id="panel-params" aria-labelledby="tab-params">
+        <p class="panel-note">Generated from the <code>param</code> lines of the definition. Moving a slider never calls the AI. The lock keeps a value safe from the agent.</p>
+        <div id="paramGroups"></div>
+      </section>
+
+      <section class="card" role="tabpanel" id="panel-graph" aria-labelledby="tab-graph" hidden>
+        <p class="panel-note">The same definition drawn as a Grasshopper-style graph: each named line is a node, each name you reference is a wire.</p>
+        <div class="graph-scroll"><svg id="graph" viewBox="0 0 1110 500" role="img" aria-label="Node graph of the definition"></svg></div>
+        <div class="legend">
+          <span><i style="background: var(--muted)"></i>number</span>
+          <span><i style="background: var(--accent)"></i>curve</span>
+          <span><i style="background: var(--accent2)"></i>surface / solid</span>
+          <span><i style="background: var(--warn)"></i>toolpath</span>
+        </div>
+      </section>
+
+      <section class="card" role="tabpanel" id="panel-code" aria-labelledby="tab-code" hidden>
+        <p class="panel-note">The document itself: <code>twisted-vase.easycad</code>. This is what gets saved, diffed and edited by the agent. Slider values update here live.</p>
+        <div class="code-wrap"><pre class="code" id="code"></pre></div>
+      </section>
+
+      <section class="card" role="tabpanel" id="panel-print" aria-labelledby="tab-print" hidden>
+        <div class="field">
+          <label for="printer">Printer</label>
+          <select id="printer">
+            <option value="p1p">Bambu Lab P1P · 0.4 mm nozzle · PLA filament</option>
+            <option value="pellet">Klipper pellet printer · 2.0 mm nozzle (example)</option>
+          </select>
+        </div>
+        <div class="stats" id="stats"></div>
+        <h2>Checks</h2>
+        <ul class="checks" id="checks"></ul>
+        <div class="buttons">
+          <button class="btn primary" type="button" data-export="3MF">Export 3MF</button>
+          <button class="btn" type="button" data-export="STL">STL</button>
+          <button class="btn" type="button" data-export="G-code">G-code</button>
+          <button class="btn" type="button" data-export="send">Send to printer</button>
+        </div>
+        <p class="panel-note" style="margin: 10px 0 0">Estimates use the EasyGCode bead model: area = (w − h)·h + π·(h/2)².</p>
+      </section>
+
+      <section class="card" aria-label="Chat with the agent">
+        <h2>Agent</h2>
+        <div class="msgs" id="msgs" aria-live="polite"></div>
+        <div class="suggest" id="suggest">
+          <button type="button">height 200</button>
+          <button type="button">twist +45</button>
+          <button type="button">points 5</button>
+          <button type="button">undo</button>
+          <button type="button">make the rim wavy</button>
+        </div>
+        <form class="composer" id="composer" autocomplete="off">
+          <input id="prompt" type="text" placeholder="Describe a change… or type “height 200”" aria-label="Message or command">
+          <button type="submit">Send</button>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <p class="foot">
+    Clickable mockup of the proposed EasyCAD interface, not the real app. The vase is computed in plain JavaScript here;
+    the real engine is Rust compiled to WebAssembly. Design docs:
+    <a href="https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/architecture.md" target="_blank" rel="noopener">architecture</a> ·
+    <a href="https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/definition-language.md" target="_blank" rel="noopener">definition language</a> ·
+    <a href="https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/roadmap.md" target="_blank" rel="noopener">roadmap</a>.
+  </p>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // Parameters: exactly the `param` lines of the definition (docs/definition-language.md §1.1).
+  // ---------------------------------------------------------------------------
+  const PARAMS = {
+    height:    { label: 'Height',       group: 'Shape', min: 60,  max: 300, step: 1,    unit: 'mm',  value: 160 },
+    radius:    { label: 'Base radius',  group: 'Shape', min: 15,  max: 120, step: 1,    unit: 'mm',  value: 45 },
+    points:    { label: 'Star points',  group: 'Shape', min: 3,   max: 16,  step: 1,    unit: '',    value: 7 },
+    depth:     { label: 'Star depth',   group: 'Shape', min: 0,   max: 40,  step: 1,    unit: '%',   value: 18 },
+    twist:     { label: 'Twist',        group: 'Shape', min: 0,   max: 360, step: 1,    unit: 'deg', value: 90 },
+    top_scale: { label: 'Top scale',    group: 'Shape', min: 0.3, max: 1.5, step: 0.01, unit: '',    value: 0.8 },
+    layer:     { label: 'Layer height', group: 'Print', min: 0.1, max: 1.2, step: 0.01, unit: 'mm',  value: 0.3 },
+    line:      { label: 'Line width',   group: 'Print', min: 0.3, max: 2,   step: 0.01, unit: 'mm',  value: 0.6, assumed: true }
+  };
+  const ALIASES = { 'top': 'top_scale', 'topscale': 'top_scale', 'scale': 'top_scale', 'layerheight': 'layer',
+    'linewidth': 'line', 'width': 'line', 'r': 'radius', 'h': 'height', 'star': 'points', 'tips': 'points' };
+  const PRINTERS = {
+    p1p:    { name: 'Bambu Lab P1P', nozzle: 0.4, bed: 256, flow: 15, density: 1.24, filament: 1.75 },
+    pellet: { name: 'Klipper pellet', nozzle: 2.0, bed: 500, flow: 120, density: 1.24, filament: 0 }
+  };
+
+  const state = { mode: 'solid', printer: 'p1p', locks: {}, history: [], future: [] };
+  const $ = (id) => document.getElementById(id);
+  const values = () => Object.fromEntries(Object.entries(PARAMS).map(([k, d]) => [k, d.value]));
+
+  function fmtNum(v, step) {
+    if (step >= 1) return String(Math.round(v));
+    return String(Number(v.toFixed(2)));
+  }
+  function fmtVal(key) {
+    const d = PARAMS[key];
+    const u = d.unit === 'deg' ? '°' : d.unit === '%' ? ' %' : d.unit ? ' ' + d.unit : '';
+    return fmtNum(d.value, d.step) + u;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Geometry (mockup stand-in for the Rust engine): star → smooth → 32 sections → loft.
+  // ---------------------------------------------------------------------------
+  function starPoints(n, rOut, rIn) {
+    const pts = [];
+    for (let i = 0; i < n * 2; i++) {
+      const a = (i * Math.PI) / n;
+      const r = i % 2 === 0 ? rOut : rIn;
+      pts.push([r * Math.cos(a), r * Math.sin(a)]);
+    }
+    return pts;
+  }
+  // Closed uniform Catmull-Rom through the star corners: the `smooth(0.5)` node.
+  function smoothClosed(pts, samples) {
+    const out = [];
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+      for (let s = 0; s < samples; s++) {
+        const t = s / samples, t2 = t * t, t3 = t2 * t;
+        out.push([0, 1].map((k) => 0.5 * ((2 * p1[k]) + (-p0[k] + p2[k]) * t +
+          (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3)));
+      }
+    }
+    return out;
+  }
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  let geo = null;
+  function build() {
+    const t0 = performance.now();
+    const v = values();
+    const base = smoothClosed(starPoints(v.points, v.radius, v.radius * (1 - v.depth / 100)), 8);
+    const rings = [];
+    const R = 32;
+    for (let i = 0; i < R; i++) {
+      const t = i / (R - 1);
+      const s = lerp(1, v.top_scale, t);
+      const a = (v.twist * t * Math.PI) / 180;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      rings.push(base.map(([x, y]) => [(x * ca - y * sa) * s, (x * sa + y * ca) * s, v.height * t]));
+    }
+    let perimeter = 0;
+    for (let j = 0; j < base.length; j++) {
+      const p = base[j], q = base[(j + 1) % base.length];
+      perimeter += Math.hypot(q[0] - p[0], q[1] - p[1]);
+    }
+    geo = { base, rings, perimeter, faces: (R - 1) * base.length + 2, ms: performance.now() - t0 };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Viewport: tiny painter's-algorithm renderer on a 2D canvas (EasyGCode style).
+  // ---------------------------------------------------------------------------
+  const canvas = $('view');
+  const ctx = canvas.getContext('2d');
+  const cam = { yaw: -0.55, pitch: 0.42, zoom: 1 };
+  let colors = {};
+  let raf = 0;
+
+  function hexToRgb(hex) {
+    const h = hex.trim().replace('#', '');
+    const v = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+    const n = parseInt(v, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const get = (name) => hexToRgb(cs.getPropertyValue(name) || '#888888');
+    colors = { accent: get('--accent'), accent2: get('--accent2'), warn: get('--warn'),
+      grid: get('--view-grid'), text: get('--text'), bg: get('--view-bg') };
+  }
+  const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+  function requestDraw() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    requestDraw();
+  }
+
+  function makeProjector() {
+    const v = values();
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const rMax = v.radius * Math.max(1, v.top_scale);
+    const size = Math.max(2.3 * rMax, v.height * 1.05);
+    const scale = (Math.min(w, h) * 0.8 * cam.zoom) / size;
+    const cz = v.height / 2;
+    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const D = size * 3.2;
+    const ox = w / 2, oy = h / 2 + 8;
+    return {
+      // Returns [screenX, screenY, depth]; depth grows away from the camera.
+      p(x, y, z) {
+        const x1 = x * cy - y * sy, y1 = x * sy + y * cy, zc = z - cz;
+        const depth = y1 * cp - zc * sp;
+        const up = y1 * sp + zc * cp;
+        const f = D / (D + depth);
+        return [ox + x1 * scale * f, oy - up * scale * f, depth];
+      },
+      // Normal in camera terms: [right, up, towards camera].
+      n(nx, ny, nz) {
+        const x1 = nx * cy - ny * sy, y1 = nx * sy + ny * cy;
+        return [x1, y1 * sp + nz * cp, -(y1 * cp - nz * sp)];
+      }
+    };
+  }
+
+  function drawBed(P, bed) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = rgba(colors.grid, 1);
+    const half = bed / 2, step = bed / 8;
+    for (let i = 0; i <= 8; i++) {
+      const g = -half + i * step;
+      let a = P.p(g, -half, 0), b = P.p(g, half, 0);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      a = P.p(-half, g, 0); b = P.p(half, g, 0);
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    }
+  }
+
+  function drawSolid(P) {
+    const { rings } = geo;
+    const M = rings[0].length;
+    const light = [-0.35, 0.55, 0.76];
+    const polys = [];
+    for (let i = 0; i < rings.length - 1; i++) {
+      const A = rings[i], B = rings[i + 1];
+      for (let j = 0; j < M; j++) {
+        const a = A[j], b = A[(j + 1) % M], c = B[(j + 1) % M], d = B[j];
+        // Outward normal: (b - a) × (d - a); ring order is counter-clockwise seen from +z.
+        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+        const vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const len = Math.hypot(nx, ny, nz) || 1;
+        const n = P.n(nx / len, ny / len, nz / len);
+        if (n[2] <= 0) continue; // faces away from the camera
+        const pa = P.p(...a), pb = P.p(...b), pc = P.p(...c), pd = P.p(...d);
+        polys.push({ pts: [pa, pb, pc, pd], depth: (pa[2] + pb[2] + pc[2] + pd[2]) / 4,
+          lit: Math.max(0, n[0] * light[0] + n[1] * light[1] + n[2] * light[2]), ring: i % 4 === 0 });
+      }
+    }
+    // Caps (the `cap()` node closes both ends).
+    for (const [ring, nz] of [[rings[0], -1], [rings[rings.length - 1], 1]]) {
+      const n = P.n(0, 0, nz);
+      if (n[2] <= 0) continue;
+      const pts = ring.map((p) => P.p(...p));
+      polys.push({ pts, depth: pts.reduce((s, p) => s + p[2], 0) / pts.length,
+        lit: Math.max(0, n[0] * light[0] + n[1] * light[1] + n[2] * light[2]), cap: true });
+    }
+    polys.sort((x, y) => y.depth - x.depth);
+    const base = colors.accent;
+    for (const q of polys) {
+      const k = 0.32 + 0.68 * q.lit;
+      const col = `rgb(${Math.round(base[0] * k)},${Math.round(base[1] * k)},${Math.round(base[2] * k)})`;
+      ctx.beginPath();
+      ctx.moveTo(q.pts[0][0], q.pts[0][1]);
+      for (let m = 1; m < q.pts.length; m++) ctx.lineTo(q.pts[m][0], q.pts[m][1]);
+      ctx.closePath();
+      ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 0.6;
+      ctx.fill(); ctx.stroke();
+      if (q.ring) { // section curves drawn on the surface, Grasshopper-preview style
+        ctx.beginPath(); ctx.moveTo(q.pts[0][0], q.pts[0][1]); ctx.lineTo(q.pts[1][0], q.pts[1][1]);
+        ctx.strokeStyle = rgba(colors.accent2, 0.55); ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
+  }
+
+  function drawToolpath(P) {
+    const v = values();
+    const revs = Math.max(1, Math.round(v.height / v.layer));
+    const base = geo.base;
+    const step = Math.max(1, Math.round((revs * base.length) / 45000)); // keep it interactive
+    const M = base.length;
+    const total = revs * M;
+    const chunks = 24;
+    ctx.lineWidth = 0.7;
+    let prev = null;
+    for (let c = 0; c < chunks; c++) {
+      const from = Math.floor((total * c) / chunks), to = Math.floor((total * (c + 1)) / chunks);
+      const f = c / (chunks - 1);
+      const col = [0, 1, 2].map((k) => Math.round(lerp(colors.accent[k], colors.accent2[k], f)));
+      ctx.strokeStyle = rgba(col, 0.9);
+      ctx.beginPath();
+      if (prev) ctx.moveTo(prev[0], prev[1]);
+      for (let idx = from; idx <= to; idx += step) {
+        const t = idx / total;
+        const s = lerp(1, v.top_scale, t);
+        const a = (v.twist * t * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+        const [x, y] = base[idx % M];
+        const p = P.p((x * ca - y * sa) * s, (x * sa + y * ca) * s, v.height * t);
+        if (!prev && idx === from) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+        prev = p;
+      }
+      ctx.stroke();
+    }
+    return revs;
+  }
+
+  function draw() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+    const P = makeProjector();
+    drawBed(P, PRINTERS[state.printer].bed);
+    if (state.mode === 'solid') {
+      drawSolid(P);
+      $('hudLeft').textContent = `solid · ${geo.faces.toLocaleString()} faces · ${geo.ms.toFixed(1)} ms`;
+    } else {
+      const revs = drawToolpath(P);
+      $('hudLeft').textContent = `toolpath · ${revs.toLocaleString()} revolutions · one continuous line`;
+    }
+  }
+
+  // Orbit / zoom with mouse, touch and pen.
+  const pointers = new Map();
+  let pinchStart = 0, zoomStart = 1;
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchStart = Math.hypot(a[0] - b[0], a[1] - b[1]); zoomStart = cam.zoom;
+    }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const last = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pointers.size === 1) {
+      cam.yaw -= (e.clientX - last[0]) * 0.008;
+      cam.pitch = Math.max(-0.25, Math.min(1.45, cam.pitch + (e.clientY - last[1]) * 0.008));
+    } else if (pointers.size === 2 && pinchStart > 0) {
+      const [a, b] = [...pointers.values()];
+      cam.zoom = Math.max(0.3, Math.min(4, zoomStart * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinchStart));
+    }
+    requestDraw();
+  });
+  const endPointer = (e) => { pointers.delete(e.pointerId); if (pointers.size < 2) pinchStart = 0; };
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    cam.zoom = Math.max(0.3, Math.min(4, cam.zoom * Math.exp(-e.deltaY * 0.0012)));
+    requestDraw();
+  }, { passive: false });
+  canvas.addEventListener('dblclick', () => { cam.yaw = -0.55; cam.pitch = 0.42; cam.zoom = 1; requestDraw(); });
+
+  for (const [id, mode] of [['modeSolid', 'solid'], ['modePath', 'path']]) {
+    $(id).addEventListener('click', () => {
+      state.mode = mode;
+      $('modeSolid').setAttribute('aria-pressed', String(mode === 'solid'));
+      $('modePath').setAttribute('aria-pressed', String(mode === 'path'));
+      requestDraw();
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Params panel (auto-generated from PARAMS).
+  // ---------------------------------------------------------------------------
+  const LOCK_ICON = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  const UNLOCK_ICON = '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>';
+
+  function renderParams() {
+    const host = $('paramGroups');
+    host.innerHTML = '';
+    const groups = {};
+    for (const [key, d] of Object.entries(PARAMS)) (groups[d.group] = groups[d.group] || []).push(key);
+    for (const [name, keys] of Object.entries(groups)) {
+      const g = document.createElement('div');
+      g.className = 'group';
+      g.innerHTML = `<h2>${name}</h2>`;
+      for (const key of keys) {
+        const d = PARAMS[key];
+        const row = document.createElement('div');
+        row.className = 'param';
+        row.innerHTML = `
+          <label for="p-${key}">${d.label}${d.assumed ? ` <span class="assumed" id="as-${key}">assumed <button type="button" data-keep="${key}">Keep</button></span>` : ''}</label>
+          <output id="o-${key}" for="p-${key}">${fmtVal(key)}</output>
+          <button type="button" class="lock" id="l-${key}" aria-pressed="${!!state.locks[key]}" aria-label="Lock ${d.label} for the agent" title="Lock: the agent can't change this value">${state.locks[key] ? LOCK_ICON : UNLOCK_ICON}</button>
+          <input type="range" id="p-${key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${d.value}">`;
+        g.appendChild(row);
+      }
+      host.appendChild(g);
+    }
+    for (const key of Object.keys(PARAMS)) {
+      const input = $('p-' + key);
+      input.addEventListener('pointerdown', () => pushHistory(), { passive: true });
+      input.addEventListener('keydown', () => pushHistory(), { once: false });
+      input.addEventListener('input', () => setParam(key, Number(input.value), { fromSlider: true }));
+      $('l-' + key).addEventListener('click', () => {
+        state.locks[key] = !state.locks[key];
+        const b = $('l-' + key);
+        b.setAttribute('aria-pressed', String(!!state.locks[key]));
+        b.innerHTML = state.locks[key] ? LOCK_ICON : UNLOCK_ICON;
+        renderCode();
+        toast(`${PARAMS[key].label} ${state.locks[key] ? 'locked: the agent will leave it alone' : 'unlocked'}`);
+      });
+    }
+    host.querySelectorAll('[data-keep]').forEach((b) => b.addEventListener('click', () => {
+      const key = b.dataset.keep;
+      PARAMS[key].assumed = false;
+      const tag = $('as-' + key);
+      if (tag) tag.remove();
+      renderCode();
+      toast(`${PARAMS[key].label} confirmed: no longer marked as assumed`);
+    }));
+  }
+
+  let lastChanged = null;
+  function setParam(key, value, opts = {}) {
+    const d = PARAMS[key];
+    const v = Math.max(d.min, Math.min(d.max, value));
+    d.value = d.step >= 1 ? Math.round(v) : Math.round(v / d.step) * d.step;
+    if (!opts.fromSlider) $('p-' + key).value = d.value;
+    $('o-' + key).textContent = fmtVal(key);
+    lastChanged = key;
+    refresh();
+  }
+
+  function snapshot() { return JSON.stringify(values()); }
+  function pushHistory() {
+    const s = snapshot();
+    if (state.history[state.history.length - 1] !== s) { state.history.push(s); state.future = []; }
+    updateUndo();
+  }
+  function restore(s) {
+    const v = JSON.parse(s);
+    for (const k of Object.keys(v)) { PARAMS[k].value = v[k]; $('p-' + k).value = v[k]; $('o-' + k).textContent = fmtVal(k); }
+    lastChanged = null;
+    refresh();
+  }
+  function undo() {
+    if (!state.history.length) return false;
+    state.future.push(snapshot());
+    restore(state.history.pop());
+    updateUndo();
+    return true;
+  }
+  function redo() {
+    if (!state.future.length) return false;
+    state.history.push(snapshot());
+    restore(state.future.pop());
+    updateUndo();
+    return true;
+  }
+  function updateUndo() {
+    $('undoBtn').disabled = state.history.length === 0;
+    $('redoBtn').disabled = state.future.length === 0;
+  }
+  $('undoBtn').addEventListener('click', undo);
+  $('redoBtn').addEventListener('click', redo);
+
+  // ---------------------------------------------------------------------------
+  // Code panel: the .easycad text, regenerated from the current values.
+  // ---------------------------------------------------------------------------
+  function definitionText() {
+    const line = (key) => {
+      const d = PARAMS[key];
+      const unit = d.unit === 'deg' ? ' deg' : d.unit === '%' ? ' %' : d.unit ? ' ' + d.unit : '';
+      const val = (fmtNum(d.value, d.step) + unit).padEnd(8);
+      const range = `in ${fmtNum(d.min, d.step)}..${fmtNum(d.max, d.step)}`.padEnd(12);
+      const attrs = (d.assumed ? '  @assumed' : '') + (state.locks[key] ? '  @locked' : '');
+      return `param ${key.padEnd(9)} = ${val} ${range} "${d.label}"${attrs}`;
+    };
+    return [
+      'easycad 0.1',
+      '# Twisted star vase: a solid for normal printing, plus a direct vase-mode toolpath',
+      '',
+      'group "Shape"',
+      ...['height', 'radius', 'points', 'depth', 'twist', 'top_scale'].map(line),
+      '',
+      'group "Print"',
+      ...['layer', 'line'].map(line),
+      '',
+      'base     = star(points, outer: radius, inner: radius * (1 - depth)) |> smooth(0.5)',
+      't        = range(0, 1, count: 32)                  # 32 numbers from 0 to 1',
+      'sections = base',
+      '           |> scale(lerp(1, top_scale, t))         # t is a list, so this makes 32 curves',
+      '           |> rotate(twist * t)',
+      '           |> move(z: height * t)',
+      'wall     = loft(sections)                          # NURBS surface through all sections',
+      'vase     = wall |> cap()                           # close both ends: a watertight solid',
+      '',
+      'path     = vase_spiral(wall, layer: layer, width: line)   # one continuous helix along the wall',
+      '',
+      'show vase',
+      'export vase as "twisted-vase.3mf"',
+      'print path'
+    ].join('\n');
+  }
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const TOKEN = /(#.*$)|("[^"]*")|(@\w+)|(\|>)|\b(easycad|param|group|in|of|show|export|as|print|with)\b|(\b\d+(?:\.\d+)?(?:\s?(?:mm|deg|%))?)|\b([a-z_]+)(?=\()/gm;
+  function highlight(text) {
+    return text.split('\n').map((ln) => {
+      let out = '', last = 0;
+      ln.replace(TOKEN, (m, com, str, attr, pipe, kw, num, fn, idx) => {
+        out += esc(ln.slice(last, idx));
+        const cls = com ? 'c' : str ? 'str' : attr ? 'a' : pipe ? 'op' : kw ? 'k' : num ? 'n' : 'f';
+        out += `<span class="${cls}">${esc(m)}</span>`;
+        last = idx + m.length;
+        return m;
+      });
+      out += esc(ln.slice(last));
+      if (lastChanged && ln.startsWith(`param ${lastChanged} `)) out = `<span class="flash">${out}</span>`;
+      return out;
+    }).join('\n');
+  }
+  function renderCode() { $('code').innerHTML = highlight(definitionText()); }
+
+  // ---------------------------------------------------------------------------
+  // Graph panel (SVG).
+  // ---------------------------------------------------------------------------
+  const TYPE_COLOR = { number: 'var(--muted)', curve: 'var(--accent)', surface: 'var(--accent2)', solid: 'var(--accent2)', toolpath: 'var(--warn)' };
+  const NODES = [
+    { id: 'height', kind: 'param', x: 16, y: 16 }, { id: 'radius', kind: 'param', x: 16, y: 70 },
+    { id: 'points', kind: 'param', x: 16, y: 124 }, { id: 'depth', kind: 'param', x: 16, y: 178 },
+    { id: 'twist', kind: 'param', x: 16, y: 232 }, { id: 'top_scale', kind: 'param', x: 16, y: 286 },
+    { id: 'layer', kind: 'param', x: 16, y: 384 }, { id: 'line', kind: 'param', x: 16, y: 438 },
+    { id: 'base', title: 'base', op: 'star |> smooth', type: 'curve', x: 200, y: 70, inputs: ['points', 'radius', 'depth'] },
+    { id: 't', title: 't', op: 'range(0, 1, 32)', type: 'number', x: 200, y: 300, inputs: [] },
+    { id: 'sections', title: 'sections', op: 'scale |> rotate |> move', note: '32 curves', type: 'curve', x: 402, y: 140, inputs: ['base', 'top_scale', 'twist', 'height', 't'] },
+    { id: 'wall', title: 'wall', op: 'loft', type: 'surface', x: 604, y: 196, inputs: ['sections'] },
+    { id: 'vase', title: 'vase', op: 'cap', type: 'solid', x: 806, y: 110, inputs: ['wall'] },
+    { id: 'path', title: 'path', op: 'vase_spiral', type: 'toolpath', x: 806, y: 320, inputs: ['wall', 'layer', 'line'] },
+    { id: 'o-show', kind: 'out', title: 'show', x: 1004, y: 60, inputs: ['vase'] },
+    { id: 'o-export', kind: 'out', title: 'export 3MF', x: 1004, y: 140, inputs: ['vase'] },
+    { id: 'o-print', kind: 'out', title: 'print', x: 1004, y: 350, inputs: ['path'] }
+  ];
+  const byId = Object.fromEntries(NODES.map((n) => [n.id, n]));
+  function nodeBox(n) {
+    if (n.kind === 'param') return { w: 150, h: 44 };
+    if (n.kind === 'out') return { w: 92, h: 40 };
+    return { w: 168, h: 46 + 18 * n.inputs.length + (n.note ? 16 : 0) };
+  }
+  function outType(n) { return n.kind === 'param' ? 'number' : n.type; }
+  function renderGraph() {
+    const svg = $('graph');
+    let wires = '', boxes = '';
+    for (const n of NODES) {
+      const { w, h } = nodeBox(n);
+      (n.inputs || []).forEach((src, i) => {
+        const s = byId[src], sb = nodeBox(s);
+        const x1 = s.x + sb.w, y1 = s.y + sb.h / 2;
+        const x2 = n.x, y2 = n.kind === 'out' ? n.y + h / 2 : n.y + 48 + i * 18;
+        const dx = Math.max(40, (x2 - x1) / 2);
+        wires += `<path class="g-wire" style="stroke: ${TYPE_COLOR[outType(s)]}" d="M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}"/>`;
+      });
+      if (n.kind === 'param') {
+        const d = PARAMS[n.id];
+        boxes += `<g class="g-node param"><rect x="${n.x}" y="${n.y}" width="${w}" height="${h}" rx="9"/>
+          <text class="t" x="${n.x + 12}" y="${n.y + 18}">${n.id}</text>
+          <text class="v" id="gv-${n.id}" x="${n.x + 12}" y="${n.y + 35}">${fmtVal(n.id)}</text>
+          <text class="s" x="${n.x + w - 12}" y="${n.y + 35}" text-anchor="end">slider</text></g>`;
+      } else if (n.kind === 'out') {
+        boxes += `<g class="g-node out"><rect x="${n.x}" y="${n.y}" width="${w}" height="${h}" rx="9"/>
+          <text class="t" x="${n.x + w / 2}" y="${n.y + 25}" text-anchor="middle">${n.title}</text></g>`;
+      } else {
+        const ins = n.inputs.map((src, i) => `<text class="s" x="${n.x + 12}" y="${n.y + 52 + i * 18}">◂ ${src}</text>`).join('');
+        boxes += `<g class="g-node"><rect x="${n.x}" y="${n.y}" width="${w}" height="${h}" rx="9" style="stroke: ${TYPE_COLOR[n.type]}"/>
+          <text class="t" x="${n.x + 12}" y="${n.y + 19}">${n.title}</text>
+          <text class="s" x="${n.x + 12}" y="${n.y + 34}" style="fill: ${TYPE_COLOR[n.type]}">${n.op}</text>${ins}
+          ${n.note ? `<text class="s" x="${n.x + 12}" y="${n.y + h - 9}">${n.note}</text>` : ''}</g>`;
+      }
+    }
+    svg.innerHTML = wires + boxes;
+  }
+  function updateGraphValues() {
+    for (const key of Object.keys(PARAMS)) { const el = $('gv-' + key); if (el) el.textContent = fmtVal(key); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Print panel: estimates + checks from the same numbers.
+  // ---------------------------------------------------------------------------
+  const beadArea = (w, h) => (Math.max(w, h) - h) * h + Math.PI * (h / 2) ** 2;
+  // Conservative wall lean at the star tips (degrees from vertical): radial taper and twist together.
+  function wallLean(v) {
+    const rTip = v.radius * Math.max(1, v.top_scale);
+    const radial = (v.radius * Math.abs(v.top_scale - 1)) / v.height;
+    const tangential = (rTip * (v.twist * Math.PI / 180)) / v.height;
+    return Math.atan(Math.hypot(radial, tangential)) * 180 / Math.PI;
+  }
+  function renderPrint() {
+    const v = values(), pr = PRINTERS[state.printer];
+    const revs = Math.round(v.height / v.layer);
+    const avgScale = (1 + v.top_scale) / 2;
+    const length = revs * geo.perimeter * avgScale;                    // mm of toolpath
+    const area = beadArea(v.line, v.layer);
+    const volume = length * area;                                       // mm³
+    const grams = volume * pr.density / 1000;
+    const speed = Math.min(pr.nozzle < 1 ? 100 : 60, pr.flow / area);  // mm/s, flow-limited
+    const minutes = length / speed / 60;
+    const h = Math.floor(minutes / 60), m = Math.round(minutes % 60);
+    const filament = pr.filament ? volume / (Math.PI * (pr.filament / 2) ** 2) / 1000 : 0;
+    $('stats').innerHTML = [
+      [`${revs.toLocaleString()}`, 'layers (one continuous spiral)'],
+      [`${h}:${String(m).padStart(2, '0')} h`, `print time at ≤ ${pr.flow} mm³/s`],
+      [`${Math.round(grams)} g`, pr.filament ? `${filament.toFixed(1)} m of ${pr.filament} mm filament` : 'pellets'],
+      [`${(length / 1000).toFixed(1)} m`, 'toolpath length']
+    ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+
+    const lean = wallLean(v);
+    const diameter = 2 * v.radius * Math.max(1, v.top_scale);
+    const ratio = v.line / pr.nozzle;
+    const checks = [
+      [lean < 40 ? 'ok' : lean < 55 ? 'warn' : 'bad', `Max wall lean ≈ ${Math.round(lean)}° (conservative; under 45° prints without support)`],
+      [diameter <= pr.bed - 10 ? 'ok' : 'bad', `Fits the bed: ⌀ ${Math.round(diameter)} mm on a ${pr.bed} mm bed`],
+      [ratio >= 1 && ratio <= 2 ? 'ok' : 'warn', `Line width ${v.line.toFixed(2)} mm is ${ratio.toFixed(1)}× the ${pr.nozzle} mm nozzle`],
+      [v.layer <= pr.nozzle * 0.75 ? 'ok' : 'warn', `Layer height ${v.layer.toFixed(2)} mm (≤ 75 % of nozzle recommended)`],
+      ['ok', 'Watertight solid (cap closes both ends)']
+    ];
+    $('checks').innerHTML = checks.map(([s, t]) => `<li><span class="dot ${s}"></span><span>${t}</span></li>`).join('');
+  }
+  $('printer').addEventListener('change', (e) => { state.printer = e.target.value; refresh(); });
+  document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => {
+    const what = b.dataset.export;
+    toast(what === 'send'
+      ? 'Mockup: sending to Klipper/Moonraker comes with the desktop app (Phase 4).'
+      : `Mockup: in the app this saves twisted-vase.${what === 'G-code' ? 'gcode' : what.toLowerCase()} (Phase ${what === 'G-code' ? 3 : 1}).`);
+  }));
+
+  // ---------------------------------------------------------------------------
+  // Tabs.
+  // ---------------------------------------------------------------------------
+  const tabs = ['params', 'graph', 'code', 'print'];
+  function selectTab(name) {
+    for (const t of tabs) {
+      $('tab-' + t).setAttribute('aria-selected', String(t === name));
+      $('panel-' + t).hidden = t !== name;
+    }
+    document.querySelector('.layout').classList.toggle('wide', name === 'graph' || name === 'code');
+    requestDraw();
+    try { localStorage.setItem('easycad-mockup-tab', name); } catch (e) { /* storage may be unavailable */ }
+  }
+  tabs.forEach((t) => $('tab-' + t).addEventListener('click', () => selectTab(t)));
+
+  // ---------------------------------------------------------------------------
+  // Chat: local commands first (no AI), everything else would go to the agent.
+  // ---------------------------------------------------------------------------
+  function addMsg(kind, html) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + kind;
+    const who = kind === 'user' ? 'You' : kind === 'agent' ? 'Agent' : '';
+    el.innerHTML = (who ? `<span class="who">${who}</span>` : '') + html;
+    const list = $('msgs');
+    list.appendChild(el);
+    list.scrollTop = list.scrollHeight;
+  }
+  let toastTimer = 0;
+  function toast(text) {
+    const t = $('toast');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+  }
+
+  function findParam(word) {
+    const w = word.toLowerCase().replace(/[\s_-]/g, '');
+    if (PARAMS[word]) return word;
+    if (ALIASES[w]) return ALIASES[w];
+    return Object.keys(PARAMS).find((k) => k.replace(/_/g, '') === w || PARAMS[k].label.toLowerCase().replace(/\s/g, '') === w) || null;
+  }
+
+  function handle(text) {
+    const raw = text.trim();
+    if (!raw) return;
+    addMsg('user', esc(raw));
+    const lower = raw.toLowerCase();
+    if (lower === 'undo' || lower === 'redo') {
+      const ok = lower === 'undo' ? undo() : redo();
+      addMsg('local', ok ? `${lower === 'undo' ? 'Undone' : 'Redone'}. Handled locally, no AI.` : `Nothing to ${lower}.`);
+      return;
+    }
+    const exp = lower.match(/^export\s+(3mf|stl|gcode|g-code)$/);
+    if (exp) { addMsg('local', `Would save twisted-vase.${exp[1].replace('-', '')}. Handled locally, no AI.`); return; }
+    const m = raw.match(/^([a-zA-Z][\w\s-]*?)\s*(?:=|to|:)?\s*([+-]?)(\d+(?:\.\d+)?)\s*(mm|deg|°|%)?$/);
+    if (m) {
+      const key = findParam(m[1].trim());
+      if (key) {
+        pushHistory();
+        const d = PARAMS[key];
+        const n = Number(m[3]);
+        const target = m[2] === '+' ? d.value + n : m[2] === '-' ? d.value - n : n;
+        setParam(key, target);
+        addMsg('local', `${d.label} → ${fmtVal(key)}. Handled locally: instant, free, no AI.`);
+        toast(`${d.label} → ${fmtVal(key)} (no AI)`);
+        return;
+      }
+    }
+    addMsg('agent', `In the real app this goes to the agent (Claude Opus 5.5) together with the definition, ` +
+      `the ${Object.keys(PARAMS).length} parameters and four rendered views. It answers with a small edit to the ` +
+      `definition that you can accept or undo, and it leaves locked values alone.` +
+      `<div class="chips"><span class="chip">mockup reply</span></div>`);
+    toast('Sent to the agent (mockup)');
+  }
+
+  $('composer').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = $('prompt');
+    handle(input.value);
+    input.value = '';
+  });
+  $('suggest').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => handle(b.textContent)));
+
+  // Opening conversation: how the definition came to be.
+  addMsg('user', 'Make me a vase with a twisted 7-point star cross-section, about 16 cm tall. I want to print it in vase mode on my P1P.');
+  addMsg('agent', 'Done: a twisted star vase you can print two ways, as a watertight solid (3MF, use spiral vase mode in Bambu Studio) ' +
+    'or straight from the spiral toolpath. I exposed 8 parameters in two groups. I <b>assumed a 0.6 mm line width</b> for your 0.4 mm nozzle; ' +
+    'change or confirm it under Print. The steepest wall leans about ' + Math.round(wallLean(values())) + '°, so it prints without supports.' +
+    '<div class="chips"><span class="chip">8 parameters</span><span class="chip warn">1 assumed</span><span class="chip">+21 lines</span>' +
+    '<span class="chip btn-like" role="button" tabindex="0" id="viewCode">View definition</span></div>');
+  $('msgs').scrollTop = 0;
+  $('viewCode').addEventListener('click', () => selectTab('code'));
+  $('viewCode').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectTab('code'); } });
+
+  // ---------------------------------------------------------------------------
+  // Wiring it all together.
+  // ---------------------------------------------------------------------------
+  function refresh() {
+    build();
+    renderCode();
+    updateGraphValues();
+    renderPrint();
+    requestDraw();
+  }
+
+  readColors();
+  build();
+  renderParams();
+  renderGraph();
+  refresh();
+  updateUndo();
+  try { const saved = localStorage.getItem('easycad-mockup-tab'); if (saved && tabs.includes(saved)) selectTab(saved); } catch (e) { /* ignore */ }
+
+  new ResizeObserver(resize).observe(canvas);
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const retheme = () => { readColors(); requestDraw(); };
+  if (mq.addEventListener) mq.addEventListener('change', retheme);
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  resize();
+})();
+</script>
+
+</html>
