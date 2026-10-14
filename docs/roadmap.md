@@ -33,7 +33,9 @@ Sizes are relative (S ≈ one focused session, M ≈ a few, L ≈ many).
 
 ---
 
-## Phase 0: Walking skeleton (S) ← *in progress*
+## Phase 0: Walking skeleton (S) ✓ *done 14 Oct 2026 (hosting pending)*
+
+What landed and the numbers are in [devlog.md](devlog.md).
 - **The app shell** in the EasyGCode look (PWA: installable, offline).
 - **The Rust engine** compiled to WebAssembly and running in a background worker, so the UI
   never freezes.
@@ -46,7 +48,7 @@ Sizes are relative (S ≈ one focused session, M ≈ a few, L ≈ many).
 **Done when:** you open the app on your phone and computer, drag sliders, and see the shape
 and its toolpath update instantly.
 
-## Phase 1: Grasshopper-lite + projects (M–L)
+## Phase 1: Grasshopper-lite + projects (M–L) ← *next*
 - **Definition language v0** (parser, formatter, clear errors) and the evaluator (dependency
   graph, caching, list handling).
 - **The settings window**, generated from the project's parameters: groups, sliders, toggles,

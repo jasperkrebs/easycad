@@ -1,7 +1,7 @@
 # EasyCAD architecture (proposal)
 
 *Status: decisions answered on 14 Oct 2026 (see [roadmap.md](roadmap.md#decisions-answered-14-oct-2026)).
-Phase 0 is in progress. The owner's priority is **custom toolpaths and G-code**; the printing
+Phase 0 is done; Phase 1 is next. The owner's priority is **custom toolpaths and G-code**; the printing
 workflow is described in [toolpaths-and-skills.md](toolpaths-and-skills.md). Where this document
 mentions solids/3MF/slicers, treat those as "later". Reasoning and sources are in
 [research.md](research.md).*

@@ -13,7 +13,7 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
   (Bambu P1P filament, Klipper pellet).
 
 **Current phase:** decisions answered (14 Oct 2026, see `docs/roadmap.md`). **Phase 0 (walking
-skeleton) is in progress.** Priorities:
+skeleton) is done; Phase 1 is next.** Hosting is still pending. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.

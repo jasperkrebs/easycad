@@ -5,8 +5,12 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status:** decisions made (14 Oct 2026). **Phase 0 (walking skeleton) in progress.** See the
-> [roadmap](docs/roadmap.md).
+> **Status:** Phase 0 done (14 Oct 2026).
+> - **Working:** the Rust engine runs in the browser as WebAssembly. A twisted-vase demo
+>   shows the shape, its continuous print toolpath and a live print estimate.
+> - **Next:** Phase 1, project files with their own settings window, and real G-code.
+>
+> See the [roadmap](docs/roadmap.md).
 
 ---
 

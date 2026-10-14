@@ -35,7 +35,5 @@ next session (human or agent) picks up.
 **Open**
 - **Hosting:** the repo is private. Pages needs GitHub Pro (or a public repo, or Cloudflare
   Pages). Owner to decide; then set `DEPLOY_PAGES=true`.
-- The workflow file push may need the `workflows` permission (if it was refused, it lives in
-  the PR as a manual step).
 - Phase 1 next: definition language v0, evaluator, settings window generated from the
   project, project files, first G-code (P1P + pellet) golden-tested against EasyGCode.
