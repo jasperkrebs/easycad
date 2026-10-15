@@ -78,6 +78,8 @@ The fix is a general Grasshopper-like vocabulary, not one step per project.
   of their settings in the tests.
 - The language guide (agent and Copy for AI) and `docs/definition-language.md` describe the
   toolbox, with a Grasshopper → EasyCAD table. 71 steps; engine 241 KB gzipped.
+- The agent's cached system prompt (guide + 71 steps + tools) grew to about 7.3k tokens: about
+  $0.02 to write the cache once, then about $0.0015 per request to read it with Sonnet 5.5.
 
 **Open**
 - Still missing for many Grasshopper definitions: Brep solids and booleans, sweep/pipe, curve
