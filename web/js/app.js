@@ -286,17 +286,31 @@ function wire() {
 
   const templates = /** @type {HTMLSelectElement} */ ($('template'));
   for (const t of TEMPLATES) templates.append(el('option', { value: t.id, text: t.name }));
-  templates.addEventListener('change', async () => {
-    const id = templates.value;
-    templates.value = '';
-    if (!id) return;
-    if (state.unsaved && !confirm('Start a new project from this template? Save first if you want to keep the current one.')) return;
+  const open = async (id) => {
+    $('replaceConfirm').hidden = true;
     try {
       await openTemplate(id);
     } catch (err) {
       showSettingsError(`Could not open the template: ${err.message || err}`);
     }
+  };
+  // Replacing a changed project asks first, inside the page (no browser dialog).
+  let pending = '';
+  templates.addEventListener('change', () => {
+    const id = templates.value;
+    templates.value = '';
+    if (!id) return;
+    if (!state.unsaved) {
+      open(id);
+      return;
+    }
+    pending = id;
+    const name = TEMPLATES.find((t) => t.id === id)?.name || id;
+    $('replaceText').textContent = `Replace “${projectName()}” with a new “${name}”? Changes since you last saved it are lost.`;
+    $('replaceConfirm').hidden = false;
   });
+  $('replaceYes').addEventListener('click', () => open(pending));
+  $('replaceNo').addEventListener('click', () => ($('replaceConfirm').hidden = true));
 
   $('openProject').addEventListener('click', () => $('projectFile').click());
   $('projectFile').addEventListener('change', async (e) => {
@@ -369,8 +383,9 @@ function wire() {
   $('copyRecipe').addEventListener('click', async () => {
     note((await copyText(editor.value)) ? 'Recipe copied.' : 'Copying was blocked by the browser: select the text and copy it.');
   });
+  // Copy right inside the tap: some browsers (Safari) refuse clipboard writes after a wait.
   $('copyForAI').addEventListener('click', async () => {
-    const ok = await copyText(aiPrompt(await currentSource(), state.catalog));
+    const ok = await copyText(aiPrompt(state.source, state.catalog));
     note(ok ? 'Copied. Paste it into a Claude chat and describe what you want.' : 'Copying was blocked by the browser.');
   });
 }

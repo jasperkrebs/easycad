@@ -46,7 +46,6 @@ async function waitForServer(url) {
       page.on('console', (m) => {
         if (m.type() === 'error') failures.push(`${name}: console error: ${m.text()}`);
       });
-      page.on('dialog', (d) => d.accept()); // "replace the current project?" when switching templates
       await page.goto(url);
       const status = () => page.textContent('#status');
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
@@ -77,6 +76,9 @@ async function waitForServer(url) {
       // Templates replace the project; the print estimate follows.
       await page.click('#tab-settings');
       await page.selectOption('#template', 'ribbed-cylinder');
+      // The project was edited, so the page asks before replacing it.
+      if (!(await page.isVisible('#replaceConfirm'))) failures.push(`${name}: no confirmation before replacing an edited project`);
+      await page.click('#replaceYes');
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Ribbed cylinder', null, { timeout: 15000 });
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-ribbed.png`), fullPage: name === 'phone' });
