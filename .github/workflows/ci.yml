@@ -2,7 +2,8 @@
 #
 # Hosting (decided 15 Oct 2026): the repo is public, so GitHub Pages is free. It needs one
 # setting, once: Settings → Pages → Source: "GitHub Actions". Until then the deploy job only
-# leaves a notice and stays green. A private repo needs a paid plan for Pages; then also set the
+# leaves a notice and stays green. After switching it on, Actions → CI → "Run workflow"
+# deploys without waiting for the next push. A private repo needs a paid plan for Pages; then also set the
 # repo variable DEPLOY_PAGES = true.
 name: CI
 
@@ -61,14 +62,15 @@ jobs:
           npx playwright install --with-deps chromium
           node scripts/smoke-test.cjs
       - uses: actions/upload-pages-artifact@v4
-        if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         with:
           path: web
 
   deploy:
     name: Deploy to GitHub Pages
+    # Pushes deploy; so does "Run workflow" in the Actions tab (handy right after switching Pages on).
     if: >-
-      github.event_name == 'push' && github.ref_name == github.event.repository.default_branch &&
+      github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch &&
       (!github.event.repository.private || vars.DEPLOY_PAGES == 'true')
     needs: web
     runs-on: ubuntu-latest
