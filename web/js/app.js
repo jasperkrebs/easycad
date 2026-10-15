@@ -74,10 +74,11 @@ async function run(quality, how = {}) {
     if (result.printer) setPrinter(printerFor(result.printer));
   }
 
+  const errors = result.diagnostics.filter((d) => d.severity === 'error').length;
   const layout = layoutKey(result.params);
   if (how.fresh || layout !== state.layout) {
     state.layout = layout;
-    renderSettings($('settings'), result.params, state.values, onSettingChange);
+    renderSettings($('settings'), result.params, state.values, onSettingChange, { broken: errors > 0 });
   }
   viewport.show(result, { refit: refitNext });
   refitNext = false;
@@ -90,7 +91,6 @@ async function run(quality, how = {}) {
   renderHud(result);
   renderAbout();
 
-  const errors = result.diagnostics.filter((d) => d.severity === 'error').length;
   showSettingsError(errors ? `The recipe has ${errors === 1 ? 'a problem' : `${errors} problems`}: see the Recipe tab.` : '');
   if (errors) setStatus(`${errors} recipe ${errors === 1 ? 'problem' : 'problems'}`, 'bad');
   else setStatus(`Engine ready · ${fmt(result.ms)} ms`, 'ok');

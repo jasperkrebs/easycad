@@ -23,8 +23,9 @@ export function layoutKey(params) {
  * @param {any[]} params the engine's ParamInfo list
  * @param {Record<string, any>} values current values by name
  * @param {(name: string, value: any, quality: 'preview' | 'final') => void} onChange
+ * @param {{ broken?: boolean }} [opts] broken: the recipe has errors (they're explained elsewhere)
  */
-export function renderSettings(host, params, values, onChange) {
+export function renderSettings(host, params, values, onChange, opts = {}) {
   host.replaceChildren();
   const groups = new Map();
   for (const p of params) {
@@ -37,7 +38,7 @@ export function renderSettings(host, params, values, onChange) {
     }
     groups.get(name).append(settingRow(p, values[p.name] ?? p.value, onChange));
   }
-  if (!params.length) {
+  if (!params.length && !opts.broken) {
     host.append(
       el('p', {
         className: 'hint',
