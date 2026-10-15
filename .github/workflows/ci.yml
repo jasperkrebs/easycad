@@ -5,6 +5,12 @@
 # leaves a notice and stays green. After switching it on, Actions → CI → "Run workflow"
 # deploys without waiting for the next push. A private repo needs a paid plan for Pages; then also set the
 # repo variable DEPLOY_PAGES = true.
+#
+# The AI proxy (agent-proxy/, a Cloudflare Worker that keeps the Claude API key) is deployed
+# from the default branch once four repository secrets exist: CLOUDFLARE_API_TOKEN,
+# CLOUDFLARE_ACCOUNT_ID, ANTHROPIC_API_KEY and EASYCAD_PASSWORD (docs/api-key.md). Its address
+# goes into the app's config.json, so the app finds it by itself. Without the secrets the job
+# leaves a notice and stays green; the app's "key on this device" mode works either way.
 name: CI
 
 on:
@@ -38,10 +44,58 @@ jobs:
       # Licenses: permissive only, and the notices file must list every dependency.
       - run: python3 scripts/third-party-notices.py --check
 
+  proxy:
+    name: AI proxy (Cloudflare Worker)
+    if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node --test agent-proxy/worker.test.mjs
+      - name: Deploy (once the Cloudflare secrets are set)
+        id: deploy
+        working-directory: agent-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EASYCAD_PASSWORD: ${{ secrets.EASYCAD_PASSWORD }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -o pipefail
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::The AI proxy wasn't deployed: no Cloudflare secrets yet (docs/api-key.md). The app's 'key on this device' mode still works."
+            exit 0
+          fi
+          if [ -z "$ANTHROPIC_API_KEY" ] || [ -z "$EASYCAD_PASSWORD" ]; then
+            echo "::error::Add both ANTHROPIC_API_KEY and EASYCAD_PASSWORD as repository secrets (docs/api-key.md)."
+            exit 1
+          fi
+          # Only this repo's GitHub Pages site (and a local server) may call the proxy.
+          pages="https://$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]').github.io"
+          sed -i "s|^ALLOWED_ORIGINS = .*|ALLOWED_ORIGINS = \"$pages,http://localhost:8080,http://127.0.0.1:8080\"|" wrangler.toml
+          npx --yes wrangler@4.146.0 deploy | tee deploy.log
+          printf '%s' "$ANTHROPIC_API_KEY" | npx --yes wrangler@4.146.0 secret put ANTHROPIC_API_KEY
+          printf '%s' "$EASYCAD_PASSWORD" | npx --yes wrangler@4.146.0 secret put EASYCAD_PASSWORD
+          url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | head -n 1)
+          if [ -z "$url" ]; then
+            echo "::error::Deployed, but Wrangler printed no workers.dev address. Is a workers.dev subdomain set up (docs/api-key.md)?"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "::notice::The AI proxy is live at $url"
+
   web:
     name: Web app (build, size budget, smoke test)
     runs-on: ubuntu-latest
-    needs: engine
+    needs: [engine, proxy]
+    # The proxy job runs only on the default branch, and a broken proxy setup shouldn't stop the
+    # website from updating: only the engine has to pass.
+    if: ${{ !cancelled() && needs.engine.result == 'success' }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -56,11 +110,18 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - run: node --test agent-proxy/worker.test.mjs
       - name: Smoke test in headless Chromium
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
           npx playwright install --with-deps chromium
           node scripts/smoke-test.cjs
+          node scripts/agent-test.cjs
+      - name: App config (the AI proxy's address, when it's deployed; the repo's copy is empty)
+        env:
+          AGENT_URL: ${{ needs.proxy.outputs.url }}
+        run: |
+          python3 -c "import json, os; json.dump({'agentUrl': os.environ.get('AGENT_URL', '')}, open('web/config.json', 'w'))"
       - uses: actions/upload-pages-artifact@v4
         if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         with:
@@ -70,6 +131,7 @@ jobs:
     name: Deploy to GitHub Pages
     # Pushes deploy; so does "Run workflow" in the Actions tab (handy right after switching Pages on).
     if: >-
+      needs.web.result == 'success' && !cancelled() &&
       github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch &&
       (!github.event.repository.private || vars.DEPLOY_PAGES == 'true')
     needs: web

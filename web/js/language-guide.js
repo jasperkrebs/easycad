@@ -1,0 +1,48 @@
+// How the recipe language works, written for an AI (and readable by people). Used by the in-app
+// agent's system prompt and by "Copy for AI". The list of steps is generated from the engine
+// (nodeCatalog), so only the language itself is described here. Keep it in step with
+// docs/definition-language.md.
+
+export const LANGUAGE_GUIDE = `How the EasyCAD language works (easycad 0.1)
+
+A recipe is a small dataflow program, like a Grasshopper definition written as text. The app runs it on every change and shows the result; the settings window is generated from its \`param\` lines.
+
+Header
+- The first line is \`easycad 0.1\`.
+- \`project "Name"\`, \`printer "Bambu P1P 0.4"\` or \`printer "Klipper pellet"\`, and any number of \`note "…"\` lines (what the project is and why it's built this way: the project's memory, saved with the file).
+
+Settings (each \`param\` is one control in the settings window)
+- \`param height = 160 mm in 40..300 "Height"\`: a slider with a range, in the setting's own unit. Add \`step 1\` for whole numbers or fixed steps.
+- \`param solid = true "Solid bottom"\`: a toggle. \`param style = "round" of ["round", "square"] "Style"\`: a dropdown. \`param label = "A" "Text"\`: a text field.
+- \`group "Shape"\` puts the params below it into a group. \`@assumed\` after a param marks a guessed value; \`@hidden\` hides it from the window.
+- Units: mm, cm, m, inch (lengths); deg, rad (angles); % (18 % means 0.18). Values without a unit are plain numbers (mm for lengths, degrees for angles).
+
+Steps
+- \`name = expression\` is one step; the name is its output wire. Steps can be in any order; a name can't depend on itself. There are no loops, ifs or user-defined functions.
+- Calls take positional arguments first, then named ones: \`star(7, outer: 45, inner: 36)\`.
+- Pipes: \`a |> f(x)\` means \`f(a, x)\`, and \`a |> f\` means \`f(a)\`. A line starting with \`|>\` continues the step above it.
+- Arithmetic: + - * / ^ and parentheses; \`-t^2\` is \`-(t^2)\`. Use \`mod(a, b)\` for remainders (% is the percent unit). \`pi\` is 3.14159…; trigonometry takes degrees (sin(90) is 1).
+- Comments start with #.
+
+Lists (Grasshopper's list matching)
+- \`[a, b, c]\` and \`range(0, 1, count: 20)\` make lists.
+- A step that receives a list where it expects one value runs once per item, so \`outline |> rotate(twist * t)\` with a list \`t\` makes one curve per value. With several lists, the longest one sets the count and shorter ones repeat their last item. Arithmetic on lists works item by item.
+- Steps that take a whole list say so in their inputs (\`loft(sections: List<Curve>)\`).
+
+Fields (numbers that vary over space)
+- \`distance(curve)\` is a field: at each point, how far it is from the curve (negative inside a closed curve). \`fade(…)\` turns a distance into a 0..1 weight.
+- Arithmetic and the number steps (min, clamp, sin, smoothstep, …) work on fields point by point, so \`line * (1 + near)\` is a field too.
+- Inputs typed \`Length | Field\` accept a field and read it at every point they make (a spiral's spacing, a wave's amplitude). That's how one setting can affect only part of a shape, like an attractor in Grasshopper.
+
+Geometry
+- Millimetres, Z up. The origin is where the printer puts the print's centre (on the bed for z = 0).
+- Curves are point lists, open or closed; \`circle\` and friends start on +X and run counter-clockwise. Surfaces are lofts through section curves (each section's first point is the seam); \`cap\` closes a loft into a solid. Toolpaths are nozzle moves with a line width, layer height and speed.
+
+Outputs
+- \`show a, b\` draws steps in the 3D view (otherwise the last step is drawn).
+- \`print path\` is the toolpath the printer prints: the app writes G-code for the chosen printer from it.
+- \`export shape as "name.stl"\` offers shapes (surfaces and solids, or a list of them) as an STL file; \`export path as "name.gcode"\` offers another toolpath as G-code. A recipe without \`print\` is plain geometry.
+
+Printing
+- Vase mode: \`vase_spiral(wall, layer: …, width: …)\` needs a loft of closed sections stacked upward (lift them with \`move(z: …)\`).
+- Line width about 1–2× the nozzle (0.4 mm on the P1P); layer height up to about 75 % of the line width; overhangs under about 45°.`;

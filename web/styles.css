@@ -233,7 +233,7 @@ button {
 
 .tab {
   flex: 1;
-  min-width: 80px;
+  min-width: 62px;
   background: var(--card);
   color: var(--muted);
   border: 1px solid var(--border);
@@ -669,4 +669,176 @@ h2.spaced {
 
 #printerSettings .setting:first-child {
   border-top: 0;
+}
+
+/* ---------- chat (the agent) ---------- */
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(60vh, 620px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 2px 6px;
+}
+
+.chat-log .empty {
+  margin: 0;
+}
+
+.msg {
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 0.93rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.msg.user {
+  align-self: flex-end;
+  max-width: 88%;
+  background: color-mix(in srgb, var(--accent) 18%, var(--card2));
+}
+
+.msg.assistant {
+  align-self: stretch;
+  background: var(--card2);
+}
+
+.msg.error {
+  background: color-mix(in srgb, var(--danger) 14%, var(--card2));
+  color: var(--text);
+}
+
+.msg p {
+  margin: 0;
+}
+
+.msg .md > * + * {
+  margin-top: 8px;
+}
+
+.msg ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.msg pre {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+}
+
+.msg .tool {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 6px 0;
+  padding-left: 14px;
+  position: relative;
+}
+
+.msg .tool::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.msg .tool.ok::before {
+  background: var(--accent2);
+}
+
+.msg .tool.bad::before {
+  background: var(--warn);
+}
+
+.msg .thinking {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+.msg .thinking summary {
+  cursor: pointer;
+}
+
+.msg .thinking p {
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+
+.msg .cost {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: right;
+}
+
+.msg .status-line {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.chat-form textarea,
+.field input[type="url"],
+.field input[type="password"],
+.field input[type="text"],
+#aiRules {
+  width: 100%;
+  background: var(--card2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.chat-form {
+  margin-top: 10px;
+}
+
+.chat-form textarea {
+  display: block;
+  resize: vertical;
+  min-height: 64px;
+}
+
+.chat-form .buttons {
+  margin-top: 8px;
+}
+
+fieldset.choice {
+  border: 0;
+  margin: 10px 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+fieldset.choice legend {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+fieldset.choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+fieldset.choice input {
+  accent-color: var(--accent);
+}
+
+#aiSecretState {
+  margin: 8px 0 12px;
 }

@@ -50,6 +50,7 @@
       <div class="side">
         <nav class="tabs" role="tablist" aria-label="Panels">
           <button class="tab" role="tab" id="tab-settings" aria-controls="panel-settings" aria-selected="true">Settings</button>
+          <button class="tab" role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="false">Chat</button>
           <button class="tab" role="tab" id="tab-recipe" aria-controls="panel-recipe" aria-selected="false">Recipe</button>
           <button class="tab" role="tab" id="tab-print" aria-controls="panel-print" aria-selected="false">Print</button>
           <button class="tab" role="tab" id="tab-about" aria-controls="panel-about" aria-selected="false">About</button>
@@ -102,6 +103,75 @@
           </p>
         </section>
 
+        <section class="card" role="tabpanel" id="panel-chat" aria-labelledby="tab-chat" hidden>
+          <div class="chat-log" id="chatLog" aria-live="polite"></div>
+          <div class="confirm" id="chatUndo" hidden>
+            <p>The AI changed the recipe.</p>
+            <div class="buttons">
+              <button class="btn" type="button" id="chatUndoButton">Undo its changes</button>
+              <button class="btn" type="button" id="chatKeep">Keep</button>
+            </div>
+          </div>
+          <p class="hint" id="chatSetup">
+            To chat, connect the AI once on this device in <b>AI settings</b> below: the password for your EasyCAD proxy, or your
+            own Claude API key.
+          </p>
+          <form class="chat-form" id="chatForm">
+            <textarea id="chatText" rows="3" placeholder="Describe a new project or a change…" aria-label="Message to the AI"></textarea>
+            <div class="buttons">
+              <button class="btn primary" type="submit" id="chatSend">Send</button>
+              <button class="btn" type="button" id="chatStop" hidden>Stop</button>
+              <button class="btn" type="button" id="chatNew">New chat</button>
+            </div>
+          </form>
+          <p class="hint" id="chatCost"></p>
+          <details class="catalog" id="aiSettings">
+            <summary>AI settings</summary>
+            <fieldset class="choice">
+              <legend>How to reach Claude</legend>
+              <label><input type="radio" name="aiMode" value="proxy" /> My EasyCAD proxy, with a password</label>
+              <label><input type="radio" name="aiMode" value="key" /> My API key, stored on this device</label>
+            </fieldset>
+            <div class="field" id="aiProxyFields">
+              <label for="aiProxyUrl">Proxy address</label>
+              <input type="url" id="aiProxyUrl" placeholder="https://easycad-agent.….workers.dev" autocomplete="off" />
+            </div>
+            <div class="field" id="aiKeyFields" hidden>
+              <span class="hint">The key stays in this browser and is sent only to Anthropic's API.</span>
+            </div>
+            <div class="field">
+              <label for="aiSecret">Password or API key</label>
+              <input type="password" id="aiSecret" autocomplete="current-password" placeholder="Saved on this device only" />
+            </div>
+            <div class="buttons tight">
+              <button class="btn primary" type="button" id="aiSave">Save</button>
+              <button class="btn" type="button" id="aiCheck">Check</button>
+              <button class="btn" type="button" id="aiForget">Forget</button>
+            </div>
+            <p class="hint" id="aiSecretState" role="status"></p>
+            <div class="field">
+              <label for="aiModel">Model</label>
+              <select id="aiModel"></select>
+            </div>
+            <div class="field">
+              <label for="aiEffort">Effort (how much it thinks)</label>
+              <select id="aiEffort">
+                <option value="low">Low: quick edits, cheapest</option>
+                <option value="medium">Medium: the default</option>
+                <option value="high">High: hard new projects</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="aiRules">Your rules (the AI follows them in every project)</label>
+              <textarea id="aiRules" rows="3" placeholder="e.g. Always set speeds as volumetric flow. Pellet printer: at most 60 mm³/s."></textarea>
+            </div>
+            <p class="hint">
+              Setup and costs: <a href="https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/api-key.md" target="_blank" rel="noopener">docs/api-key.md</a>.
+              Never paste a password or key into a chat.
+            </p>
+          </details>
+        </section>
+
         <section class="card" role="tabpanel" id="panel-recipe" aria-labelledby="tab-recipe" hidden>
           <h2>Recipe</h2>
           <p class="hint first">
@@ -134,9 +204,9 @@
             <pre id="catalog">Loading…</pre>
           </details>
           <p class="hint">
-            <b>Copy for AI</b> copies this recipe together with a description of the language. Paste it into a Claude chat,
-            describe the shape or change you want, then paste the answer here and press Run. (In Phase 2 the agent works
-            right inside the app.)
+            The <b>Chat</b> tab does this inside the app. <b>Copy for AI</b> copies this recipe together with a description of
+            the language, for any other Claude chat: describe the shape or change you want, then paste the answer here and
+            press Run.
           </p>
         </section>
 
@@ -167,9 +237,9 @@
           <h2>About this build</h2>
           <dl class="info" id="about"></dl>
           <p class="hint">
-            Phase 1b: projects are recipes, and recipes make G-code and STL files. The Rust engine runs them as WebAssembly in a
-            background worker, and three.js draws on the GPU. Next: more of EasyGCode's projects as recipes, then the agent
-            (Phase 2).
+            Projects are recipes, and recipes make G-code and STL files. The Rust engine runs them as WebAssembly in a
+            background worker, three.js draws on the GPU, and the Chat tab's agent (Claude, with your own key) writes and edits
+            recipes with you.
           </p>
         </section>
       </div>

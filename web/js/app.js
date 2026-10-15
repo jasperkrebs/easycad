@@ -11,6 +11,7 @@ import { $, copyText, download, el, fmt, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
 import { PRINTERS, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
+import { createChat } from './chat.js';
 
 const TEMPLATES = [
   { id: 'twisted-vase', name: 'Twisted star vase' },
@@ -20,7 +21,7 @@ const TEMPLATES = [
 ];
 const STORAGE_KEY = 'easycad.project';
 const MAX_FILE_BYTES = 256 * 1024;
-const TABS = ['settings', 'recipe', 'print', 'about'];
+const TABS = ['settings', 'chat', 'recipe', 'print', 'about'];
 
 const state = {
   /** The recipe text: the project. */
@@ -66,9 +67,9 @@ async function run(quality, how = {}) {
   } catch (err) {
     setStatus('Engine error', 'bad');
     showSettingsError(String(err.message || err));
-    return;
+    return null;
   }
-  if (!result) return; // a newer run replaced this one
+  if (!result) return null; // a newer run replaced this one
   state.last = result;
   state.source = result.source;
   for (const p of result.params) if (!(p.name in state.values)) state.values[p.name] = p.value;
@@ -99,6 +100,7 @@ async function run(quality, how = {}) {
   if (errors) setStatus(`${errors} recipe ${errors === 1 ? 'problem' : 'problems'}`, 'bad');
   else setStatus(`Engine ready · ${fmt(result.ms)} ms`, 'ok');
   autosave();
+  return result;
 }
 
 function onSettingChange(name, value, quality) {
@@ -241,11 +243,52 @@ function note(text) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The agent (Chat tab): it changes the project only through the recipe text, like everything else
+// ---------------------------------------------------------------------------------------------
+
+/** Replaces the recipe (an agent edit), runs it at full quality and returns the result. */
+async function applyRecipe(text) {
+  state.source = text;
+  state.unsaved = true;
+  setDirty(false);
+  editor.value = text;
+  await run('final', { fresh: true });
+  await engine.idle();
+  return state.last;
+}
+
+/** Moves settings (an agent edit), runs and returns the result. */
+async function applyValues(values) {
+  Object.assign(state.values, values);
+  state.unsaved = true;
+  state.layout = ''; // rebuild the window so the sliders show the new values
+  await run('final');
+  await engine.idle();
+  return state.last;
+}
+
+const chat = createChat({
+  project: () => ({
+    source: state.source,
+    last: state.last,
+    printerName: PRINTERS[state.printer].name,
+    profile: state.profile,
+    values: state.values,
+    editorDirty,
+  }),
+  applyRecipe,
+  applyValues,
+  look: (show) => viewport.snapshot(/** @type {any} */ (show)),
+  catalog: async () => state.catalog || (state.catalog = await engine.catalog()),
+});
+
+// ---------------------------------------------------------------------------------------------
 // Projects: templates, open, save, autosave
 // ---------------------------------------------------------------------------------------------
 
 /** Opens recipe text as the current project. */
 async function openSource(text) {
+  chat?.projectReplaced();
   state.source = text;
   setDirty(false);
   editor.value = text;
@@ -450,6 +493,7 @@ function wire() {
 
 async function start() {
   wire();
+  chat.start();
   const saved = restore();
   setPrinter(state.printer);
   renderAbout();

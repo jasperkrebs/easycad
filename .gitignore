@@ -2,3 +2,4 @@ target/
 .DS_Store
 web/pkg/
 node_modules/
+agent-proxy/.wrangler/

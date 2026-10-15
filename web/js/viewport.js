@@ -237,6 +237,88 @@ export function createViewport(canvas) {
     },
 
     fit,
+
+    /**
+     * Renders four views into one picture (for the agent's `look` tool): perspective, then front
+     * (looking along +Y), right side (looking along -X) and top (looking down, +Y up) as
+     * orthographic views, true to proportion like a technical drawing. The view on screen is left
+     * as it was. Returns a JPEG data URL.
+     * @param {'shape' | 'toolpath' | 'both'} [show]
+     * @param {number} [size] pixels per view
+     */
+    snapshot(show = 'both', size = 384) {
+      const saved = {
+        mode,
+        position: camera.position.clone(),
+        up: camera.up.clone(),
+        target: controls.target.clone(),
+        near: camera.near,
+        far: camera.far,
+        pixelRatio: renderer.getPixelRatio(),
+        size: renderer.getSize(new THREE.Vector2()),
+      };
+      mode = show === 'toolpath' ? 'path' : show === 'shape' ? 'shape' : 'both';
+      applyMode();
+      renderer.setPixelRatio(1);
+      renderer.setSize(size, size, false);
+      camera.aspect = 1;
+      lineMaterial.resolution.set(size, size);
+
+      const b = lastBounds || { min: [-50, -50, 0], max: [50, 50, 100] };
+      const center = new THREE.Vector3((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
+      const radius = Math.max(10, Math.hypot(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) / 2) * 1.08;
+      const dist = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
+      const ortho = new THREE.OrthographicCamera(-radius, radius, radius, -radius, dist / 100, dist * 20);
+      const views = [
+        { label: 'perspective', cam: camera, dir: new THREE.Vector3(0.62, -0.78, 0.5).normalize(), up: new THREE.Vector3(0, 0, 1) },
+        { label: 'front (looking along +Y)', cam: ortho, dir: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1) },
+        { label: 'right (looking along -X)', cam: ortho, dir: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 0, 1) },
+        { label: 'top (+Y up)', cam: ortho, dir: new THREE.Vector3(0, 0, 1), up: new THREE.Vector3(0, 1, 0) },
+      ];
+      const out = document.createElement('canvas');
+      out.width = out.height = size * 2;
+      const ctx = /** @type {CanvasRenderingContext2D} */ (out.getContext('2d'));
+      ctx.font = '13px sans-serif';
+      views.forEach((v, i) => {
+        const cam = v.cam;
+        cam.up.copy(v.up);
+        cam.position.copy(center).addScaledVector(v.dir, dist);
+        cam.near = Math.max(0.5, dist / 100);
+        cam.far = dist * 20;
+        cam.lookAt(center);
+        cam.updateProjectionMatrix();
+        keyLight.position.copy(cam.position).add(new THREE.Vector3(-0.3, 0.2, 0.6).multiplyScalar(cam.position.length()));
+        keyLight.target.position.copy(center);
+        renderer.render(scene, cam);
+        // Copy right after rendering, while the WebGL drawing buffer still holds this frame.
+        const [x, y] = [(i % 2) * size, Math.floor(i / 2) * size];
+        ctx.drawImage(renderer.domElement, x, y, size, size);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillRect(x, y, ctx.measureText(v.label).width + 16, 22);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(v.label, x + 8, y + 15);
+      });
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.beginPath();
+      ctx.moveTo(size, 0);
+      ctx.lineTo(size, size * 2);
+      ctx.moveTo(0, size);
+      ctx.lineTo(size * 2, size);
+      ctx.stroke();
+
+      // Back to the view on screen.
+      mode = saved.mode;
+      camera.up.copy(saved.up);
+      camera.position.copy(saved.position);
+      camera.near = saved.near;
+      camera.far = saved.far;
+      controls.target.copy(saved.target);
+      renderer.setPixelRatio(saved.pixelRatio);
+      resize();
+      applyMode();
+      controls.update();
+      return out.toDataURL('image/jpeg', 0.85);
+    },
   };
 }
 

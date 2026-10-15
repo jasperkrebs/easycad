@@ -3,6 +3,7 @@
 // the language, so any Claude chat can write or change recipes until the agent lives in the app.
 
 import { el } from './dom.js';
+import { LANGUAGE_GUIDE } from './language-guide.js';
 
 /**
  * @param {HTMLElement} host
@@ -54,14 +55,7 @@ export function selectLine(area, line) {
 export function aiPrompt(source, catalog) {
   return `I'm designing a 3D-printing project in EasyCAD. A project is a recipe written in a small text language ("easycad 0.1"). Please write or change the recipe below.
 
-How the language works:
-- \`param name = value unit in min..max step s "Label"\` makes a setting (a slider). Units: mm, cm, m, inch, deg, rad, % (18 % means 0.18). \`group "Name"\` starts a group of settings. Mark a value you guessed with @assumed.
-- \`name = expression\` is one step. Steps may be in any order; names are the wires between them.
-- \`a |> f(x)\` means \`f(a, x)\`. A line that starts with \`|>\` continues the step above it.
-- Lists: \`[a, b]\` and \`range(0, 1, count: 20)\`. When a step gets a list where it expects one value, it runs once per item (like Grasshopper), so \`outline |> scale(lerp(1, 0.8, t))\` makes one curve per value of t.
-- Arithmetic: + - * / ^ and parentheses. Angles are in degrees. There are no loops, ifs or functions.
-- \`show name\` draws a step. \`print path\` marks the toolpath to print.
-- Vase mode: \`vase_spiral(wall, layer: …, width: …)\` needs a loft of closed sections stacked upward (lift them with \`move(z: …)\`). Keep overhangs under about 45°.
+${LANGUAGE_GUIDE}
 
 The steps you can use:
 
@@ -75,6 +69,6 @@ ${source.trim()}
 
 What I want: (describe the shape or the change here)
 
-Reply with the complete recipe in one code block. Keep the values I'll want to tune as \`param\` lines with sensible ranges and labels.
+Reply with the complete recipe in one code block. Keep the values I'll want to tune as \`param\` lines with sensible ranges and labels. If a step I'd need doesn't exist, say so instead of guessing.
 `;
 }

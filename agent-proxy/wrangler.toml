@@ -1,0 +1,10 @@
+# EasyCAD's AI proxy (worker.js). CI deploys it with Wrangler when the Cloudflare secrets are set
+# (docs/api-key.md); the API key and the password are Worker secrets, never written here.
+name = "easycad-agent"
+main = "worker.js"
+compatibility_date = "2026-09-15"
+workers_dev = true
+
+[vars]
+# The pages allowed to call the proxy. CI puts the GitHub Pages address first.
+ALLOWED_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080"

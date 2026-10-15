@@ -235,42 +235,49 @@ is cheap and can be kept forever. That also enables *variants* ("save as variant
 ## 8. The agent
 
 ### 8.1 Where it runs
-*Decided 14 Oct 2026: option 1 (in the app, your own key) is the way. Options 2–3 are optional
-and much later. Getting a key: [api-key.md](api-key.md). Agent "skills":
+*Decided 14 Oct 2026 (in the app, your own key); built 15 Oct 2026 as the **Chat** tab
+(`web/js/chat.js`, `web/js/agent.js`). Setup: [api-key.md](api-key.md). Agent "skills":
 [toolpaths-and-skills.md](toolpaths-and-skills.md#skills-how-the-agent-learns-your-ways).*
 
-1. **In the app** (phone, web, desktop):
-   - A chat panel calls the Claude API directly with **your own API key**, stored only on the
-     device (OS keychain on desktop). No server, no account.
-   - The official TypeScript SDK supports this (`dangerouslyAllowBrowser: true`), which is
-     acceptable because it's your key on your device.
-   - The SDK is vendored as a pinned ES module.
-2. **Through MCP** (desktop):
+1. **In the app** (phone, web, desktop): the Chat tab runs the agent loop in the browser and its
+   tools run locally on the engine. Claude is reached one of two ways:
+   - **password → your own proxy** (`agent-proxy/`, a Cloudflare Worker deployed by CI from
+     GitHub secrets): the proxy holds the API key and checks the password, so a device only
+     knows the password;
+   - **key on this device**: the official SDK calls the Claude API directly
+     (`dangerouslyAllowBrowser: true`), acceptable because it's your key on your device.
+
+   The official TypeScript SDK is vendored as one pinned ES module
+   (`web/vendor/anthropic/`) and loaded only when the chat is used.
+2. **Through MCP** (desktop, later):
    - `easycad mcp` exposes the same tools to **Claude Desktop / Claude Code**, so you can use
      your Claude plan instead of API billing.
    - You watch the model update live in the app while Claude works.
 3. **Later, WebMCP**, once browsers ship it unflagged: the PWA registers its commands as
    browser-agent tools.
 
-### 8.2 Model (decide)
-- **Default: Claude Opus 5.5**, adaptive thinking, effort `medium`
-  (raise to `high` for "design something new").
-- The model is a **user setting**: Sonnet 5.5 and Haiku 5.5 are cheaper options.
-- Opus 5.5 can't force a specific tool, so tools use `tool_choice: auto` with `strict: true`
-  schemas.
+### 8.2 Model
+- **Default: Claude Sonnet 5.5 at `medium` effort** (decided 15 Oct 2026, the owner's choice for
+  cost): adaptive thinking with summarized thinking shown in the chat. Opus 5.5 (hard new
+  inventions) and Haiku 5.5 (quick edits) are one setting away, as is effort (low/medium/high).
+- Forced tool choice isn't available on these models, so tools use `tool_choice: auto` and the
+  app validates every tool input itself (inputs stream in as they're written).
+- Server-side refusal fallback (`fallbacks: "default"`) is on for Sonnet and Opus.
 
-### 8.3 Tools (all are commands from §7)
+### 8.3 Tools (in the browser; each change runs the recipe and reports back)
 
 | Tool | Purpose |
 |---|---|
-| `get_state` | Definition text with line numbers, parameter values/ranges/locks, diagnostics, scene summary (bounding boxes, volumes, counts) |
-| `edit_definition` | Apply small find/replace edits (or a full text for new designs). The engine formats, evaluates and returns diagnostics plus what changed |
-| `set_params` | Try values (e.g. check extremes of a range) |
-| `render_views` | PNG renders from named views (iso/front/top/right), optionally highlighting a node. The agent's eyes |
-| `inspect` | Type, size, volume, warnings of one node |
-| `check_print` | Overhangs, thin walls, bed fit, watertightness |
-| `node_docs` | Detailed docs + examples for specific nodes (keeps the base prompt small) |
-| `ask_user` | A clarifying question with quick-reply chips. Ends the turn |
+| `edit_recipe` | Exact find/replace edits, all or none; the recipe runs and the result comes back |
+| `write_recipe` | A whole new recipe (new projects, rewrites) |
+| `set_settings` | Move sliders (values clamped to their ranges) |
+| `look` | One picture, four views: perspective, plus front, side and top as orthographic views. The agent's eyes |
+| `read_recipe` | The current recipe with line numbers |
+
+Every result is compact text: problems by line, each step and what it made, the settings, the
+drawn size, and print numbers (layers, height, volume, time, flow, overhang). Each message also
+carries the project as it is now (recipe with line numbers, last run, printer and bed).
+Later: `check_print` (thin walls, bed fit), `ask_user` with quick replies, locked parameters.
 
 ### 8.4 The loop
 ```
@@ -285,10 +292,17 @@ critic, small diffs (Procedura).
 
 ### 8.5 The system prompt (cached)
 1. Role and collaboration rules (below).
-2. **Language reference + node catalog, generated from the node registry** so it can never
-   drift from the code. Roughly 10–20k tokens, cached so repeat calls are cheap.
-3. Three to five example definitions.
-4. Your printer profiles and preferences (units, default nozzle, your naming style).
+2. **Language guide (`web/js/language-guide.js`, shared with "Copy for AI") + node catalog
+   generated from the node registry**, so it can never drift from the code. About 4–8k tokens,
+   byte-identical on every request so it stays cached (cache reads cost a tenth).
+3. Your own standing rules ("Your rules" in AI settings).
+4. Per message, not in the system prompt (so the cache holds): the recipe, its last run, the
+   printer and bed.
+
+**Memory:** the project's memory is the recipe itself plus its `note` lines, which the agent
+keeps current and which travel with the file. The chat is kept on the device (IndexedDB) until
+"New chat"; the conversation is append-only, which keeps the cache and Claude's own reasoning
+valid between requests.
 
 ### 8.6 Collaboration rules (enforced by the engine where possible)
 - Expose every meaningful dimension as a `param` with a sensible range, a label and a group.
@@ -302,9 +316,9 @@ critic, small diffs (Procedura).
 
 ### 8.7 Cost and privacy
 - Tuning, exporting and printing cost nothing.
-- **Rough estimate:** a design request with Opus 5.5 costs a few cents up to about $1,
-  depending on how many render-and-fix rounds it takes. Model prices are $4 / $20 per
-  million input/output tokens, and caching makes the large reference cheap.
+- **Rough estimate:** with Sonnet 5.5 a small change costs about $0.01–0.05 and a new project
+  about $0.05–0.25, depending on how many run-look-fix rounds it takes; Opus 5.5 about twice
+  that. The chat shows each answer's cost (details in [api-key.md](api-key.md)).
 - What gets sent: your message, the definition text, parameter values and rendered images.
   No files, no keys, nothing else.
 

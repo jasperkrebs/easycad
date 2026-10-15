@@ -3,6 +3,35 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-15: the agent in the app (Chat tab) and the AI proxy
+
+**Landed**
+- **Chat tab** (`web/js/chat.js`, `web/js/agent.js`): Claude builds and edits the recipe with five
+  tools (`edit_recipe`, `write_recipe`, `set_settings`, `look`, `read_recipe`) that run in the
+  browser on the engine. Each change runs at once and reports back as compact text; `look`
+  returns one picture with four views (perspective, and front/side/top as orthographic views).
+  Streaming answers, summarized thinking, an "Undo its changes" button per message, the cost of
+  each answer and of the month, the chat kept on the device (IndexedDB), and "Your rules" that
+  apply to every project.
+- **Model:** Sonnet 5.5 at medium effort by default (Opus 5.5 and Haiku 5.5 in settings),
+  adaptive thinking, refusal fallback on. The system prompt (language guide + step catalog,
+  about 4k tokens) is byte-identical on every request and cached; the chat is append-only.
+- **Two ways to connect:** a password for your own **AI proxy** (`agent-proxy/`, a Cloudflare
+  Worker that holds the key; CI deploys it from four GitHub secrets and writes its address into
+  the site's `config.json`), or a key stored on the device. Setup: `docs/api-key.md`.
+- The official TypeScript SDK 0.129.0 is vendored as one minified ES module (189 KB, 50 KB
+  gzipped), loaded only when the chat is used. "Copy for AI" now shares the agent's language
+  guide (`web/js/language-guide.js`).
+- **Tests:** `agent-proxy/worker.test.mjs` (password, origins, models, limits, streaming
+  pass-through; the Claude API stubbed) and `scripts/agent-test.cjs` (the Chat tab against a
+  scripted stand-in for the proxy and the API: write → look → edit → answer; checks caching
+  settings, a fixed tool list, an append-only history, the picture, undo, reload, a wrong
+  password). Both run in CI.
+
+**Open**
+- The owner sets up the secrets (or a key on the device); no real API call has been made from
+  CI or here yet (no key in this environment). The first real chat is the real test.
+
 ## 2026-10-15: Phase 1b, real G-code, and EasyGCode's spiral disc as a recipe
 
 **Why:** the owner wants to build custom things inside the app, both G-code projects like
