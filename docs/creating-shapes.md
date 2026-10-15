@@ -25,6 +25,19 @@ thickness a setting too".
 That's exactly how Grasshopper works. The definition takes effort once; then sliders are
 instant. The difference is that you can describe the definition instead of wiring it.
 
+## When does the app itself have to change?
+
+Rarely. A new *project* is a new recipe, never new app code: the spiral disc, which needed its
+own generator in EasyGCode, is ten recipe lines in EasyCAD, with the same G-code (see
+[toolpaths-and-skills.md](toolpaths-and-skills.md#proof-easygcodes-spiral-disc-built-inside-the-app-phase-1b-15-oct-2026)).
+
+The engine only changes when a recipe needs a *kind* of step that doesn't exist yet: a boolean,
+an offset, a new way of turning a surface into curves. Those steps are general on purpose, so
+each one makes many new projects possible. Think of the steps as a vocabulary: the more words
+there are, the more you (and the agent) can say without calling a programmer. Asking for "a
+spiral that gets denser near the rim" needs no new word; "cut a hole through the wall" needs
+`difference`, once.
+
 ## Five ways to make a shape (mix freely)
 
 | Way | Who does the work | Good on the phone? | When |
@@ -83,7 +96,9 @@ finger. EasyCAD avoids it:
    possible: the agent needs a recipe format to write into.)* Way 2 already works by hand: the
    Recipe tab's **Copy for AI** copies the recipe with a summary of the language and every
    step. Paste that into any Claude chat, describe what you want, and paste the answer back.
-2. **Phase 1b:** real G-code for P1P and Klipper pellet, golden-tested against EasyGCode.
+2. **Phase 1b** ✓ (landed 15 Oct): real G-code for the P1P and the Klipper pellet printer,
+   golden-tested against EasyGCode; fields and general toolpath steps; EasyGCode's spiral disc
+   as a recipe; STL export.
 3. **Phase 2:** the agent (way 2), writing and editing recipes with skills.
 4. **Phase 2b:** the Steps tab (way 3) and 2D curve editors (way 4).
 5. **Later:** importing curves and photos (way 5) and the graph view on desktop.

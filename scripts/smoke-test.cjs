@@ -1,6 +1,7 @@
 // Smoke test for the web app: serves web/, opens it in headless Chromium at phone and desktop
 // sizes, waits for the Rust engine, then changes a setting, edits and breaks the recipe, switches
-// templates and reloads, checking that nothing errored.
+// templates, reloads, and saves files: an STL, and the spiral disc's G-code, which must match the
+// G-code EasyGCode itself writes (fixtures/easygcode/). Checks that nothing errored.
 //
 //   node scripts/smoke-test.cjs [screenshot-dir]
 //
@@ -9,11 +10,41 @@
 
 const { chromium } = require('playwright');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..', 'web');
 const port = 8000 + Math.floor(Math.random() * 1000);
 const shots = process.argv[2];
+
+/** G-code commands without comments or blank lines. */
+const commands = (text) =>
+  text
+    .split('\n')
+    .map((l) => l.replace(/;.*/, '').trim())
+    .filter(Boolean);
+
+/** The same command, with numbers equal to the last printed digit (as the Rust golden test). */
+function sameCommand(a, b) {
+  if (a === b) return true;
+  const ta = a.split(' ');
+  const tb = b.split(' ');
+  return (
+    ta.length === tb.length &&
+    ta.every((x, i) => {
+      const y = tb[i];
+      if (x === y) return true;
+      if (x[0] !== y[0] || !'XYZE'.includes(x[0])) return false;
+      return Math.abs(Number(x.slice(1)) - Number(y.slice(1))) <= (x[0] === 'E' ? 1.01e-5 : 1.01e-3);
+    })
+  );
+}
+
+/** Clicks a button that saves a file, and returns the file's name and bytes. */
+async function saveFrom(page, selector) {
+  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click(selector)]);
+  return { name: download.suggestedFilename(), data: fs.readFileSync(await download.path()) };
+}
 
 async function waitForServer(url) {
   for (let i = 0; i < 50; i++) {
@@ -87,14 +118,44 @@ async function waitForServer(url) {
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-settings.png`), fullPage: name === 'phone' });
 
+      // The shape saves as a closed STL mesh.
+      const stl = await saveFrom(page, '#exportButtons button:text("twisted-vase.stl")');
+      const triangles = stl.data.readUInt32LE(80);
+      if (stl.name !== 'twisted-vase.stl' || stl.data.length !== 84 + 50 * triangles || triangles < 1000) {
+        failures.push(`${name}: bad STL ${stl.name}: ${stl.data.length} bytes, ${triangles} triangles`);
+      }
+
       await page.click('button[data-mode="path"]');
       await page.click('#tab-print');
       const stats = await page.locator('#stats .stat').count();
       if (stats !== 6) failures.push(`${name}: expected 6 print stats, got ${stats}`);
+      if ((await page.inputValue('#printer')) !== 'p1p') failures.push(`${name}: the vase should pick the P1P`);
 
       // The project survives a reload (remembered on the device).
       await page.reload();
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Twisted star vase', null, { timeout: 30000 });
+
+      // EasyGCode's spiral disc, rebuilt as a recipe from general steps, prints EasyGCode's G-code.
+      await page.click('#tab-settings');
+      await page.selectOption('#template', 'spiral-disc');
+      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Spiral disc', null, { timeout: 15000 });
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-disc-settings.png`), fullPage: name === 'phone' });
+      const gcode = await saveFrom(page, '#exportButtons button.primary');
+      const want = commands(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'easygcode', 'sdisc-default.gcode'), 'utf8'));
+      const got = commands(gcode.data.toString('utf8'));
+      const differ = got.findIndex((c, i) => !sameCommand(c, want[i] ?? ''));
+      if (gcode.name !== 'spiral-disc.gcode' || got.length !== want.length || differ >= 0) {
+        failures.push(
+          `${name}: spiral disc G-code ${gcode.name} differs from EasyGCode's: ${got.length} vs ${want.length} commands, first difference at ${differ}: "${got[differ]}" vs "${want[differ]}"`,
+        );
+      }
+      await page.click('#tab-print');
+      if ((await page.inputValue('#printer')) !== 'pellet') failures.push(`${name}: the disc should pick the pellet printer`);
+      await page.click('#panel-print summary');
+      const fields = await page.locator('#printerSettings .setting').count();
+      if (fields < 10) failures.push(`${name}: expected the printer settings, got ${fields} fields`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-disc-print.png`), fullPage: name === 'phone' });
 
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       if (overflow) failures.push(`${name}: page scrolls sideways`);

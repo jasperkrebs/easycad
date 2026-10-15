@@ -28,3 +28,4 @@ path     = vase_spiral(wall, layer: layer, width: line, speed: speed)
 
 show bowl
 print path
+export bowl as "star-bowl.stl"

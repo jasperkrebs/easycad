@@ -12,9 +12,10 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
 - The Rust engine turns shapes into curves, curves into toolpaths, and toolpaths into G-code
   (Bambu P1P filament, Klipper pellet).
 
-**Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0 and
-Phase 1a (recipes as files) are done; 1b (real G-code) is next.** Hosting: public repo + GitHub
-Pages. Priorities:
+**Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0, 1a
+(recipes as files) and 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL)
+are done; 1c (more of EasyGCode as recipes of general steps) is next.** Hosting: public repo +
+GitHub Pages. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.
@@ -72,7 +73,11 @@ any UI change.
   in the same change.
 - **G-code safety.** G-code drives real machines. Never emit printable G-code from a node
   unless it's golden-tested against EasyGCode (or a hand-checked fixture), and keep start/end
-  blocks identical to EasyGCode's proven ones.
+  blocks identical to EasyGCode's proven ones. Fixtures come from EasyGCode itself
+  (`scripts/easygcode-fixtures.cjs` → `fixtures/easygcode/`); EasyGCode is never changed.
+- **General steps, not per-project code.** A new project is a recipe. Add an engine step only
+  when no combination of existing steps can do the job, and make it reusable (see
+  `docs/creating-shapes.md`).
 
 ## Conventions (once code exists)
 

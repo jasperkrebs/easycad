@@ -1,6 +1,7 @@
 //! The values that flow along a recipe's wires.
 
 use crate::curve::Curve;
+use crate::field::Field;
 use crate::surface::Surface;
 use crate::toolpath::Toolpath;
 use easycad_lang::format_number;
@@ -19,6 +20,8 @@ pub enum Value {
     Curve(Rc<Curve>),
     Surface(Rc<Surface>),
     Toolpath(Rc<Toolpath>),
+    /// A number that varies over space (see [`crate::field`]).
+    Field(Rc<Field>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,6 +61,7 @@ impl Value {
             Value::Surface(s) if s.capped => "a solid",
             Value::Surface(_) => "a surface",
             Value::Toolpath(_) => "a toolpath",
+            Value::Field(_) => "a field",
         }
     }
 
@@ -71,6 +75,7 @@ impl Value {
             Value::Surface(s) if s.capped => "solids",
             Value::Surface(_) => "surfaces",
             Value::Toolpath(_) => "toolpaths",
+            Value::Field(_) => "fields",
         }
     }
 
@@ -103,10 +108,24 @@ impl Value {
                     Some(_) => format!("list of {} values", items.len()),
                 }
             }
+            Value::Curve(c) if c.winding.is_some() => {
+                let end = c.points.last().map_or(0.0, |p| p[0].hypot(p[1]));
+                format!(
+                    "spiral · {} turns · {} points · ends at r = {} mm",
+                    format_number(c.turns()),
+                    c.points.len(),
+                    format_number((end * 100.0).round() / 100.0)
+                )
+            }
             Value::Curve(c) => {
                 format!(
-                    "{} curve · {} points",
+                    "{} {} · {} points",
                     if c.closed { "closed" } else { "open" },
+                    if c.circle.is_some() {
+                        "circle"
+                    } else {
+                        "curve"
+                    },
                     c.points.len()
                 )
             }
@@ -119,6 +138,7 @@ impl Value {
             Value::Toolpath(p) => {
                 format!("toolpath · {} layers · {} points", p.layers, p.points.len())
             }
+            Value::Field(_) => "field (a number that varies over space)".into(),
         }
     }
 
@@ -132,6 +152,8 @@ impl Value {
             Value::Curve(c) => pts(&c.points),
             Value::Surface(s) => s.sections.iter().all(|sec| pts(sec)),
             Value::Toolpath(p) => pts(&p.points),
+            // Checked where the field is used, point by point.
+            Value::Field(_) => true,
         }
     }
 }
@@ -159,7 +181,7 @@ mod tests {
         let many = Value::list((0..46).map(|i| n(i as f64)).collect()).unwrap();
         assert_eq!(many.summary(), "list of 46 numbers");
         let c = Value::Curve(Rc::new(Curve::circle(1.0, 8)));
-        assert_eq!(c.summary(), "closed curve · 8 points");
+        assert_eq!(c.summary(), "closed circle · 8 points");
         assert_eq!(
             Value::list(vec![c.clone(), n(1.0)]).unwrap().summary(),
             "list of 2 values"

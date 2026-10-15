@@ -29,3 +29,4 @@ path     = vase_spiral(wall, layer: layer, width: line, speed: speed)
 
 show vase
 print path
+export vase as "twisted-vase.stl"

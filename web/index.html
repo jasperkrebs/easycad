@@ -74,19 +74,25 @@
               </div>
             </div>
           </div>
-          <div class="field">
-            <label for="printer">Printer</label>
-            <select id="printer">
-              <option value="p1p">Bambu P1P · 0.4 mm nozzle · filament</option>
-              <option value="pellet">Klipper pellet · example bed</option>
-            </select>
-          </div>
           <div id="settings"></div>
           <p class="error" id="settingsError" hidden></p>
           <div class="buttons">
             <button class="btn" type="button" id="resetSettings">Reset settings</button>
             <button class="btn" type="button" id="saveSettings">Save settings</button>
             <button class="btn" type="button" id="loadSettings">Load settings</button>
+          </div>
+          <div class="export" id="exportBar">
+            <h2 class="spaced">Export</h2>
+            <div class="buttons tight" id="exportButtons"></div>
+            <p class="hint" id="exportEmpty" hidden>
+              Nothing to export yet. A recipe makes G-code with a line like <code>print path</code>, and saves a shape for any
+              CAD program or slicer with <code>export shape as "name.stl"</code>.
+            </p>
+            <p class="hint" id="exportNote" role="status" hidden></p>
+            <p class="hint">
+              G-code is written for the printer chosen in the <button class="linkish" type="button" id="toPrinter">Print tab</button>,
+              with EasyGCode's start and end blocks.
+            </p>
           </div>
           <input type="file" id="projectFile" hidden />
           <input type="file" id="settingsFile" accept=".json,application/json" hidden />
@@ -135,13 +141,25 @@
         </section>
 
         <section class="card" role="tabpanel" id="panel-print" aria-labelledby="tab-print" hidden>
+          <div class="field">
+            <label for="printer">Printer</label>
+            <select id="printer">
+              <option value="p1p">Bambu P1P · 0.4 mm nozzle · filament</option>
+              <option value="pellet">Klipper pellet</option>
+            </select>
+          </div>
           <h2>Print estimate</h2>
           <div class="stats" id="stats"></div>
           <ul class="checks" id="checks"></ul>
+          <details class="catalog">
+            <summary>Printer settings</summary>
+            <div id="printerSettings"></div>
+          </details>
           <p class="hint">
-            One continuous vase-mode spiral: the first turn climbs from the bed while extrusion ramps up, and a flat cap turn
-            closes the rim. Walls only for now; a solid bottom comes with the G-code. Volumes use EasyGCode's bead model,
-            (w − h)·h + π·(h/2)². G-code export arrives in Phase 1b, once it's tested against EasyGCode's output.
+            G-code is written the way EasyGCode writes it: its start and end blocks, each move's E from the bead model
+            (w − h)·h + π·(h/2)² (mm³ on the pellet printer, mm of filament on the P1P), and the part fan from the second
+            layer. The spiral disc and the vase spiral match EasyGCode's own G-code line for line. G-code drives a real
+            machine: look at the toolpath before printing, and watch the first layer.
           </p>
         </section>
 
@@ -149,8 +167,9 @@
           <h2>About this build</h2>
           <dl class="info" id="about"></dl>
           <p class="hint">
-            Phase 1a: projects are recipes. The Rust engine runs them as WebAssembly in a background worker, and three.js
-            draws on the GPU. Next: real G-code for the P1P and the pellet printer (1b), then the agent (Phase 2).
+            Phase 1b: projects are recipes, and recipes make G-code and STL files. The Rust engine runs them as WebAssembly in a
+            background worker, and three.js draws on the GPU. Next: more of EasyGCode's projects as recipes, then the agent
+            (Phase 2).
           </p>
         </section>
       </div>

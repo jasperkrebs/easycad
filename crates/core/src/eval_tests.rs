@@ -3,7 +3,7 @@
 use crate::eval::{Evaluation, Quality, Severity, evaluate};
 use easycad_lang::{Literal, set_values};
 
-const TEMPLATES: [(&str, &str); 3] = [
+const TEMPLATES: [(&str, &str); 4] = [
     (
         "twisted-vase",
         include_str!("../../../web/templates/twisted-vase.easycad"),
@@ -15,6 +15,10 @@ const TEMPLATES: [(&str, &str); 3] = [
     (
         "star-bowl",
         include_str!("../../../web/templates/star-bowl.easycad"),
+    ),
+    (
+        "spiral-disc",
+        include_str!("../../../web/templates/spiral-disc.easycad"),
     ),
 ];
 
@@ -316,12 +320,25 @@ fn outputs() {
         [(
             2,
             1,
-            "`print` needs a toolpath (from vase_spiral), got a curve".to_string()
+            "`print` needs a toolpath (from toolpath or vase_spiral), got a curve".to_string()
         )]
     );
 
     let e = run("c = circle(5)\nexport c as \"c.stl\"");
-    assert_eq!(diags(&e, Severity::Warning).len(), 1);
+    assert_eq!(
+        diags(&e, Severity::Error),
+        [(
+            2,
+            1,
+            "\"c.stl\" needs surfaces or solids, got a curve".to_string()
+        )]
+    );
+    let e = run("c = circle(5)\nexport c as \"c.dxf\"");
+    assert!(
+        diags(&e, Severity::Warning)[0]
+            .2
+            .contains("name the file .stl")
+    );
 
     let e = run("c = circle(5)\nd = 2");
     assert_eq!(e.drawing.curves.len(), 1);

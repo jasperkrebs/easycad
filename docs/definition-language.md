@@ -1,9 +1,11 @@
 # The EasyCAD definition language (v0.1)
 
 *Status: **v0.1 is implemented** (Phase 1a, 15 Oct 2026): the parser is `crates/lang`, the
-evaluator and nodes are `crates/core`. §2 says exactly which syntax works today and what comes
-later; §6 lists the steps you can use. The format was approved on 14 Oct 2026; syntax and node
-names may still change, and every file starts with its version so old files can be migrated.*
+evaluator and nodes are `crates/core`. Phase 1b (15 Oct 2026) added fields (numbers that vary
+over space), general toolpath steps, and files: G-code and STL (§2.1). §2 says exactly which
+syntax works today and what comes later; §6 lists the steps you can use. The format was approved
+on 14 Oct 2026; syntax and node names may still change, and every file starts with its version
+so old files can be migrated.*
 
 > **In plain words:** this is the *project file*. It has nothing to do with the chat commands
 > like `height 200`. When you save a project, this is what gets written:
@@ -36,7 +38,7 @@ Why a small language and not JSON, Python or JavaScript (details in
 
 ---
 
-## 1. Four examples
+## 1. Five examples
 
 ### 1.1 Twisted star vase (sliders + list replication)
 
@@ -192,6 +194,44 @@ the spiral, so a whole number stacks the ribs straight up, a small fraction make
 round slowly, and a half (`ribs + 0.5`) makes alternate layers interlock. Extrusion comes from
 the bead cross-section (`(w − h)·h + π·(h/2)²`).
 
+### 1.5 EasyGCode's spiral disc, from general steps
+
+The fourth template (`web/templates/spiral-disc.easycad`). In EasyGCode the spiral disc is a
+dedicated generator, written into the app's code. Here it's a recipe built from general steps,
+and its G-code is the same as EasyGCode's, command for command (a golden test checks it):
+
+```
+group "Disc"
+param outer    = 60 mm   in 5..150          "Outer radius"
+param ring     = 35 mm   in 1..150          "Ring radius"
+param open     = 200 %   in 100..400        "Spacing at the ring"
+param band     = 0 mm    in 0..50           "Full-spacing band"
+param fade_in  = 15 mm   in 0..150          "Fade inside the ring"
+param fade_out = 15 mm   in 0..150          "Fade outside the ring"
+param bumps    = 21      in 1..99 step 2    "Bumps per turn"
+param layers   = 1       in 1..20 step 1    "Layers"
+
+group "Print"
+param layer    = 0.6 mm  in 0.1..3          "Layer height"
+param line     = 2 mm    in 0.2..6          "Line width"
+param speed    = 20      in 1..100          "Speed (mm/s)"
+
+# Turns sit one line width apart, spreading to `open` around the ring.
+near    = fade(distance(circle(ring)), inside: fade_in, outside: fade_out, band: band)
+spacing = line * (1 + (open - 1) * near)
+odd     = 2 * floor(bumps / 2) + 1             # odd, so a bump always faces the next turn's dip
+disc    = spiral(outer: outer, spacing: spacing, min_samples: 16 * odd)
+wiggly  = interlock(disc, bumps: odd, width: line)
+path    = toolpath(wiggly, width: line, layer: layer, speed: speed) |> stack(layers)
+
+print path
+```
+
+`near` is a *field* (§3): a number at every point of the bed, 1 on the ring and fading to 0
+away from it. Arithmetic with a field gives a field, so `spacing` is a field too, and `spiral`
+spreads its turns wherever `spacing` is larger. Nothing in these steps knows about discs: the
+same `fade`, `spiral`, `interlock`, `toolpath` and `stack` build other things.
+
 ---
 
 ## 2. Syntax
@@ -218,7 +258,7 @@ modifier  = "in" NUMBER ".." NUMBER             # slider range, in the setting's
 binding   = NAME "=" expr                       # one node
 output    = "show" NAME ("," NAME)*             # draw these steps
           | "print" expr ("with" expr)?         # the toolpath to print (and the printer)
-          | "export" expr "as" STRING           # parsed; does nothing until Phase 1b
+          | "export" expr "as" STRING           # a file to save: .stl or .gcode (§2.1)
 
 expr      = sum ( "|>" NAME args? )*            # a |> f(x) means f(a, x); a |> f means f(a)
 sum       = product (("+" | "-") product)*
@@ -248,6 +288,21 @@ comment   = "#" … end of line
   `if … then … else`, record fields (`b.size`) and indexing (`list[0]`), units for speeds and
   temperatures (`mm/s`, `°C`), settings that hold geometry (`param attractor = point(60, 40)`),
   and `of printers()`.
+
+### 2.1 Files: G-code and STL
+
+- `print path` is what the printer prints. **G-code for the chosen printer** (Print tab) is one
+  tap away. It is written the way EasyGCode writes it: the same start and end blocks, `G90` with
+  relative extrusion (`M83`), E from the bead model (mm³ on the pellet printer, mm of filament on
+  the P1P), the part fan from the second layer, coordinates with 3 decimals and E with 5.
+  Golden tests compare it with G-code written by EasyGCode itself (`fixtures/easygcode/`).
+- `export shape as "shape.stl"` offers a shape (surfaces and solids, or a list of them) as an
+  **STL** file, for any slicer or CAD program. `export path as "name.gcode"` offers another
+  toolpath as G-code. Other file types are a warning for now (3MF, STEP and DXF come later).
+- G-code is checked before it's written: every point must be on the bed and below the build
+  height (both from the printer settings), and every extrusion sane. A toolpath that fails gets
+  a message instead of a file. The recipe's origin sits at the bed point set in the printer
+  settings (EasyGCode's 125/125 by default).
 
 ### Project header, presets and conversation
 These statements make one file a complete project (decided 14 Oct 2026). `project`, `printer`
@@ -294,6 +349,12 @@ conversation {                               # optional; the engine ignores it
 - **Records** (later): nodes with several outputs return records. `b = bbox(vase)` gives `b.min`,
   `b.max` and `b.size`; `d = divide(curve, count: 20)` gives `d.points`, `d.tangents` and
   `d.params`. In the graph they are separate output ports.
+- **Fields** are numbers that vary over space: `distance(curve)` is how far each point is from
+  a curve, and `fade(d, inside: …, outside: …)` turns a distance into a 0..1 weight. Arithmetic
+  and the number steps (`min`, `clamp`, `sin`, `smoothstep`, …) work on fields point by point, so
+  `line * (1 + near)` is a field too. A step that takes a field (`spiral`'s spacing, `wave`'s
+  amplitude) reads it at every point it makes. That's how one setting can affect only part of a
+  shape, like Grasshopper's attractors.
 - **Errors belong to nodes.** Syntax errors point to a line and column. Mistakes in a step
   ("circle: `r` must be more than 0, got -10") mark that step; steps that need it are skipped
   quietly; everything else still runs and draws. Typos get a suggestion ("unknown name
@@ -357,11 +418,12 @@ input (it's generated from the code, `crates/core/src/nodes.rs`, so it can't go 
 
 | Group | Steps |
 |---|---|
-| Numbers & lists | `range(start, end, count)` evenly spaced numbers, both ends included · `lerp(a, b, t)` · `count(list)` · `min(a, b)` · `max(a, b)` · `clamp(value, low, high)` · `mod(a, b)` · `abs(x)` · `sqrt(x)` · `round(x)` · `floor(x)` · `ceil(x)` · `sin(angle)` · `cos(angle)` · `tan(angle)` |
-| Curves | `circle(r)` · `polygon(sides, r)` · `star(points, outer, inner)` (sharp corners) · `smooth(curve)` (a cubic NURBS through every point) |
+| Numbers & lists | `range(start, end, count)` evenly spaced numbers, both ends included · `lerp(a, b, t)` · `count(list)` · `min(a, b)` · `max(a, b)` · `clamp(value, low, high)` · `mod(a, b)` · `abs(x)` · `sqrt(x)` · `round(x)` · `floor(x)` · `ceil(x)` · `sin(angle)` · `cos(angle)` · `tan(angle)` · `smoothstep(t)` (an S-curve from 0 to 1). All except `range` and `count` also work on fields |
+| Fields | `distance(to)` how far each point is from a curve (negative inside a closed one; exact for circles) · `fade(distance, inside, outside, band)` 1 on the curve, easing to 0 `inside`/`outside` mm away (EasyGCode's spiral-disc falloff) |
+| Curves | `circle(r)` · `polygon(sides, r)` · `star(points, outer, inner)` (sharp corners) · `smooth(curve)` (a cubic NURBS through every point) · `spiral(outer, spacing, tolerance, min_samples)` (a flat spiral from the centre out; `spacing` can be a field) · `interlock(spiral, bumps, width)` (wiggles spread-apart turns so each bump meets the next turn's dip) |
 | Transforms | `scale(geometry, factor, x, y, z)` · `rotate(geometry, angle)` about the Z axis · `move(geometry, x, y, z)` |
 | Surfaces | `loft(sections)` (smooth through the sections; each section's first point is its seam) · `cap(surface)` (flat ends: a solid) |
-| Toolpaths | `vase_spiral(wall, layer, width, speed)` (EasyGCode's vase mode: start ramp, whole layers, flat cap turn) · `wave(geometry, amplitude, count, phase)` (on a toolpath, curve or surface) |
+| Toolpaths | `toolpath(curves, width, layer, speed)` (prints any curves as drawn, in order) · `vase_spiral(wall, layer, width, speed)` (EasyGCode's vase mode: start ramp, whole layers, flat cap turn) · `stack(path, count)` (the same layer `count` times) · `join(paths)` (one after another, each with its own settings) · `wave(geometry, amplitude, count, phase)` (on a toolpath, curve or surface; the amplitude can be a field) |
 
 ### 6.2 Planned (≈ 40 nodes for Phases 1–3)
 
@@ -374,7 +436,7 @@ input (it's generated from the code, `crates/core/src/nodes.rs`, so it can't go 
 | Surfaces | `extrude`, `revolve`, `loft`, `sweep`, `cap`, `thicken` |
 | Solids | `box`, `cylinder`, `sphere`, `union`, `difference`, `intersection`, `hull`, `split`, `bbox`, `volume` |
 | Shape → curves | `spiral_on`, `offset_rings`, `contours`, `isocurves`, `project`, `unroll`, `fill` |
-| Toolpath & G-code | `printers`, `vase_spiral`, `toolpath`, `order`, `travel`, `ramp`, `wave`, `brim`, `overhang_comp`, `gcode`, `check_print` |
+| Toolpath & G-code | `printers`, `order`, `travel`, `ramp`, `brim`, `infill`, `overhang_comp`, `check_print` (`toolpath`, `vase_spiral`, `stack`, `join`, `wave` and G-code export are done) |
 
 The printing nodes and how they chain are described in
 [toolpaths-and-skills.md](toolpaths-and-skills.md).

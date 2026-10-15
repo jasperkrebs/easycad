@@ -2,6 +2,7 @@
 //! (`show`, `print`) are collected for the app. Problems become diagnostics on a line; steps
 //! that don't depend on a failed step still run, like Grasshopper turning one component red.
 
+use crate::field::Field;
 use crate::geom::{Bounds, P3};
 use crate::nodes::{self, Node};
 use crate::surface::Mesh;
@@ -35,6 +36,8 @@ pub enum Quality {
 pub struct Ctx {
     pub quality: Quality,
     remaining: usize,
+    /// Messages from nodes that worked but want to say something (shown on the calling line).
+    warnings: Vec<String>,
 }
 
 impl Ctx {
@@ -42,6 +45,13 @@ impl Ctx {
         Ctx {
             quality,
             remaining: BUDGET,
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn warn(&mut self, message: String) {
+        if !self.warnings.contains(&message) {
+            self.warnings.push(message);
         }
     }
 
@@ -146,6 +156,29 @@ pub struct PrintInfo {
     pub stats: ToolpathStats,
     /// From `print … with printer`, else the recipe's `printer` line.
     pub printer: Option<String>,
+    #[serde(skip)]
+    pub path: Rc<Toolpath>,
+}
+
+/// What an `export … as "file"` statement asks for.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExportKind {
+    /// A triangle mesh of surfaces and solids.
+    Stl,
+    /// Printer G-code for a toolpath.
+    Gcode,
+}
+
+/// A file the recipe offers to save.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Export {
+    pub file: String,
+    pub kind: ExportKind,
+    pub line: u32,
+    /// What to write: surfaces/solids for STL, a toolpath for G-code.
+    #[serde(skip)]
+    pub value: Value,
 }
 
 /// The result of running a recipe. Always produced, even for broken recipes: then the
@@ -161,6 +194,7 @@ pub struct Evaluation {
     pub diagnostics: Vec<Diagnostic>,
     pub drawing: Drawing,
     pub print: Option<PrintInfo>,
+    pub exports: Vec<Export>,
 }
 
 impl Evaluation {
@@ -536,6 +570,9 @@ impl<'a> Runner<'a> {
                 let is_list = |_: usize, v: &Value| matches!(v, Value::List(_));
                 nodes::replicate(&mut self.ctx, &[v], &is_list, &mut |_, a| match a.first() {
                     Some(Value::Number(n)) => Ok(Value::Number(-n)),
+                    Some(Value::Field(f)) => {
+                        Field::negated(f.clone()).map(|f| Value::Field(Rc::new(f)))
+                    }
                     Some(other) => Err(format!("can't put a minus in front of {}", other.kind())),
                     None => Err("missing value".into()),
                 })
@@ -570,8 +607,11 @@ impl<'a> Runner<'a> {
                 None => Value::Number(input.default.unwrap_or(0.0)),
             });
         }
-        nodes::call(&mut self.ctx, node, values)
-            .map_err(|m| Fail::Error(span, format!("{name}: {m}")))
+        let result = nodes::call(&mut self.ctx, node, values);
+        for warning in std::mem::take(&mut self.ctx.warnings) {
+            self.diag(span, Severity::Warning, format!("{name}: {warning}"));
+        }
+        result.map_err(|m| Fail::Error(span, format!("{name}: {m}")))
     }
 
     // ------------------------------------------------------------------------- outputs
@@ -635,11 +675,12 @@ impl<'a> Runner<'a> {
                             self.out.print = Some(PrintInfo {
                                 stats: p.stats(),
                                 printer,
+                                path: p.clone(),
                             });
                         }
                         Ok(other) => {
                             let msg = format!(
-                                "`print` needs a toolpath (from vase_spiral), got {}",
+                                "`print` needs a toolpath (from toolpath or vase_spiral), got {}",
                                 other.kind()
                             );
                             self.diag(*span, Severity::Error, msg);
@@ -648,9 +689,7 @@ impl<'a> Runner<'a> {
                         Err(Fail::Skipped) => {}
                     }
                 }
-                Output::Export { span, .. } => {
-                    self.diag(*span, Severity::Warning, "`export` doesn't do anything yet: file export arrives with G-code (Phase 1b)");
-                }
+                Output::Export { expr, file, span } => self.export(expr, file, *span),
             }
         }
         if !shown {
@@ -674,6 +713,45 @@ impl<'a> Runner<'a> {
                 self.diag(span, Severity::Info, msg);
             }
         }
+    }
+
+    /// `export x as "file"`: offers a file to save, if the value suits the file type.
+    fn export(&mut self, expr: &Expr, file: &str, span: Span) {
+        let lower = file.to_lowercase();
+        let kind = if lower.ends_with(".stl") {
+            ExportKind::Stl
+        } else if lower.ends_with(".gcode") {
+            ExportKind::Gcode
+        } else {
+            let msg = format!(
+                "can't export \"{file}\" yet: name the file .stl (for shapes) or .gcode (for a toolpath)"
+            );
+            self.diag(span, Severity::Warning, msg);
+            return;
+        };
+        let value = match self.eval(expr) {
+            Ok(v) => v,
+            Err(Fail::Error(s, m)) => {
+                self.diag(s, Severity::Error, m);
+                return;
+            }
+            Err(Fail::Skipped) => return,
+        };
+        let (fits, wanted) = match kind {
+            ExportKind::Stl => (has_surface(&value), "surfaces or solids"),
+            ExportKind::Gcode => (matches!(value, Value::Toolpath(_)), "a toolpath"),
+        };
+        if !fits {
+            let msg = format!("\"{file}\" needs {wanted}, got {}", value.kind());
+            self.diag(span, Severity::Error, msg);
+            return;
+        }
+        self.out.exports.push(Export {
+            file: file_name(file),
+            kind,
+            line: span.line,
+            value,
+        });
     }
 
     /// Adds a value to the drawing. Returns whether there was anything to draw.
@@ -731,6 +809,35 @@ impl<'a> Runner<'a> {
             _ => {}
         }
         true
+    }
+}
+
+fn has_surface(v: &Value) -> bool {
+    match v {
+        Value::Surface(_) => true,
+        Value::List(l) => l.items.iter().any(has_surface),
+        _ => false,
+    }
+}
+
+/// A safe file name: the last part of the path, with only plain characters.
+fn file_name(file: &str) -> String {
+    let last = file.rsplit(['/', '\\']).next().unwrap_or(file);
+    let clean: String = last
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(100)
+        .collect();
+    if clean.trim_matches(['.', ' ']).is_empty() {
+        "export".into()
+    } else {
+        clean
     }
 }
 
@@ -836,6 +943,18 @@ fn arithmetic(op: BinOp, ab: &[Value]) -> Result<Value, String> {
         }
         (Some(Value::Text(x)), Some(Value::Text(y))) if op == BinOp::Add => {
             Ok(Value::Text(format!("{x}{y}").into()))
+        }
+        // With a field on either side, the result is a field: the same arithmetic, point by point.
+        (
+            Some(a @ (Value::Number(_) | Value::Field(_))),
+            Some(b @ (Value::Number(_) | Value::Field(_))),
+        ) => {
+            let field = |v: &Value| match v {
+                Value::Field(f) => f.clone(),
+                Value::Number(n) => Rc::new(Field::constant(*n)),
+                _ => Rc::new(Field::constant(f64::NAN)),
+            };
+            Field::binary(op, field(a), field(b)).map(|f| Value::Field(Rc::new(f)))
         }
         (Some(a), Some(b)) => {
             let geometry =

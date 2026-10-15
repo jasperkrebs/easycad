@@ -1,13 +1,15 @@
 //! The node library: every step a recipe can call, with its inputs and docs.
 //!
 //! The catalog the app shows (and the agent will read) is generated from this table, so the
-//! docs can't drift from the code. Units: lengths in mm, angles in degrees.
+//! docs can't drift from the code. Units: lengths in mm, angles in degrees, speeds in mm/s.
 
 use crate::curve::Curve;
 use crate::eval::Ctx;
+use crate::field::{self, Field, MathFn};
 use crate::geom::Xform;
+use crate::spiral;
 use crate::surface::Surface;
-use crate::toolpath::{self, MAX_PATH_POINTS};
+use crate::toolpath::{self, MAX_PATH_POINTS, Settings, Toolpath};
 use crate::value::Value;
 use std::rc::Rc;
 
@@ -30,13 +32,22 @@ pub struct Input {
     pub doc: &'static str,
 }
 
+/// What a node does with its inputs.
+pub enum Run {
+    /// Works on whole values.
+    Op(fn(&mut Ctx, &Args) -> Result<Value, String>),
+    /// Pure math on numbers. Given a field anywhere, it returns a field that applies the math
+    /// point by point.
+    Math(MathFn),
+}
+
 pub struct Node {
     pub name: &'static str,
     pub group: &'static str,
     pub inputs: &'static [Input],
     pub output: &'static str,
     pub doc: &'static str,
-    pub run: fn(&mut Ctx, &Args) -> Result<Value, String>,
+    pub run: Run,
 }
 
 const fn req(name: &'static str, kind: &'static str, doc: &'static str) -> Input {
@@ -70,6 +81,7 @@ const fn all(name: &'static str, kind: &'static str, doc: &'static str) -> Input
 }
 
 const GEOMETRY: &str = "Geometry";
+const NUM: &str = "Number | Field";
 
 /// Every node, in catalog order.
 pub static NODES: &[Node] = &[
@@ -84,19 +96,7 @@ pub static NODES: &[Node] = &[
         ],
         output: "List<Number>",
         doc: "`count` evenly spaced numbers from `start` to `end`, both included. `range(0, 1, count: 5)` is [0, 0.25, 0.5, 0.75, 1].",
-        run: range,
-    },
-    Node {
-        name: "lerp",
-        group: "Numbers & lists",
-        inputs: &[
-            req("a", "Number", "value at t = 0"),
-            req("b", "Number", "value at t = 1"),
-            req("t", "Number", "fraction"),
-        ],
-        output: "Number",
-        doc: "Blends from `a` to `b`: a + (b − a)·t.",
-        run: lerp,
+        run: Run::Op(range),
     },
     Node {
         name: "count",
@@ -104,107 +104,152 @@ pub static NODES: &[Node] = &[
         inputs: &[all("list", "List", "any list")],
         output: "Number",
         doc: "How many items a list has.",
-        run: count,
+        run: Run::Op(count),
+    },
+    Node {
+        name: "lerp",
+        group: "Numbers & lists",
+        inputs: &[
+            req("a", NUM, "value at t = 0"),
+            req("b", NUM, "value at t = 1"),
+            req("t", NUM, "fraction"),
+        ],
+        output: NUM,
+        doc: "Blends from `a` to `b`: a + (b − a)·t.",
+        run: Run::Math(|a| Ok(arg(a, 0) + (arg(a, 1) - arg(a, 0)) * arg(a, 2))),
     },
     Node {
         name: "min",
         group: "Numbers & lists",
-        inputs: &[req("a", "Number", ""), req("b", "Number", "")],
-        output: "Number",
-        doc: "The smaller of two numbers.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.min(a.num(1)?))),
+        inputs: &[req("a", NUM, ""), req("b", NUM, "")],
+        output: NUM,
+        doc: "The smaller of two values.",
+        run: Run::Math(|a| Ok(arg(a, 0).min(arg(a, 1)))),
     },
     Node {
         name: "max",
         group: "Numbers & lists",
-        inputs: &[req("a", "Number", ""), req("b", "Number", "")],
-        output: "Number",
-        doc: "The larger of two numbers.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.max(a.num(1)?))),
+        inputs: &[req("a", NUM, ""), req("b", NUM, "")],
+        output: NUM,
+        doc: "The larger of two values.",
+        run: Run::Math(|a| Ok(arg(a, 0).max(arg(a, 1)))),
     },
     Node {
         name: "clamp",
         group: "Numbers & lists",
         inputs: &[
-            req("value", "Number", ""),
-            req("low", "Number", ""),
-            req("high", "Number", ""),
+            req("value", NUM, ""),
+            req("low", NUM, ""),
+            req("high", NUM, ""),
         ],
-        output: "Number",
+        output: NUM,
         doc: "Keeps `value` between `low` and `high`.",
-        run: clamp,
+        run: Run::Math(clamp),
     },
     Node {
         name: "mod",
         group: "Numbers & lists",
-        inputs: &[req("a", "Number", ""), req("b", "Number", "")],
-        output: "Number",
+        inputs: &[req("a", NUM, ""), req("b", NUM, "")],
+        output: NUM,
         doc: "Remainder of a ÷ b, always between 0 and b (for b > 0).",
-        run: modulo,
+        run: Run::Math(modulo),
     },
     Node {
         name: "abs",
         group: "Numbers & lists",
-        inputs: &[req("x", "Number", "")],
-        output: "Number",
+        inputs: &[req("x", NUM, "")],
+        output: NUM,
         doc: "The value without its sign.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.abs())),
+        run: Run::Math(|a| Ok(arg(a, 0).abs())),
     },
     Node {
         name: "sqrt",
         group: "Numbers & lists",
-        inputs: &[req("x", "Number", "0 or more")],
-        output: "Number",
+        inputs: &[req("x", NUM, "0 or more")],
+        output: NUM,
         doc: "Square root.",
-        run: sqrt,
+        run: Run::Math(sqrt),
     },
     Node {
         name: "round",
         group: "Numbers & lists",
-        inputs: &[req("x", "Number", "")],
-        output: "Number",
+        inputs: &[req("x", NUM, "")],
+        output: NUM,
         doc: "Nearest whole number.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.round())),
+        run: Run::Math(|a| Ok(arg(a, 0).round())),
     },
     Node {
         name: "floor",
         group: "Numbers & lists",
-        inputs: &[req("x", "Number", "")],
-        output: "Number",
+        inputs: &[req("x", NUM, "")],
+        output: NUM,
         doc: "Whole number at or below x.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.floor())),
+        run: Run::Math(|a| Ok(arg(a, 0).floor())),
     },
     Node {
         name: "ceil",
         group: "Numbers & lists",
-        inputs: &[req("x", "Number", "")],
-        output: "Number",
+        inputs: &[req("x", NUM, "")],
+        output: NUM,
         doc: "Whole number at or above x.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.ceil())),
+        run: Run::Math(|a| Ok(arg(a, 0).ceil())),
     },
     Node {
         name: "sin",
         group: "Numbers & lists",
-        inputs: &[req("angle", "Angle", "degrees")],
-        output: "Number",
+        inputs: &[req("angle", NUM, "degrees")],
+        output: NUM,
         doc: "Sine of an angle in degrees: sin(90) is 1.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.to_radians().sin())),
+        run: Run::Math(|a| Ok(arg(a, 0).to_radians().sin())),
     },
     Node {
         name: "cos",
         group: "Numbers & lists",
-        inputs: &[req("angle", "Angle", "degrees")],
-        output: "Number",
+        inputs: &[req("angle", NUM, "degrees")],
+        output: NUM,
         doc: "Cosine of an angle in degrees.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.to_radians().cos())),
+        run: Run::Math(|a| Ok(arg(a, 0).to_radians().cos())),
     },
     Node {
         name: "tan",
         group: "Numbers & lists",
-        inputs: &[req("angle", "Angle", "degrees")],
-        output: "Number",
+        inputs: &[req("angle", NUM, "degrees")],
+        output: NUM,
         doc: "Tangent of an angle in degrees.",
-        run: |_, a| Ok(Value::Number(a.num(0)?.to_radians().tan())),
+        run: Run::Math(|a| Ok(arg(a, 0).to_radians().tan())),
+    },
+    Node {
+        name: "smoothstep",
+        group: "Numbers & lists",
+        inputs: &[req("t", NUM, "0..1 (clamped)")],
+        output: NUM,
+        doc: "An S-curve from 0 to 1: 3t² − 2t³. Eases in and out instead of kinking.",
+        run: Run::Math(|a| {
+            let t = arg(a, 0).clamp(0.0, 1.0);
+            Ok(t * t * (3.0 - 2.0 * t))
+        }),
+    },
+    // ------------------------------------------------------------------ fields
+    Node {
+        name: "distance",
+        group: "Fields",
+        inputs: &[req("to", "Curve", "a curve to measure from")],
+        output: "Field",
+        doc: "A field: how far each point is from the curve, in mm (in plan view; negative inside a closed curve). Exact for circles.",
+        run: Run::Op(distance),
+    },
+    Node {
+        name: "fade",
+        group: "Fields",
+        inputs: &[
+            req("distance", NUM, "a distance, usually a `distance(…)` field"),
+            req("inside", NUM, "mm inside the curve where it reaches 0"),
+            req("outside", NUM, "mm outside the curve where it reaches 0"),
+            opt("band", NUM, 0.0, "width held at 1, centred on the curve"),
+        ],
+        output: NUM,
+        doc: "1 on the curve, easing smoothly to 0 `inside` mm inside and `outside` mm outside it (EasyGCode's spiral-disc falloff). Turns a distance into a 0..1 weight.",
+        run: Run::Math(field::fade),
     },
     // ------------------------------------------------------------------ curves
     Node {
@@ -213,7 +258,7 @@ pub static NODES: &[Node] = &[
         inputs: &[req("r", "Length", "radius")],
         output: "Curve",
         doc: "A circle around the origin, flat on the bed, starting on +X and running counter-clockwise.",
-        run: circle,
+        run: Run::Op(circle),
     },
     Node {
         name: "polygon",
@@ -224,7 +269,7 @@ pub static NODES: &[Node] = &[
         ],
         output: "Curve",
         doc: "A regular polygon around the origin with a corner on +X.",
-        run: polygon,
+        run: Run::Op(polygon),
     },
     Node {
         name: "star",
@@ -236,7 +281,7 @@ pub static NODES: &[Node] = &[
         ],
         output: "Curve",
         doc: "A star's corners around the origin, alternating tips and inner corners, first tip on +X. Sharp; add `|> smooth` to round it.",
-        run: star,
+        run: Run::Op(star),
     },
     Node {
         name: "smooth",
@@ -244,7 +289,50 @@ pub static NODES: &[Node] = &[
         inputs: &[req("curve", "Curve", "a curve with corners")],
         output: "Curve",
         doc: "A smooth curve through every point of `curve` (a cubic NURBS, closed if the curve is closed).",
-        run: smooth,
+        run: Run::Op(smooth),
+    },
+    Node {
+        name: "spiral",
+        group: "Curves",
+        inputs: &[
+            req("outer", "Length", "radius to end near"),
+            req(
+                "spacing",
+                "Length | Field",
+                "distance from one turn to the next; a field makes it vary",
+            ),
+            opt(
+                "tolerance",
+                "Length",
+                0.05,
+                "how closely the points follow the true curve",
+            ),
+            opt(
+                "min_samples",
+                "Count",
+                0.0,
+                "at least this many points per turn",
+            ),
+        ],
+        output: "Curve",
+        doc: "A flat spiral from the centre out, each turn one `spacing` outside the last, ending on the whole turn nearest `outer`. With a field as spacing, turns spread apart where the field is larger (EasyGCode's spiral disc).",
+        run: Run::Op(spiral),
+    },
+    Node {
+        name: "interlock",
+        group: "Curves",
+        inputs: &[
+            req("spiral", "Curve", "a spiral (from `spiral`)"),
+            req(
+                "bumps",
+                "Count",
+                "bumps per turn, counting outward and inward ones; odd",
+            ),
+            req("width", "Length", "line width"),
+        ],
+        output: "Curve",
+        doc: "Wiggles a spiral's turns so that wherever they are spread wider than `width`, each outward bump meets the next turn's inward bump with one line width between them: the turns stay joined at those points and leave holes in between. Turns that touch stay straight.",
+        run: Run::Op(interlock),
     },
     // ------------------------------------------------------------------ transforms
     Node {
@@ -259,7 +347,7 @@ pub static NODES: &[Node] = &[
         ],
         output: GEOMETRY,
         doc: "Scales about the origin. `scale(c, 2)` doubles everything; `scale(c, y: 0.5)` squashes Y only.",
-        run: scale,
+        run: Run::Op(scale),
     },
     Node {
         name: "rotate",
@@ -274,7 +362,7 @@ pub static NODES: &[Node] = &[
         ],
         output: GEOMETRY,
         doc: "Rotates about the vertical (Z) axis through the origin.",
-        run: rotate,
+        run: Run::Op(rotate),
     },
     Node {
         name: "move",
@@ -287,7 +375,7 @@ pub static NODES: &[Node] = &[
         ],
         output: GEOMETRY,
         doc: "Moves by x, y and z. `move(c, z: 10)` lifts by 10 mm.",
-        run: translate,
+        run: Run::Op(translate),
     },
     // ------------------------------------------------------------------ surfaces
     Node {
@@ -300,7 +388,7 @@ pub static NODES: &[Node] = &[
         )],
         output: "Surface",
         doc: "A smooth surface through the section curves, in order. Each section's first point is its seam.",
-        run: loft,
+        run: Run::Op(loft),
     },
     Node {
         name: "cap",
@@ -308,9 +396,22 @@ pub static NODES: &[Node] = &[
         inputs: &[req("surface", "Surface", "a loft of closed sections")],
         output: "Solid",
         doc: "Closes both ends of a lofted tube with flat caps, making a solid.",
-        run: cap,
+        run: Run::Op(cap),
     },
     // ------------------------------------------------------------------ toolpaths
+    Node {
+        name: "toolpath",
+        group: "Toolpaths",
+        inputs: &[
+            all("curves", "List<Curve>", "printed in order"),
+            req("width", "Length", "line width"),
+            req("layer", "Length", "layer height"),
+            opt("speed", "Speed", 40.0, "print speed in mm/s"),
+        ],
+        output: "Toolpath",
+        doc: "Prints curves exactly as drawn, in order, with a travel move to the start of each. A curve drawn at z = 0 prints on the bed (the nozzle one layer up).",
+        run: Run::Op(toolpath),
+    },
     Node {
         name: "vase_spiral",
         group: "Toolpaths",
@@ -326,24 +427,47 @@ pub static NODES: &[Node] = &[
         ],
         output: "Toolpath",
         doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up, snaps to whole layers, and ends with a flat turn that ramps extrusion down.",
-        run: vase_spiral,
+        run: Run::Op(vase_spiral),
+    },
+    Node {
+        name: "stack",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", "one layer (or more)"),
+            req("count", "Count", "how many copies"),
+        ],
+        output: "Toolpath",
+        doc: "Prints the toolpath `count` times, each copy one layer higher. Between copies the nozzle lifts clear, returns to the start and lowers.",
+        run: Run::Op(stack),
+    },
+    Node {
+        name: "join",
+        group: "Toolpaths",
+        inputs: &[all("paths", "List<Toolpath>", "printed in order")],
+        output: "Toolpath",
+        doc: "Toolpaths printed one after another (a bottom, then a wall), each with its own width, layer and speed. The nozzle lifts clear between them.",
+        run: Run::Op(join),
     },
     Node {
         name: "wave",
         group: "Toolpaths",
         inputs: &[
             req("geometry", GEOMETRY, "a toolpath, curve or surface"),
-            req("amplitude", "Length", "how far the wave pushes in and out"),
+            req(
+                "amplitude",
+                "Length | Field",
+                "how far the wave pushes in and out; a field makes it vary",
+            ),
             req(
                 "count",
                 "Number",
-                "waves per turn (toolpath) or per loop (curve)",
+                "waves per turn (toolpath, spiral) or per loop (curve)",
             ),
             opt("phase", "Number", 0.0, "shift, in waves"),
         ],
         output: GEOMETRY,
         doc: "Pushes points in and out sideways in a sine wave. On a toolpath, whole counts stack into straight ribs, a fraction makes each layer shift (0.5 alternates, for a weave).",
-        run: wave,
+        run: Run::Op(wave),
     },
 ];
 
@@ -412,12 +536,46 @@ pub fn call(ctx: &mut Ctx, node: &'static Node, args: Vec<Value>) -> Result<Valu
         }
     };
     replicate(ctx, &args, &replicable, &mut |ctx, values| {
-        let out = (node.run)(ctx, &Args { node, values })?;
+        let out = match node.run {
+            Run::Op(f) => f(ctx, &Args { node, values })?,
+            Run::Math(f) => math(node, f, values)?,
+        };
         if !out.is_finite() {
             return Err("the result has invalid coordinates (infinite or not a number); check the values going in".into());
         }
         Ok(out)
     })
+}
+
+/// A math node on numbers, or on fields point by point.
+fn math(node: &Node, f: MathFn, values: &[Value]) -> Result<Value, String> {
+    let mut numbers = Vec::with_capacity(values.len());
+    let mut fields = Vec::with_capacity(values.len());
+    for (i, v) in values.iter().enumerate() {
+        match v {
+            Value::Number(n) => {
+                numbers.push(*n);
+                fields.push(Rc::new(Field::constant(*n)));
+            }
+            Value::Field(fl) => fields.push(fl.clone()),
+            other => {
+                let name = node.inputs.get(i).map_or("?", |x| x.name);
+                return Err(format!(
+                    "`{name}` must be a number or a field, got {}",
+                    other.kind()
+                ));
+            }
+        }
+    }
+    if numbers.len() == values.len() {
+        f(&numbers).map(Value::Number)
+    } else {
+        Ok(Value::Field(Rc::new(Field::map(f, fields)?)))
+    }
+}
+
+fn arg(a: &[f64], i: usize) -> f64 {
+    a.get(i).copied().unwrap_or(0.0)
 }
 
 /// What [`replicate`] runs once per set of items.
@@ -518,6 +676,15 @@ impl Args<'_> {
         Ok(v as usize)
     }
 
+    /// A number or a field, as a field.
+    pub fn field(&self, i: usize) -> Result<Rc<Field>, String> {
+        match self.get(i)? {
+            Value::Number(n) if n.is_finite() => Ok(Rc::new(Field::constant(*n))),
+            Value::Field(f) => Ok(f.clone()),
+            other => Err(self.wrong(i, "a number or a field", other)),
+        }
+    }
+
     pub fn curve(&self, i: usize) -> Result<&Rc<Curve>, String> {
         match self.get(i)? {
             Value::Curve(c) => Ok(c),
@@ -529,6 +696,13 @@ impl Args<'_> {
         match self.get(i)? {
             Value::Surface(s) => Ok(s),
             other => Err(self.wrong(i, "a surface (from loft)", other)),
+        }
+    }
+
+    pub fn toolpath(&self, i: usize) -> Result<&Rc<Toolpath>, String> {
+        match self.get(i)? {
+            Value::Toolpath(p) => Ok(p),
+            other => Err(self.wrong(i, "a toolpath", other)),
         }
     }
 
@@ -571,37 +745,40 @@ fn range(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     )
 }
 
-fn lerp(_: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let (x, y, t) = (a.num(0)?, a.num(1)?, a.num(2)?);
-    Ok(Value::Number(x + (y - x) * t))
-}
-
 fn count(_: &mut Ctx, a: &Args) -> Result<Value, String> {
     Ok(Value::Number(a.items(0)?.len() as f64))
 }
 
-fn clamp(_: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let (v, lo, hi) = (a.num(0)?, a.num(1)?, a.num(2)?);
+fn clamp(a: &[f64]) -> Result<f64, String> {
+    let (v, lo, hi) = (arg(a, 0), arg(a, 1), arg(a, 2));
     if lo > hi {
         return Err(format!("`low` ({lo}) is above `high` ({hi})"));
     }
-    Ok(Value::Number(v.clamp(lo, hi)))
+    Ok(v.clamp(lo, hi))
 }
 
-fn modulo(_: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let (x, y) = (a.num(0)?, a.num(1)?);
+fn modulo(a: &[f64]) -> Result<f64, String> {
+    let (x, y) = (arg(a, 0), arg(a, 1));
     if y == 0.0 {
         return Err("`b` must not be 0".into());
     }
-    Ok(Value::Number(x.rem_euclid(y)))
+    Ok(x.rem_euclid(y))
 }
 
-fn sqrt(_: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let x = a.num(0)?;
+fn sqrt(a: &[f64]) -> Result<f64, String> {
+    let x = arg(a, 0);
     if x < 0.0 {
         return Err(format!("can't take the square root of {x}"));
     }
-    Ok(Value::Number(x.sqrt()))
+    Ok(x.sqrt())
+}
+
+fn distance(_: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let c = a.curve(0)?;
+    if c.points.is_empty() {
+        return Err("the curve has no points".into());
+    }
+    Ok(Value::Field(Rc::new(Field::distance(c))))
 }
 
 fn circle(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
@@ -634,6 +811,43 @@ fn smooth(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let per = ctx.samples(8, 16);
     ctx.spend(c.points.len().saturating_mul(per))?;
     Ok(Value::Curve(Rc::new(c.smooth(per)?)))
+}
+
+fn spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let outer = a.num(0)?;
+    let spacing = a.field(1)?;
+    let tolerance = a.num(2)?;
+    let min_samples = a.count(3, 0, 100_000)?;
+    let curve = spiral::spiral(
+        outer,
+        &spacing,
+        tolerance,
+        min_samples,
+        ctx.remaining().min(MAX_PATH_POINTS),
+    )?;
+    ctx.spend(curve.points.len())?;
+    Ok(Value::Curve(Rc::new(curve)))
+}
+
+fn interlock(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let c = a.curve(0)?;
+    let bumps = a.count(1, 1, 999)?;
+    let width = a.positive(2)?;
+    ctx.spend(c.points.len())?;
+    let (curve, info) = spiral::interlock(c, bumps, width)?;
+    if info.bumps != bumps {
+        ctx.warn(format!(
+            "bumps per turn must be odd so a peak always faces the next turn's dip; using {}",
+            info.bumps
+        ));
+    }
+    if info.overlap > 0.25 * width {
+        ctx.warn(format!(
+            "the spread is too short for the wiggles to meet exactly: neighbouring turns overlap by up to {} mm; widen the fade",
+            easycad_lang::format_number((info.overlap * 1000.0).round() / 1000.0)
+        ));
+    }
+    Ok(Value::Curve(Rc::new(curve)))
 }
 
 fn transform(ctx: &mut Ctx, g: &Value, x: &Xform, z_scale: f64) -> Result<Value, String> {
@@ -673,23 +887,22 @@ fn translate(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 }
 
 fn loft(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let items = a.items(0)?;
-    let mut curves = Vec::with_capacity(items.len());
-    for (i, v) in items.iter().enumerate() {
-        match v {
-            Value::Curve(c) => curves.push(c.as_ref()),
-            other => {
-                return Err(format!(
-                    "section {} is {}, not a curve",
-                    i + 1,
-                    other.kind()
-                ));
-            }
-        }
-    }
+    let curves = curves_of(a.items(0)?, "section")?;
     let m = curves.iter().map(|c| c.points.len()).max().unwrap_or(0);
     ctx.spend(curves.len().saturating_mul(m))?;
     Ok(Value::Surface(Rc::new(Surface::loft(&curves)?)))
+}
+
+/// The curves in a list input, or a message naming the first item that isn't one.
+fn curves_of<'v>(items: &'v [Value], what: &str) -> Result<Vec<&'v Curve>, String> {
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, v)| match v {
+            Value::Curve(c) => Ok(c.as_ref()),
+            other => Err(format!("{what} {} is {}, not a curve", i + 1, other.kind())),
+        })
+        .collect()
 }
 
 fn cap(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
@@ -704,67 +917,86 @@ fn cap(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     })))
 }
 
-fn vase_spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let wall = a.surface(0)?;
-    let (layer, width, speed) = (a.num(1)?, a.num(2)?, a.num(3)?);
-    let path = toolpath::vase_spiral(
-        wall,
-        layer,
-        width,
-        speed,
-        ctx.remaining().min(MAX_PATH_POINTS),
-    )?;
+fn toolpath(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let curves = curves_of(a.items(0)?, "item")?;
+    let settings = Settings::new(a.num(1)?, a.num(2)?, a.num(3)?)?;
+    let path = toolpath::from_curves(&curves, settings, ctx.remaining().min(MAX_PATH_POINTS))?;
     ctx.spend(path.points.len())?;
     Ok(Value::Toolpath(Rc::new(path)))
 }
 
+fn vase_spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let wall = a.surface(0)?;
+    let settings = Settings::new(a.num(2)?, a.num(1)?, a.num(3)?)?;
+    let path = toolpath::vase_spiral(wall, settings, ctx.remaining().min(MAX_PATH_POINTS))?;
+    ctx.spend(path.points.len())?;
+    Ok(Value::Toolpath(Rc::new(path)))
+}
+
+fn stack(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let path = a.toolpath(0)?;
+    let n = a.count(1, 1, 10_000)?;
+    let out = toolpath::stack(path, n, ctx.remaining().min(MAX_PATH_POINTS))?;
+    ctx.spend(out.points.len())?;
+    Ok(Value::Toolpath(Rc::new(out)))
+}
+
+fn join(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let paths = a
+        .items(0)?
+        .iter()
+        .enumerate()
+        .map(|(i, v)| match v {
+            Value::Toolpath(p) => Ok(p.as_ref()),
+            other => Err(format!(
+                "item {} is {}, not a toolpath",
+                i + 1,
+                other.kind()
+            )),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    if paths.is_empty() {
+        return Err("needs at least one toolpath".into());
+    }
+    let out = toolpath::join(&paths, ctx.remaining().min(MAX_PATH_POINTS))?;
+    ctx.spend(out.points.len())?;
+    Ok(Value::Toolpath(Rc::new(out)))
+}
+
 fn wave(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let (amplitude, count, phase) = (a.num(1)?, a.num(2)?, a.num(3)?);
-    match a.get(0)? {
-        Value::Toolpath(p) => {
-            let path = toolpath::wave_path(
-                p,
-                amplitude,
-                count,
-                phase,
-                ctx.remaining().min(MAX_PATH_POINTS),
-            )?;
-            ctx.spend(path.points.len())?;
-            Ok(Value::Toolpath(Rc::new(path)))
-        }
-        Value::Curve(c) => {
-            let points = toolpath::wave_ring(
-                &c.points,
-                c.closed,
-                amplitude,
-                count,
-                phase,
-                ctx.remaining(),
-            )?;
-            ctx.spend(points.len())?;
-            Ok(Value::Curve(Rc::new(Curve {
-                points,
-                closed: c.closed,
-            })))
-        }
+    let (amplitude, count, phase) = (a.field(1)?, a.num(2)?, a.num(3)?);
+    let max = ctx.remaining().min(MAX_PATH_POINTS);
+    let out = match a.get(0)? {
+        Value::Toolpath(p) => Value::Toolpath(Rc::new(toolpath::wave_path(
+            p, &amplitude, count, phase, max,
+        )?)),
+        Value::Curve(c) => Value::Curve(Rc::new(toolpath::wave_curve(
+            c, &amplitude, count, phase, max,
+        )?)),
         Value::Surface(s) => {
             let mut sections = Vec::with_capacity(s.sections.len());
             for sec in &s.sections {
-                let points =
-                    toolpath::wave_ring(sec, s.closed, amplitude, count, phase, ctx.remaining())?;
-                ctx.spend(points.len())?;
-                sections.push(points);
+                let ring = Curve::new(sec.clone(), s.closed);
+                let waved = toolpath::wave_curve(&ring, &amplitude, count, phase, ctx.remaining())?;
+                ctx.spend(waved.points.len())?;
+                sections.push(waved.points);
             }
-            Ok(Value::Surface(Rc::new(Surface {
+            Value::Surface(Rc::new(Surface {
                 sections,
                 ..s.as_ref().clone()
-            })))
+            }))
         }
-        other => Err(format!(
-            "works on toolpaths, curves and surfaces, got {}",
-            other.kind()
-        )),
+        other => {
+            return Err(format!(
+                "works on toolpaths, curves and surfaces, got {}",
+                other.kind()
+            ));
+        }
+    };
+    if let Value::Toolpath(p) = &out {
+        ctx.spend(p.points.len())?;
     }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -790,6 +1022,7 @@ mod tests {
         let cat = catalog();
         assert!(cat.starts_with("## Numbers & lists"));
         assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40) -> Toolpath"));
+        assert!(cat.contains("fade(distance: Number | Field, inside: Number | Field, outside: Number | Field, band: Number | Field = 0) -> Number | Field"));
     }
 
     #[test]
@@ -806,6 +1039,29 @@ mod tests {
         assert_eq!(
             call(&mut ctx, node, vec![n(0.0), n(1.0), empty.clone()]).unwrap(),
             empty
+        );
+    }
+
+    #[test]
+    fn math_on_fields_gives_fields() {
+        let mut ctx = Ctx::new(Quality::Preview);
+        let c = Value::Curve(Rc::new(Curve::circle(10.0, 8)));
+        let d = call(&mut ctx, find("distance").unwrap(), vec![c]).unwrap();
+        let out = call(
+            &mut ctx,
+            find("clamp").unwrap(),
+            vec![d, Value::Number(-1.0), Value::Number(1.0)],
+        )
+        .unwrap();
+        let Value::Field(f) = out else {
+            panic!("expected a field")
+        };
+        assert_eq!(f.at([0.0, 0.0, 0.0]), -1.0);
+        assert_eq!(f.at([10.5, 0.0, 0.0]), 0.5);
+        let curve = Value::Curve(Rc::new(Curve::circle(1.0, 8)));
+        assert_eq!(
+            call(&mut ctx, find("sin").unwrap(), vec![curve]).unwrap_err(),
+            "`angle` must be a number or a field, got a curve"
         );
     }
 

@@ -76,6 +76,19 @@ impl Xform {
         ]
     }
 
+    /// If this transform keeps circles in the XY plane circles (a move, a rotation about Z, a
+    /// uniform scale in X and Y, or a mirror), the factor it scales their radius by.
+    pub fn xy_similarity(&self) -> Option<f64> {
+        let m = &self.m;
+        let (a, b, c, d) = (m[0][0], m[0][1], m[1][0], m[1][1]);
+        let uncoupled = m[0][2] == 0.0 && m[1][2] == 0.0 && m[2][0] == 0.0 && m[2][1] == 0.0;
+        let tol = 1e-12 * (a.abs() + b.abs() + c.abs() + d.abs()).max(1.0);
+        let rotation = (a - d).abs() <= tol && (b + c).abs() <= tol;
+        let reflection = (a + d).abs() <= tol && (b - c).abs() <= tol;
+        let s = a.hypot(c);
+        (uncoupled && (rotation || reflection) && s > 0.0).then_some(s)
+    }
+
     /// Whether the transform flips orientation (a mirror), which reverses curve direction.
     pub fn mirrors(&self) -> bool {
         let m = &self.m;
@@ -298,6 +311,11 @@ mod tests {
         );
         assert!(Xform::scale(-1.0, 1.0, 1.0).mirrors());
         assert!(!Xform::rotate_z(33.0).mirrors());
+        assert_eq!(Xform::translate(3.0, 4.0, 5.0).xy_similarity(), Some(1.0));
+        assert!((Xform::rotate_z(33.0).xy_similarity().unwrap() - 1.0).abs() < 1e-12);
+        assert_eq!(Xform::scale(2.0, 2.0, 7.0).xy_similarity(), Some(2.0));
+        assert_eq!(Xform::scale(-2.0, 2.0, 1.0).xy_similarity(), Some(2.0));
+        assert_eq!(Xform::scale(2.0, 1.0, 1.0).xy_similarity(), None);
     }
 
     #[test]

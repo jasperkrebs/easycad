@@ -9,7 +9,8 @@ use std::f64::consts::PI;
 /// narrower than it is tall). Multiply by a segment's length to get its volume in mm³.
 pub fn bead_area(width: f64, height: f64) -> f64 {
     let w = width.max(height);
-    (w - height) * height + PI * (height / 2.0).powi(2)
+    // Same operation order as EasyGCode, so both round identically.
+    (w - height) * height + PI * (height / 2.0) * (height / 2.0)
 }
 
 #[cfg(test)]

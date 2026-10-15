@@ -3,6 +3,66 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-15: Phase 1b, real G-code, and EasyGCode's spiral disc as a recipe
+
+**Why:** the owner wants to build custom things inside the app, both G-code projects like
+EasyGCode's and plain geometry to export, without a new app build for every project. The test:
+EasyGCode's spiral disc, which was a dedicated generator, rebuilt only from general steps.
+
+**Landed**
+- **G-code** (`core::gcode`) in EasyGCode's dialect for the P1P (filament, Marlin start/end) and
+  the Klipper pellet printer: start and end blocks copied verbatim, E from the bead model
+  (mm³ or mm of filament), numbers rounded exactly like JavaScript's `toFixed`, F only when it
+  changes, the fan after the first layer. Before writing, it checks the bed, the build height
+  and every extrusion amount; the end lift stops at the build height (Klipper refuses moves past
+  it; EasyGCode doesn't check, so this is the one deliberate difference).
+- **Golden tests against EasyGCode itself:** `scripts/easygcode-fixtures.cjs` runs EasyGCode's
+  `gcode.js` headlessly and writes `fixtures/easygcode/`. **Every command identical** in all
+  four cases:
+  - three spiral disc cases (default pellet, filament with a multiplier and fan, no start/end
+    blocks): 8,772, 9,639 and 5,133 commands;
+  - `vase_spiral` on a cylinder against EasyGCode's lampshade generator with both ends the same
+    size (its vase mode: ramped first turn, whole layers, flat closing turn): 7,908 commands.
+
+  So every toolpath the templates print is covered. The browser smoke test also checks the
+  G-code the app downloads for the spiral disc.
+- **Fields:** numbers that vary over space. `distance(curve)`, `fade(…)` (EasyGCode's falloff),
+  and arithmetic and the number steps on fields, point by point. `wave`'s amplitude can be one.
+- **General toolpath steps:** `toolpath(curves, …)` prints any curves; `stack` repeats a layer
+  (EasyGCode's lift-and-return layer change); `join` prints toolpaths one after another;
+  `spiral` (RK4 like EasyGCode, spacing from a field) and `interlock` (the odd-bump wiggles,
+  solved per angle like EasyGCode). 34 steps in all.
+- **The spiral disc template** (`web/templates/spiral-disc.easycad`): ten lines, every setting
+  of EasyGCode's tab, same G-code.
+- **STL export:** `export shape as "x.stl"` (binary STL of surfaces and solids; the vase's is
+  closed and faces outward, which a test checks). The vase and bowl templates offer one.
+- **`core::files`** makes the files (G-code for `print`, the file of each `export`), so the
+  app, a CLI and MCP share one path. The WebAssembly facade got `exportFile`.
+- **Web app:**
+  - Settings tab: an **Export** section (G-code for the chosen printer, plus the recipe's
+    `export` files);
+  - Print tab: the printer choice and **printer settings** (bed, where the recipe's origin sits,
+    travel speed, multiplier, end lift, temperatures, fan, pellet purge and pressure advance),
+    remembered per printer, with EasyGCode's defaults; checks for bed fit and height;
+  - the 3D bed grid follows the printer's bed and origin;
+  - the engine client answers requests by id (runs, exports, the catalog) and re-asks whatever
+    a crashed worker never answered.
+
+**Numbers** (cloud CPU, WebAssembly in Node)
+- Engine WASM: 696 KB raw / **212 KB gzipped** (budget 3 MB).
+- Spiral disc: **19 ms** per run (8,737 path points), G-code 28 ms (315 kB).
+- Twisted vase: 25 ms per full-quality run; G-code 0.28 s (119,617 moves, 4.4 MB); STL 47 ms
+  (2 MB).
+- 95 Rust tests (17 language, 78 engine). Smoke test green on phone and desktop: it also saves
+  an STL and checks the spiral disc's G-code against EasyGCode's.
+
+**Open**
+- **1c:** more of EasyGCode as recipes from general steps: the vessel (wall plus a solid bottom
+  as a joined toolpath), the bend stool seat (`offset_rings`), the lampshade (`revolve`,
+  `spiral_on`). Each golden-tested.
+- Geometry for STL: `extrude`, `revolve`, `offset`, then booleans.
+- No per-step caching yet; G-code for very large toolpaths takes a few tenths of a second.
+
 ## 2026-10-15: Phase 1a, recipes become files
 
 **Landed**
@@ -59,9 +119,9 @@ next session (human or agent) picks up.
   templates and reloads.
 
 **Open**
-- **Owner:** switch on GitHub Pages (one setting, see above).
-- **1b:** G-code for the P1P and the Klipper pellet printer, golden-tested against EasyGCode; a
-  solid bottom (walls only for now); the vessel template.
+- ~~**Owner:** switch on GitHub Pages~~ (done: live at https://jasperkrebs.github.io/easycad/).
+- ~~**1b:** G-code for the P1P and the Klipper pellet printer~~ (done, see above); a solid
+  bottom and the vessel template moved to 1c.
 - **1c:** formatter, presets, a project library on the device, `revolve` / `offset_rings` /
   `contours`.
 - No per-step caching yet: every run recomputes everything, which is fine at these sizes.

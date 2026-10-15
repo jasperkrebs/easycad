@@ -649,3 +649,24 @@ h2.spaced {
   max-height: 420px;
   overflow: auto;
 }
+
+/* ---------- export and printer settings ---------- */
+.export {
+  margin-top: 6px;
+}
+
+.buttons.tight {
+  margin-top: 4px;
+}
+
+.buttons.tight:empty {
+  display: none;
+}
+
+#printerSettings {
+  margin-top: 6px;
+}
+
+#printerSettings .setting:first-child {
+  border-top: 0;
+}

@@ -22,6 +22,7 @@ const ASSETS = [
   './templates/twisted-vase.easycad',
   './templates/ribbed-cylinder.easycad',
   './templates/star-bowl.easycad',
+  './templates/spiral-disc.easycad',
   './pkg/easycad_wasm.js',
   './pkg/easycad_wasm_bg.wasm',
   './vendor/three/three.module.js',

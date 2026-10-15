@@ -1,5 +1,5 @@
 // EasyCAD: a recipe (.easycad text) → Rust engine (WebAssembly, in a worker) → 3D view, a settings
-// window generated from the recipe, and a print estimate.
+// window generated from the recipe, a print estimate, and files to save (G-code, STL).
 //
 // The recipe text is the project and the single source of truth: moving a slider writes the new
 // value into the text (the engine does that, see crates/wasm), and saving a project saves exactly
@@ -9,13 +9,14 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
-import { PRINTERS, printerFor, renderPrint } from './print.js';
+import { PRINTERS, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 
 const TEMPLATES = [
   { id: 'twisted-vase', name: 'Twisted star vase' },
   { id: 'ribbed-cylinder', name: 'Ribbed cylinder' },
   { id: 'star-bowl', name: 'Star bowl' },
+  { id: 'spiral-disc', name: 'Spiral disc (from EasyGCode)' },
 ];
 const STORAGE_KEY = 'easycad.project';
 const MAX_FILE_BYTES = 256 * 1024;
@@ -31,6 +32,8 @@ const state = {
   /** The settings window's layout, so it's rebuilt only when the recipe's settings change. */
   layout: '',
   printer: /** @type {keyof typeof PRINTERS} */ ('p1p'),
+  /** The printer's machine settings (print.js); G-code is written for these. */
+  profile: loadProfile('p1p'),
   /** Changed since it was opened or saved (asks before a template replaces it). */
   unsaved: false,
   /** @type {import('./engine.js').RunResult | null} */
@@ -84,7 +87,8 @@ async function run(quality, how = {}) {
   refitNext = false;
 
   renderProject(result);
-  renderPrint($('stats'), $('checks'), result.print, state.printer);
+  renderPrintTab();
+  renderExports(result);
   renderProblems($('problems'), result.diagnostics, (line) => selectLine(editor, line));
   renderSteps($('steps'), result.steps);
   showSource(result.source);
@@ -117,7 +121,7 @@ function renderProject(result) {
 
 function renderHud(result) {
   const st = result.print && result.print.stats;
-  const parts = st ? [`${fmt(st.layers)} layers`, `${fmt(st.pathPoints)} path points`] : ['no toolpath'];
+  const parts = st ? [`${fmt(st.layers)} ${st.layers === 1 ? 'layer' : 'layers'}`, `${fmt(st.pathPoints)} path points`] : ['no toolpath'];
   $('hud').textContent = [...parts, `${fmt(result.ms)} ms`].join(' · ');
   const empty = !result.mesh.indices.length && result.curves.starts.length < 2 && result.paths.starts.length < 2;
   const msg = $('viewMessage');
@@ -127,6 +131,50 @@ function renderHud(result) {
     : 'Nothing to draw yet: add a line like  show name  to the recipe.';
 }
 
+function renderPrintTab() {
+  renderPrint($('stats'), $('checks'), state.last && state.last.print, state.printer, state.profile);
+}
+
+/** Buttons for the files the recipe makes: G-code of what it prints, and its `export` lines. */
+function renderExports(result) {
+  const host = $('exportButtons');
+  host.replaceChildren();
+  // A broken recipe has nothing to export (the problem is explained above).
+  const broken = result.diagnostics.some((d) => d.severity === 'error');
+  $('exportEmpty').hidden = broken || Boolean(result.print || result.exports.length);
+  if (broken) return;
+  if (result.print) {
+    const b = el('button', { className: 'btn primary', type: 'button', text: `G-code for the ${PRINTERS[state.printer].name}` });
+    b.addEventListener('click', () => saveFile('print', `${slug(projectName())}.gcode`));
+    host.append(b);
+  }
+  result.exports.forEach((x, i) => {
+    const b = el('button', { className: 'btn', type: 'button', text: x.file });
+    b.addEventListener('click', () => saveFile(String(i), x.file));
+    host.append(b);
+  });
+}
+
+/** Makes a file in the engine and offers it as a download. */
+async function saveFile(which, fallback) {
+  exportNote('');
+  try {
+    const file = await engine.exportFile(state.source, state.values, which, state.profile);
+    const name = file.name || fallback;
+    download(name, file.data, 'application/octet-stream');
+    exportNote(`Saved ${name} (${fmt(file.data.length / 1024, 1)} kB).`);
+  } catch (err) {
+    exportNote(`Couldn't make the file: ${err.message || err}.`, true);
+  }
+}
+
+function exportNote(text, bad = false) {
+  const n = $('exportNote');
+  n.textContent = text;
+  n.className = bad ? 'error' : 'hint';
+  n.hidden = !text;
+}
+
 function renderAbout() {
   const steps = (state.catalog.match(/^\w+\(/gm) || []).length;
   const rows = [
@@ -134,6 +182,7 @@ function renderAbout() {
     ['Engine start', `${fmt(state.engineInfo.loadMs)} ms`],
     ['Last run', state.last ? `${fmt(state.last.ms, 1)} ms (in a background worker)` : '…'],
     ['Recipe language', `easycad 0.1 · ${steps || '…'} steps`],
+    ['G-code', 'EasyGCode’s dialect, golden-tested against it'],
     ['3D view', viewport.rendererInfo()],
     ['CPU threads', String(navigator.hardwareConcurrency || '?')],
     ['Multi-thread ready', self.crossOriginIsolated ? 'yes' : 'not yet (needs isolation headers)'],
@@ -249,8 +298,17 @@ function projectName() {
 
 function setPrinter(id) {
   state.printer = id;
+  state.profile = loadProfile(id);
   /** @type {HTMLSelectElement} */ ($('printer')).value = id;
-  viewport.setBed(PRINTERS[id].bed);
+  renderPrinterSettings($('printerSettings'), id, state.profile, onProfileChange);
+  onProfileChange();
+}
+
+/** The printer or its settings changed: the bed, the checks and the export buttons follow. */
+function onProfileChange() {
+  viewport.setBed(state.profile.bed, state.profile.center);
+  renderPrintTab();
+  if (state.last) renderExports(state.last);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -330,9 +388,9 @@ function wire() {
 
   $('printer').addEventListener('change', (e) => {
     setPrinter(/** @type {any} */ (/** @type {HTMLSelectElement} */ (e.target).value));
-    if (state.last) renderPrint($('stats'), $('checks'), state.last.print, state.printer);
     autosave();
   });
+  $('toPrinter').addEventListener('click', () => selectTab('print'));
 
   $('resetSettings').addEventListener('click', () => {
     Object.assign(state.values, state.openedValues);
@@ -410,7 +468,6 @@ async function start() {
       setPrinter(saved.printer in PRINTERS ? saved.printer : state.printer);
       if (saved.openedValues && typeof saved.openedValues === 'object') state.openedValues = saved.openedValues;
       state.unsaved = saved.unsaved === true;
-      if (state.last) renderPrint($('stats'), $('checks'), state.last.print, state.printer);
     } else {
       await openTemplate(TEMPLATES[0].id);
     }

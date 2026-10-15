@@ -21,8 +21,9 @@ Sizes are relative (S ≈ one focused session, M ≈ a few, L ≈ many).
 | 3 | License | **All rights reserved** (no open-source license). Everything we build on is permissively licensed (MIT/Apache/BSD; MPL is fine), so this limits nothing; we keep their license notices. The repo is *public* since 15 Oct (see hosting), which makes the code visible but doesn't grant anyone a license to reuse it. |
 | 4 | Printers | **Bambu P1P (filament) and Klipper pellet**, with EasyGCode's proven start/end G-code. |
 | 5 | AI | **Built into the app with your own Claude API key** (standalone; see [api-key.md](api-key.md)). Claude Desktop/MCP control is optional, much later. |
-| 6 | Hosting (15 Oct) | **Public repo + GitHub Pages** (free). Can go private + GitHub Pro later. Needs one setting: Settings → Pages → Source: **GitHub Actions**. CI deploys on every push to the default branch once that's on. |
+| 6 | Hosting (15 Oct) | **Public repo + GitHub Pages** (free), live at https://jasperkrebs.github.io/easycad/. CI deploys on every push to the default branch. Can go private + GitHub Pro later. |
 | 7 | Making shapes (15 Oct) | Recipes, not "AI every time": the agent (or you) writes a recipe once; it then runs locally, free and instantly. Five ways to make one: templates, describe, steps, draw curves, import. See [creating-shapes.md](creating-shapes.md). |
+| 8 | Custom projects (15 Oct) | **General steps, not one generator per project.** "I want to create custom things right out of the app", both G-code projects like EasyGCode's and plain geometry to export. So EasyGCode's projects become recipes made of general steps (fields, spirals, toolpaths, …), and the app only changes when a genuinely new *kind* of step is needed. Shown first with the spiral disc (Phase 1b). |
 
 ---
 
@@ -49,10 +50,20 @@ Split into small steps (15 Oct):
   - The twisted vase rebuilt as a recipe (prints the same as Phase 0); two more templates.
   - Settings window generated from the recipe; Recipe tab (with "Copy for AI"); open/save
     `.easycad`; autosave.
-- **1b: Real G-code** ← *next*: P1P and Klipper pellet, golden-tested against EasyGCode;
-  a solid bottom; vessel template.
-- **1c:** formatter, presets, project library on the device, `revolve` / `offset_rings` /
-  `contours`.
+- **1b: Real G-code** ✓ *done 15 Oct 2026* (see [devlog.md](devlog.md))
+  - G-code for the P1P and the Klipper pellet printer in EasyGCode's dialect, with its start and
+    end blocks, golden-tested against G-code written by EasyGCode itself; printer settings in
+    the Print tab; bed and height checks before anything is written.
+  - General steps: fields (`distance`, `fade`, maths on fields), `spiral`, `interlock`,
+    `toolpath`, `stack`, `join`.
+  - **EasyGCode's spiral disc as a recipe** of those steps: its G-code matches EasyGCode's,
+    command for command.
+  - STL export (`export shape as "x.stl"`) for plain geometry.
+- **1c: More of EasyGCode as recipes** ← *next*: the vessel (wall + solid bottom as a joined
+  toolpath), the bend stool seat (`offset_rings`), the lampshade (`revolve`, `spiral_on`). Each
+  one golden-tested, and each new step general enough to reuse.
+- **1d:** formatter, presets, project library on the device; geometry steps for STL
+  (`extrude`, `revolve`, `offset`).
 
 The full Phase 1 scope:
 - **Definition language v0** (parser, formatter, clear errors) and the evaluator (dependency
@@ -67,10 +78,10 @@ The full Phase 1 scope:
     golden-tested against EasyGCode).
 - **Project files:** save, open, presets, plus a project library on the device and
   export/import as files.
-- **First template:** EasyGCode's *vessel* rebuilt as a project.
+- **First templates:** EasyGCode's *spiral disc* (done) and *vessel* rebuilt as projects.
 
 **Done when:** you open the vessel project on your phone, change settings, export G-code, and
-it prints like EasyGCode's.
+it prints like EasyGCode's. (The spiral disc already does: same G-code as EasyGCode's.)
 
 ## Phase 2: The agent (M), then 2b: Steps and Draw tabs
 *2b adds the phone-friendly manual tools from [creating-shapes.md](creating-shapes.md): the
@@ -111,8 +122,8 @@ project with good settings, and "a bit taller" is just a slider.
 ## Later / when needed
 - Graph view becomes editable (drag wires, node palette).
 - Rhino `.3dm` import/export, SVG/DXF.
-- Solids and SolidWorks-style features.
-- 3MF/STL export for slicers.
+- Solids and SolidWorks-style features (booleans, fillets, STEP).
+- 3MF export for slicers (STL works since 1b).
 - Claude Desktop/MCP control.
 - Multi-threaded engine (needs cross-origin-isolation headers; see research §9).
 - App Store builds.

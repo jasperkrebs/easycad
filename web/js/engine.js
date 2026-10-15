@@ -1,14 +1,15 @@
 // Engine client: the Rust engine runs as WebAssembly in a Web Worker, so the UI never freezes.
 //
-// Only the newest run matters (like a game dropping stale frames): while the worker is busy, a
-// new run replaces any queued one, and the replaced run resolves with `null`. If the engine ever
-// crashes (a bug), the worker is replaced by a fresh one and the run that hit it fails with a
-// message.
+// Every request carries an id and gets one answer. For runs only the newest matters (like a game
+// dropping stale frames): while the worker is busy, a new run replaces any queued one, and the
+// replaced run resolves with `null`. If the engine ever crashes (a bug), the worker is replaced
+// by a fresh one: the request that hit it fails with a message, and the others are asked again.
 
 /**
  * @typedef {{ source: string, project: string | null, printer: string | null, notes: string[],
  *   params: any[], steps: any[], diagnostics: { line: number, col: number, severity: string, message: string }[],
  *   print: { stats: Record<string, any>, printer: string | null } | null,
+ *   exports: { file: string, kind: 'stl' | 'gcode', line: number }[],
  *   bounds: { min: number[], max: number[] } | null,
  *   mesh: { positions: Float32Array, indices: Uint32Array },
  *   curves: { points: Float32Array, starts: Uint32Array },
@@ -29,22 +30,39 @@ export function createEngine() {
     onFail = reject;
   });
 
+  let nextId = 1;
+  /** Requests the worker hasn't answered yet, by id. @type {Map<number, { msg: object, resolve: (r: any) => void, reject: (e: Error) => void }>} */
+  const pending = new Map();
+
   /** @typedef {{ source: string, values: object, quality: string, resolve: (r: RunResult | null) => void, reject: (e: Error) => void }} Job */
   /** @type {Job | null} */
   let queued = null;
-  /** @type {Job | null} */
-  let running = null;
+  let running = false;
   /** @type {(() => void)[]} */
   let idleWaiters = [];
-  /** @type {((text: string) => void)[]} */
-  let catalogWaiters = [];
 
   function start() {
     worker = new Worker(new URL('./engine.worker.js', import.meta.url), { type: 'module' });
     worker.onmessage = onMessage;
     worker.onerror = (e) => {
-      if (!info) onFail(new Error(e.message || 'The engine worker could not start.'));
+      if (!info) fail(new Error(e.message || 'The engine worker could not start.'));
     };
+  }
+
+  /** The engine can't start: everything waiting on it fails. */
+  function fail(err) {
+    onFail(err);
+    for (const r of pending.values()) r.reject(err);
+    pending.clear();
+  }
+
+  /** @param {{ type: string } & Record<string, any>} msg */
+  function send(msg) {
+    return new Promise((resolve, reject) => {
+      const withId = { ...msg, id: nextId++ };
+      pending.set(withId.id, { msg: withId, resolve, reject });
+      worker.postMessage(withId);
+    });
   }
 
   /** @param {MessageEvent} e */
@@ -53,36 +71,40 @@ export function createEngine() {
     if (msg.type === 'ready') {
       info = { version: msg.version, loadMs: msg.loadMs };
       onReady(info);
-    } else if (msg.type === 'fatal') {
-      onFail(new Error(msg.error));
-    } else if (msg.type === 'catalog') {
-      catalogWaiters.splice(0).forEach((w) => w(msg.text));
-    } else if (msg.type === 'result' || msg.type === 'error' || msg.type === 'crashed') {
-      const job = running;
-      running = null;
-      if (msg.type === 'crashed') {
-        worker.terminate();
-        start();
-        // A catalog request the old worker never answered is asked again.
-        if (catalogWaiters.length) worker.postMessage({ type: 'catalog' });
-      }
-      if (job) {
-        if (msg.type === 'result') job.resolve(msg.result);
-        else job.reject(new Error(msg.type === 'crashed' ? `The engine hit an internal error and restarted (${msg.error}).` : msg.error));
-      }
-      pump();
+      return;
     }
+    if (msg.type === 'fatal') {
+      fail(new Error(msg.error));
+      return;
+    }
+    const request = pending.get(msg.id);
+    pending.delete(msg.id);
+    if (msg.type === 'crashed') {
+      worker.terminate();
+      start();
+      // Whatever the old worker never answered is asked again.
+      for (const r of pending.values()) worker.postMessage(r.msg);
+    }
+    if (!request) return;
+    if (msg.type === 'result') request.resolve(msg.result);
+    else request.reject(new Error(msg.type === 'crashed' ? `The engine hit an internal error and restarted (${msg.error}).` : msg.error));
   }
 
   function pump() {
     if (running) return;
-    if (!queued) {
+    const job = queued;
+    if (!job) {
       idleWaiters.splice(0).forEach((w) => w());
       return;
     }
-    running = queued;
     queued = null;
-    worker.postMessage({ type: 'evaluate', source: running.source, values: running.values, quality: running.quality });
+    running = true;
+    send({ type: 'evaluate', source: job.source, values: job.values, quality: job.quality })
+      .then(job.resolve, job.reject)
+      .finally(() => {
+        running = false;
+        pump();
+      });
   }
 
   start();
@@ -113,12 +135,23 @@ export function createEngine() {
       });
     },
 
-    /** The node catalog (every step a recipe can use), as text. */
+    /**
+     * Makes a file to save: the printed toolpath as G-code (`which` = 'print'), or the file of
+     * one of the recipe's `export` lines (`which` = its index in `exports`). Fails with a
+     * readable message when there's nothing to export or the toolpath isn't safe to print.
+     * @param {string} source recipe text
+     * @param {Record<string, number | boolean | string>} values setting values
+     * @param {string} which
+     * @param {object} profile the printer (see print.js)
+     * @returns {Promise<{ name: string, data: Uint8Array }>}
+     */
+    exportFile(source, values, which, profile) {
+      return send({ type: 'export', source, values, which, profile });
+    },
+
+    /** The node catalog (every step a recipe can use), as text. @returns {Promise<string>} */
     catalog() {
-      return new Promise((resolve) => {
-        catalogWaiters.push(resolve);
-        worker.postMessage({ type: 'catalog' });
-      });
+      return send({ type: 'catalog' });
     },
   };
 }

@@ -26,6 +26,35 @@ and you can always build or edit things yourself.
 
 ---
 
+## Proof: EasyGCode's spiral disc, built inside the app (Phase 1b, 15 Oct 2026)
+
+The owner's question: *"I want to be able to create custom things right out of the thing … and
+not have a new app build all the time. Should the architecture not be able to do this?"* It can.
+The spiral disc was a dedicated generator inside EasyGCode, written by Claude Code from a long
+prompt. In EasyCAD it's a recipe (`web/templates/spiral-disc.easycad`) of general steps, and
+its G-code matches EasyGCode's command for command. Each part of the original prompt became a
+line:
+
+| The prompt asked for | The recipe line |
+|---|---|
+| A spiral from the centre out, turns one line width apart, ending on a whole turn | `spiral(outer: outer, spacing: spacing)` |
+| A second circle as an attractor that spreads the turns (not the line width) | `distance(circle(ring))` |
+| A gradual, Bezier-like falloff with controllable reach, confined to a few turns or spread over everything | `fade(…, inside: fade_in, outside: fade_out, band: band)` |
+| Maximum spacing as a % of the line width (200 % = two line widths) | `spacing = line * (1 + (open - 1) * near)` |
+| Sine wiggles, an odd count per turn, so each peak meets the next turn's dip with one line width between centrelines, the amplitude following the same falloff | `interlock(disc, bumps: odd, width: line)` |
+| An input for the number of identical layers | `toolpath(…) \|> stack(layers)` |
+
+None of these steps is disc-specific: `fade` and `distance` make any setting vary over space,
+`spiral` takes any spacing, `stack` repeats any layer. The next project reuses them, so
+building it means writing a recipe (by you, the agent, or Copy for AI today), not a new app.
+The engine only grows when a genuinely new *kind* of step is needed, and then the step is
+written to be reused.
+
+The same goes for plain geometry: `export shape as "name.stl"` saves any surface or solid for a
+slicer or CAD program. Booleans, extrusions and fillets are the next geometry steps.
+
+---
+
 ## Four layers
 
 | Layer | What it is | Examples |
@@ -78,18 +107,25 @@ nodes.
 | `overhang_comp(mode, strength)` | Line-width or layer-height mode (lampshade) |
 | `fan(...)`, `temps(...)` | Events along the path (fan after first revolution, foam zones) |
 
-### Toolpath → G-code
-- `gcode(path, printer)` with EasyGCode's proven start/end blocks for **Bambu P1P** and
-  **Klipper pellet**:
+### Toolpath → G-code *(done in 1b)*
+- `print path` writes G-code for the chosen printer, with EasyGCode's proven start/end blocks
+  for **Bambu P1P** and **Klipper pellet**:
   - `G90` absolute positions, `M83` relative extrusion;
   - E is mm³ (pellet) or mm of filament;
-  - extrusion multiplier, end lift above the tallest point.
-- Live stats: time, material, flow range.
-- Preview coloured by speed (blue = fast, red = slow), drawn on the GPU so huge paths stay smooth.
+  - extrusion multiplier, end lift above the tallest point (never past the build height);
+  - the part fan from the second layer.
+- The printer settings (bed size, where the recipe's origin sits, temperatures, fan, purge,
+  pressure advance, …) live in the Print tab, with EasyGCode's defaults.
+- Live stats: time, material, flow. Checks: bed fit, height, line width vs nozzle, overhang.
+- *Later:* preview coloured by speed (blue = fast, red = slow), drawn on the GPU so huge paths
+  stay smooth.
 
 **Porting rule:** every node that comes from EasyGCode gets a **golden test**. With the same
-settings, EasyCAD must produce the same G-code as EasyGCode (ignoring the timestamp line).
-EasyGCode itself is never changed.
+settings, EasyCAD must produce the same G-code as EasyGCode (comments aside). The fixtures are
+G-code written by EasyGCode itself (`scripts/easygcode-fixtures.cjs`). The spiral disc matches
+in all three cases (pellet, filament, without start/end blocks), and `vase_spiral` matches
+EasyGCode's vase mode (its lampshade generator, set up as a plain cylinder). EasyGCode itself is
+never changed.
 
 ---
 

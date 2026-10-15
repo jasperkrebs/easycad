@@ -5,14 +5,18 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status:** Phase 1a done (15 Oct 2026).
+> **Status:** Phase 1b done (15 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
 > - **Working:** projects are recipes, small `.easycad` text files. Each one opens with its
->   own settings window, generated from the recipe. There are three templates, open/save, and a
->   Recipe tab with **Copy for AI**: describe a shape in any Claude chat and paste the recipe
->   back. The Rust engine runs in the browser as WebAssembly, shows the shape and its
->   continuous print toolpath, and gives a live print estimate.
-> - **Next:** Phase 1b, real G-code for the Bambu P1P and the Klipper pellet printer, tested
->   against EasyGCode.
+>   own settings window, generated from the recipe. The Rust engine runs in the browser as
+>   WebAssembly, shows the shape and its toolpath, and gives a live print estimate.
+> - **G-code** for the Bambu P1P and the Klipper pellet printer, written the way EasyGCode
+>   writes it and golden-tested against EasyGCode's own output. **STL** for plain geometry.
+> - **EasyGCode's spiral disc** is a ten-line recipe of general steps (fields, spiral,
+>   interlock, toolpath, stack), with the same G-code as EasyGCode: new projects are recipes,
+>   not new app code. Four templates, open/save, and **Copy for AI** in the Recipe tab to
+>   describe new things in any Claude chat.
+> - **Next:** more of EasyGCode's projects as recipes (vessel, bend stool seat, lampshade), and
+>   geometry steps for STL (extrude, revolve, booleans).
 >
 > See the [roadmap](docs/roadmap.md).
 
@@ -99,12 +103,13 @@ cargo test --workspace   # language and engine tests
 ```
 
 Templates live in `web/templates/*.easycad`; the engine's tests run every one of them.
+`fixtures/easygcode/` holds G-code written by EasyGCode itself, for the golden tests.
 
 ## Relationship to EasyGCode
 
 EasyGCode stays exactly as it is. EasyCAD reuses its proven math, ported to Rust with
-golden tests that require identical G-code. Each EasyGCode tab becomes a starter project, so
-new projects no longer need new code.
+golden tests that require identical G-code. Each EasyGCode tab becomes a starter project made of
+general steps (the spiral disc is the first), so new projects no longer need new code.
 
 ## License
 

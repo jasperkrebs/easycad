@@ -1,0 +1,29 @@
+easycad 0.1
+project "Spiral disc"
+printer "Klipper pellet"
+note "EasyGCode's spiral disc as a recipe: a flat spiral from the centre out. Around the ring its turns spread apart and wiggle, so each bump meets the next turn's opposite bump: a solid disc with a ring of holes."
+
+group "Disc"
+param outer    = 60 mm   in 5..150          "Outer radius"
+param ring     = 35 mm   in 1..150          "Ring radius"
+param open     = 200 %   in 100..400        "Spacing at the ring"
+param band     = 0 mm    in 0..50           "Full-spacing band"
+param fade_in  = 15 mm   in 0..150          "Fade inside the ring"
+param fade_out = 15 mm   in 0..150          "Fade outside the ring"
+param bumps    = 21      in 1..99 step 2    "Bumps per turn"
+param layers   = 1       in 1..20 step 1    "Layers"
+
+group "Print"
+param layer    = 0.6 mm  in 0.1..3          "Layer height"
+param line     = 2 mm    in 0.2..6          "Line width"
+param speed    = 20      in 1..100          "Speed (mm/s)"
+
+# Turns sit one line width apart, spreading to `open` around the ring.
+near    = fade(distance(circle(ring)), inside: fade_in, outside: fade_out, band: band)
+spacing = line * (1 + (open - 1) * near)
+odd     = 2 * floor(bumps / 2) + 1             # odd, so a bump always faces the next turn's dip
+disc    = spiral(outer: outer, spacing: spacing, min_samples: 16 * odd)
+wiggly  = interlock(disc, bumps: odd, width: line)
+path    = toolpath(wiggly, width: line, layer: layer, speed: speed) |> stack(layers)
+
+print path

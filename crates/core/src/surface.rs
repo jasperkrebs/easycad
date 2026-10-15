@@ -237,10 +237,7 @@ mod tests {
     fn loft_needs_two_matching_sections() {
         let c = Curve::circle(10.0, 8);
         assert!(Surface::loft(&[&c]).is_err());
-        let open = Curve {
-            points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
-            closed: false,
-        };
+        let open = Curve::new(vec![[0.0; 3], [1.0, 0.0, 0.0]], false);
         assert!(Surface::loft(&[&c, &open]).is_err());
         // Different point counts are resampled to match.
         let square = Curve::polygon(4, 10.0).transformed(&Xform::translate(0.0, 0.0, 5.0));

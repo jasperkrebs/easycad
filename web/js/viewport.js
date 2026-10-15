@@ -46,7 +46,8 @@ export function createViewport(canvas) {
   let grid = null;
 
   let mode = 'both';
-  let bedSize = 256;
+  /** Bed width and depth, and where the recipe's origin sits on it (all in mm). */
+  let bed = { size: [256, 256], center: [125, 125] };
   let fitted = false;
   /** @type {{ min: number[], max: number[] } | null} */
   let lastBounds = null;
@@ -82,8 +83,13 @@ export function createViewport(canvas) {
       /** @type {THREE.Material} */ (grid.material).dispose();
     }
     const c = new THREE.Color(token('--view-grid'));
-    grid = new THREE.GridHelper(bedSize, 8, c, c);
-    grid.rotation.x = Math.PI / 2; // GridHelper lies in XZ; our bed is the XY plane.
+    // A unit grid stretched to the bed. GridHelper lies in XZ; our bed is the XY plane. The
+    // bed's corner is at -center in recipe coordinates, where the printer puts the origin.
+    const [w, d] = bed.size;
+    grid = new THREE.GridHelper(1, 8, c, c);
+    grid.scale.set(w, 1, d);
+    grid.rotation.x = Math.PI / 2;
+    grid.position.set(w / 2 - bed.center[0], d / 2 - bed.center[1], 0);
     scene.add(grid);
   }
 
@@ -172,9 +178,12 @@ export function createViewport(canvas) {
       applyMode();
     },
 
-    /** @param {number} size bed width in mm (square) */
-    setBed(size) {
-      bedSize = size;
+    /**
+     * @param {number[]} size bed width and depth in mm
+     * @param {number[]} center where the recipe's origin sits on the bed, in mm
+     */
+    setBed(size, center) {
+      bed = { size: [size[0], size[1]], center: [center[0], center[1]] };
       rebuildGrid();
       requestRender();
     },

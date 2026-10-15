@@ -11,32 +11,59 @@ use nalgebra::Point3;
 /// The most points `smooth` will fit a curve through (the fit solves a dense system).
 pub const MAX_SMOOTH_POINTS: usize = 256;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Curve {
     pub points: Vec<P3>,
     /// A closed curve's last point connects back to its first (the first point is not repeated).
     pub closed: bool,
+    /// Set while the curve is exactly a circle in a horizontal plane, so distances to it can be
+    /// computed exactly (and fast) instead of from its sample points.
+    pub circle: Option<Circle>,
+    /// Set when the curve winds around a centre, like a spiral: where each point is, in turns.
+    /// Waves and interlocking use it to line up one turn with the next.
+    pub winding: Option<Winding>,
+}
+
+/// An exact circle: centre (x, y) and radius.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Circle {
+    pub center: [f64; 2],
+    pub r: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Winding {
+    /// Each point's position around `center` in turns (angle ÷ 360°, counted from the start).
+    pub turn: Vec<f64>,
+    /// How many points make one turn; the points are evenly spaced in angle.
+    pub per_turn: usize,
+    pub center: [f64; 2],
 }
 
 impl Curve {
-    /// A circle around the origin in the XY plane, starting on +X, counter-clockwise.
-    pub fn circle(r: f64, samples: usize) -> Curve {
-        let n = samples.max(3);
-        let points = (0..n)
-            .map(|i| {
-                let a = std::f64::consts::TAU * i as f64 / n as f64;
-                [r * a.cos(), r * a.sin(), 0.0]
-            })
-            .collect();
+    pub fn new(points: Vec<P3>, closed: bool) -> Curve {
         Curve {
             points,
-            closed: true,
+            closed,
+            circle: None,
+            winding: None,
+        }
+    }
+
+    /// A circle around the origin in the XY plane, starting on +X, counter-clockwise.
+    pub fn circle(r: f64, samples: usize) -> Curve {
+        Curve {
+            circle: Some(Circle {
+                center: [0.0; 2],
+                r,
+            }),
+            ..Curve::new(ring(r, samples.max(3)), true)
         }
     }
 
     /// A regular polygon with a corner on +X, counter-clockwise. `r` is the corner radius.
     pub fn polygon(sides: usize, r: f64) -> Curve {
-        Curve::circle(r, sides)
+        Curve::new(ring(r, sides.max(3)), true)
     }
 
     /// A star's corners, alternating tip (`outer`) and inner corner (`inner`), counter-clockwise
@@ -49,10 +76,7 @@ impl Curve {
                 [r * a.cos(), r * a.sin(), 0.0]
             })
             .collect();
-        Curve {
-            points,
-            closed: true,
-        }
+        Curve::new(points, true)
     }
 
     /// A smooth curve through every point (a cubic NURBS interpolation, periodic for closed
@@ -93,10 +117,7 @@ impl Curve {
         if points.iter().flatten().any(|v| !v.is_finite()) {
             return Err("could not fit a smooth curve through these points".into());
         }
-        Ok(Curve {
-            points,
-            closed: self.closed,
-        })
+        Ok(Curve::new(points, self.closed))
     }
 
     /// The points without repeats: consecutive points closer than a micrometre are merged, and
@@ -144,10 +165,7 @@ impl Curve {
         let total = self.length();
         if total <= 0.0 || self.points.len() < 2 {
             let p = self.points.first().copied().unwrap_or([0.0; 3]);
-            return Curve {
-                points: vec![p; n],
-                closed: self.closed,
-            };
+            return Curve::new(vec![p; n], self.closed);
         }
         // A closed curve's n points split it into n equal pieces; an open one's into n − 1.
         let pieces = if self.closed { n } else { n - 1 };
@@ -177,24 +195,53 @@ impl Curve {
                 seg = segs.next();
             }
         }
-        Curve {
-            points: out,
-            closed: self.closed,
-        }
+        Curve::new(out, self.closed)
     }
 
+    /// The curve moved, turned or scaled. It stays an exact circle under moves, turns, mirrors
+    /// and uniform scaling, and keeps its winding (with the centre moved along).
     pub fn transformed(&self, x: &Xform) -> Curve {
         let mut points: Vec<P3> = self.points.iter().map(|p| x.apply(*p)).collect();
-        if x.mirrors() && self.closed {
+        let mirrored = x.mirrors() && self.closed;
+        if mirrored {
             // Keep the seam on the same point but restore counter-clockwise travel.
             if let Some(rest) = points.get_mut(1..) {
                 rest.reverse();
             }
         }
+        let moved = |c: [f64; 2]| {
+            let p = x.apply([c[0], c[1], 0.0]);
+            [p[0], p[1]]
+        };
+        let circle = match (self.circle, x.xy_similarity()) {
+            (Some(c), Some(s)) => Some(Circle {
+                center: moved(c.center),
+                r: c.r * s,
+            }),
+            _ => None,
+        };
+        let winding = if mirrored {
+            None
+        } else {
+            self.winding.as_ref().map(|w| Winding {
+                center: moved(w.center),
+                ..w.clone()
+            })
+        };
         Curve {
             points,
             closed: self.closed,
+            circle,
+            winding,
         }
+    }
+
+    /// How many turns a winding curve makes (0 for other curves).
+    pub fn turns(&self) -> f64 {
+        self.winding
+            .as_ref()
+            .and_then(|w| w.turn.last().copied())
+            .unwrap_or(0.0)
     }
 
     /// Positive when the curve runs counter-clockwise seen from above.
@@ -209,6 +256,16 @@ impl Curve {
         }
         self.points.iter().map(|p| p[2]).sum::<f64>() / self.points.len() as f64
     }
+}
+
+/// `n` points evenly round a circle of radius `r`, the first on +X.
+fn ring(r: f64, n: usize) -> Vec<P3> {
+    (0..n)
+        .map(|i| {
+            let a = std::f64::consts::TAU * i as f64 / n as f64;
+            [r * a.cos(), r * a.sin(), 0.0]
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -251,35 +308,23 @@ mod tests {
 
     #[test]
     fn smooth_handles_degenerate_input() {
-        let dot = Curve {
-            points: vec![[1.0, 1.0, 0.0]; 5],
-            closed: true,
-        };
+        let dot = Curve::new(vec![[1.0, 1.0, 0.0]; 5], true);
         assert_eq!(dot.smooth(8).unwrap(), dot);
-        let line = Curve {
-            points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
-            closed: false,
-        };
+        let line = Curve::new(vec![[0.0; 3], [1.0, 0.0, 0.0]], false);
         assert_eq!(line.smooth(8).unwrap(), line);
-        let tri = Curve {
-            points: vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            closed: true,
-        };
+        let tri = Curve::new(vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], true);
         assert!(tri.smooth(8).is_ok());
-        let collinear = Curve {
-            points: (0..6).map(|i| [i as f64, 0.0, 0.0]).collect(),
-            closed: false,
-        };
+        let collinear = Curve::new((0..6).map(|i| [i as f64, 0.0, 0.0]).collect(), false);
         assert!(collinear.smooth(4).is_ok());
-        let nan = Curve {
-            points: vec![
+        let nan = Curve::new(
+            vec![
                 [f64::NAN; 3],
                 [1.0, 0.0, 0.0],
                 [0.0, 1.0, 0.0],
                 [2.0, 2.0, 0.0],
             ],
-            closed: true,
-        };
+            true,
+        );
         let _ = nan.smooth(4); // an error or a curve, never a crash
         let big = Curve::circle(10.0, MAX_SMOOTH_POINTS + 1);
         assert!(big.smooth(2).is_err());
@@ -296,13 +341,31 @@ mod tests {
             .fold((f64::MAX, 0.0f64), |(lo, hi), l| (lo.min(*l), hi.max(*l)));
         // Corners get cut, so pieces vary a little.
         assert!(hi / lo < 1.5, "{lo} {hi}");
-        let open = Curve {
-            points: vec![[0.0; 3], [10.0, 0.0, 0.0]],
-            closed: false,
-        };
+        let open = Curve::new(vec![[0.0; 3], [10.0, 0.0, 0.0]], false);
         let r = open.resample(11);
         assert!(dist3(r.points[5], [5.0, 0.0, 0.0]) < 1e-12);
         assert!(dist3(r.points[10], [10.0, 0.0, 0.0]) < 1e-12);
+    }
+
+    #[test]
+    fn circles_stay_exact_under_moves_turns_and_uniform_scaling() {
+        let c = Curve::circle(10.0, 64);
+        let moved = c
+            .transformed(&Xform::translate(5.0, -2.0, 3.0))
+            .transformed(&Xform::rotate_z(90.0));
+        let exact = moved.circle.unwrap();
+        assert!((exact.center[0] - 2.0).abs() < 1e-12 && (exact.center[1] - 5.0).abs() < 1e-12);
+        assert_eq!(exact.r, 10.0);
+        assert_eq!(
+            c.transformed(&Xform::scale(3.0, 3.0, 1.0))
+                .circle
+                .unwrap()
+                .r,
+            30.0
+        );
+        assert!(c.transformed(&Xform::scale(3.0, 1.0, 1.0)).circle.is_none());
+        assert!(Curve::polygon(6, 10.0).circle.is_none());
+        assert!(c.smooth(2).is_err() || c.smooth(2).unwrap().circle.is_none());
     }
 
     #[test]
