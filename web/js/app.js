@@ -1,243 +1,256 @@
-// EasyCAD Phase 0: settings → Rust engine (WebAssembly, in a worker) → 3D view + print estimate.
-// In Phase 1 the settings list below is generated from the project file instead of hard-coded.
+// EasyCAD: a recipe (.easycad text) → Rust engine (WebAssembly, in a worker) → 3D view, a settings
+// window generated from the recipe, and a print estimate.
+//
+// The recipe text is the project and the single source of truth: moving a slider writes the new
+// value into the text (the engine does that, see crates/wasm), and saving a project saves exactly
+// that text.
 
 import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
+import { $, copyText, download, el, fmt, slug } from './dom.js';
+import { layoutKey, renderSettings } from './settings.js';
+import { PRINTERS, printerFor, renderPrint } from './print.js';
+import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 
-const PRINTERS = {
-  p1p: { name: 'Bambu P1P', bed: 256, nozzle: 0.4, defaults: { layer: 0.3, line: 0.6, speed: 40 } },
-  // Example values from EasyGCode's pellet defaults (0.6 mm layers, 2.0 mm lines, 1800 mm/min).
-  pellet: { name: 'Klipper pellet', bed: 400, nozzle: null, defaults: { layer: 0.6, line: 2.0, speed: 30 } },
-};
-
-/**
- * The demo's settings. `toEngine` converts what you see into what the engine expects.
- * @type {{ group: string, key: string, label: string, unit: string, min: number, max: number,
- *          step: number, value: number, toEngine?: (v: number) => number }[]}
- */
-const SETTINGS = [
-  { group: 'Shape', key: 'height', label: 'Height', unit: 'mm', min: 40, max: 300, step: 1, value: 160 },
-  { group: 'Shape', key: 'radius', label: 'Tip radius', unit: 'mm', min: 10, max: 150, step: 0.5, value: 45 },
-  { group: 'Shape', key: 'points', label: 'Star points', unit: '', min: 3, max: 16, step: 1, value: 7 },
-  { group: 'Shape', key: 'depth', label: 'Star depth', unit: '%', min: 0, max: 60, step: 1, value: 18, toEngine: (v) => v / 100 },
-  { group: 'Shape', key: 'twist', label: 'Twist', unit: '°', min: -360, max: 360, step: 1, value: 90 },
-  { group: 'Shape', key: 'topScale', label: 'Top scale', unit: '×', min: 0.3, max: 2, step: 0.01, value: 0.8 },
-  { group: 'Print', key: 'layer', label: 'Layer height', unit: 'mm', min: 0.08, max: 3, step: 0.01, value: 0.3 },
-  { group: 'Print', key: 'line', label: 'Line width', unit: 'mm', min: 0.2, max: 10, step: 0.05, value: 0.6 },
-  { group: 'Print', key: 'speed', label: 'Speed', unit: 'mm/s', min: 2, max: 300, step: 1, value: 40 },
+const TEMPLATES = [
+  { id: 'twisted-vase', name: 'Twisted star vase' },
+  { id: 'ribbed-cylinder', name: 'Ribbed cylinder' },
+  { id: 'star-bowl', name: 'Star bowl' },
 ];
-
-const STORAGE_KEY = 'easycad.phase0.settings';
-const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
+const STORAGE_KEY = 'easycad.project';
+const MAX_FILE_BYTES = 256 * 1024;
+const TABS = ['settings', 'recipe', 'print', 'about'];
 
 const state = {
-  printer: 'p1p',
-  /** @type {Record<string, number>} */
-  values: Object.fromEntries(SETTINGS.map((s) => [s.key, s.value])),
+  /** The recipe text: the project. */
+  source: '',
+  /** Setting values as last opened, for "Reset settings". */
+  openedValues: /** @type {Record<string, any>} */ ({}),
+  /** Current setting values (each in its own unit); written into the text on every run. */
+  values: /** @type {Record<string, any>} */ ({}),
+  /** The settings window's layout, so it's rebuilt only when the recipe's settings change. */
+  layout: '',
+  printer: /** @type {keyof typeof PRINTERS} */ ('p1p'),
+  /** Changed since it was opened or saved (asks before a template replaces it). */
+  unsaved: false,
+  /** @type {import('./engine.js').RunResult | null} */
+  last: null,
   engineInfo: { version: '?', loadMs: 0 },
-  lastMs: 0,
+  catalog: '',
 };
 
-// ---------------------------------------------------------------------------------------------
-// Settings panel
-// ---------------------------------------------------------------------------------------------
-
-function clampToSetting(s, v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return s.value;
-  return Math.min(s.max, Math.max(s.min, n));
-}
-
-function renderSettings() {
-  const host = $('settings');
-  host.innerHTML = '';
-  const groups = new Map();
-  for (const s of SETTINGS) {
-    if (!groups.has(s.group)) {
-      const g = document.createElement('div');
-      g.className = 'group';
-      g.innerHTML = `<h2>${s.group}</h2>`;
-      groups.set(s.group, g);
-      host.appendChild(g);
-    }
-    const row = document.createElement('div');
-    row.className = 'setting';
-    row.innerHTML = `
-      <label for="n-${s.key}">${s.label}</label>
-      <span class="num"><input type="number" id="n-${s.key}" inputmode="decimal" min="${s.min}" max="${s.max}" step="${s.step}"><span class="unit">${s.unit}</span></span>
-      <input type="range" id="r-${s.key}" min="${s.min}" max="${s.max}" step="${s.step}" aria-label="${s.label}">`;
-    groups.get(s.group).appendChild(row);
-
-    const num = /** @type {HTMLInputElement} */ (row.querySelector(`#n-${s.key}`));
-    const range = /** @type {HTMLInputElement} */ (row.querySelector(`#r-${s.key}`));
-    // Dragging a slider asks for quick previews; letting go asks for the full-quality result.
-    range.addEventListener('input', () => setValue(s.key, range.value, 'preview'));
-    range.addEventListener('change', () => setValue(s.key, range.value, 'final'));
-    num.addEventListener('change', () => setValue(s.key, num.value, 'final'));
-  }
-  syncInputs();
-}
-
-function syncInputs() {
-  for (const s of SETTINGS) {
-    const v = state.values[s.key];
-    /** @type {HTMLInputElement} */ ($(`n-${s.key}`)).value = String(v);
-    /** @type {HTMLInputElement} */ ($(`r-${s.key}`)).value = String(v);
-  }
-  /** @type {HTMLSelectElement} */ ($('printer')).value = state.printer;
-}
-
-function setValue(key, raw, quality) {
-  const s = SETTINGS.find((x) => x.key === key);
-  if (!s) return;
-  state.values[key] = clampToSetting(s, raw);
-  /** @type {HTMLInputElement} */ ($(`n-${key}`)).value = String(state.values[key]);
-  if (quality === 'final') /** @type {HTMLInputElement} */ ($(`r-${key}`)).value = String(state.values[key]);
-  save();
-  compute(quality);
-}
+const engine = createEngine();
+const viewport = createViewport(/** @type {HTMLCanvasElement} */ ($('view')));
+const editor = /** @type {HTMLTextAreaElement} */ ($('recipe'));
+let refitNext = true;
 
 // ---------------------------------------------------------------------------------------------
-// Persistence: remembered on this device, plus "Save/Load settings" files (like EasyGCode).
+// Running the recipe
 // ---------------------------------------------------------------------------------------------
 
-function save() {
+/**
+ * Runs the recipe.
+ * @param {'preview' | 'final'} quality
+ * @param {{ fresh?: boolean, opened?: boolean }} [how] fresh: the text itself changed (values come
+ *   from the text, not the sliders); opened: a new project was opened (also frames the view)
+ */
+async function run(quality, how = {}) {
+  if (how.fresh) state.values = {};
+  if (how.opened) refitNext = true;
+  let result;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ printer: state.printer, values: state.values }));
-  } catch {
-    // Storage can be unavailable (private browsing); the app works without it.
+    result = await engine.evaluate(state.source, state.values, quality);
+  } catch (err) {
+    setStatus('Engine error', 'bad');
+    showSettingsError(String(err.message || err));
+    return;
   }
+  if (!result) return; // a newer run replaced this one
+  state.last = result;
+  state.source = result.source;
+  for (const p of result.params) if (!(p.name in state.values)) state.values[p.name] = p.value;
+  if (how.opened) {
+    state.openedValues = { ...state.values };
+    if (result.printer) setPrinter(printerFor(result.printer));
+  }
+
+  const layout = layoutKey(result.params);
+  if (how.fresh || layout !== state.layout) {
+    state.layout = layout;
+    renderSettings($('settings'), result.params, state.values, onSettingChange);
+  }
+  viewport.show(result, { refit: refitNext });
+  refitNext = false;
+
+  renderProject(result);
+  renderPrint($('stats'), $('checks'), result.print, state.printer);
+  renderProblems($('problems'), result.diagnostics, (line) => selectLine(editor, line));
+  renderSteps($('steps'), result.steps);
+  showSource(result.source);
+  renderHud(result);
+  renderAbout();
+
+  const errors = result.diagnostics.filter((d) => d.severity === 'error').length;
+  showSettingsError(errors ? `The recipe has ${errors === 1 ? 'a problem' : `${errors} problems`}: see the Recipe tab.` : '');
+  if (errors) setStatus(`${errors} recipe ${errors === 1 ? 'problem' : 'problems'}`, 'bad');
+  else setStatus(`Engine ready · ${fmt(result.ms)} ms`, 'ok');
+  autosave();
 }
 
-/** @param {any} data */
-function applySaved(data) {
-  if (!data || typeof data !== 'object') throw new Error('This file does not contain EasyCAD settings.');
-  if (typeof data.printer === 'string' && data.printer in PRINTERS) state.printer = data.printer;
-  const values = data.values && typeof data.values === 'object' ? data.values : {};
-  for (const s of SETTINGS) {
-    if (s.key in values) state.values[s.key] = clampToSetting(s, values[s.key]);
-  }
+function onSettingChange(name, value, quality) {
+  state.values[name] = value;
+  state.unsaved = true;
+  run(quality);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------------------------
+
+function renderProject(result) {
+  const name = result.project || 'Untitled project';
+  $('projectSub').textContent = name;
+  $('projectName').textContent = name;
+  document.title = `${name} · EasyCAD`;
+  $('projectNotes').textContent = result.notes.join(' ');
+}
+
+function renderHud(result) {
+  const st = result.print && result.print.stats;
+  const parts = st ? [`${fmt(st.layers)} layers`, `${fmt(st.pathPoints)} path points`] : ['no toolpath'];
+  $('hud').textContent = [...parts, `${fmt(result.ms)} ms`].join(' · ');
+  const empty = !result.mesh.indices.length && result.curves.starts.length < 2 && result.paths.starts.length < 2;
+  const msg = $('viewMessage');
+  msg.hidden = !empty;
+  msg.textContent = result.diagnostics.some((d) => d.severity === 'error')
+    ? 'Nothing to draw: the recipe has a problem (see the Recipe tab).'
+    : 'Nothing to draw yet: add a line like  show name  to the recipe.';
+}
+
+function renderAbout() {
+  const steps = (state.catalog.match(/^\w+\(/gm) || []).length;
+  const rows = [
+    ['Engine', `Rust → WebAssembly, v${state.engineInfo.version}`],
+    ['Engine start', `${fmt(state.engineInfo.loadMs)} ms`],
+    ['Last run', state.last ? `${fmt(state.last.ms, 1)} ms (in a background worker)` : '…'],
+    ['Recipe language', `easycad 0.1 · ${steps || '…'} steps`],
+    ['3D view', viewport.rendererInfo()],
+    ['CPU threads', String(navigator.hardwareConcurrency || '?')],
+    ['Multi-thread ready', self.crossOriginIsolated ? 'yes' : 'not yet (needs isolation headers)'],
+  ];
+  const about = $('about');
+  about.replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })]));
+  const link = el('a', {
+    href: 'https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/roadmap.md',
+    target: '_blank',
+    rel: 'noopener',
+    text: 'Roadmap',
+  });
+  about.append(el('dt', { text: 'Docs' }), el('dd', {}, [link]));
+}
+
+function setStatus(text, kind) {
+  const s = $('status');
+  s.textContent = text;
+  s.className = `status ${kind || ''}`;
+}
+
+function showSettingsError(message) {
+  const e = $('settingsError');
+  e.textContent = message;
+  e.hidden = !message;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The recipe editor
+// ---------------------------------------------------------------------------------------------
+
+let editorDirty = false;
+
+/** Shows the latest recipe text, unless you're in the middle of editing it. */
+function showSource(text) {
+  if (!editorDirty && editor.value !== text) editor.value = text;
+}
+
+function setDirty(dirty) {
+  editorDirty = dirty;
+  $('recipeDirty').hidden = !dirty;
+}
+
+function runEditor() {
+  state.source = editor.value;
+  state.unsaved = true;
+  setDirty(false);
+  run('final', { fresh: true });
+}
+
+function note(text) {
+  const n = $('copyNote');
+  n.textContent = text;
+  n.hidden = false;
+  setTimeout(() => (n.hidden = true), 6000);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Projects: templates, open, save, autosave
+// ---------------------------------------------------------------------------------------------
+
+/** Opens recipe text as the current project. */
+async function openSource(text) {
+  state.source = text;
+  setDirty(false);
+  editor.value = text;
+  await run('final', { fresh: true, opened: true });
+  state.unsaved = false;
+}
+
+async function openTemplate(id) {
+  const response = await fetch(`templates/${id}.easycad`);
+  if (!response.ok) throw new Error(`template ${id}: ${response.status}`);
+  await openSource(await response.text());
+}
+
+let saveTimer = 0;
+function autosave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ source: state.source, openedValues: state.openedValues, printer: state.printer, unsaved: state.unsaved }),
+      );
+    } catch {
+      // Storage can be unavailable (private browsing); the app works without it.
+    }
+  }, 300);
 }
 
 function restore() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) applySaved(JSON.parse(raw));
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if (saved && typeof saved.source === 'string' && saved.source.trim()) {
+      return saved;
+    }
   } catch {
-    // Ignore unreadable storage and start from the defaults.
+    // Unreadable storage: start from a template.
   }
+  return null;
 }
 
-function downloadSettings() {
-  const data = { app: 'EasyCAD', kind: 'settings', version: 1, demo: 'twisted-vase', printer: state.printer, values: state.values };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'easycad-settings.json';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+/** The project, with every pending slider value written in. */
+async function currentSource() {
+  await engine.idle();
+  return state.source;
 }
 
-function showSettingsError(message) {
-  const el = $('settingsError');
-  el.textContent = message;
-  el.hidden = !message;
+function projectName() {
+  return (state.last && state.last.project) || 'project';
 }
 
-// ---------------------------------------------------------------------------------------------
-// Engine → view and stats
-// ---------------------------------------------------------------------------------------------
-
-const engine = createEngine();
-const viewport = createViewport(/** @type {HTMLCanvasElement} */ ($('view')));
-let refitNext = false;
-
-function engineParams(quality) {
-  const p = { quality };
-  for (const s of SETTINGS) p[s.key] = s.toEngine ? s.toEngine(state.values[s.key]) : state.values[s.key];
-  return p;
-}
-
-async function compute(quality) {
-  try {
-    const result = await engine.vase(engineParams(quality));
-    if (!result) return; // a newer request replaced this one
-    state.lastMs = result.ms;
-    viewport.show(result, {
-      radius: state.values.radius * Math.max(1, state.values.topScale),
-      height: state.values.height,
-      refit: refitNext,
-    });
-    refitNext = false;
-    renderStats(result.stats);
-    renderHud(result.stats, result.ms);
-    renderAbout();
-    showSettingsError('');
-    setStatus(`Engine ready · ${result.ms.toFixed(0)} ms`, 'ok');
-  } catch (err) {
-    showSettingsError(String(err.message || err));
-    setStatus('Engine error', 'bad');
-  }
-}
-
-function setStatus(text, kind) {
-  const el = $('status');
-  el.textContent = text;
-  el.className = `status ${kind || ''}`;
-}
-
-const fmt = (n, digits = 0) => n.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-
-function duration(seconds) {
-  const m = Math.round(seconds / 60);
-  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
-}
-
-function renderStats(st) {
-  const printer = PRINTERS[state.printer];
-  $('stats').innerHTML = [
-    [fmt(st.revolutions), 'layers, one continuous spiral'],
-    [`${fmt(st.printedHeightMm, 1)} mm`, 'printed height (whole layers)'],
-    [duration(st.timeS), `at ${fmt(state.values.speed)} mm/s`],
-    [`${fmt(st.massGPla)} g`, `PLA · ${fmt(st.volumeMm3 / 1000, 1)} cm³`],
-    [`${fmt(st.pathLengthMm / 1000, 1)} m`, 'toolpath length'],
-    [`${fmt(st.flowMm3S, 1)} mm³/s`, 'volumetric flow'],
-  ]
-    .map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`)
-    .join('');
-
-  const overhang = st.maxOverhangDeg;
-  const diameter = 2 * state.values.radius * Math.max(1, state.values.topScale);
-  const checks = [
-    [overhang < 40 ? 'ok' : overhang < 55 ? 'warn' : 'bad', `Steepest overhang ${fmt(overhang, 1)}° (under ~45° prints cleanly)`],
-    [diameter <= printer.bed - 10 ? 'ok' : 'bad', `About ${fmt(diameter)} mm wide on a ${printer.bed} mm bed`],
-  ];
-  if (printer.nozzle) {
-    const ratio = state.values.line / printer.nozzle;
-    checks.push([ratio >= 1 && ratio <= 2 ? 'ok' : 'warn', `Line width is ${fmt(ratio, 1)}× the ${printer.nozzle} mm nozzle`]);
-  }
-  $('checks').innerHTML = checks
-    .map(([kind, text]) => `<li><span class="dot ${kind === 'ok' ? '' : kind}"></span><span>${text}</span></li>`)
-    .join('');
-}
-
-function renderHud(st, ms) {
-  $('hud').textContent = `${fmt(st.revolutions)} layers · ${fmt(st.pathPoints)} path points · ${fmt(ms)} ms`;
-}
-
-function renderAbout() {
-  const rows = [
-    ['Engine', `Rust → WebAssembly, v${state.engineInfo.version}`],
-    ['Engine start', `${fmt(state.engineInfo.loadMs)} ms`],
-    ['Last evaluation', `${fmt(state.lastMs, 1)} ms (in a background worker)`],
-    ['3D view', viewport.rendererInfo()],
-    ['CPU threads', String(navigator.hardwareConcurrency || '?')],
-    ['Multi-thread ready', self.crossOriginIsolated ? 'yes' : 'not yet (needs isolation headers)'],
-    ['Docs', '<a href="https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/roadmap.md" target="_blank" rel="noopener">Roadmap</a>'],
-  ];
-  $('about').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+function setPrinter(id) {
+  state.printer = id;
+  /** @type {HTMLSelectElement} */ ($('printer')).value = id;
+  viewport.setBed(PRINTERS[id].bed);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -245,74 +258,147 @@ function renderAbout() {
 // ---------------------------------------------------------------------------------------------
 
 function selectTab(name) {
-  for (const t of ['settings', 'print', 'about']) {
+  for (const t of TABS) {
     $(`tab-${t}`).setAttribute('aria-selected', String(t === name));
     $(`panel-${t}`).hidden = t !== name;
   }
 }
 
+/** Reads a picked file as text, refusing anything too big to be a recipe or settings file. */
+async function readPicked(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return null;
+  if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name} is too big for a project file (${fmt(file.size / 1024)} kB).`);
+  return file.text();
+}
+
 function wire() {
-  for (const t of ['settings', 'print', 'about']) $(`tab-${t}`).addEventListener('click', () => selectTab(t));
+  for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => selectTab(t));
 
   document.querySelectorAll('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => {
-      const mode = /** @type {HTMLElement} */ (b).dataset.mode;
       document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-      viewport.setMode(/** @type {any} */ (mode));
+      viewport.setMode(/** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.mode));
     }),
   );
-  $('view').addEventListener('dblclick', () => {
-    viewport.fit(state.values.radius * Math.max(1, state.values.topScale), state.values.height);
+  $('view').addEventListener('dblclick', () => viewport.refit());
+
+  const templates = /** @type {HTMLSelectElement} */ ($('template'));
+  for (const t of TEMPLATES) templates.append(el('option', { value: t.id, text: t.name }));
+  templates.addEventListener('change', async () => {
+    const id = templates.value;
+    templates.value = '';
+    if (!id) return;
+    if (state.unsaved && !confirm('Start a new project from this template? Save first if you want to keep the current one.')) return;
+    try {
+      await openTemplate(id);
+    } catch (err) {
+      showSettingsError(`Could not open the template: ${err.message || err}`);
+    }
+  });
+
+  $('openProject').addEventListener('click', () => $('projectFile').click());
+  $('projectFile').addEventListener('change', async (e) => {
+    try {
+      const text = await readPicked(e.target);
+      if (text !== null) await openSource(text);
+    } catch (err) {
+      showSettingsError(`Could not open the project: ${err.message || err}`);
+    }
+  });
+  $('saveProject').addEventListener('click', async () => {
+    download(`${slug(projectName())}.easycad`, await currentSource());
+    state.openedValues = { ...state.values };
+    state.unsaved = false;
+    autosave();
   });
 
   $('printer').addEventListener('change', (e) => {
-    state.printer = /** @type {HTMLSelectElement} */ (e.target).value;
-    const p = PRINTERS[state.printer];
-    Object.assign(state.values, p.defaults);
-    viewport.setBed(p.bed);
-    syncInputs();
-    save();
-    compute('final');
+    setPrinter(/** @type {any} */ (/** @type {HTMLSelectElement} */ (e.target).value));
+    if (state.last) renderPrint($('stats'), $('checks'), state.last.print, state.printer);
+    autosave();
   });
 
-  $('saveSettings').addEventListener('click', downloadSettings);
+  $('resetSettings').addEventListener('click', () => {
+    Object.assign(state.values, state.openedValues);
+    state.layout = ''; // rebuild the window so every slider shows its reset value
+    run('final');
+  });
+  $('saveSettings').addEventListener('click', async () => {
+    await engine.idle();
+    const data = { app: 'EasyCAD', kind: 'settings', version: 2, project: projectName(), printer: state.printer, values: state.values };
+    download(`${slug(projectName())}-settings.json`, JSON.stringify(data, null, 2), 'application/json');
+  });
   $('loadSettings').addEventListener('click', () => $('settingsFile').click());
   $('settingsFile').addEventListener('change', async (e) => {
-    const input = /** @type {HTMLInputElement} */ (e.target);
-    const file = input.files && input.files[0];
-    input.value = '';
-    if (!file) return;
     try {
-      applySaved(JSON.parse(await file.text()));
-      viewport.setBed(PRINTERS[state.printer].bed);
-      syncInputs();
-      save();
-      refitNext = true;
-      compute('final');
+      const text = await readPicked(e.target);
+      if (text === null) return;
+      const data = JSON.parse(text);
+      if (!data || typeof data.values !== 'object') throw new Error('this file has no EasyCAD settings in it.');
+      let used = 0;
+      for (const [k, v] of Object.entries(data.values)) {
+        if (k in state.values && typeof v === typeof state.values[k]) {
+          state.values[k] = v;
+          used++;
+        }
+      }
+      if (typeof data.printer === 'string' && data.printer in PRINTERS) setPrinter(/** @type {any} */ (data.printer));
+      if (!used) throw new Error('none of its settings belong to this project.');
+      state.unsaved = true;
+      state.layout = '';
+      run('final');
     } catch (err) {
       showSettingsError(`Could not load settings: ${err.message || err}`);
     }
   });
-  $('resetSettings').addEventListener('click', () => {
-    state.printer = 'p1p';
-    for (const s of SETTINGS) state.values[s.key] = s.value;
-    viewport.setBed(PRINTERS.p1p.bed);
-    syncInputs();
-    save();
-    refitNext = true;
-    compute('final');
+
+  editor.addEventListener('input', () => setDirty(editor.value !== state.source));
+  editor.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      runEditor();
+    }
+  });
+  $('runRecipe').addEventListener('click', runEditor);
+  $('revertRecipe').addEventListener('click', () => {
+    setDirty(false);
+    editor.value = state.source;
+  });
+  $('copyRecipe').addEventListener('click', async () => {
+    note((await copyText(editor.value)) ? 'Recipe copied.' : 'Copying was blocked by the browser: select the text and copy it.');
+  });
+  $('copyForAI').addEventListener('click', async () => {
+    const ok = await copyText(aiPrompt(await currentSource(), state.catalog));
+    note(ok ? 'Copied. Paste it into a Claude chat and describe what you want.' : 'Copying was blocked by the browser.');
   });
 }
 
 async function start() {
-  restore();
-  renderSettings();
   wire();
-  viewport.setBed(PRINTERS[state.printer].bed);
+  const saved = restore();
+  setPrinter(state.printer);
   renderAbout();
   try {
     state.engineInfo = await engine.ready;
-    await compute('final');
+    engine.catalog().then((text) => {
+      state.catalog = text;
+      $('catalog').textContent = text;
+      renderAbout();
+    });
+    if (saved) {
+      editor.value = saved.source;
+      state.source = saved.source;
+      await run('final', { fresh: true, opened: true });
+      // Back to how it was left: the printer chosen, and "Reset" still meaning "as opened".
+      setPrinter(saved.printer in PRINTERS ? saved.printer : state.printer);
+      if (saved.openedValues && typeof saved.openedValues === 'object') state.openedValues = saved.openedValues;
+      state.unsaved = saved.unsaved === true;
+      if (state.last) renderPrint($('stats'), $('checks'), state.last.print, state.printer);
+    } else {
+      await openTemplate(TEMPLATES[0].id);
+    }
   } catch (err) {
     setStatus('Engine failed to start', 'bad');
     const msg = $('viewMessage');

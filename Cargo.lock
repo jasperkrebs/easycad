@@ -144,7 +144,16 @@ name = "easycad-core"
 version = "0.1.0"
 dependencies = [
  "curvo",
+ "easycad-lang",
  "nalgebra",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "easycad-lang"
+version = "0.1.0"
+dependencies = [
  "serde",
  "thiserror",
 ]
@@ -154,7 +163,9 @@ name = "easycad-wasm"
 version = "0.1.0"
 dependencies = [
  "easycad-core",
+ "easycad-lang",
  "js-sys",
+ "serde",
  "serde-wasm-bindgen",
  "wasm-bindgen",
 ]

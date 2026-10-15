@@ -1,0 +1,15 @@
+[package]
+name = "easycad-lang"
+description = "The .easycad recipe language: lexer, parser, syntax tree, and saving setting values back into the text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

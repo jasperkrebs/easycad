@@ -1,0 +1,30 @@
+easycad 0.1
+project "Star bowl"
+printer "Bambu P1P 0.4"
+note "A low bowl: a rounded star that widens toward the top, with a gentle belly and a little twist."
+
+group "Shape"
+param height = 70 mm   in 20..200          "Height"
+param bottom = 35 mm   in 10..100          "Bottom radius"
+param top    = 65 mm   in 20..140          "Top radius"
+param belly  = 6 mm    in -20..20          "Belly"
+param lobes  = 9       in 3..24 step 1     "Lobes"
+param depth  = 8 %     in 0..40            "Lobe depth"
+param twist  = 20 deg  in -180..180        "Twist"
+
+group "Print"
+param layer  = 0.3 mm  in 0.08..3          "Layer height"
+param line   = 0.6 mm  in 0.2..10          "Line width"
+param speed  = 40      in 2..300           "Speed (mm/s)"
+
+# A star with radius 1, scaled to the bowl's radius at each height.
+outline  = star(lobes, outer: 1, inner: 1 - depth) |> smooth
+t        = range(0, 1, count: 24)
+r        = lerp(bottom, top, t) + belly * sin(180 * t)   # widening, plus a bulge in the middle
+sections = outline |> scale(r) |> rotate(twist * t) |> move(z: height * t)
+wall     = loft(sections)
+bowl     = cap(wall)
+path     = vase_spiral(wall, layer: layer, width: line, speed: speed)
+
+show bowl
+print path

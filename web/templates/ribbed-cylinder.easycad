@@ -1,0 +1,24 @@
+easycad 0.1
+project "Ribbed cylinder"
+printer "Bambu P1P 0.4"
+note "A plain cylinder printed as one spiral, with a wave added to the toolpath itself: the shape stays simple, the texture comes from the path."
+note "Whole numbers of ribs stack into straight ribs. Drift turns them into a slow spiral; a drift of 0.5 makes alternate layers interlock (keep the rib size small then)."
+
+group "Shape"
+param radius = 40 mm   in 15..120              "Radius"
+param height = 100 mm  in 20..250              "Height"
+param ribs   = 12      in 3..40 step 1         "Ribs per turn"
+param drift  = 0.02    in -0.5..0.5 step 0.01  "Rib drift per layer"
+param size   = 1.5 mm  in 0..5                 "Rib size"
+
+group "Print"
+param layer  = 0.3 mm  in 0.08..3              "Layer height"
+param line   = 0.8 mm  in 0.2..10              "Line width"
+param speed  = 30      in 2..300               "Speed (mm/s)"
+
+base = circle(radius)
+wall = loft([base, base |> move(z: height)])
+path = vase_spiral(wall, layer: layer, width: line, speed: speed)
+       |> wave(amplitude: size, count: ribs + drift)
+
+print path

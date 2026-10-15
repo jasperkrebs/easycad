@@ -12,6 +12,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 easycad-core = { workspace = true }
+easycad-lang = { workspace = true }
+serde = { workspace = true }
 wasm-bindgen = { workspace = true }
 js-sys = { workspace = true }
 serde-wasm-bindgen = { workspace = true }

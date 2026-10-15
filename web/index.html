@@ -28,7 +28,7 @@
     <header class="top">
       <div class="brand">
         <h1>EasyCAD</h1>
-        <p class="sub">Phase 0 · twisted vase demo</p>
+        <p class="sub" id="projectSub">Loading…</p>
       </div>
       <div class="status" id="status" role="status">Starting engine…</div>
     </header>
@@ -50,11 +50,23 @@
       <div class="side">
         <nav class="tabs" role="tablist" aria-label="Panels">
           <button class="tab" role="tab" id="tab-settings" aria-controls="panel-settings" aria-selected="true">Settings</button>
+          <button class="tab" role="tab" id="tab-recipe" aria-controls="panel-recipe" aria-selected="false">Recipe</button>
           <button class="tab" role="tab" id="tab-print" aria-controls="panel-print" aria-selected="false">Print</button>
           <button class="tab" role="tab" id="tab-about" aria-controls="panel-about" aria-selected="false">About</button>
         </nav>
 
         <section class="card" role="tabpanel" id="panel-settings" aria-labelledby="tab-settings">
+          <div class="project">
+            <p class="project-name" id="projectName"></p>
+            <p class="notes" id="projectNotes"></p>
+            <div class="project-bar">
+              <select id="template" aria-label="New project from a template">
+                <option value="">New from template…</option>
+              </select>
+              <button class="btn" type="button" id="openProject">Open</button>
+              <button class="btn primary" type="button" id="saveProject">Save</button>
+            </div>
+          </div>
           <div class="field">
             <label for="printer">Printer</label>
             <select id="printer">
@@ -63,14 +75,56 @@
             </select>
           </div>
           <div id="settings"></div>
+          <p class="error" id="settingsError" hidden></p>
           <div class="buttons">
+            <button class="btn" type="button" id="resetSettings">Reset settings</button>
             <button class="btn" type="button" id="saveSettings">Save settings</button>
             <button class="btn" type="button" id="loadSettings">Load settings</button>
-            <button class="btn" type="button" id="resetSettings">Reset</button>
           </div>
+          <input type="file" id="projectFile" hidden />
           <input type="file" id="settingsFile" accept=".json,application/json" hidden />
-          <p class="hint">Your latest settings are remembered on this device. "Save settings" downloads them as a file.</p>
-          <p class="error" id="settingsError" hidden></p>
+          <p class="hint">
+            Your project is remembered on this device. <b>Save</b> downloads it as an <code>.easycad</code> file you can open
+            again anywhere. <b>Save settings</b> keeps just the values, to load into the same project later.
+          </p>
+        </section>
+
+        <section class="card" role="tabpanel" id="panel-recipe" aria-labelledby="tab-recipe" hidden>
+          <h2>Recipe</h2>
+          <p class="hint first">
+            This text <em>is</em> the project. Each <code>param</code> line is a setting in the Settings tab, and each named
+            line is one step. Moving a slider changes the number in this text.
+          </p>
+          <textarea
+            id="recipe"
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
+            autocorrect="off"
+            wrap="off"
+            rows="18"
+            aria-label="Recipe text"
+          ></textarea>
+          <p class="hint" id="recipeDirty" hidden>Edited: press <b>Run</b> to apply, or <b>Revert</b>.</p>
+          <div class="buttons">
+            <button class="btn primary" type="button" id="runRecipe">Run</button>
+            <button class="btn" type="button" id="revertRecipe">Revert</button>
+            <button class="btn" type="button" id="copyRecipe">Copy</button>
+            <button class="btn" type="button" id="copyForAI">Copy for AI</button>
+          </div>
+          <p class="hint" id="copyNote" role="status" hidden></p>
+          <ul class="problems" id="problems" hidden></ul>
+          <h2 class="spaced">Steps</h2>
+          <ul class="steps" id="steps"></ul>
+          <details class="catalog">
+            <summary>Steps you can use</summary>
+            <pre id="catalog">Loading…</pre>
+          </details>
+          <p class="hint">
+            <b>Copy for AI</b> copies this recipe together with a description of the language. Paste it into a Claude chat,
+            describe the shape or change you want, then paste the answer here and press Run. (In Phase 2 the agent works
+            right inside the app.)
+          </p>
         </section>
 
         <section class="card" role="tabpanel" id="panel-print" aria-labelledby="tab-print" hidden>
@@ -78,9 +132,9 @@
           <div class="stats" id="stats"></div>
           <ul class="checks" id="checks"></ul>
           <p class="hint">
-            One continuous vase-mode spiral: the first revolution climbs from the bed while extrusion ramps up, and a flat
-            cap revolution closes the rim. Volumes use EasyGCode's bead model, (w − h)·h + π·(h/2)².
-            G-code export arrives in Phase 1, once it is tested against EasyGCode's output.
+            One continuous vase-mode spiral: the first turn climbs from the bed while extrusion ramps up, and a flat cap turn
+            closes the rim. Walls only for now; a solid bottom comes with the G-code. Volumes use EasyGCode's bead model,
+            (w − h)·h + π·(h/2)². G-code export arrives in Phase 1b, once it's tested against EasyGCode's output.
           </p>
         </section>
 
@@ -88,8 +142,8 @@
           <h2>About this build</h2>
           <dl class="info" id="about"></dl>
           <p class="hint">
-            Phase 0 is the walking skeleton: the Rust engine runs as WebAssembly in a background worker, and three.js draws on
-            the GPU. Next is Phase 1: project files with their own settings window, and real G-code.
+            Phase 1a: projects are recipes. The Rust engine runs them as WebAssembly in a background worker, and three.js
+            draws on the GPU. Next: real G-code for the P1P and the pellet printer (1b), then the agent (Phase 2).
           </p>
         </section>
       </div>

@@ -36,17 +36,20 @@ export function createViewport(canvas) {
   const mesh = new THREE.Mesh(new THREE.BufferGeometry(), meshMaterial);
   scene.add(mesh);
 
+  // Toolpaths: fat lines coloured by height. Curves: thin lines.
   const lineMaterial = new LineMaterial({ linewidth: 1.1, vertexColors: true, worldUnits: false });
-  /** @type {Line2 | null} */
-  let line = null;
+  const paths = new THREE.Group();
+  const curveMaterial = new THREE.LineBasicMaterial();
+  const curves = new THREE.Group();
+  scene.add(paths, curves);
   /** @type {THREE.GridHelper | null} */
   let grid = null;
 
   let mode = 'both';
   let bedSize = 256;
   let fitted = false;
-  /** @type {{ path: Float32Array, height: number } | null} */
-  let lastPath = null;
+  /** @type {{ min: number[], max: number[] } | null} */
+  let lastBounds = null;
   let frame = 0;
 
   function requestRender() {
@@ -84,13 +87,14 @@ export function createViewport(canvas) {
     scene.add(grid);
   }
 
-  function pathColors(path, height) {
+  function pathColors(path, zMin, zMax) {
     const low = new THREE.Color(token('--accent'));
     const high = new THREE.Color(token('--accent2'));
     const out = new Float32Array(path.length);
     const c = new THREE.Color();
+    const span = zMax - zMin;
     for (let i = 0; i < path.length; i += 3) {
-      c.copy(low).lerp(high, height > 0 ? path[i + 2] / height : 0);
+      c.copy(low).lerp(high, span > 0 ? (path[i + 2] - zMin) / span : 0);
       out[i] = c.r;
       out[i + 1] = c.g;
       out[i + 2] = c.b;
@@ -98,9 +102,26 @@ export function createViewport(canvas) {
     return out;
   }
 
+  function recolorPaths() {
+    const zMin = lastBounds ? lastBounds.min[2] : 0;
+    const zMax = lastBounds ? lastBounds.max[2] : 1;
+    for (const line of paths.children) {
+      const geometry = /** @type {LineGeometry} */ (/** @type {Line2} */ (line).geometry);
+      geometry.setColors(pathColors(/** @type {any} */ (line).userData.points, zMin, zMax));
+    }
+  }
+
+  /** @param {THREE.Group} group */
+  function clear(group) {
+    for (const child of [...group.children]) {
+      /** @type {any} */ (child).geometry.dispose();
+      group.remove(child);
+    }
+  }
+
   function applyMode() {
     mesh.visible = mode !== 'path';
-    if (line) line.visible = mode !== 'shape';
+    paths.visible = mode !== 'shape';
     // With both visible, the shape turns see-through so the toolpath on its surface shows.
     meshMaterial.transparent = mode === 'both';
     meshMaterial.opacity = mode === 'both' ? 0.28 : 1;
@@ -109,10 +130,13 @@ export function createViewport(canvas) {
     requestRender();
   }
 
-  function fit(radius, height) {
-    const r = Math.hypot(radius, height / 2) * 1.15;
+  /** Frames a box: `{ min: [x, y, z], max: [x, y, z] }` (a default box when there's nothing). */
+  function fit(bounds) {
+    const b = bounds || { min: [-50, -50, 0], max: [50, 50, 100] };
+    const size = [0, 1, 2].map((k) => b.max[k] - b.min[k]);
+    const r = Math.max(10, Math.hypot(size[0], size[1], size[2]) / 2) * 1.1;
     const dist = r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
-    controls.target.set(0, 0, height / 2);
+    controls.target.set((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
     const dir = new THREE.Vector3(0.62, -0.78, 0.5).normalize();
     camera.position.copy(controls.target).addScaledVector(dir, dist);
     camera.near = Math.max(0.5, dist / 100);
@@ -125,10 +149,9 @@ export function createViewport(canvas) {
   function applyTheme() {
     scene.background = new THREE.Color(token('--view-bg'));
     meshMaterial.color.set(token('--accent'));
+    curveMaterial.color.set(token('--warn'));
     rebuildGrid();
-    if (lastPath && line) {
-      /** @type {LineGeometry} */ (line.geometry).setColors(pathColors(lastPath.path, lastPath.height));
-    }
+    recolorPaths();
     requestRender();
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
@@ -157,39 +180,65 @@ export function createViewport(canvas) {
     },
 
     /**
-     * Shows a new engine result.
-     * @param {{ positions: Float32Array, indices: Uint32Array, path: Float32Array }} result
-     * @param {{ radius: number, height: number, refit?: boolean }} view
+     * Shows a new engine result: the merged mesh, curves as thin lines, toolpaths as fat lines.
+     * Polylines arrive packed: `points` (x,y,z floats) and `starts` (where each one begins, in
+     * points, with the total at the end).
+     * @param {{ mesh: { positions: Float32Array, indices: Uint32Array },
+     *   curves: { points: Float32Array, starts: Uint32Array },
+     *   paths: { points: Float32Array, starts: Uint32Array },
+     *   bounds: { min: number[], max: number[] } | null }} result
+     * @param {{ refit?: boolean }} [view]
      */
-    show(result, view) {
+    show(result, view = {}) {
       const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(result.positions, 3));
-      geometry.setIndex(new THREE.BufferAttribute(result.indices, 1));
+      geometry.setAttribute('position', new THREE.BufferAttribute(result.mesh.positions, 3));
+      geometry.setIndex(new THREE.BufferAttribute(result.mesh.indices, 1));
       geometry.computeVertexNormals();
       mesh.geometry.dispose();
       mesh.geometry = geometry;
 
-      const lineGeometry = new LineGeometry();
-      lineGeometry.setPositions(result.path);
-      lineGeometry.setColors(pathColors(result.path, view.height));
-      if (line) {
-        line.geometry.dispose();
-        line.geometry = lineGeometry;
-      } else {
-        line = new Line2(lineGeometry, lineMaterial);
-        scene.add(line);
-      }
-      lastPath = { path: result.path, height: view.height };
+      lastBounds = result.bounds;
+      clear(curves);
+      eachPolyline(result.curves, (points) => {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(points, 3));
+        curves.add(new THREE.Line(g, curveMaterial));
+      });
+      clear(paths);
+      eachPolyline(result.paths, (points) => {
+        const g = new LineGeometry();
+        g.setPositions(points);
+        const line = new Line2(g, lineMaterial);
+        line.userData.points = points;
+        paths.add(line);
+      });
+      recolorPaths();
 
       applyMode();
       if (!fitted || view.refit) {
-        fit(view.radius, view.height);
+        fit(result.bounds);
         fitted = true;
       }
       requestRender();
     },
 
-    /** Frames the model again (double-tap / double-click). */
+    /** Frames the last result again (double-tap / double-click). */
+    refit() {
+      fit(lastBounds);
+    },
+
     fit,
   };
+}
+
+/**
+ * Calls `fn` with each polyline of a packed set (see `show`), skipping single points.
+ * @param {{ points: Float32Array, starts: Uint32Array }} packed
+ * @param {(points: Float32Array) => void} fn
+ */
+function eachPolyline(packed, fn) {
+  for (let i = 0; i + 1 < packed.starts.length; i++) {
+    const [a, b] = [packed.starts[i], packed.starts[i + 1]];
+    if (b - a >= 2) fn(packed.points.subarray(a * 3, b * 3));
+  }
 }

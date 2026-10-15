@@ -18,18 +18,11 @@ Sizes are relative (S ≈ one focused session, M ≈ a few, L ≈ many).
 |---|---|---|
 | 1 | UI stack | **Rust engine (WebAssembly) + plain web interface.** EasyCAD is a web app: it runs in the browser on computer and phone and can be installed from the browser (PWA). A desktop wrapper is optional, later. |
 | 2 | Project format | **Own small text format (`.easycad`).** One file holds the recipe (nodes), all settings, presets and optionally the agent conversation. Opening it brings back the same settings window. |
-| 3 | License | **Private (all rights reserved).** Everything we build on is permissively licensed (MIT/Apache/BSD; MPL is fine), so being private limits nothing. We just keep their license notices. We can open-source later at any time. |
+| 3 | License | **All rights reserved** (no open-source license). Everything we build on is permissively licensed (MIT/Apache/BSD; MPL is fine), so this limits nothing; we keep their license notices. The repo is *public* since 15 Oct (see hosting), which makes the code visible but doesn't grant anyone a license to reuse it. |
 | 4 | Printers | **Bambu P1P (filament) and Klipper pellet**, with EasyGCode's proven start/end G-code. |
 | 5 | AI | **Built into the app with your own Claude API key** (standalone; see [api-key.md](api-key.md)). Claude Desktop/MCP control is optional, much later. |
-
-**Still open: hosting.**
-- The repo is private, and GitHub only serves websites from private repos on a paid plan
-  (GitHub Pro, about $4/month).
-- **Options:**
-  - (a) GitHub Pro: simplest, one setting.
-  - (b) Make the repo public: free, but the code is visible.
-  - (c) Cloudflare Pages: free and also allows multi-threading headers, a bit more setup.
-- CI is already prepared for (a) or (b).
+| 6 | Hosting (15 Oct) | **Public repo + GitHub Pages** (free). Can go private + GitHub Pro later. Needs one setting: Settings → Pages → Source: **GitHub Actions**. CI deploys on every push to the default branch once that's on. |
+| 7 | Making shapes (15 Oct) | Recipes, not "AI every time": the agent (or you) writes a recipe once; it then runs locally, free and instantly. Five ways to make one: templates, describe, steps, draw curves, import. See [creating-shapes.md](creating-shapes.md). |
 
 ---
 
@@ -48,7 +41,20 @@ What landed and the numbers are in [devlog.md](devlog.md).
 **Done when:** you open the app on your phone and computer, drag sliders, and see the shape
 and its toolpath update instantly.
 
-## Phase 1: Grasshopper-lite + projects (M–L) ← *next*
+## Phase 1: Grasshopper-lite + projects (M–L) ← *in progress*
+
+Split into small steps (15 Oct):
+- **1a: Recipes become files** ✓ *done 15 Oct 2026* (see [devlog.md](devlog.md))
+  - Language v0.1 parser and evaluator, plus the first 24 nodes.
+  - The twisted vase rebuilt as a recipe (prints the same as Phase 0); two more templates.
+  - Settings window generated from the recipe; Recipe tab (with "Copy for AI"); open/save
+    `.easycad`; autosave.
+- **1b: Real G-code** ← *next*: P1P and Klipper pellet, golden-tested against EasyGCode;
+  a solid bottom; vessel template.
+- **1c:** formatter, presets, project library on the device, `revolve` / `offset_rings` /
+  `contours`.
+
+The full Phase 1 scope:
 - **Definition language v0** (parser, formatter, clear errors) and the evaluator (dependency
   graph, caching, list handling).
 - **The settings window**, generated from the project's parameters: groups, sliders, toggles,
@@ -66,7 +72,10 @@ and its toolpath update instantly.
 **Done when:** you open the vessel project on your phone, change settings, export G-code, and
 it prints like EasyGCode's.
 
-## Phase 2: The agent (M)
+## Phase 2: The agent (M), then 2b: Steps and Draw tabs
+*2b adds the phone-friendly manual tools from [creating-shapes.md](creating-shapes.md): the
+recipe as a list of steps (add, reorder, remove) and 2D curve editors.*
+
 - **The chat panel:**
   - your API key, Claude Opus 5.5 by default, model as a setting;
   - the chat box doubles as a command line (`height 200`, `export gcode`), with no AI involved.

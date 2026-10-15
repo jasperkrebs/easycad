@@ -1,7 +1,9 @@
-# The EasyCAD definition language (draft v0.1)
+# The EasyCAD definition language (v0.1)
 
-*Status: draft. The format itself was approved on 14 Oct 2026; syntax and node names will still
-change.*
+*Status: **v0.1 is implemented** (Phase 1a, 15 Oct 2026): the parser is `crates/lang`, the
+evaluator and nodes are `crates/core`. §2 says exactly which syntax works today and what comes
+later; §6 lists the steps you can use. The format was approved on 14 Oct 2026; syntax and node
+names may still change, and every file starts with its version so old files can be migrated.*
 
 > **In plain words:** this is the *project file*. It has nothing to do with the chat commands
 > like `height 200`. When you save a project, this is what gets written:
@@ -38,48 +40,54 @@ Why a small language and not JSON, Python or JavaScript (details in
 
 ### 1.1 Twisted star vase (sliders + list replication)
 
+This is the app's first template (`web/templates/twisted-vase.easycad`), exactly as it ships:
+
 ```
 easycad 0.1
-# Twisted star vase: a solid for normal printing, plus a direct vase-mode toolpath
+project "Twisted star vase"
+printer "Bambu P1P 0.4"
+note "A rounded star that shrinks and twists as it rises, printed as one continuous spiral (vase mode)."
 
 group "Shape"
-param height    = 160 mm  in 60..300   "Height"
-param radius    = 45 mm   in 15..120   "Base radius"
-param points    = 7       in 3..16     "Star points"
-param depth     = 18 %    in 0..40     "Star depth"
-param twist     = 90 deg  in 0..360    "Twist"
-param top_scale = 0.8     in 0.3..1.5  "Top scale"
+param height    = 160 mm  in 40..300          "Height"
+param radius    = 45 mm   in 10..150          "Tip radius"
+param points    = 7       in 3..16 step 1     "Star points"
+param depth     = 18 %    in 0..60            "Star depth"
+param twist     = 90 deg  in -360..360        "Twist"
+param top_scale = 0.8     in 0.3..2           "Top scale"
 
 group "Print"
-param layer     = 0.3 mm  in 0.1..1.2  "Layer height"
-param line      = 0.6 mm  in 0.3..2    "Line width"
+param layer     = 0.3 mm  in 0.08..3          "Layer height"
+param line      = 0.6 mm  in 0.2..10          "Line width"
+param speed     = 40      in 2..300           "Speed (mm/s)"
 
-base     = star(points, outer: radius, inner: radius * (1 - depth)) |> smooth(0.5)
-t        = range(0, 1, count: 32)                  # 32 numbers from 0 to 1
-sections = base
-           |> scale(lerp(1, top_scale, t))         # t is a list, so this makes 32 curves
+# One rounded star, copied every few degrees of twist: each copy scaled, turned and lifted.
+outline  = star(points, outer: radius, inner: radius * (1 - depth)) |> smooth
+t        = range(0, 1, count: 16 + abs(twist) / 3)
+sections = outline
+           |> scale(lerp(1, top_scale, t))
            |> rotate(twist * t)
            |> move(z: height * t)
-wall     = loft(sections)                          # NURBS surface through all sections
-vase     = wall |> cap()                           # close both ends: a watertight solid
-
-path     = vase_spiral(wall, layer: layer, width: line)   # one continuous helix along the wall
+wall     = loft(sections)
+vase     = cap(wall)
+path     = vase_spiral(wall, layer: layer, width: line, speed: speed)
 
 show vase
-export vase as "twisted-vase.3mf"
 print path
 ```
 
 What you get in the app:
-- two slider groups (Shape, Print);
-- a graph of 8 nodes;
-- a solid to export;
-- a toolpath to print directly.
+- a settings window with two groups (Shape, Print);
+- six steps, each listed in the Recipe tab with what it made (`list of 46 curves`, …);
+- a solid to look at and a toolpath to print, with its print estimate.
 
-Asking the agent for "less twist at the bottom" changes one line (`rotate(twist * t^2)`).
-Making it taller is a slider.
+`t` is a list of numbers, so `scale`, `rotate` and `move` each run once per number and
+`sections` is a list of 46 curves. Asking for "less twist at the bottom" changes one line
+(`rotate(twist * t^2)`). Making it taller is a slider.
 
 ### 1.2 Attractor panel (the classic Grasshopper demo)
+
+*Later: needs nodes from later phases (`rectangle`, `extrude`, `grid_points`, `difference`, …).*
 
 ```
 easycad 0.1
@@ -112,6 +120,8 @@ once per item (Grasshopper's list matching). Dragging the attractor dot in the v
 updates the parameter and re-evaluates, with no AI involved.
 
 ### 1.3 Box with lid (fit tolerances, the "SolidWorks" side)
+
+*Later: needs solids (`rounded_rect`, `extrude`, `offset`, booleans).*
 
 ```
 easycad 0.1
@@ -147,79 +157,101 @@ export [box, lid] as "box-with-lid.3mf"
 `@assumed` tells you the agent guessed the clearance. The Params panel shows it with a badge
 until you confirm it.
 
-### 1.4 Printing a curve directly (EasyGCode heritage)
+### 1.4 A texture made by the toolpath (EasyGCode heritage)
+
+The second template (`web/templates/ribbed-cylinder.easycad`): the shape is a plain cylinder,
+and the ribs exist only in the toolpath.
 
 ```
 easycad 0.1
-# Woven cylinder printed straight from a curve: no slicer
+project "Ribbed cylinder"
+printer "Bambu P1P 0.4"
 
-param radius  = 60 mm   in 20..150  "Radius"
-param height  = 120 mm  in 20..300  "Height"
-param bumps   = 9       in 3..41    "Bumps per turn"   # odd numbers weave, even numbers make flutes
-param amp     = 3 mm    in 0..10    "Bump size"
+group "Shape"
+param radius = 40 mm   in 15..120              "Radius"
+param height = 100 mm  in 20..250              "Height"
+param ribs   = 12      in 3..40 step 1         "Ribs per turn"
+param drift  = 0.02    in -0.5..0.5 step 0.01  "Rib drift per layer"
+param size   = 1.5 mm  in 0..5                 "Rib size"
 
 group "Print"
-param printer = "Bambu P1P 0.4" of printers()  "Printer"
-param layer   = 0.3 mm  in 0.1..1   "Layer height"
-param line    = 0.6 mm  in 0.3..2   "Line width"
+param layer  = 0.3 mm  in 0.08..3              "Layer height"
+param line   = 0.8 mm  in 0.2..10              "Line width"
+param speed  = 30      in 2..300               "Speed (mm/s)"
 
-helix = vase_spiral(circle(r: radius), height: height, layer: layer)  # a single 3D curve
-wavy  = helix |> wave(amplitude: amp, per_turn: bumps)                # displaced along its normal
-path  = toolpath(wavy, width: line, height: layer)                    # bead model → extrusion
+base = circle(radius)
+wall = loft([base, base |> move(z: height)])
+path = vase_spiral(wall, layer: layer, width: line, speed: speed)
+       |> wave(amplitude: size, count: ribs + drift)
 
-print path with printer
+print path
 ```
 
-This is EasyGCode's model: geometry *is* the toolpath. Extrusion comes from the bead
-cross-section (`(w − h)·h + π·(h/2)²`), and the preview is coloured by speed.
+This is EasyGCode's model: geometry *is* the toolpath. `wave` counts in waves per turn along
+the spiral, so a whole number stacks the ribs straight up, a small fraction makes them drift
+round slowly, and a half (`ribs + 0.5`) makes alternate layers interlock. Extrusion comes from
+the bead cross-section (`(w − h)·h + π·(h/2)²`).
 
 ---
 
-## 2. Syntax (sketch)
+## 2. Syntax
+
+Everything below is implemented in v0.1 unless it says *later*.
 
 ```
-file      = header? statement*
+file      = header? statement*                  # one statement per line
 header    = "easycad" VERSION
-statement = group | param | binding | output | layout | comment
+statement = project | printer | note | group | param | binding | output
 
+project   = "project" STRING                    # name in the window title and file name
+printer   = "printer" STRING                    # default printer profile
+note      = "note" STRING                       # free notes, any number of lines
 group     = "group" STRING                      # following params go into this group
-param     = "param" NAME "=" value range? step? choices? STRING? attribute*
-range     = "in" NUMBER ".." NUMBER
-step      = "step" NUMBER
-choices   = "of" ( "[" value ("," value)* "]" | call )
-attribute = "@assumed" | "@locked" | "@hidden"
+param     = "param" NAME "=" literal UNIT? modifier*
+literal   = "-"? NUMBER | STRING | "true" | "false"
+modifier  = "in" NUMBER ".." NUMBER             # slider range, in the setting's own unit
+          | "step" NUMBER                       # slider step; typed values snap to it
+          | "of" "[" choice ("," choice)* "]"   # a dropdown
+          | STRING                              # the label
+          | "@" NAME                            # @assumed, @locked, @hidden
 
 binding   = NAME "=" expr                       # one node
-output    = "show" NAME ("," NAME)*
-          | "export" expr "as" STRING
-          | "print" expr ("with" expr)?
+output    = "show" NAME ("," NAME)*             # draw these steps
+          | "print" expr ("with" expr)?         # the toolpath to print (and the printer)
+          | "export" expr "as" STRING           # parsed; does nothing until Phase 1b
 
-expr      = domain ( "|>" call )*               # a |> f(x) means f(a, x)
-domain    = sum ( ".." sum )?                   # 1..5 is a Domain value
+expr      = sum ( "|>" NAME args? )*            # a |> f(x) means f(a, x); a |> f means f(a)
 sum       = product (("+" | "-") product)*
-product   = power (("*" | "/") power)*            # no % operator: % is a unit; use mod(a, b)
-power     = unary ("^" unary)?
-unary     = ("-" | "not")? postfix
-postfix   = primary ( "." NAME | "[" expr "]" )*  # record fields, list indexing
-primary   = NUMBER UNIT? | STRING | "true" | "false" | NAME | call | list
-          | "(" expr ")" | "if" expr "then" expr "else" expr
-call      = NAME "(" ( arg ("," arg)* )? ")"
-arg       = (NAME ":")? expr                     # positional first, then named
-list      = "[" ( expr ("," expr)* )? "]"
+product   = unary (("*" | "/") unary)*          # no % operator: % is a unit; use mod(a, b)
+unary     = "-" unary | power                   # -t^2 is -(t^2), as in maths
+power     = primary ("^" unary)?                # 2^3^2 is 2^(3^2)
+primary   = NUMBER UNIT? | STRING | "true" | "false" | NAME | NAME args
+          | "[" (expr ("," expr)*)? "]" | "(" expr ")"
+args      = "(" (arg ("," arg)*)? ")"
+arg       = (NAME ":")? expr                    # positional ones first, then named ones
 comment   = "#" … end of line
 ```
 
-- Comparison (`== != < <= > >=`) and boolean (`and`, `or`) operators exist too, with the usual
-  precedence.
-- One statement per line. A line may continue when the next line starts with `|>` or when
-  brackets are still open.
-
-**Units:** `mm cm m in ft` for length and `deg rad` for angles; `%` means ÷100. A bare number
-in a length slot is mm, in an angle slot degrees. Speeds and temperatures (`mm/s`, `°C`)
-arrive with the print nodes.
+- A statement continues on the next line while brackets are open, or when the next line starts
+  with `|>`.
+- **Units:** `mm cm m inch` for lengths, `deg rad` for angles (`90°` works too), `%` for ratios
+  (18 % is 0.18).
+  The engine works in mm, degrees and plain ratios; a bare number is taken as one of those.
+  Inches are written `inch` because `in` is the range keyword. A setting keeps its own unit in
+  the settings window (18 %, 90°).
+- **Reserved words** (they can't name a setting or a step): `easycad project printer note group
+  param show export print true false in of step as with`. `pi` is a built-in constant.
+- **Limits**, so a hostile file can't hang or crash the app: 256 kB per recipe, expressions
+  nested at most 128 deep, lists at most 32 levels deep, at most 4 million points and list
+  items per run, and 1 million points per toolpath. Going over gives an error message.
+- *Later:* domains as values (`r_min..r_max`), comparisons (`== != < <= > >=`), `and`/`or`/`not`,
+  `if … then … else`, record fields (`b.size`) and indexing (`list[0]`), units for speeds and
+  temperatures (`mm/s`, `°C`), settings that hold geometry (`param attractor = point(60, 40)`),
+  and `of printers()`.
 
 ### Project header, presets and conversation
-These statements make one file a complete project (decided 14 Oct 2026):
+These statements make one file a complete project (decided 14 Oct 2026). `project`, `printer`
+and `note` work today; `preset` comes in Phase 1c and `conversation` with the agent (Phase 2):
 
 ```
 easycad 0.1
@@ -237,7 +269,9 @@ conversation {                               # optional; the engine ignores it
 
 - **Opening a project** evaluates the recipe with the saved values and shows its settings
   window.
-- **Choosing a preset** changes only the values.
+- **Moving a slider** rewrites only that setting's value in its `param` line; comments, layout
+  and everything else stay exactly as they were. Saving the project saves that text.
+- **Choosing a preset** (later) changes only the values.
 - **"Save settings"** writes only the values (a small `.json`, like EasyGCode). "Load settings"
   puts them back into the open project.
 
@@ -246,24 +280,26 @@ conversation {                               # optional; the engine ignores it
 ## 3. Meaning
 
 - **Order doesn't matter, names do.** The file is a graph, not a script. Lines can be in any
-  order; the formatter keeps them in dependency order. Cycles are an error.
-- **No mutation, no loops, no I/O.** Repetition comes from lists. Randomness always takes a
-  seed (`random(seed: 7, count: 20)`), so the same file always gives the same result.
+  order (the formatter, Phase 1c, will keep them in dependency order). Loops are an error:
+  "`a` depends on itself (a → b → a)".
+- **No mutation, no loops, no I/O.** Repetition comes from lists. Randomness (later) always
+  takes a seed (`random(seed: 7, count: 20)`), so the same file always gives the same result.
 - **List replication** (Grasshopper/Dynamo style):
   - every node input is *item* or *list* access;
   - an item input that receives a list makes the node run once per item;
   - with several lists, the longest-list rule applies (the shorter list repeats its last item);
-  - `cross(a, b)` gives all combinations;
+  - `cross(a, b)` gives all combinations (later);
   - operators replicate too: `twist * t` with a list `t` gives a list;
   - list inputs (`loft(curves)`, `union(solids)`, `difference(a, many)`) take the whole list.
-- **Records:** nodes with several outputs return records. `b = bbox(vase)` gives `b.min`,
+- **Records** (later): nodes with several outputs return records. `b = bbox(vase)` gives `b.min`,
   `b.max` and `b.size`; `d = divide(curve, count: 20)` gives `d.points`, `d.tangents` and
   `d.params`. In the graph they are separate output ports.
-- **Errors belong to nodes.** Syntax errors point to a line and column with a suggestion.
-  Geometry errors ("loft failed: section 12 is reversed") mark that node red. Everything that
-  doesn't depend on it still evaluates.
-- **Formatting is canonical.** `easycad fmt` aligns parameter blocks and normalises spacing
-  while keeping comments. Agent edits and human edits always look the same, which keeps diffs
+- **Errors belong to nodes.** Syntax errors point to a line and column. Mistakes in a step
+  ("circle: `r` must be more than 0, got -10") mark that step; steps that need it are skipped
+  quietly; everything else still runs and draws. Typos get a suggestion ("unknown name
+  `hieght`; did you mean `height`?").
+- **Formatting is canonical** (Phase 1c). `easycad fmt` aligns parameter blocks and normalises
+  spacing while keeping comments. Agent edits and human edits always look the same, which keeps diffs
   small.
 
 ---
@@ -312,7 +348,22 @@ small as the library grows.
 
 ---
 
-## 6. Node library v0 (≈ 40 nodes for Phases 1–3)
+## 6. Node library
+
+### 6.1 Available now (v0.1)
+
+Lengths are in mm and angles in degrees. The app's Recipe tab shows the full catalog with every
+input (it's generated from the code, `crates/core/src/nodes.rs`, so it can't go stale).
+
+| Group | Steps |
+|---|---|
+| Numbers & lists | `range(start, end, count)` evenly spaced numbers, both ends included · `lerp(a, b, t)` · `count(list)` · `min(a, b)` · `max(a, b)` · `clamp(value, low, high)` · `mod(a, b)` · `abs(x)` · `sqrt(x)` · `round(x)` · `floor(x)` · `ceil(x)` · `sin(angle)` · `cos(angle)` · `tan(angle)` |
+| Curves | `circle(r)` · `polygon(sides, r)` · `star(points, outer, inner)` (sharp corners) · `smooth(curve)` (a cubic NURBS through every point) |
+| Transforms | `scale(geometry, factor, x, y, z)` · `rotate(geometry, angle)` about the Z axis · `move(geometry, x, y, z)` |
+| Surfaces | `loft(sections)` (smooth through the sections; each section's first point is its seam) · `cap(surface)` (flat ends: a solid) |
+| Toolpaths | `vase_spiral(wall, layer, width, speed)` (EasyGCode's vase mode: start ramp, whole layers, flat cap turn) · `wave(geometry, amplitude, count, phase)` (on a toolpath, curve or surface) |
+
+### 6.2 Planned (≈ 40 nodes for Phases 1–3)
 
 | Group | Nodes |
 |---|---|

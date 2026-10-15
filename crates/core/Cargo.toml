@@ -1,6 +1,6 @@
 [package]
 name = "easycad-core"
-description = "EasyCAD engine core: geometry, toolpaths and print statistics (no UI, no I/O)"
+description = "EasyCAD engine core: runs recipes; curves, surfaces, toolpaths and print statistics (no UI, no I/O)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+easycad-lang = { workspace = true }
 curvo = { workspace = true }
 nalgebra = { workspace = true }
 serde = { workspace = true }

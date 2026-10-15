@@ -4,8 +4,13 @@
 //! the results back. Big arrays are returned as typed arrays so the worker can hand them to the
 //! UI without copying.
 
-use easycad_core::vase::{self, VaseParams};
+use easycad_core::eval::{Evaluation, MAX_SOURCE_BYTES, Quality};
+use easycad_core::geom::P3;
+use easycad_core::nodes;
+use easycad_lang::{Literal, set_values};
 use js_sys::{Float32Array, Object, Reflect, Uint32Array};
+use serde::Serialize;
+use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 
 /// Engine version, shown in the app's About panel.
@@ -14,33 +19,107 @@ pub fn engine_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Evaluates the Phase 0 demo (the twisted star vase).
-///
-/// `params` is a plain object with any of the `VaseParams` fields in camelCase (missing ones
-/// use the defaults). Returns `{ positions, indices, path, stats }`, or throws an `Error` with
-/// a readable message for invalid settings.
-#[wasm_bindgen(js_name = twistedVase)]
-pub fn twisted_vase(params: JsValue) -> Result<Object, JsError> {
-    let p: VaseParams = serde_wasm_bindgen::from_value(params)
-        .map_err(|e| JsError::new(&format!("settings: {e}")))?;
-    let out = vase::build(&p).map_err(|e| JsError::new(&e.to_string()))?;
+/// The node catalog as text: every step a recipe can use, with its inputs.
+#[wasm_bindgen(js_name = nodeCatalog)]
+pub fn node_catalog() -> String {
+    nodes::catalog()
+}
 
-    let result = Object::new();
+/// Runs a recipe.
+///
+/// `values` (optional) holds setting values to write into the recipe first, each in its own
+/// unit as shown in the settings window: `{ height: 200, depth: 18 }`. Slider moves become edits
+/// to the recipe text, so the text stays the single source of truth; the edited text comes
+/// back as `source`. `quality` is `"preview"` or `"final"`.
+///
+/// Returns `{ source, project, printer, notes, params, steps, diagnostics, print, bounds,
+/// mesh: { positions, indices }, curves: { points, starts }, paths: { points, starts } }`.
+/// A broken recipe doesn't throw: its problems are in `diagnostics`.
+#[wasm_bindgen]
+pub fn evaluate(source: &str, values: JsValue, quality: &str) -> Result<Object, JsError> {
+    let values: BTreeMap<String, Literal> = if values.is_undefined() || values.is_null() {
+        BTreeMap::new()
+    } else {
+        serde_wasm_bindgen::from_value(values)
+            .map_err(|e| JsError::new(&format!("settings: {e}")))?
+    };
+    let quality = if quality == "final" {
+        Quality::Final
+    } else {
+        Quality::Preview
+    };
+    let pairs: Vec<(String, Literal)> = values.into_iter().collect();
+    let source = if pairs.is_empty() || source.len() > MAX_SOURCE_BYTES {
+        source.to_string()
+    } else {
+        // A recipe that doesn't parse keeps its text; the evaluation reports the error.
+        set_values(source, &pairs).unwrap_or_else(|_| source.to_string())
+    };
+    let e = easycad_core::evaluate(&source, quality);
+    to_js(&source, &e)
+}
+
+fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
+    let out = Object::new();
+    set(&out, "source", &JsValue::from_str(source))?;
+    set(&out, "project", &plain(&e.project)?)?;
+    set(&out, "printer", &plain(&e.printer)?)?;
+    set(&out, "notes", &plain(&e.notes)?)?;
+    set(&out, "params", &plain(&e.params)?)?;
+    set(&out, "steps", &plain(&e.steps)?)?;
+    set(&out, "diagnostics", &plain(&e.diagnostics)?)?;
+    set(&out, "print", &plain(&e.print)?)?;
+    let bounds = &e.drawing.bounds;
     set(
-        &result,
+        &out,
+        "bounds",
+        &if bounds.is_empty() {
+            JsValue::NULL
+        } else {
+            plain(bounds)?
+        },
+    )?;
+
+    let mesh = Object::new();
+    set(
+        &mesh,
         "positions",
-        &Float32Array::from(out.mesh.positions.as_slice()),
+        &Float32Array::from(e.drawing.mesh.positions.as_slice()),
     )?;
     set(
-        &result,
+        &mesh,
         "indices",
-        &Uint32Array::from(out.mesh.indices.as_slice()),
+        &Uint32Array::from(e.drawing.mesh.indices.as_slice()),
     )?;
-    set(&result, "path", &Float32Array::from(out.path.as_slice()))?;
-    let stats = serde_wasm_bindgen::to_value(&out.stats)
-        .map_err(|e| JsError::new(&format!("stats: {e}")))?;
-    set(&result, "stats", &stats)?;
-    Ok(result)
+    set(&out, "mesh", &mesh)?;
+    let curves = polylines(e.drawing.curves.iter().map(Vec::as_slice))?;
+    set(&out, "curves", &curves)?;
+    let paths = polylines(e.drawing.paths.iter().map(|p| p.points.as_slice()))?;
+    set(&out, "paths", &paths)?;
+    Ok(out)
+}
+
+/// Several polylines as one `points` array (x,y,z floats) plus `starts`: where each polyline
+/// begins, counted in points, with the total count at the end.
+fn polylines<'a>(lines: impl Iterator<Item = &'a [P3]>) -> Result<Object, JsError> {
+    let mut points: Vec<f32> = Vec::new();
+    let mut starts: Vec<u32> = vec![0];
+    for line in lines {
+        points.extend(line.iter().flat_map(|p| p.map(|c| c as f32)));
+        starts.push((points.len() / 3) as u32);
+    }
+    let out = Object::new();
+    set(&out, "points", &Float32Array::from(points.as_slice()))?;
+    set(&out, "starts", &Uint32Array::from(starts.as_slice()))?;
+    Ok(out)
+}
+
+/// Converts to plain JavaScript objects and arrays (`null` for missing values).
+fn plain<T: Serialize + ?Sized>(value: &T) -> Result<JsValue, JsError> {
+    let serializer = serde_wasm_bindgen::Serializer::new().serialize_missing_as_null(true);
+    value
+        .serialize(&serializer)
+        .map_err(|e| JsError::new(&format!("internal: {e}")))
 }
 
 fn set(target: &Object, key: &str, value: &JsValue) -> Result<(), JsError> {

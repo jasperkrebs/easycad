@@ -1,7 +1,7 @@
 # EasyCAD architecture (proposal)
 
 *Status: decisions answered on 14 Oct 2026 (see [roadmap.md](roadmap.md#decisions-answered-14-oct-2026)).
-Phase 0 is done; Phase 1 is next. The owner's priority is **custom toolpaths and G-code**; the printing
+Phase 0 and Phase 1a (recipes as files) are done; 1b (G-code) is next. The owner's priority is **custom toolpaths and G-code**; the printing
 workflow is described in [toolpaths-and-skills.md](toolpaths-and-skills.md). Where this document
 mentions solids/3MF/slicers, treat those as "later". Reasoning and sources are in
 [research.md](research.md).*
@@ -102,8 +102,8 @@ easycad/
 └─ spikes/                 throwaway experiments with results
 ```
 
-**Start small:** Phase 1 can begin with just three crates (`lang`, a combined
-`core` = geom + nodes + eval, and `wasm`) plus `web/`. They get split once they grow.
+**Start small** (this is the layout today, Phase 1a): three crates, `lang`, a combined
+`core` (= geom + nodes + eval) and `wasm`, plus `web/`. They get split once they grow.
 
 ---
 
@@ -437,7 +437,7 @@ The preview colours toolpaths by feed, exactly as EasyGCode does.
 
 | Target | How |
 |---|---|
-| **Web / phone** (the app) | GitHub Actions builds the WASM, then deploys `web/` to static hosting. Installable PWA, works offline. **The repo is private:** GitHub Pages then needs GitHub Pro. Alternatives are a public repo or Cloudflare Pages (free, and can send the headers needed for multi-threading). The deploy job is ready and switched on by a repo variable. |
+| **Web / phone** (the app) | GitHub Actions builds the WASM, then deploys `web/` to GitHub Pages from the default branch. Installable PWA, works offline. **The repo is public** (since 15 Oct 2026), so Pages is free; it needs Settings → Pages → Source: GitHub Actions once. Going private later needs GitHub Pro (then set the `DEPLOY_PAGES` variable). Cloudflare Pages remains the option for the headers multi-threading needs. |
 | **Desktop** | Tauri 2 builds macOS (`.dmg`), Windows (`.msi`/`.exe`) and Linux (AppImage/`.deb`) installers on GitHub Releases. A few MB each. Code signing (Apple Developer account for macOS notarisation; optional Windows signing) avoids "unknown developer" warnings. |
 | **App Store / Play Store** | Optional, later, via Tauri 2 mobile from the same code. Needs Xcode on a Mac and an Apple Developer account to build and sign, but no Swift code. The PWA covers the phone until then. |
 
@@ -460,7 +460,8 @@ The preview colours toolpaths by feed, exactly as EasyGCode does.
   every new session can pick up where the last one stopped.
 - **Small, boring dependencies.** Pinned, permissive licenses only (MIT/Apache/BSD/0BSD;
   MPL-2.0 acceptable; no GPL/AGPL in the shipped app).
-  - EasyCAD itself is **private (all rights reserved)**, decided 14 Oct 2026. Permissive licenses
+  - EasyCAD itself is **all rights reserved** (decided 14 Oct 2026; the repo is public since
+    15 Oct, which doesn't make it open source). Permissive licenses
     allow that.
   - Their notices are listed in `THIRD-PARTY-NOTICES.md` and shipped with the app.
 

@@ -12,6 +12,7 @@ publish = false
 
 [workspace.dependencies]
 easycad-core = { path = "crates/core" }
+easycad-lang = { path = "crates/lang" }
 curvo = "=0.3.2"
 nalgebra = "=0.35.0"
 serde = { version = "1.0.229", features = ["derive"] }

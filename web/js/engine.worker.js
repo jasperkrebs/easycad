@@ -1,7 +1,7 @@
 // Web Worker that hosts the Rust engine (WebAssembly). Generated glue lives in ../pkg/
 // (scripts/build-web.sh). Big arrays go back to the page as transferables: moved, not copied.
 
-import init, { engineVersion, twistedVase } from '../pkg/easycad_wasm.js';
+import init, { engineVersion, evaluate, nodeCatalog } from '../pkg/easycad_wasm.js';
 
 const started = performance.now();
 const loading = init()
@@ -14,18 +14,29 @@ const loading = init()
   });
 
 self.onmessage = async (e) => {
-  const { type, params } = e.data;
-  if (type !== 'vase') return;
+  const msg = e.data;
   try {
     await loading;
+  } catch {
+    return; // already reported as fatal
+  }
+  if (msg.type === 'catalog') {
+    postMessage({ type: 'catalog', text: nodeCatalog() });
+    return;
+  }
+  if (msg.type !== 'evaluate') return;
+  try {
     const t0 = performance.now();
-    const r = twistedVase(params);
+    const r = evaluate(msg.source, msg.values, msg.quality);
     const ms = performance.now() - t0;
-    postMessage(
-      { type: 'result', result: { positions: r.positions, indices: r.indices, path: r.path, stats: r.stats, ms } },
-      [r.positions.buffer, r.indices.buffer, r.path.buffer],
+    const transfer = [r.mesh.positions, r.mesh.indices, r.curves.points, r.curves.starts, r.paths.points, r.paths.starts].map(
+      (a) => a.buffer,
     );
+    postMessage({ type: 'result', result: { ...r, ms } }, transfer);
   } catch (err) {
-    postMessage({ type: 'error', error: String((err && err.message) || err) });
+    // A trap inside the WebAssembly is an engine bug; the instance can't be trusted after it,
+    // so the page starts a fresh worker. Anything else is an ordinary error message.
+    const crashed = err instanceof WebAssembly.RuntimeError;
+    postMessage({ type: crashed ? 'crashed' : 'error', error: String((err && err.message) || err) });
   }
 };

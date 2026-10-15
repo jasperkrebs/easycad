@@ -180,7 +180,7 @@ param fit       = -0.2 mm in -1..1     "Fit tolerance"
 profile = lamp_profile(socket, opening: opening, height: height, shape: "bell", fit: fit)
 shade   = revolve(profile)
 path    = spiral_on(shade, pitch: thread_pitch(socket))     # layer height = thread pitch
-          |> wave(amplitude: wave_size, per_turn: waves)
+          |> wave(amplitude: wave_size, count: waves)
           |> toolpath(width: 2.4 mm, flow: 30 mm3/s)
           |> overhang_comp(mode: "layer", strength: 100 %)
 

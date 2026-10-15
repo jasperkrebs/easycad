@@ -62,7 +62,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -353,6 +354,12 @@ select {
   font-weight: 600;
 }
 
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
 /* Print stats */
 .stats {
   display: grid;
@@ -436,4 +443,192 @@ a {
   color: var(--danger);
   font-size: 0.9rem;
   margin: 10px 0 0;
+}
+
+code,
+pre,
+textarea#recipe {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+code {
+  font-size: 0.9em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ---------- project (top of the Settings tab) ---------- */
+.project {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-name {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.notes {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.notes:empty {
+  display: none;
+}
+
+.project-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.project-bar select {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- settings: other kinds ---------- */
+.setting select,
+.setting input[type="text"] {
+  width: auto;
+  max-width: 60vw;
+  min-width: 120px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+}
+
+.setting.toggle,
+.setting.choice,
+.setting.text {
+  padding-block: 10px;
+}
+
+.switch {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 999px;
+  padding: 0 6px;
+  vertical-align: 2px;
+}
+
+/* ---------- recipe tab ---------- */
+.hint.first {
+  margin: 0 0 10px;
+}
+
+textarea#recipe {
+  display: block;
+  width: 100%;
+  min-height: 300px;
+  resize: vertical;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+.problems {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.problems li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.88rem;
+  border-left: 3px solid var(--danger);
+  background: var(--card2);
+  border-radius: 6px;
+  padding: 6px 8px;
+  overflow-wrap: anywhere;
+}
+
+.problems li[data-severity="warning"] {
+  border-left-color: var(--warn);
+}
+
+.problems li[data-severity="info"] {
+  border-left-color: var(--muted);
+}
+
+.linkish {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+h2.spaced {
+  margin-top: 16px;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.88rem;
+}
+
+.steps li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.steps li .muted {
+  overflow-wrap: anywhere;
+}
+
+.catalog {
+  margin-top: 14px;
+}
+
+.catalog summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.catalog pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  background: var(--card2);
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 420px;
+  overflow: auto;
 }

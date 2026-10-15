@@ -12,8 +12,9 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
 - The Rust engine turns shapes into curves, curves into toolpaths, and toolpaths into G-code
   (Bambu P1P filament, Klipper pellet).
 
-**Current phase:** decisions answered (14 Oct 2026, see `docs/roadmap.md`). **Phase 0 (walking
-skeleton) is done; Phase 1 is next.** Hosting is still pending. Priorities:
+**Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0 and
+Phase 1a (recipes as files) are done; 1b (real G-code) is next.** Hosting: public repo + GitHub
+Pages. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.
@@ -27,7 +28,7 @@ Slicers, 3MF and solids are "later".
 3. `docs/toolpaths-and-skills.md`: the core workflow (shapes → curves → toolpaths → G-code,
    skills, project files)
 4. `docs/architecture.md`: how it's built and why
-5. `docs/definition-language.md`: the project file / recipe language
+5. `docs/definition-language.md`: the project file / recipe language (§2: what works today)
 6. `docs/devlog.md`: what landed recently, what's open
 7. `docs/research.md`: background and sources, when you need the "why"
 
@@ -65,9 +66,10 @@ any UI change.
 - **Phone-first UI in the EasyGCode style** (see `docs/architecture.md` §9.4 for the tokens).
   Plain HTML/CSS/ES modules, no framework, no bundler. Third-party UI code is vendored and
   pinned in `web/vendor/`.
-- **Licenses.** EasyCAD is private (all rights reserved). Dependencies must be permissive
-  (MIT/Apache/BSD/0BSD; MPL-2.0 OK). No GPL/AGPL in the shipped app. Add every new runtime
-  dependency (Rust crate or vendored JS) to `THIRD-PARTY-NOTICES.md` in the same change.
+- **Licenses.** EasyCAD is all rights reserved: the repo is public, but not open source.
+  Dependencies must be permissive (MIT/Apache/BSD/0BSD; MPL-2.0 OK). No GPL/AGPL in the shipped
+  app. Add every new runtime dependency (Rust crate or vendored JS) to `THIRD-PARTY-NOTICES.md`
+  in the same change.
 - **G-code safety.** G-code drives real machines. Never emit printable G-code from a node
   unless it's golden-tested against EasyGCode (or a hand-checked fixture), and keep start/end
   blocks identical to EasyGCode's proven ones.

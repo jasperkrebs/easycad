@@ -5,10 +5,14 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status:** Phase 0 done (14 Oct 2026).
-> - **Working:** the Rust engine runs in the browser as WebAssembly. A twisted-vase demo
->   shows the shape, its continuous print toolpath and a live print estimate.
-> - **Next:** Phase 1, project files with their own settings window, and real G-code.
+> **Status:** Phase 1a done (15 Oct 2026).
+> - **Working:** projects are recipes, small `.easycad` text files. Each one opens with its
+>   own settings window, generated from the recipe. There are three templates, open/save, and a
+>   Recipe tab with **Copy for AI**: describe a shape in any Claude chat and paste the recipe
+>   back. The Rust engine runs in the browser as WebAssembly, shows the shape and its
+>   continuous print toolpath, and gives a live print estimate.
+> - **Next:** Phase 1b, real G-code for the Bambu P1P and the Klipper pellet printer, tested
+>   against EasyGCode.
 >
 > See the [roadmap](docs/roadmap.md).
 
@@ -34,20 +38,37 @@ become toolpaths, toolpaths become G-code for your printer.
   in the browser, installable like an app. No account, no cloud kernel. AI uses your own Claude
   API key ([how to get one](docs/api-key.md)).
 
+A project, exactly as the app saves it (the first template; every `param` is a slider):
+
 ```
 easycad 0.1
-project "Twisted vase"
-printer "Bambu P1P"
+project "Twisted star vase"
+printer "Bambu P1P 0.4"
 
-param height = 160 mm in 60..300 "Height"
-param twist  = 90 deg in 0..360  "Twist"
+group "Shape"
+param height    = 160 mm  in 40..300          "Height"
+param radius    = 45 mm   in 10..150          "Tip radius"
+param points    = 7       in 3..16 step 1     "Star points"
+param depth     = 18 %    in 0..60            "Star depth"
+param twist     = 90 deg  in -360..360        "Twist"
+param top_scale = 0.8     in 0.3..2           "Top scale"
 
-base     = star(7, outer: 45 mm, inner: 37 mm) |> smooth(0.5)
-t        = range(0, 1, count: 32)
-sections = base |> rotate(twist * t) |> move(z: height * t)
+group "Print"
+param layer     = 0.3 mm  in 0.08..3          "Layer height"
+param line      = 0.6 mm  in 0.2..10          "Line width"
+param speed     = 40      in 2..300           "Speed (mm/s)"
+
+outline  = star(points, outer: radius, inner: radius * (1 - depth)) |> smooth
+t        = range(0, 1, count: 16 + abs(twist) / 3)
+sections = outline
+           |> scale(lerp(1, top_scale, t))
+           |> rotate(twist * t)
+           |> move(z: height * t)
 wall     = loft(sections)
-path     = spiral_on(wall, pitch: 0.3 mm) |> toolpath(width: 0.6 mm, height: 0.3 mm)
+vase     = cap(wall)
+path     = vase_spiral(wall, layer: layer, width: line, speed: speed)
 
+show vase
 print path
 ```
 
@@ -57,8 +78,9 @@ print path
 |---|---|
 | [docs/roadmap.md](docs/roadmap.md) | Phases, decisions, what's next |
 | [docs/toolpaths-and-skills.md](docs/toolpaths-and-skills.md) | **The core workflow:** shapes → curves → toolpaths → G-code, skills, project files |
+| [docs/creating-shapes.md](docs/creating-shapes.md) | How shapes get made: the agent builds the recipe once; five ways to make one |
 | [docs/architecture.md](docs/architecture.md) | How it's built and why (incl. lessons from browser games) |
-| [docs/definition-language.md](docs/definition-language.md) | The `.easycad` project file / recipe language (draft) |
+| [docs/definition-language.md](docs/definition-language.md) | The `.easycad` project file / recipe language (v0.1) |
 | [docs/research.md](docs/research.md) | What exists, what doesn't, sources, measured kernel spike |
 | [docs/api-key.md](docs/api-key.md) | Getting and using your Claude API key |
 | [docs/devlog.md](docs/devlog.md) | What landed, what's open |
@@ -73,8 +95,10 @@ Requirements: Rust (stable, with the `wasm32-unknown-unknown` target) and `wasm-
 ```sh
 scripts/build-web.sh     # Rust → WebAssembly → web/pkg/
 scripts/serve.sh         # http://localhost:8080
-cargo test               # engine tests
+cargo test --workspace   # language and engine tests
 ```
+
+Templates live in `web/templates/*.easycad`; the engine's tests run every one of them.
 
 ## Relationship to EasyGCode
 
@@ -84,5 +108,5 @@ new projects no longer need new code.
 
 ## License
 
-Private, all rights reserved. Third-party components are permissively licensed; see
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+All rights reserved: the repository is public, but EasyCAD is not open source. Third-party
+components are permissively licensed; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

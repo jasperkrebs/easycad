@@ -1,16 +1,25 @@
-//! EasyCAD engine core.
+//! EasyCAD engine core: runs `.easycad` recipes.
 //!
-//! Phase 0 holds one hard-coded "project", the twisted star vase ([`vase`]), built the way a
-//! Grasshopper definition would build it. It proves the pipeline end to end: a NURBS outline
-//! (via `curvo`), a preview mesh, a continuous vase-mode toolpath, and print statistics from
-//! EasyGCode's bead model. In Phase 1 the same steps become nodes driven by an `.easycad`
-//! project file.
+//! A recipe (parsed by `easycad-lang`) is a small dataflow program. [`eval::evaluate`] runs its
+//! steps in dependency order through the node library ([`nodes`]): curves ([`curve`]), lofted
+//! surfaces ([`surface`]) and toolpaths with EasyGCode's vase-mode conventions and bead model
+//! ([`toolpath`], [`bead`]). The result is a drawing for the 3D view, print statistics, the
+//! settings window's contents and diagnostics.
 //!
-//! Rules (see `CLAUDE.md`): no UI, no I/O, no panics. Every failure is an [`Error`].
+//! Rules (see `CLAUDE.md`): no UI, no I/O, no panics. Bad input of any kind becomes a message.
 
 pub mod bead;
-pub mod error;
+pub mod curve;
+pub mod eval;
 pub mod geom;
-pub mod vase;
+pub mod nodes;
+pub mod surface;
+pub mod toolpath;
+pub mod value;
 
-pub use error::Error;
+pub use eval::{
+    Diagnostic, Evaluation, ParamInfo, PrintInfo, Quality, Severity, StepInfo, evaluate,
+};
+
+#[cfg(test)]
+mod eval_tests;
