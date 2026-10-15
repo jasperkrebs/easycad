@@ -263,6 +263,7 @@ function setDirty(dirty) {
 }
 
 function runEditor() {
+  clearGraphUndo();
   state.source = editor.value;
   state.unsaved = true;
   setDirty(false);
@@ -310,6 +311,13 @@ async function graphCommand(command) {
   return r.name;
 }
 
+/** The graph's Undo covers graph edits only: a change made elsewhere (the AI, the Recipe tab, a
+ * project opened) starts a fresh history, so Undo never reverts it by surprise. */
+function clearGraphUndo() {
+  graphUndo.length = 0;
+  /** @type {HTMLButtonElement} */ ($('graphUndo')).disabled = true;
+}
+
 /** Puts the recipe back as it was before the last graph edit. */
 async function undoGraph() {
   const previous = graphUndo.pop();
@@ -338,7 +346,10 @@ const chat = createChat({
     values: state.values,
     editorDirty,
   }),
-  applyRecipe,
+  applyRecipe: (text) => {
+    clearGraphUndo();
+    return applyRecipe(text);
+  },
   applyValues,
   look: (show) => viewport.snapshot(/** @type {any} */ (show)),
   catalog: async () => state.catalog || (state.catalog = await engine.catalog()),
@@ -351,8 +362,7 @@ const chat = createChat({
 /** Opens recipe text as the current project. */
 async function openSource(text) {
   chat?.projectReplaced();
-  graphUndo.length = 0;
-  /** @type {HTMLButtonElement} */ ($('graphUndo')).disabled = true;
+  clearGraphUndo();
   state.highlight = '';
   state.source = text;
   setDirty(false);
