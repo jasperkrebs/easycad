@@ -83,9 +83,10 @@ nodes.
 |---|---|---|
 | `spiral_on(surface, pitch)` | One continuous helix that follows *any* surface (vase mode for every shape, not just prisms) | vessel, lampshade, thread |
 | `isocurves(surface, dir, count)` | Follow the surface's own grid lines, which is natural for non-planar paths | — |
-| `contours(shape, every)` | Planar sections, only when you actually want layers | — |
+| `contour(surface, layer)` ✓ | Flat layers through a surface, as `vase_spiral` prints them; bend them with fields first if you like | — |
+| `tween(a, b, t)` ✓ + `spiralize(layers)` ✓ | Layers that blend from one curve to another (a flat bottom to a tilted top), printed as one spiral, each move extruded for its own layer height | lampshade (vase mode) |
 | `offset_rings(outline, step)` | Concentric rings with seam styles: staircase, zipper, true spiral | bend stool seat, vessel bottoms |
-| `project(curves, onto: surface)` | Drape a flat pattern onto a surface (non-planar decoration) | — |
+| `project(curves, onto: surface)` | Drape a flat pattern onto a surface (non-planar decoration); onto a plane it exists as `project_along` ✓ | — |
 | `unroll(surface)` / `flatten(shape)` | Lay a (developable) surface out flat: for laser cutting, or print flat and bend afterwards | bend stool idea |
 | `fill(outline, pattern)` | Zigzag, spiral or concentric fills | spoon, spiral disc |
 
@@ -128,7 +129,11 @@ settings, EasyCAD must produce the same G-code as EasyGCode (comments aside). Th
 G-code written by EasyGCode itself (`scripts/easygcode-fixtures.cjs`). The spiral disc matches
 in all four cases (flow mode, and pellet, filament and without start/end blocks at a set
 speed), and `vase_spiral` matches EasyGCode's vase mode (its lampshade generator, set up as a
-plain cylinder) at a set speed and in flow mode. EasyGCode itself is never changed.
+plain cylinder) at a set speed and in flow mode. So does `spiralize` through the same
+cylinder's flat layers. Toolpaths with no EasyGCode counterpart, such as `spiralize` through
+tilted layers, are checked against a **hand-checked fixture** instead (`fixtures/hand-checked/`).
+It is worked out from the geometry in exact arithmetic, with every move annotated so a person
+can check it with a calculator. EasyGCode itself is never changed.
 
 ---
 
@@ -169,7 +174,10 @@ Rules that always apply live in two places:
 - **The settings window:** sliders, number fields, toggles, dropdowns, and point editors like
   EasyGCode's drag-editable profile and curve canvases.
 - **Edit points and handles directly in the 3D view.**
-- **Code view** for exact edits; graph view later.
+- **The Graph tab** (since 15 Oct): the recipe as Grasshopper-style components and wires.
+  You can add components, wire inputs and add sliders without any AI, and take a recipe the AI
+  wrote further by hand. Every edit is an edit of the recipe text.
+- **Recipe tab** for exact edits of the text itself.
 - The chat box doubles as a command line: `height 200`, `layer 0.4`, `export gcode` happen
   instantly, without AI.
 

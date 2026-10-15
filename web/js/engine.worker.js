@@ -2,7 +2,7 @@
 // (scripts/build-web.sh). Big arrays go back to the page as transferables: moved, not copied.
 // Every request carries an id, and its answer (result, error or crash) carries the same id.
 
-import init, { engineVersion, evaluate, exportFile, nodeCatalog } from '../pkg/easycad_wasm.js';
+import init, { editGraph, engineVersion, evaluate, exportFile, graph, nodeCatalog, palette } from '../pkg/easycad_wasm.js';
 
 const started = performance.now();
 const loading = init()
@@ -17,15 +17,18 @@ const loading = init()
 /** Answers one request: the result, and the buffers to move rather than copy. */
 function answer(msg) {
   if (msg.type === 'catalog') return { result: nodeCatalog(), transfer: [] };
+  if (msg.type === 'palette') return { result: palette(), transfer: [] };
+  if (msg.type === 'graph') return { result: graph(msg.source), transfer: [] };
+  if (msg.type === 'edit') return { result: editGraph(msg.source, msg.command), transfer: [] };
   if (msg.type === 'export') {
     const file = exportFile(msg.source, msg.values, msg.which, msg.profile);
     return { result: { name: file.name, data: file.data }, transfer: [file.data.buffer] };
   }
   if (msg.type === 'evaluate') {
     const t0 = performance.now();
-    const r = evaluate(msg.source, msg.values, msg.quality);
+    const r = evaluate(msg.source, msg.values, msg.quality, msg.highlight || undefined);
     const ms = performance.now() - t0;
-    const arrays = [r.mesh.positions, r.mesh.indices, r.curves.points, r.curves.starts, r.paths.points, r.paths.starts];
+    const arrays = [r, r.highlight].flatMap((d) => [d.mesh.positions, d.mesh.indices, d.curves.points, d.curves.starts, d.paths.points, d.paths.starts]);
     return { result: { ...r, ms }, transfer: arrays.map((a) => a.buffer) };
   }
   throw new Error(`unknown request: ${msg.type}`);

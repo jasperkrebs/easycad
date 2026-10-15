@@ -182,9 +182,11 @@ on fields builds a small expression tree that steps evaluate at each point they 
 - An item input that receives a list makes the node run per item. With several lists, the
   **longest list** rule applies (Grasshopper's default).
 - `cross(a, b)` gives every combination; `flatten`, `zip` and `shift` cover the common
-  data-tree needs.
-- Full Grasshopper data trees are deliberately **not** in v0. Nested lists cover most cases;
-  revisit later.
+  data-tree needs (`flatten` and `shift` exist since 1c).
+- A list of lists works like a tree's branches: a list input runs once per inner list
+  (`count([[1, 2], [3]])` is `[2, 1]`).
+- Full Grasshopper data trees with paths are deliberately **not** in v0. Nested lists cover
+  most cases; revisit later.
 
 ---
 
@@ -221,7 +223,7 @@ server all call the same registry.
 | Document | `doc.new`, `doc.open`, `doc.save`, `doc.export {format}` |
 | Definition | `def.get`, `def.apply_edits {edits}`, `def.replace {text}`, `def.format` |
 | Parameters | `param.set {name, value}`, `param.lock {name}`, `param.reset {name}` |
-| Graph | `node.add`, `node.connect`, `node.remove`, `node.rename` (implemented as text edits) |
+| Graph | `setInput` (type or wire), `setExpr`, `addStep`, `addStage`, `removeStage`, `remove`, `rename`, `setShown`, `addParam`, `setParam`: `easycad_core::graph`, each one a text edit, parsed again before it's used (done 15 Oct) |
 | Evaluation | `eval.run`, `eval.inspect {node}`, `eval.diagnostics` |
 | View | `view.render {views, size}` (provided by the UI, returns PNGs) |
 | Print | `print.check`, `print.toolpath`, `print.gcode {printer}`, `print.send {printer}` (desktop) |
@@ -360,8 +362,17 @@ viewport, like Rhino + Grasshopper.
 - **Params:** auto-generated from `param` lines:
   - sliders, number fields, toggles and dropdowns, grouped;
   - lock icons, and "assumed" badges with a one-tap "OK, keep it".
-- **Graph:** the definition drawn as nodes and wires, coloured by status. Read-only first,
-  editable in Phase 5 (edits become text edits).
+- **Graph** (done 15 Oct, the Graph tab): the definition drawn as components and wires,
+  like Grasshopper:
+  - settings are sliders on the left; each step is a component with its pipe stages listed
+    inside; every name an input reads is a wire; `print` and `export` are sinks on the right;
+  - components are coloured by status and show what they made;
+  - the selected one is drawn in the highlight colour in the 3D view;
+  - you can drag wires from outputs to inputs, add components from a searchable palette
+    (double-click, or drop a wire on empty space), and type inputs in the inspector below;
+  - preview, rename, remove, add sliders and change their ranges, undo;
+  - every edit is a graph command, so a text edit (§7); positions you drag to are kept on
+    the device (a `layout` block in the file is still a plan, §4 of the language doc).
 - **Code:** the `.easycad` text with highlighting and inline errors (a simple editor first,
   CodeMirror later).
 - **Print:** printer, material, estimates (time, length, weight), checks, export buttons, send

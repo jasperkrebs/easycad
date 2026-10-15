@@ -4,7 +4,7 @@
 
 import { el } from './dom.js';
 
-const UNIT_LABELS = { deg: '°', inch: 'in' };
+export const UNIT_LABELS = { deg: '°', inch: 'in' };
 
 /** A slider step for a range: about a hundredth of it, rounded down to a power of ten. */
 export function autoStep(min, max) {

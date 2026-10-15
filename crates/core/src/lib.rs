@@ -5,7 +5,8 @@
 //! [`spiral`]), values that vary over space ([`field`]), lofted surfaces ([`surface`]) and
 //! toolpaths with EasyGCode's conventions and bead model ([`toolpath`], [`bead`]). The result is
 //! a drawing for the 3D view, print statistics, the settings window's contents and diagnostics.
-//! [`files`] turns it into files to save: G-code ([`gcode`]) and STL ([`stl`]).
+//! [`files`] turns it into files to save: G-code ([`gcode`]) and STL ([`stl`]). [`graph`] is the
+//! recipe as components and wires, and the commands that edit it as text.
 //!
 //! Rules (see `CLAUDE.md`): no UI, no I/O, no panics. Bad input of any kind becomes a message.
 
@@ -16,6 +17,7 @@ pub mod field;
 pub mod files;
 pub mod gcode;
 pub mod geom;
+pub mod graph;
 pub mod nodes;
 pub mod spiral;
 pub mod stl;
@@ -25,12 +27,14 @@ pub mod value;
 
 pub use eval::{
     Diagnostic, Evaluation, Export, ExportKind, ParamInfo, PrintInfo, Quality, Severity, StepInfo,
-    evaluate,
+    evaluate, evaluate_with,
 };
 
 #[cfg(test)]
 mod eval_tests;
 #[cfg(test)]
 mod golden_tests;
+#[cfg(test)]
+mod graph_tests;
 #[cfg(test)]
 mod toolbox_tests;

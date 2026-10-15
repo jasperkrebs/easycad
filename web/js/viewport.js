@@ -42,6 +42,16 @@ export function createViewport(canvas) {
   const curveMaterial = new THREE.LineBasicMaterial();
   const curves = new THREE.Group();
   scene.add(paths, curves);
+
+  // The graph's selected component, drawn over everything in the highlight colour (green, as
+  // Grasshopper shows a selected component's geometry).
+  const hlMeshMaterial = new THREE.MeshStandardMaterial({ roughness: 0.5, transparent: true, opacity: 0.55, depthWrite: false });
+  const hlMesh = new THREE.Mesh(new THREE.BufferGeometry(), hlMeshMaterial);
+  const hlLineMaterial = new LineMaterial({ linewidth: 2.4, worldUnits: false });
+  const hlLines = new THREE.Group();
+  hlMesh.renderOrder = 2;
+  hlLines.renderOrder = 3;
+  scene.add(hlMesh, hlLines);
   /** @type {THREE.GridHelper | null} */
   let grid = null;
 
@@ -72,6 +82,7 @@ export function createViewport(canvas) {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     lineMaterial.resolution.set(w, h);
+    hlLineMaterial.resolution.set(w, h);
     requestRender();
   }
   new ResizeObserver(resize).observe(canvas);
@@ -156,6 +167,8 @@ export function createViewport(canvas) {
     scene.background = new THREE.Color(token('--view-bg'));
     meshMaterial.color.set(token('--accent'));
     curveMaterial.color.set(token('--warn'));
+    hlMeshMaterial.color.set(token('--accent2'));
+    hlLineMaterial.color.set(token('--accent2'));
     rebuildGrid();
     recolorPaths();
     requestRender();
@@ -223,6 +236,26 @@ export function createViewport(canvas) {
       });
       recolorPaths();
 
+      const hl = result.highlight;
+      const hlGeometry = new THREE.BufferGeometry();
+      if (hl && hl.mesh.indices.length) {
+        hlGeometry.setAttribute('position', new THREE.BufferAttribute(hl.mesh.positions, 3));
+        hlGeometry.setIndex(new THREE.BufferAttribute(hl.mesh.indices, 1));
+        hlGeometry.computeVertexNormals();
+      }
+      hlMesh.geometry.dispose();
+      hlMesh.geometry = hlGeometry;
+      clear(hlLines);
+      if (hl) {
+        for (const packed of [hl.curves, hl.paths]) {
+          eachPolyline(packed, (points) => {
+            const g = new LineGeometry();
+            g.setPositions(points);
+            hlLines.add(new Line2(g, hlLineMaterial));
+          });
+        }
+      }
+
       applyMode();
       if (!fitted || view.refit) {
         fit(result.bounds);
@@ -259,6 +292,8 @@ export function createViewport(canvas) {
       };
       mode = show === 'toolpath' ? 'path' : show === 'shape' ? 'shape' : 'both';
       applyMode();
+      // The AI sees the model, not what's selected in the graph.
+      hlMesh.visible = hlLines.visible = false;
       renderer.setPixelRatio(1);
       renderer.setSize(size, size, false);
       camera.aspect = 1;
@@ -307,6 +342,7 @@ export function createViewport(canvas) {
       ctx.stroke();
 
       // Back to the view on screen.
+      hlMesh.visible = hlLines.visible = true;
       mode = saved.mode;
       camera.up.copy(saved.up);
       camera.position.copy(saved.position);

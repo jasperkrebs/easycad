@@ -18,6 +18,7 @@ const ASSETS = [
   './js/dom.js',
   './js/engine.js',
   './js/engine.worker.js',
+  './js/graph.js',
   './js/language-guide.js',
   './js/print.js',
   './js/recipe.js',

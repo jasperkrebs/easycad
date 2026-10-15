@@ -44,7 +44,7 @@ spiral that gets denser near the rim" needs no new word; "cut a hole through the
 |---|---|---|---|
 | **1. Start from a template** | Nobody: open it, tune the settings | ✅ | Most days: your own past projects plus EasyGCode's projects as templates |
 | **2. Describe it** | The agent writes or edits the recipe | ✅ (typing or dictating) | New ideas, variations ("like my lampshade, but 12 waves and a wider throat"), anything you can say but not easily build |
-| **3. Build with steps** | You, from a menu of steps | ✅ (lists and forms, no 3D clicking) | Small structural edits: add a "wave" step, swap "star" for "polygon", reorder |
+| **3. Build with steps** | You, from a menu of steps: the **Graph** tab (since 15 Oct), Grasshopper-style components and wires | ✅ (tap a component, edit its inputs in a list below) | Structural edits without AI: add a component, wire it, swap "star" for "polygon", add a slider |
 | **4. Draw curves** | You, with your finger or mouse in 2D | ✅ (2D only) | Profiles, outlines and paths, like EasyGCode's drag-editable radius profile |
 | **5. Bring something in** | The agent or an importer | ✅ | A photo of a sketch (the agent traces it), SVG/DXF curves from Rhino or Illustrator |
 
@@ -99,6 +99,26 @@ finger. EasyCAD avoids it:
 2. **Phase 1b** ✓ (landed 15 Oct): real G-code for the P1P and the Klipper pellet printer,
    golden-tested against EasyGCode; fields and general toolpath steps; EasyGCode's spiral disc
    as a recipe; STL export.
-3. **Phase 2:** the agent (way 2), writing and editing recipes with skills.
-4. **Phase 2b:** the Steps tab (way 3) and 2D curve editors (way 4).
-5. **Later:** importing curves and photos (way 5) and the graph view on desktop.
+3. **Phase 2** (the Chat tab landed 15 Oct): the agent (way 2), writing and editing recipes;
+   skills next.
+4. **The Grasshopper toolbox and the Graph tab** ✓ (15 Oct, way 3): about 70 general steps
+   named after Grasshopper's components (points, planes, transforms by fields, tweens,
+   `spiralize`, …). The recipe can be built and edited as components and wires, with no AI at
+   all, and the AI's recipes open in the same graph to be taken further by hand.
+5. **Next:** 2D curve editors (way 4); importing curves and photos (way 5).
+
+## Why a vocabulary, not one tool per project (15 Oct)
+
+The owner's test request, "a cylinder whose top is cut by a tilted plane, with the layers in
+between tweened and printed as one spiral", couldn't be built at first. The answer wasn't a
+"cut cylinder" step. It was the missing *words*:
+- planes and 3D rotation;
+- moving and turning point by point (fields: `move(z: 0.1 * x)`);
+- `tween`;
+- `spiralize`, vase mode through any layers.
+
+With those, the request is five lines (the "Cut cylinder" template), and the same words build
+many other things: tilted rims, twisted or flared walls, non-planar layers.
+
+When a request still can't be built, the AI says which word is missing rather than faking it.
+That word gets added once, as a general step.

@@ -842,3 +842,441 @@ fieldset.choice input {
 #aiSecretState {
   margin: 8px 0 12px;
 }
+
+/* ---------- graph: the recipe as Grasshopper-style components and wires ---------- */
+@media (min-width: 960px) {
+  body[data-tab="graph"] .layout {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+}
+
+.graph-card {
+  position: relative;
+}
+
+.graph-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.graph-bar .btn {
+  padding: 7px 11px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.graph-canvas {
+  position: relative;
+  height: min(62vh, 640px);
+  min-height: 300px;
+  margin-top: 10px;
+  overflow: hidden;
+  background-color: var(--view-bg);
+  background-image: radial-gradient(var(--view-grid) 1px, transparent 1.5px);
+  background-size: 22px 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.graph-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+
+.graph-wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.gwire {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+  opacity: 0.75;
+}
+
+.gwire.active {
+  stroke: var(--accent2);
+  stroke-width: 2.4;
+  opacity: 1;
+}
+
+.gwire.temp {
+  stroke: var(--accent);
+  stroke-dasharray: 5 4;
+  opacity: 1;
+}
+
+.gnode {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 204px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  cursor: grab;
+}
+
+.gnode.param {
+  width: 184px;
+}
+
+.gnode.sink {
+  width: 170px;
+}
+
+.gnode.selected {
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 2px var(--accent2);
+}
+
+.gnode.error {
+  border-color: var(--danger);
+}
+
+.gnode.skipped {
+  opacity: 0.6;
+}
+
+.gnode-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 6px 10px;
+  background: var(--card2);
+  border-radius: 10px 10px 0 0;
+  font-weight: 700;
+}
+
+.gnode.error .gnode-head {
+  color: var(--danger);
+}
+
+.gnode.sink .gnode-head {
+  color: var(--accent2);
+}
+
+.gnode-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gnode-eye {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 2px;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.gnode-eye[aria-pressed="true"] {
+  color: var(--accent2);
+}
+
+.gstage {
+  padding: 5px 10px 1px;
+  color: var(--accent);
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+}
+
+.gstage.unknown {
+  color: var(--danger);
+}
+
+.grow {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 10px 2px 12px;
+  min-height: 20px;
+}
+
+.grow-name {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.grow-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
+}
+
+.grow.expr .grow-text,
+.gnode.sink .grow-text {
+  text-align: left;
+}
+
+.grow.missing .grow-text {
+  color: var(--warn);
+}
+
+.grow.unknown,
+.grow.unknown .grow-name {
+  color: var(--danger);
+}
+
+.gnode-foot {
+  margin-top: 4px;
+  padding: 4px 10px 6px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gnode.error .gnode-foot {
+  color: var(--danger);
+  white-space: normal;
+}
+
+.gport {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2px solid var(--muted);
+}
+
+.gport.in {
+  left: -6px;
+}
+
+.gport.out {
+  right: -6px;
+  border-color: var(--accent2);
+  cursor: crosshair;
+}
+
+/* A finger-sized target around the small dot. */
+.gport.out::after {
+  content: "";
+  position: absolute;
+  inset: -11px;
+}
+
+.gslider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 8px;
+}
+
+.gslider input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.gslider output {
+  min-width: 4.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.gslider input[type="number"],
+.gslider input[type="text"],
+.gslider select {
+  width: 100%;
+  padding: 4px 6px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.graph-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.graph-palette {
+  position: absolute;
+  inset: 62px 10px auto 10px;
+  z-index: 5;
+  max-height: min(70vh, 640px);
+  overflow: auto;
+  padding: 10px;
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+.graph-palette-bar {
+  display: flex;
+  gap: 6px;
+}
+
+.graph-palette-bar input,
+.graph-inspector input[type="text"],
+.graph-inspector input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.graph-palette-list h3,
+.ginsp-stage h3 {
+  margin: 12px 0 4px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+
+.ginsp-stage h3 {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.95rem;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ginsp-stage h3 small {
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.gpick {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 9px;
+  text-align: left;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.gpick span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.graph-inspector {
+  margin-top: 12px;
+}
+
+.ginsp-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.graph-inspector .ginsp-name {
+  font-weight: 700;
+}
+
+.badge.ok {
+  color: var(--accent2);
+  border-color: var(--accent2);
+}
+
+.badge.error {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.ginsp-stage {
+  margin-top: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.ginput {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.ginput > label,
+.ginput > span {
+  font-size: 0.88rem;
+}
+
+.ginput small {
+  color: var(--muted);
+}
+
+.ginput.unknown > label {
+  color: var(--danger);
+}
+
+.ginput-row {
+  display: flex;
+  gap: 6px;
+}
+
+.ginput-row select {
+  width: auto;
+  max-width: 42%;
+}
+
+.ginput-row .btn {
+  padding: 6px 10px;
+}
+
+.ginsp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0 10px;
+}
+
+/* Six tabs fit a phone without scrolling. */
+@media (max-width: 520px) {
+  .tabs {
+    gap: 5px;
+  }
+  .tab {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 10px 4px;
+    font-size: 0.86rem;
+  }
+}

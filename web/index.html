@@ -50,6 +50,7 @@
       <div class="side">
         <nav class="tabs" role="tablist" aria-label="Panels">
           <button class="tab" role="tab" id="tab-settings" aria-controls="panel-settings" aria-selected="true">Settings</button>
+          <button class="tab" role="tab" id="tab-graph" aria-controls="panel-graph" aria-selected="false">Graph</button>
           <button class="tab" role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="false">Chat</button>
           <button class="tab" role="tab" id="tab-recipe" aria-controls="panel-recipe" aria-selected="false">Recipe</button>
           <button class="tab" role="tab" id="tab-print" aria-controls="panel-print" aria-selected="false">Print</button>
@@ -100,6 +101,35 @@
           <p class="hint">
             Your project is remembered on this device. <b>Save</b> downloads it as an <code>.easycad</code> file you can open
             again anywhere. <b>Save settings</b> keeps just the values, to load into the same project later.
+          </p>
+        </section>
+
+        <section class="card graph-card" role="tabpanel" id="panel-graph" aria-labelledby="tab-graph" hidden>
+          <div class="graph-bar">
+            <button class="btn primary" type="button" id="graphAdd">+ Component</button>
+            <button class="btn" type="button" id="graphSlider">+ Slider</button>
+            <button class="btn" type="button" id="graphUndo" disabled>Undo</button>
+            <button class="btn" type="button" id="graphFit">Fit</button>
+            <button class="btn" type="button" id="graphTidy">Tidy</button>
+          </div>
+          <p class="hint" id="graphNote" role="status" hidden></p>
+          <div class="graph-canvas" id="graphCanvas" tabindex="0" aria-label="The recipe as components and wires">
+            <div class="graph-world" id="graphWorld"><svg class="graph-wires" id="graphWires" aria-hidden="true"></svg></div>
+            <p class="graph-empty" id="graphEmpty" hidden></p>
+          </div>
+          <div class="graph-palette" id="graphPalette" role="dialog" aria-label="Add a component" hidden>
+            <div class="graph-palette-bar">
+              <input type="search" id="graphSearch" placeholder="Search: circle, tween, loft, spiralize…" aria-label="Search steps" autocomplete="off" />
+              <button class="btn" type="button" id="graphPaletteClose">Close</button>
+            </div>
+            <p class="hint" id="graphPaletteFor"></p>
+            <div class="graph-palette-list" id="graphPaletteList"></div>
+          </div>
+          <div class="graph-inspector" id="graphInspector"></div>
+          <p class="hint">
+            The graph is the recipe drawn as components, like a Grasshopper definition: sliders on the left, wires for every
+            name a step reads. Everything you change here edits the recipe text (see the Recipe tab). Drag the canvas to move
+            around, pinch or scroll to zoom, double-click empty space to add a component.
           </p>
         </section>
 

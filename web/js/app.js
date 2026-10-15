@@ -12,6 +12,7 @@ import { layoutKey, renderSettings } from './settings.js';
 import { PRINTERS, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
+import { createGraph } from './graph.js';
 
 const TEMPLATES = [
   { id: 'twisted-vase', name: 'Twisted star vase' },
@@ -23,7 +24,7 @@ const TEMPLATES = [
 ];
 const STORAGE_KEY = 'easycad.project';
 const MAX_FILE_BYTES = 256 * 1024;
-const TABS = ['settings', 'chat', 'recipe', 'print', 'about'];
+const TABS = ['settings', 'graph', 'chat', 'recipe', 'print', 'about'];
 
 const state = {
   /** The recipe text: the project. */
@@ -43,12 +44,42 @@ const state = {
   last: null,
   engineInfo: { version: '?', loadMs: 0 },
   catalog: '',
+  /** The step selected in the graph, drawn in the highlight colour. */
+  highlight: '',
 };
 
 const engine = createEngine();
 const viewport = createViewport(/** @type {HTMLCanvasElement} */ ($('view')));
 const editor = /** @type {HTMLTextAreaElement} */ ($('recipe'));
 let refitNext = true;
+/** Recipe texts before each graph edit, newest last, for the graph's Undo. */
+const graphUndo = /** @type {string[]} */ ([]);
+
+const graphView = createGraph({
+  canvas: $('graphCanvas'),
+  world: $('graphWorld'),
+  wires: /** @type {any} */ ($('graphWires')),
+  inspector: $('graphInspector'),
+  note: $('graphNote'),
+  empty: $('graphEmpty'),
+  palette: $('graphPalette'),
+  search: /** @type {HTMLInputElement} */ ($('graphSearch')),
+  paletteList: $('graphPaletteList'),
+  paletteFor: $('graphPaletteFor'),
+  undoButton: /** @type {HTMLButtonElement} */ ($('graphUndo')),
+  engine,
+  command: graphCommand,
+  undo: undoGraph,
+  select: (name) => {
+    if (name === state.highlight) return;
+    state.highlight = name;
+    run('final');
+  },
+  setValue: (name, value, quality) => {
+    state.layout = ''; // the Settings tab shows the new value too
+    onSettingChange(name, value, quality);
+  },
+});
 
 // ---------------------------------------------------------------------------------------------
 // Running the recipe
@@ -65,7 +96,7 @@ async function run(quality, how = {}) {
   if (how.opened) refitNext = true;
   let result;
   try {
-    result = await engine.evaluate(state.source, state.values, quality);
+    result = await engine.evaluate(state.source, state.values, quality, state.highlight);
   } catch (err) {
     setStatus('Engine error', 'bad');
     showSettingsError(String(err.message || err));
@@ -97,6 +128,7 @@ async function run(quality, how = {}) {
   showSource(result.source);
   renderHud(result);
   renderAbout();
+  graphView.update(result);
 
   showSettingsError(errors ? `The recipe has ${errors === 1 ? 'a problem' : `${errors} problems`}: see the Recipe tab.` : '');
   if (errors) setStatus(`${errors} recipe ${errors === 1 ? 'problem' : 'problems'}`, 'bad');
@@ -259,6 +291,34 @@ async function applyRecipe(text) {
   return state.last;
 }
 
+/**
+ * Runs a graph command (an edit of the recipe text, see crates/core/src/graph.rs), undoable from
+ * the graph. Resolves to the name of anything it added; a refusal is thrown as a readable error.
+ * @param {Record<string, any>} command
+ */
+async function graphCommand(command) {
+  if (editorDirty) throw new Error('The Recipe tab has edits that haven’t run yet: press Run or Revert there first.');
+  await engine.idle();
+  const before = state.source;
+  const r = await engine.editGraph(before, command);
+  if (r.source !== before) {
+    graphUndo.push(before);
+    if (graphUndo.length > 100) graphUndo.shift();
+    /** @type {HTMLButtonElement} */ ($('graphUndo')).disabled = false;
+    await applyRecipe(r.source);
+  }
+  return r.name;
+}
+
+/** Puts the recipe back as it was before the last graph edit. */
+async function undoGraph() {
+  const previous = graphUndo.pop();
+  /** @type {HTMLButtonElement} */ ($('graphUndo')).disabled = !graphUndo.length;
+  if (previous === undefined) return false;
+  await applyRecipe(previous);
+  return true;
+}
+
 /** Moves settings (an agent edit), runs and returns the result. */
 async function applyValues(values) {
   Object.assign(state.values, values);
@@ -291,6 +351,9 @@ const chat = createChat({
 /** Opens recipe text as the current project. */
 async function openSource(text) {
   chat?.projectReplaced();
+  graphUndo.length = 0;
+  /** @type {HTMLButtonElement} */ ($('graphUndo')).disabled = true;
+  state.highlight = '';
   state.source = text;
   setDirty(false);
   editor.value = text;
@@ -365,6 +428,13 @@ function selectTab(name) {
     $(`tab-${t}`).setAttribute('aria-selected', String(t === name));
     $(`panel-${t}`).hidden = t !== name;
   }
+  document.body.dataset.tab = name;
+  graphView.show(name === 'graph');
+  // The highlight belongs to the graph: away from it, the model is drawn as it is.
+  if (name !== 'graph' && state.highlight) {
+    state.highlight = '';
+    run('final');
+  }
 }
 
 /** Reads a picked file as text, refusing anything too big to be a recipe or settings file. */
@@ -436,6 +506,13 @@ function wire() {
     autosave();
   });
   $('toPrinter').addEventListener('click', () => selectTab('print'));
+
+  $('graphAdd').addEventListener('click', () => graphView.openPalette({}));
+  $('graphSlider').addEventListener('click', () => graphView.addSlider());
+  $('graphUndo').addEventListener('click', () => undoGraph());
+  $('graphFit').addEventListener('click', () => graphView.fit());
+  $('graphTidy').addEventListener('click', () => graphView.tidy());
+  $('graphPaletteClose').addEventListener('click', () => graphView.closePalette());
 
   $('resetSettings').addEventListener('click', () => {
     Object.assign(state.values, state.openedValues);

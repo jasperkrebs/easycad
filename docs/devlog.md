@@ -3,6 +3,46 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-15: the Graph tab, Grasshopper-style components and wires
+
+**Why:** the owner works in Grasshopper and wants to build and extend recipes without AI,
+"understandable, editable and expandable by a human", and to keep design control over what
+the AI wires.
+
+**Landed**
+- **Graph tab** (`web/js/graph.js`):
+  - settings as sliders on the left, each step as a component with its pipe stages inside,
+    and a wire for every name an input reads; `print` and `export` are sinks;
+  - components are coloured by status and show what they made;
+  - laid out left to right by dependency; where you drag components is kept on the device.
+- **Editing without AI:**
+  - drag a wire from an output to an input;
+  - add components from a searchable palette (button, double-click, or drop a wire on empty
+    space);
+  - type or wire any input in the inspector below the canvas;
+  - add stages (`|>`), preview (`show`), rename, remove, add sliders and change their ranges,
+    move sliders; Undo;
+  - selecting a component draws its geometry in green in the 3D view, as in Grasshopper.
+- **Every edit is a command and a text edit** (`easycad_core::graph`, on the outline and edits
+  in `easycad_lang::outline`/`edit`):
+  - each changes only its own piece of the recipe (comments and layout stay);
+  - each is parsed again before use, so the graph can't break a recipe;
+  - an input can't be given text that reaches outside it (`1) |> move(…` is refused).
+- **Tests:**
+  - the outline matches the parser's references in every template;
+  - every kind of edit, with exact before/after text;
+  - every command on every component of every template either parses or says why;
+  - `scripts/graph-test.cjs` drives the real UI with a mouse (desktop) and touch (phone): it
+    types an input, adds from the palette, drags a wire, previews, renames, undoes, removes,
+    adds a slider and changes it. It runs in CI.
+- Engine 279 KB gzipped (of the 3 MB budget).
+
+**Open**
+- Positions live on the device, not in the file (a `layout` block is planned).
+- No clusters (your own steps from a group of components) and no full data trees yet.
+- Wiring an input that isn't shown on the canvas (an optional one without a value) goes
+  through the inspector's "wire from…" list.
+
 ## 2026-10-15: the Grasshopper-style toolbox, and vase mode through tilted layers
 
 **Why:** the owner's test request was a cylinder whose top is cut by a tilted plane, with the

@@ -195,6 +195,9 @@ pub struct Evaluation {
     pub drawing: Drawing,
     pub print: Option<PrintInfo>,
     pub exports: Vec<Export>,
+    /// The step asked for with [`evaluate_with`], drawn on its own (the graph view's selected
+    /// component, shown in the highlight colour).
+    pub highlight: Drawing,
 }
 
 impl Evaluation {
@@ -207,6 +210,12 @@ impl Evaluation {
 
 /// Parses and runs a recipe.
 pub fn evaluate(source: &str, quality: Quality) -> Evaluation {
+    evaluate_with(source, quality, None)
+}
+
+/// Parses and runs a recipe, and also draws step `highlight` on its own (in
+/// [`Evaluation::highlight`]), whether it's shown or not.
+pub fn evaluate_with(source: &str, quality: Quality, highlight: Option<&str>) -> Evaluation {
     let mut out = Evaluation::default();
     if source.len() > MAX_SOURCE_BYTES {
         out.diagnostics.push(Diagnostic {
@@ -249,7 +258,12 @@ pub fn evaluate(source: &str, quality: Quality) -> Evaluation {
             ),
         });
     }
-    Runner::new(&program, quality, &mut out).run();
+    let mut runner = Runner::new(&program, quality, &mut out);
+    runner.run();
+    if let Some(name) = highlight {
+        runner.highlight(name);
+    }
+    drop(runner);
     out.diagnostics.sort_by_key(|d| (d.line, d.col));
     out
 }
@@ -452,6 +466,24 @@ impl<'a> Runner<'a> {
                 status,
                 summary,
             });
+        }
+    }
+
+    /// Draws one step's value into the highlight drawing.
+    fn highlight(&mut self, name: &str) {
+        let value = self
+            .program
+            .bindings
+            .iter()
+            .zip(&self.state)
+            .find_map(|(b, s)| match s {
+                State::Done(v) if b.name == name => Some(v.clone()),
+                _ => None,
+            });
+        if let Some(v) = value {
+            let shown = std::mem::take(&mut self.out.drawing);
+            self.draw(&v);
+            self.out.highlight = std::mem::replace(&mut self.out.drawing, shown);
         }
     }
 

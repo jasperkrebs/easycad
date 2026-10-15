@@ -5,18 +5,24 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status:** Phase 1b done (15 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
-> - **Working:** projects are recipes, small `.easycad` text files. Each one opens with its
->   own settings window, generated from the recipe. The Rust engine runs in the browser as
+> **Status:** Phase 1c done (15 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
+> - **Projects are recipes:** small `.easycad` text files. Each one opens with its own
+>   settings window, generated from the recipe. The Rust engine runs in the browser as
 >   WebAssembly, shows the shape and its toolpath, and gives a live print estimate.
+> - **Graph tab:** the recipe as Grasshopper-style components and wires. Build and edit
+>   without any AI (add components, wire inputs, sliders), or take what the AI made further by
+>   hand. About 70 steps named after Grasshopper's components: points, planes, tweens,
+>   transforms by fields (per point), surfaces, and vase mode through tilted layers.
+> - **Chat tab:** Claude writes and edits recipes in the app, with your own key (behind your
+>   own password, or stored on your device; see [docs/api-key.md](docs/api-key.md)).
 > - **G-code** for the Bambu P1P and the Klipper pellet printer, written the way EasyGCode
->   writes it and golden-tested against EasyGCode's own output. **STL** for plain geometry.
-> - **EasyGCode's spiral disc** is a ten-line recipe of general steps (fields, spiral,
->   interlock, toolpath, stack), with the same G-code as EasyGCode: new projects are recipes,
->   not new app code. Four templates, open/save, and **Copy for AI** in the Recipe tab to
->   describe new things in any Claude chat.
-> - **Next:** more of EasyGCode's projects as recipes (vessel, bend stool seat, lampshade), and
->   geometry steps for STL (extrude, revolve, booleans).
+>   writes it, speeds set as volumetric flow, golden-tested against EasyGCode's own output.
+>   **STL** for plain geometry.
+> - **Templates:** EasyGCode's spiral disc as a ten-line recipe (same G-code as EasyGCode), a
+>   cylinder cut by a tilted plane (tilted layers in one spiral), a geometry-only turned
+>   vase, and three vase-mode vessels.
+> - **Next:** more of EasyGCode's projects as recipes (vessel, bend stool seat, lampshade),
+>   skills for the agent, and 2D curve editors.
 >
 > See the [roadmap](docs/roadmap.md).
 
@@ -48,6 +54,7 @@ A project, exactly as the app saves it (the first template; every `param` is a s
 easycad 0.1
 project "Twisted star vase"
 printer "Bambu P1P 0.4"
+note "A rounded star that shrinks and twists as it rises, printed as one continuous spiral (vase mode)."
 
 group "Shape"
 param height    = 160 mm  in 40..300          "Height"
@@ -60,8 +67,9 @@ param top_scale = 0.8     in 0.3..2           "Top scale"
 group "Print"
 param layer     = 0.3 mm  in 0.08..3          "Layer height"
 param line      = 0.6 mm  in 0.2..10          "Line width"
-param speed     = 40      in 2..300           "Speed (mm/s)"
+param flow      = 8       in 1..25            "Flow (mm³/s)"
 
+# One rounded star, copied every few degrees of twist: each copy scaled, turned and lifted.
 outline  = star(points, outer: radius, inner: radius * (1 - depth)) |> smooth
 t        = range(0, 1, count: 16 + abs(twist) / 3)
 sections = outline
@@ -70,10 +78,11 @@ sections = outline
            |> move(z: height * t)
 wall     = loft(sections)
 vase     = cap(wall)
-path     = vase_spiral(wall, layer: layer, width: line, speed: speed)
+path     = vase_spiral(wall, layer: layer, width: line, flow: flow)
 
 show vase
 print path
+export vase as "twisted-vase.stl"
 ```
 
 ## Docs
@@ -86,7 +95,7 @@ print path
 | [docs/architecture.md](docs/architecture.md) | How it's built and why (incl. lessons from browser games) |
 | [docs/definition-language.md](docs/definition-language.md) | The `.easycad` project file / recipe language (v0.1) |
 | [docs/research.md](docs/research.md) | What exists, what doesn't, sources, measured kernel spike |
-| [docs/api-key.md](docs/api-key.md) | Getting and using your Claude API key |
+| [docs/api-key.md](docs/api-key.md) | Connecting the AI: your Claude API key, the password-protected proxy, costs |
 | [docs/devlog.md](docs/devlog.md) | What landed, what's open |
 | [docs/mockup/index.html](docs/mockup/index.html) | Clickable UI mockup |
 | [CLAUDE.md](CLAUDE.md) | Guidance for AI agents (and humans) working in this repo |

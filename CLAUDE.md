@@ -13,9 +13,10 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
   (Bambu P1P filament, Klipper pellet).
 
 **Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0, 1a
-(recipes as files) and 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL)
-are done; 1c (more of EasyGCode as recipes of general steps) is next.** Hosting: public repo +
-GitHub Pages. Priorities:
+(recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL)
+and 1c (the Grasshopper toolbox, `spiralize`, the Graph tab) are done, and so is the Chat tab
+(the agent with the user's key, behind a password proxy). 1d (more of EasyGCode as recipes of
+general steps) is next.** Hosting: public repo + GitHub Pages. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.
@@ -40,6 +41,10 @@ cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && ca
 scripts/build-web.sh               # wasm32 build + wasm-bindgen → web/pkg/ (fails over the size budget)
 scripts/serve.sh                   # serves web/ at http://localhost:8080 (WASM can't load from file://)
 node scripts/smoke-test.cjs [dir]  # headless Chromium, phone + desktop; screenshots into [dir]
+node scripts/agent-test.cjs [dir]  # the Chat tab against a scripted stand-in for the AI
+node scripts/graph-test.cjs [dir]  # the Graph tab: every kind of edit, mouse and touch
+node --test agent-proxy/worker.test.mjs   # the AI proxy (Cloudflare Worker)
+python3 scripts/hand-checked-fixtures.py --check   # hand-checked G-code fixtures up to date
 python3 scripts/third-party-notices.py   # after adding/updating a dependency (CI runs --check)
 ```
 
@@ -53,7 +58,8 @@ any UI change.
 
 - **The definition is the single source of truth.** Geometry is always regenerated from the
   `.easycad` text plus parameter values. Graph edits, slider moves and agent edits all become
-  edits to that text.
+  edits to that text (graph edits through `easycad_core::graph` commands, which touch only
+  their own piece of the text and are parsed again before use).
 - **Everything is a command.** UI, in-app agent, CLI and MCP go through one command registry.
   No feature exists only in the UI.
 - **Layering.** Engine crates never depend on UI, browser, Tauri, file system or network code
@@ -75,6 +81,9 @@ any UI change.
   unless it's golden-tested against EasyGCode (or a hand-checked fixture), and keep start/end
   blocks identical to EasyGCode's proven ones. Fixtures come from EasyGCode itself
   (`scripts/easygcode-fixtures.cjs` → `fixtures/easygcode/`); EasyGCode is never changed.
+  Hand-checked fixtures (`fixtures/hand-checked/`) are worked out from the geometry in exact
+  arithmetic by `scripts/hand-checked-fixtures.py`, independently of the Rust code.
+- **Speeds as volumetric flow.** Templates and the agent set `flow:` (mm³/s), not `speed:`.
 - **General steps, not per-project code.** A new project is a recipe. Add an engine step only
   when no combination of existing steps can do the job, and make it reusable (see
   `docs/creating-shapes.md`).

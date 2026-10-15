@@ -24,6 +24,9 @@ Sizes are relative (S ≈ one focused session, M ≈ a few, L ≈ many).
 | 6 | Hosting (15 Oct) | **Public repo + GitHub Pages** (free), live at https://jasperkrebs.github.io/easycad/. CI deploys on every push to the default branch. Can go private + GitHub Pro later. |
 | 7 | Making shapes (15 Oct) | Recipes, not "AI every time": the agent (or you) writes a recipe once; it then runs locally, free and instantly. Five ways to make one: templates, describe, steps, draw curves, import. See [creating-shapes.md](creating-shapes.md). |
 | 8 | Custom projects (15 Oct) | **General steps, not one generator per project.** "I want to create custom things right out of the app", both G-code projects like EasyGCode's and plain geometry to export. So EasyGCode's projects become recipes made of general steps (fields, spirals, toolpaths, …), and the app only changes when a genuinely new *kind* of step is needed. Shown first with the spiral disc (Phase 1b). |
+| 9 | The AI in the app (15 Oct) | **Your own key, never on the site:** either a password for your own small proxy (a Cloudflare Worker that holds the key, deployed by CI from GitHub secrets), or the key stored on one device. **Sonnet 5.5 at medium effort** by default (Opus 5.5 for hard inventions, Haiku 5.5 for quick edits), with the prompt cached. Memory: `note` lines in the project, the chat on the device, and "Your rules". See [api-key.md](api-key.md). |
+| 10 | Speeds (15 Oct) | **Always as volumetric flow** (mm³/s): each move's speed follows from its bead, as in EasyGCode's flow mode. |
+| 11 | The toolbox (15 Oct) | **A Grasshopper vocabulary, not per-project tools**, and a **Graph tab** to build and edit recipes as components and wires without AI. The AI wires; you keep control of the design. |
 
 ---
 
@@ -59,11 +62,18 @@ Split into small steps (15 Oct):
   - **EasyGCode's spiral disc as a recipe** of those steps: its G-code matches EasyGCode's,
     command for command.
   - STL export (`export shape as "x.stl"`) for plain geometry.
-- **1c: More of EasyGCode as recipes** ← *next*: the vessel (wall + solid bottom as a joined
-  toolpath), the bend stool seat (`offset_rings`), the lampshade (`revolve`, `spiral_on`). Each
-  one golden-tested, and each new step general enough to reuse.
-- **1d:** formatter, presets, project library on the device; geometry steps for STL
-  (`extrude`, `revolve`, `offset`).
+- **1c: The Grasshopper toolbox and the Graph tab** ✓ *done 15 Oct 2026* (see
+  [devlog.md](devlog.md))
+  - About 70 general steps named after Grasshopper's components: points, planes, list tools,
+    curve tools (`tween`, `offset`, `divide`, …), transforms that take fields (per point) and
+    any axis, `extrude`, `revolve`, `contour`, and `spiralize` (vase mode through tilted
+    layers, hand-checked fixture). Speeds as volumetric flow, golden-tested.
+  - Templates: "Cut cylinder" (tilted layers) and "Turned vase" (geometry only).
+  - The Graph tab: the recipe as components and wires, editable without AI.
+- **1d: More of EasyGCode as recipes** ← *next*: the vessel (wall + solid bottom as a joined
+  toolpath), the bend stool seat (`offset_rings`), the lampshade (`spiral_on`). Each one
+  golden-tested, and each new step general enough to reuse.
+- **1e:** formatter, presets, project library on the device.
 
 The full Phase 1 scope:
 - **Definition language v0** (parser, formatter, clear errors) and the evaluator (dependency
@@ -83,9 +93,12 @@ The full Phase 1 scope:
 **Done when:** you open the vessel project on your phone, change settings, export G-code, and
 it prints like EasyGCode's. (The spiral disc already does: same G-code as EasyGCode's.)
 
-## Phase 2: The agent (M), then 2b: Steps and Draw tabs
-*2b adds the phone-friendly manual tools from [creating-shapes.md](creating-shapes.md): the
-recipe as a list of steps (add, reorder, remove) and 2D curve editors.*
+## Phase 2: The agent (M), then 2b: the Draw tab
+*The Chat tab landed early (15 Oct): Claude writes and edits recipes in the app, with your own
+key (see [devlog.md](devlog.md)). Still to do from this phase: skills, the command line in the
+chat box, and a test set of real requests. 2b adds the 2D curve editors from
+[creating-shapes.md](creating-shapes.md); the steps as components already exist (the Graph
+tab).*
 
 - **The chat panel:**
   - your API key, Claude Opus 5.5 by default, model as a setting;
@@ -120,7 +133,8 @@ project with good settings, and "a bit taller" is just a slider.
 - **Optional:** sync the project library between devices.
 
 ## Later / when needed
-- Graph view becomes editable (drag wires, node palette).
+- Graph positions saved in the project file (a `layout` block); clusters (your own steps made
+  from a group of components); full data trees.
 - Rhino `.3dm` import/export, SVG/DXF.
 - Solids and SolidWorks-style features (booleans, fillets, STEP).
 - 3MF export for slicers (STL works since 1b).

@@ -441,16 +441,36 @@ conversation {                               # optional; the engine ignores it
 
 ## 4. How the text becomes the graph view
 
+The Graph tab (since 15 Oct 2026) draws the recipe the way Grasshopper draws a definition, and
+every change made there is an edit of this text:
+
 | Text | Graph |
 |---|---|
-| `param height = 160 mm in 60..300 "Height"` | Slider node (left column), also in the Params panel |
-| `param attractor = point(60, 40)` | Point node, plus a draggable handle in the viewport |
-| `holes = circle(center: grid, r: r) \|> extrude(…)` | One node named **holes**. Wires come in from `grid` and `r`; the pipe chain is shown inside the node as steps |
-| `r_max + 2 mm` inside an argument | A small expression badge on that input (like Grasshopper's input expressions) |
-| `show`, `export`, `print` | Sink nodes on the right |
+| `param height = 160 mm in 60..300 "Height"` | A slider component in the left column (also in the Settings tab) |
+| `outline = star(points, outer: radius) \|> smooth` | One component named **outline**. Its stages are listed inside it (`star`, `\|> smooth`), each with its inputs; a wire comes in from `points` and from `radius` |
+| `inner: radius * (1 - depth)` | The expression is shown on that input, with wires from `radius` and `depth` (like an expression on a Grasshopper input) |
+| `sections = outline \|> scale(…)` | A first row `= outline`, wired from **outline**; the piped input of `scale` isn't shown separately |
+| `show a, b` | The preview dot on components **a** and **b** |
+| `print`, `export` | Sinks on the right |
 
-Node positions are automatic (left → right by dependency). If you drag nodes around, their
-positions are saved in an optional block at the end of the file that the evaluator ignores:
+What the graph's commands do to the text (`easycad_core::graph`; each result is parsed before
+it's used, and only the piece that changes is touched):
+
+- **Type or wire an input:** replaces that argument's text, or adds `name: value`; a wire is
+  just the name. Clearing an input removes its argument; positional values after it become
+  named, so they keep feeding the same inputs.
+- **Add a component:** a new line `offset1 = offset(outline, 10)`, after the step it's fed
+  by. Required inputs with an obvious value get one; the others stay missing (red) until wired.
+- **Add a stage:** appends `|> name(…)`. **Remove a stage** takes it off again.
+- **Remove a component or setting:** deletes its line, empties the inputs wired only to it,
+  and takes it out of `show`.
+- **Rename:** the definition and every use (not argument names, not calls).
+- **Preview:** adds the step to `show`, or removes it.
+- **Add or change a slider:** writes the `param` line (value, range, step, label).
+
+Positions are automatic: left to right by dependency, settings first. If you drag components,
+their positions are kept on the device for now; later they can go into an optional block at the
+end of the file that the evaluator ignores:
 
 ```
 layout {
@@ -458,8 +478,6 @@ layout {
   sections: 320 40
 }
 ```
-
-Editing the graph (Phase 5) produces text edits. Text stays the single source of truth.
 
 ---
 
