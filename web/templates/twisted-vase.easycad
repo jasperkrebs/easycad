@@ -14,7 +14,7 @@ param top_scale = 0.8     in 0.3..2           "Top scale"
 group "Print"
 param layer     = 0.3 mm  in 0.08..3          "Layer height"
 param line      = 0.6 mm  in 0.2..10          "Line width"
-param speed     = 40      in 2..300           "Speed (mm/s)"
+param flow      = 8       in 1..25            "Flow (mm³/s)"
 
 # One rounded star, copied every few degrees of twist: each copy scaled, turned and lifted.
 outline  = star(points, outer: radius, inner: radius * (1 - depth)) |> smooth
@@ -25,7 +25,7 @@ sections = outline
            |> move(z: height * t)
 wall     = loft(sections)
 vase     = cap(wall)
-path     = vase_spiral(wall, layer: layer, width: line, speed: speed)
+path     = vase_spiral(wall, layer: layer, width: line, flow: flow)
 
 show vase
 print path

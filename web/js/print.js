@@ -18,9 +18,11 @@ const EASYGCODE = {
   pellet: { up: 210, mid: 210, down: 210, bed: 50, pa: 0.3, purge: 5000, fan: 0 },
 };
 
+// maxFlow: the most volumetric flow (mm³/s) the printer melts reliably, for the Print tab's check
+// (0: not checked). The P1P's hotend manages about 20 mm³/s with PLA; set your pellet printer's.
 export const PRINTERS = {
-  p1p: { name: 'Bambu P1P', nozzle: 0.4, defaults: { ...EASYGCODE, mode: 'filament', bed: [256, 256, 256] } },
-  pellet: { name: 'Klipper pellet', nozzle: null, defaults: { ...EASYGCODE, mode: 'pellet', bed: [400, 400, 400] } },
+  p1p: { name: 'Bambu P1P', nozzle: 0.4, defaults: { ...EASYGCODE, mode: 'filament', bed: [256, 256, 256], maxFlow: 20 } },
+  pellet: { name: 'Klipper pellet', nozzle: null, defaults: { ...EASYGCODE, mode: 'pellet', bed: [400, 400, 400], maxFlow: 0 } },
 };
 
 /** The fields of the printer settings, by path into the profile. `only`: for one mode. */
@@ -31,6 +33,7 @@ const FIELDS = [
   { key: 'center.0', label: 'Recipe origin at X', unit: 'mm', min: -5000, max: 5000 },
   { key: 'center.1', label: 'Recipe origin at Y', unit: 'mm', min: -5000, max: 5000 },
   { key: 'travelSpeed', label: 'Travel speed', unit: 'mm/s', min: 1, max: 2000 },
+  { key: 'maxFlow', label: 'Max flow (0: no check)', unit: 'mm³/s', min: 0, max: 2000 },
   { key: 'multiplier', label: 'Extrusion multiplier', unit: '×', min: 0.01, max: 5 },
   { key: 'endLift', label: 'Lift at the end', unit: 'mm', min: 0, max: 1000 },
   { key: 'includeStartEnd', label: 'Start and end G-code', kind: 'toggle' },
@@ -178,10 +181,10 @@ export function renderPrint(statsHost, checksHost, print, printerId, profile) {
   const cards = [
     [fmt(st.layers), st.layers === 1 ? 'layer' : 'layers'],
     [`${fmt(st.printedHeightMm, 1)} mm`, 'printed height'],
-    [duration(st.timeS), `at ${fmt(st.speedMmS)} mm/s`],
+    [duration(st.timeS), st.byFlow ? `at ${fmt(st.flowMm3S, 1)} mm³/s` : `at ${fmt(st.speedMmS)} mm/s`],
     [`${fmt(st.massGPla)} g`, `PLA · ${fmt(st.volumeMm3 / 1000, 1)} cm³`],
     [`${fmt(st.pathLengthMm / 1000, 1)} m`, 'toolpath length'],
-    [`${fmt(st.flowMm3S, 1)} mm³/s`, 'volumetric flow'],
+    st.byFlow ? [`${fmt(st.speedMmS)} mm/s`, 'nozzle speed (full bead)'] : [`${fmt(st.flowMm3S, 1)} mm³/s`, 'volumetric flow'],
   ];
   for (const [big, small] of cards) statsHost.append(el('div', { className: 'stat' }, [el('b', { text: big }), el('span', { text: small })]));
 
@@ -210,6 +213,13 @@ export function renderPrint(statsHost, checksHost, print, printerId, profile) {
   if (st.samplesPerTurn > 0 && st.layers > 1) {
     const overhang = st.maxOverhangDeg;
     checks.push([overhang < 40 ? 'ok' : overhang < 55 ? 'warn' : 'bad', `Steepest overhang ${fmt(overhang, 1)}° (under ~45° prints cleanly)`]);
+  }
+  if (profile.maxFlow > 0) {
+    const q = st.flowMm3S;
+    checks.push([
+      q <= profile.maxFlow ? 'ok' : q <= profile.maxFlow * 1.15 ? 'warn' : 'bad',
+      `Flow up to ${fmt(q, 1)} mm³/s; this printer manages about ${fmt(profile.maxFlow)} mm³/s`,
+    ]);
   }
   if (printer.nozzle) {
     const ratio = st.widthMm / printer.nozzle;

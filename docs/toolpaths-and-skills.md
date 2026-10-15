@@ -114,8 +114,11 @@ nodes.
   - E is mm³ (pellet) or mm of filament;
   - extrusion multiplier, end lift above the tallest point (never past the build height);
   - the part fan from the second layer.
+- **Speeds are set as volumetric flow** (`flow:` in mm³/s): each move's speed is flow ÷ bead
+  area, like EasyGCode's flow mode, so the printer's melt rate is what you control. Golden-tested
+  against EasyGCode's flow mode (spiral disc and vase). The templates all use it.
 - The printer settings (bed size, where the recipe's origin sits, temperatures, fan, purge,
-  pressure advance, …) live in the Print tab, with EasyGCode's defaults.
+  pressure advance, max flow, …) live in the Print tab, with EasyGCode's defaults.
 - Live stats: time, material, flow. Checks: bed fit, height, line width vs nozzle, overhang.
 - *Later:* preview coloured by speed (blue = fast, red = slow), drawn on the GPU so huge paths
   stay smooth.
@@ -123,9 +126,9 @@ nodes.
 **Porting rule:** every node that comes from EasyGCode gets a **golden test**. With the same
 settings, EasyCAD must produce the same G-code as EasyGCode (comments aside). The fixtures are
 G-code written by EasyGCode itself (`scripts/easygcode-fixtures.cjs`). The spiral disc matches
-in all three cases (pellet, filament, without start/end blocks), and `vase_spiral` matches
-EasyGCode's vase mode (its lampshade generator, set up as a plain cylinder). EasyGCode itself is
-never changed.
+in all four cases (flow mode, and pellet, filament and without start/end blocks at a set
+speed), and `vase_spiral` matches EasyGCode's vase mode (its lampshade generator, set up as a
+plain cylinder) at a set speed and in flow mode. EasyGCode itself is never changed.
 
 ---
 

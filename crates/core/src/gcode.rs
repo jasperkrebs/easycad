@@ -347,12 +347,15 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
         fixed(stats.volume_mm3, 1)
     ));
     for (i, s) in path.parts.iter().enumerate() {
+        let speed = match s.flow {
+            Some(q) => format!("flow {} mm3/s", num(q)),
+            None => format!("feed {} mm/min", round(s.speed * 60.0)),
+        };
         lines.push(format!(
-            "; part {}: lineWidth={} layerHeight={} feed {} mm/min (bead area {} mm2)",
+            "; part {}: lineWidth={} layerHeight={} {speed} (bead area {} mm2)",
             i + 1,
             num(s.width),
             num(s.layer),
-            round(s.speed * 60.0),
             fixed(s.area(), 3)
         ));
     }
@@ -409,7 +412,8 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
             prev = Some(cur);
             if seg >= 1e-7 {
                 let s = path.settings(i);
-                let volume = s.area() * seg * path.flow.get(i).copied().unwrap_or(1.0);
+                let area = path.area(i);
+                let volume = area * seg * path.flow.get(i).copied().unwrap_or(1.0);
                 let mut line = format!(
                     "G1 X{} Y{} Z{} E{}",
                     f3(cur[0]),
@@ -417,7 +421,7 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
                     f3(cur[2]),
                     f5(volume * e_factor)
                 );
-                let feed = round(s.speed * 60.0);
+                let feed = round(s.feed_for(area));
                 if last_feed != Some(feed) || first_extrude {
                     let _ = write!(line, " F{feed}");
                     last_feed = Some(feed);

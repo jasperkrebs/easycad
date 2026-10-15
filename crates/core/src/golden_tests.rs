@@ -7,10 +7,10 @@
 //! too, comments included.
 //!
 //! - The spiral disc template (`web/templates/spiral-disc.easycad`) against EasyGCode's spiral
-//!   disc, in three cases.
+//!   disc: its defaults in volumetric flow mode, and three cases at a set speed.
 //! - `vase_spiral` on a cylinder against EasyGCode's lampshade generator with a straight
 //!   "cone" whose ends are the same size: the same vase mode (ramped first turn, whole layers,
-//!   flat closing turn).
+//!   flat closing turn), at a set speed and in flow mode.
 
 use crate::eval::{Quality, evaluate};
 use crate::gcode::{self, Filament, Mode, Pellet, Profile};
@@ -21,13 +21,23 @@ const SPIRAL_DISC: &str = include_str!("../../../web/templates/spiral-disc.easyc
 struct Case {
     fixture: &'static str,
     values: &'static [(&'static str, f64)],
+    /// Print at this speed (mm/s) instead of the template's volumetric flow.
+    speed: Option<f64>,
     profile: fn() -> Profile,
 }
 
-const CASES: [Case; 3] = [
+const CASES: [Case; 4] = [
+    // The template exactly as it ships: EasyGCode's defaults in flow mode (20 mm³/s).
+    Case {
+        fixture: include_str!("../../../fixtures/easygcode/sdisc-flow.gcode"),
+        values: &[],
+        speed: None,
+        profile: Profile::default,
+    },
     Case {
         fixture: include_str!("../../../fixtures/easygcode/sdisc-default.gcode"),
         values: &[],
+        speed: Some(20.0),
         profile: Profile::default,
     },
     Case {
@@ -43,8 +53,8 @@ const CASES: [Case; 3] = [
             ("layers", 2.0),
             ("layer", 0.3),
             ("line", 0.6),
-            ("speed", 30.0),
         ],
+        speed: Some(30.0),
         profile: || Profile {
             mode: Mode::Filament,
             multiplier: 0.95,
@@ -73,8 +83,8 @@ const CASES: [Case; 3] = [
             ("layers", 3.0),
             ("layer", 0.4),
             ("line", 1.2),
-            ("speed", 15.0),
         ],
+        speed: Some(15.0),
         profile: || Profile {
             include_start_end: false,
             center: [100.0, 100.0],
@@ -173,7 +183,11 @@ fn spiral_disc_recipe_matches_easygcode() {
             .iter()
             .map(|(k, v)| (k.to_string(), Literal::Number(*v)))
             .collect();
-        let recipe = set_values(SPIRAL_DISC, &values).unwrap();
+        let template = match case.speed {
+            Some(v) => SPIRAL_DISC.replace("flow: flow", &format!("speed: {v}")),
+            None => SPIRAL_DISC.to_string(),
+        };
+        let recipe = set_values(&template, &values).unwrap();
         let e = evaluate(&recipe, Quality::Final);
         assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
         let path = &e.print.as_ref().unwrap().path;
@@ -185,24 +199,35 @@ fn spiral_disc_recipe_matches_easygcode() {
 }
 
 /// EasyGCode's lampshade with both ends the same size is a cylinder in vase mode: 40 turns of
-/// 0.5 mm at radius 20.4 mm, 192 points per turn, the seam at the back (+Y).
+/// 0.5 mm at radius 20.4 mm, 192 points per turn, the seam at the back (+Y). Once at a set
+/// speed, once in volumetric flow mode.
 #[test]
 fn vase_spiral_matches_easygcodes_vase_mode() {
-    let recipe = "easycad 0.1
+    for (speed, fixture) in [
+        (
+            "speed: 20",
+            include_str!("../../../fixtures/easygcode/lamp-cylinder.gcode"),
+        ),
+        (
+            "flow: 8",
+            include_str!("../../../fixtures/easygcode/lamp-cylinder-flow.gcode"),
+        ),
+    ] {
+        let recipe = format!(
+            "easycad 0.1
 base = circle(20.4) |> rotate(90)
 wall = loft([base, base |> move(z: 20)])
-path = vase_spiral(wall, layer: 0.5, width: 0.8, speed: 20)
+path = vase_spiral(wall, layer: 0.5, width: 0.8, {speed})
 print path
-";
-    let e = evaluate(recipe, Quality::Final);
-    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
-    let path = &e.print.as_ref().unwrap().path;
-    assert_eq!((path.samples_per_turn, path.layers), (192, 40));
-    let ours = gcode::write(path, &Profile::default(), "Cylinder")
-        .unwrap()
-        .text;
-    assert_matches(
-        &ours,
-        include_str!("../../../fixtures/easygcode/lamp-cylinder.gcode"),
-    );
+"
+        );
+        let e = evaluate(&recipe, Quality::Final);
+        assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+        let path = &e.print.as_ref().unwrap().path;
+        assert_eq!((path.samples_per_turn, path.layers), (192, 40));
+        let ours = gcode::write(path, &Profile::default(), "Cylinder")
+            .unwrap()
+            .text;
+        assert_matches(&ours, fixture);
+    }
 }

@@ -142,7 +142,7 @@ async function waitForServer(url) {
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-disc-settings.png`), fullPage: name === 'phone' });
       const gcode = await saveFrom(page, '#exportButtons button.primary');
-      const want = commands(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'easygcode', 'sdisc-default.gcode'), 'utf8'));
+      const want = commands(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'easygcode', 'sdisc-flow.gcode'), 'utf8'));
       const got = commands(gcode.data.toString('utf8'));
       const differ = got.findIndex((c, i) => !sameCommand(c, want[i] ?? ''));
       if (gcode.name !== 'spiral-disc.gcode' || got.length !== want.length || differ >= 0) {

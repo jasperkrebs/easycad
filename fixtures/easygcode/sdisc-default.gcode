@@ -1,5 +1,5 @@
 ; EasyGCode — spiral disc (attractor spacing + wiggles) generator
-; 2026-10-15T14:42:15.681Z
+; 2026-10-15T20:22:26.958Z
 ; outerRadius=60 -> 26 turns ending at r=60.823 layers=1
 ; attractor r=35 maxSpacing=200% fullBand=0mm falloff in=15 out=15mm (smoothstep) -> widest turn spacing 3.952mm, 9 open turn(s)
 ; wiggles: 21 bumps per turn (odd, so a peak faces the next turn's dip), max amplitude 1.034mm, peaks meet dips within -0.005/+0.000mm of one line width

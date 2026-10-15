@@ -15,7 +15,7 @@ param twist  = 20 deg  in -180..180        "Twist"
 group "Print"
 param layer  = 0.3 mm  in 0.08..3          "Layer height"
 param line   = 0.6 mm  in 0.2..10          "Line width"
-param speed  = 40      in 2..300           "Speed (mm/s)"
+param flow   = 8       in 1..25            "Flow (mm³/s)"
 
 # A star with radius 1, scaled to the bowl's radius at each height.
 outline  = star(lobes, outer: 1, inner: 1 - depth) |> smooth
@@ -24,7 +24,7 @@ r        = lerp(bottom, top, t) + belly * sin(180 * t)   # widening, plus a bulg
 sections = outline |> scale(r) |> rotate(twist * t) |> move(z: height * t)
 wall     = loft(sections)
 bowl     = cap(wall)
-path     = vase_spiral(wall, layer: layer, width: line, speed: speed)
+path     = vase_spiral(wall, layer: layer, width: line, flow: flow)
 
 show bowl
 print path

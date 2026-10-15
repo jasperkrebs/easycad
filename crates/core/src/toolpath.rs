@@ -3,7 +3,10 @@
 //! A toolpath is made from any curves (`from_curves`), or by a strategy such as `vase_spiral`,
 //! and can be stacked (`stack`), joined (`join`) and patterned (`wave_path`). Every move ends at
 //! a point and is either a travel (no extrusion) or extrudes a fraction of a full bead, using
-//! EasyGCode's bead model with the width, layer height and speed of its part.
+//! EasyGCode's bead model with the width, layer height and speed of its part. A move can carry
+//! its own layer height (non-planar layers are thicker in some places than others), and a part
+//! can be printed at a set volumetric flow instead of a set speed: then each move's speed is the
+//! flow divided by its bead's cross-section, as in EasyGCode's flow mode.
 //!
 //! `vase_spiral` follows EasyGCode's vase-mode conventions (its lamp/vessel generators in
 //! gcode.js): one continuous helix that rises one layer per turn; the opening turn holds the
@@ -32,8 +35,10 @@ pub struct Settings {
     pub width: f64,
     /// Layer height in mm.
     pub layer: f64,
-    /// Print speed in mm/s.
+    /// Print speed in mm/s (with `flow`: the speed of a full-height bead).
     pub speed: f64,
+    /// Volumetric flow in mm³/s. When set, each move's speed follows from it: flow ÷ bead area.
+    pub flow: Option<f64>,
 }
 
 impl Settings {
@@ -45,12 +50,60 @@ impl Settings {
             width,
             layer,
             speed,
+            flow: None,
         })
+    }
+
+    /// Printed at a set volumetric flow (mm³/s) instead of a set speed.
+    pub fn with_flow(width: f64, layer: f64, flow: f64) -> Result<Settings, String> {
+        check("width", width, 0.05, 20.0, " mm")?;
+        check("layer", layer, 0.02, 10.0, " mm")?;
+        check("flow", flow, 0.1, 1000.0, " mm³/s")?;
+        let speed = flow / bead_area(width, layer);
+        if speed > 1000.0 {
+            return Err(format!(
+                "a flow of {} mm³/s is {} mm/s with this bead; lower the flow",
+                easycad_lang::format_number(flow),
+                easycad_lang::format_number(speed.round())
+            ));
+        }
+        Ok(Settings {
+            width,
+            layer,
+            speed,
+            flow: Some(flow),
+        })
+    }
+
+    /// By speed, or by flow when `flow` is more than 0 (how the steps take them).
+    pub fn from_inputs(width: f64, layer: f64, speed: f64, flow: f64) -> Result<Settings, String> {
+        if flow > 0.0 {
+            Settings::with_flow(width, layer, flow)
+        } else {
+            Settings::new(width, layer, speed)
+        }
     }
 
     /// The bead's cross-section in mm².
     pub fn area(&self) -> f64 {
         bead_area(self.width, self.layer)
+    }
+
+    /// The speed (mm/s) of a move whose bead has this cross-section.
+    pub fn speed_for(&self, area: f64) -> f64 {
+        match self.flow {
+            Some(q) => q / area.max(1e-6),
+            None => self.speed,
+        }
+    }
+
+    /// The G-code feed (mm/min) of a move whose bead has this cross-section, computed the way
+    /// EasyGCode does in flow mode (flow · 60 / area), so both round identically.
+    pub fn feed_for(&self, area: f64) -> f64 {
+        match self.flow {
+            Some(q) => (q * 60.0) / area.max(1e-6),
+            None => self.speed * 60.0,
+        }
     }
 }
 
@@ -67,6 +120,9 @@ pub struct Toolpath {
     pub turn: Vec<f64>,
     /// Which of `parts` prints the move that ends at each point.
     pub part: Vec<u16>,
+    /// The layer height of the move that ends at each point, where it differs from its part's
+    /// (non-planar layers); 0 means the part's layer height.
+    pub height: Vec<f64>,
     pub parts: Vec<Settings>,
     /// Index of the first point of each layer (the fan comes on after the first).
     pub layer_starts: Vec<usize>,
@@ -91,8 +147,10 @@ pub struct ToolpathStats {
     pub volume_mm3: f64,
     pub mass_g_pla: f64,
     pub time_s: f64,
-    /// Highest volumetric flow of any part.
+    /// Highest volumetric flow of any move.
     pub flow_mm3_s: f64,
+    /// Whether speeds follow from a set volumetric flow (the first part's).
+    pub by_flow: bool,
     /// Steepest outward lean between consecutive layers, in degrees from vertical.
     pub max_overhang_deg: f64,
     pub samples_per_turn: usize,
@@ -130,6 +188,7 @@ impl Toolpath {
             flow: Vec::with_capacity(capacity),
             turn: Vec::with_capacity(capacity),
             part: Vec::with_capacity(capacity),
+            height: Vec::with_capacity(capacity),
             parts,
             layer_starts: vec![0],
             samples_per_turn: 0,
@@ -138,22 +197,37 @@ impl Toolpath {
     }
 
     fn push(&mut self, p: P3, travel: bool, flow: f64, turn: f64, part: u16) {
+        self.push_with_height(p, travel, flow, turn, part, 0.0);
+    }
+
+    /// A move with its own layer height (`height` 0: the part's).
+    fn push_with_height(
+        &mut self,
+        p: P3,
+        travel: bool,
+        flow: f64,
+        turn: f64,
+        part: u16,
+        height: f64,
+    ) {
         self.points.push(p);
         self.travel.push(travel);
         self.flow.push(if travel { 0.0 } else { flow });
         self.turn.push(turn);
         self.part.push(part);
+        self.height.push(if travel { 0.0 } else { height });
     }
 
     /// Copies point `i` of `other`, shifted by `dz`, with its part index moved by `part_offset`.
     fn push_from(&mut self, other: &Toolpath, i: usize, dz: f64, part_offset: u16) {
         let p = other.points.get(i).copied().unwrap_or([0.0; 3]);
-        self.push(
+        self.push_with_height(
             [p[0], p[1], p[2] + dz],
             other.travel.get(i).copied().unwrap_or(true),
             other.flow.get(i).copied().unwrap_or(0.0),
             other.turn.get(i).copied().unwrap_or(0.0),
             other.part.get(i).copied().unwrap_or(0) + part_offset,
+            other.height.get(i).copied().unwrap_or(0.0),
         );
     }
 
@@ -168,7 +242,20 @@ impl Toolpath {
                 width: 0.4,
                 layer: 0.2,
                 speed: 40.0,
+                flow: None,
             })
+    }
+
+    /// The bead cross-section (mm²) of move `i`: its part's width with its own layer height.
+    pub fn area(&self, i: usize) -> f64 {
+        let s = self.settings(i);
+        let h = self
+            .height
+            .get(i)
+            .copied()
+            .filter(|h| *h > 0.0)
+            .unwrap_or(s.layer);
+        bead_area(s.width, h)
     }
 
     /// The layer height used for lifts between layers and parts.
@@ -190,6 +277,7 @@ impl Toolpath {
 
     pub fn stats(&self) -> ToolpathStats {
         let (mut length, mut travel, mut volume, mut time) = (0.0, 0.0, 0.0, 0.0);
+        let mut flow_max: f64 = 0.0;
         let mut top = f64::NEG_INFINITY;
         let mut bounds = Bounds::empty();
         for (i, w) in self.points.windows(2).enumerate() {
@@ -199,9 +287,12 @@ impl Toolpath {
                 time += d / TRAVEL_SPEED_MM_S;
             } else {
                 let s = self.settings(i + 1);
+                let area = self.area(i + 1);
+                let speed = s.speed_for(area);
                 length += d;
-                volume += s.area() * d * self.flow.get(i + 1).copied().unwrap_or(1.0);
-                time += d / s.speed;
+                volume += area * d * self.flow.get(i + 1).copied().unwrap_or(1.0);
+                time += d / speed;
+                flow_max = flow_max.max(speed * area);
                 top = top.max(w[1][2]);
                 bounds.add(w[0]);
                 bounds.add(w[1]);
@@ -211,6 +302,7 @@ impl Toolpath {
             width: 0.0,
             layer: 0.0,
             speed: 0.0,
+            flow: None,
         });
         ToolpathStats {
             layers: self.layers,
@@ -221,11 +313,8 @@ impl Toolpath {
             volume_mm3: volume,
             mass_g_pla: volume * PLA_DENSITY_G_PER_MM3,
             time_s: time,
-            flow_mm3_s: self
-                .parts
-                .iter()
-                .map(|s| s.speed * s.area())
-                .fold(0.0, f64::max),
+            flow_mm3_s: flow_max,
+            by_flow: first.flow.is_some(),
             max_overhang_deg: self.max_overhang_deg(),
             samples_per_turn: self.samples_per_turn,
             path_points: self.points.len(),
@@ -600,12 +689,13 @@ pub fn wave_path(
             for k in 1..split {
                 let a = k as f64 / split as f64;
                 let flow = path.flow.get(i).copied().unwrap_or(1.0);
-                out.push(
+                out.push_with_height(
                     lerp3(q, p, a),
                     false,
                     flow,
                     tq + (t - tq) * a,
                     path.part.get(i).copied().unwrap_or(0),
+                    path.height.get(i).copied().unwrap_or(0.0),
                 );
             }
         }

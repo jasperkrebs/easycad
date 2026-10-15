@@ -144,7 +144,8 @@ export const TOOLS = [
 export function projectContext(project) {
   const p = project.profile;
   const printer = p
-    ? `${project.printerName}: ${p.mode} printer, bed ${p.bed[0]} × ${p.bed[1]} mm, build height ${p.bed[2]} mm, the recipe's origin sits at X${p.center[0]} Y${p.center[1]} on the bed`
+    ? `${project.printerName}: ${p.mode} printer, bed ${p.bed[0]} × ${p.bed[1]} mm, build height ${p.bed[2]} mm, the recipe's origin sits at X${p.center[0]} Y${p.center[1]} on the bed` +
+      (p.maxFlow > 0 ? `, melts at most about ${p.maxFlow} mm³/s` : '')
     : project.printerName;
   return `${CONTEXT_TAG}
 Printer: ${printer}.
@@ -197,7 +198,9 @@ export function runStatus(r) {
     out.push(
       `Prints: ${st.layers} layer${st.layers === 1 ? '' : 's'}, ${fmtNum(st.printedHeightMm)} mm tall, ` +
         `${fmtNum(st.pathLengthMm / 1000, 2)} m of extrusion, ${fmtNum(st.volumeMm3 / 1000, 2)} cm³ (${fmtNum(st.massGPla, 0)} g PLA), ` +
-        `about ${minutes} min, up to ${fmtNum(st.flowMm3S)} mm³/s, line ${fmtNum(st.widthMm, 2)} mm, layer ${fmtNum(st.layerMm, 2)} mm` +
+        `about ${minutes} min, ` +
+        (st.byFlow ? `at a set flow (up to ${fmtNum(st.flowMm3S)} mm³/s; ${fmtNum(st.speedMmS)} mm/s for a full bead)` : `at ${fmtNum(st.speedMmS)} mm/s (up to ${fmtNum(st.flowMm3S)} mm³/s)`) +
+        `, line ${fmtNum(st.widthMm, 2)} mm, layer ${fmtNum(st.layerMm, 2)} mm` +
         (st.samplesPerTurn > 0 && st.layers > 1 ? `, steepest overhang ${fmtNum(st.maxOverhangDeg)}°` : ''),
     );
   } else {

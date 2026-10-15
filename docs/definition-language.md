@@ -291,6 +291,13 @@ comment   = "#" … end of line
 
 ### 2.1 Files: G-code and STL
 
+**Speed as volumetric flow.** The toolpath steps take `flow:` in mm³/s (a setting like
+`param flow = 8 in 1..25 "Flow (mm³/s)"`). Each move's speed then follows from its bead:
+speed = flow ÷ bead area, and the G-code feed is flow · 60 ÷ area, rounded, exactly like
+EasyGCode's flow mode (golden-tested). A thicker bead is printed slower, so the printer's
+melt rate is what you set. `speed:` (mm/s) still works when you want a fixed speed. The
+Print tab checks the flow against the printer's "max flow" setting.
+
 - `print path` is what the printer prints. **G-code for the chosen printer** (Print tab) is one
   tap away. It is written the way EasyGCode writes it: the same start and end blocks, `G90` with
   relative extrusion (`M83`), E from the bead model (mm³ on the pellet printer, mm of filament on
@@ -423,7 +430,7 @@ input (it's generated from the code, `crates/core/src/nodes.rs`, so it can't go 
 | Curves | `circle(r)` · `polygon(sides, r)` · `star(points, outer, inner)` (sharp corners) · `smooth(curve)` (a cubic NURBS through every point) · `spiral(outer, spacing, tolerance, min_samples)` (a flat spiral from the centre out; `spacing` can be a field) · `interlock(spiral, bumps, width)` (wiggles spread-apart turns so each bump meets the next turn's dip) |
 | Transforms | `scale(geometry, factor, x, y, z)` · `rotate(geometry, angle)` about the Z axis · `move(geometry, x, y, z)` |
 | Surfaces | `loft(sections)` (smooth through the sections; each section's first point is its seam) · `cap(surface)` (flat ends: a solid) |
-| Toolpaths | `toolpath(curves, width, layer, speed)` (prints any curves as drawn, in order) · `vase_spiral(wall, layer, width, speed)` (EasyGCode's vase mode: start ramp, whole layers, flat cap turn) · `stack(path, count)` (the same layer `count` times) · `join(paths)` (one after another, each with its own settings) · `wave(geometry, amplitude, count, phase)` (on a toolpath, curve or surface; the amplitude can be a field) |
+| Toolpaths | `toolpath(curves, width, layer, speed, flow)` (prints any curves as drawn, in order) · `vase_spiral(wall, layer, width, speed, flow)` (EasyGCode's vase mode: start ramp, whole layers, flat cap turn) · `stack(path, count)` (the same layer `count` times) · `join(paths)` (one after another, each with its own settings) · `wave(geometry, amplitude, count, phase)` (on a toolpath, curve or surface; the amplitude can be a field) |
 
 ### 6.2 Planned (≈ 40 nodes for Phases 1–3)
 

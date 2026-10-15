@@ -407,6 +407,12 @@ pub static NODES: &[Node] = &[
             req("width", "Length", "line width"),
             req("layer", "Length", "layer height"),
             opt("speed", "Speed", 40.0, "print speed in mm/s"),
+            opt(
+                "flow",
+                "Number",
+                0.0,
+                "volumetric flow in mm³/s; when set, it sets the speed (flow ÷ bead area)",
+            ),
         ],
         output: "Toolpath",
         doc: "Prints curves exactly as drawn, in order, with a travel move to the start of each. A curve drawn at z = 0 prints on the bed (the nozzle one layer up).",
@@ -424,6 +430,12 @@ pub static NODES: &[Node] = &[
             req("layer", "Length", "layer height: the rise per turn"),
             req("width", "Length", "line width"),
             opt("speed", "Speed", 40.0, "print speed in mm/s"),
+            opt(
+                "flow",
+                "Number",
+                0.0,
+                "volumetric flow in mm³/s; when set, it sets the speed (flow ÷ bead area)",
+            ),
         ],
         output: "Toolpath",
         doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up, snaps to whole layers, and ends with a flat turn that ramps extrusion down.",
@@ -919,7 +931,7 @@ fn cap(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 
 fn toolpath(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let curves = curves_of(a.items(0)?, "item")?;
-    let settings = Settings::new(a.num(1)?, a.num(2)?, a.num(3)?)?;
+    let settings = Settings::from_inputs(a.num(1)?, a.num(2)?, a.num(3)?, flow(a, 4)?)?;
     let path = toolpath::from_curves(&curves, settings, ctx.remaining().min(MAX_PATH_POINTS))?;
     ctx.spend(path.points.len())?;
     Ok(Value::Toolpath(Rc::new(path)))
@@ -927,10 +939,19 @@ fn toolpath(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 
 fn vase_spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let wall = a.surface(0)?;
-    let settings = Settings::new(a.num(2)?, a.num(1)?, a.num(3)?)?;
+    let settings = Settings::from_inputs(a.num(2)?, a.num(1)?, a.num(3)?, flow(a, 4)?)?;
     let path = toolpath::vase_spiral(wall, settings, ctx.remaining().min(MAX_PATH_POINTS))?;
     ctx.spend(path.points.len())?;
     Ok(Value::Toolpath(Rc::new(path)))
+}
+
+/// A `flow` input: 0 (not set) or a volumetric flow in mm³/s.
+fn flow(a: &Args, i: usize) -> Result<f64, String> {
+    let q = a.num(i)?;
+    if q < 0.0 {
+        return Err(format!("`flow` must be 0 (not set) or more, got {q}"));
+    }
+    Ok(q)
 }
 
 fn stack(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
@@ -1021,7 +1042,7 @@ mod tests {
         }
         let cat = catalog();
         assert!(cat.starts_with("## Numbers & lists"));
-        assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40) -> Toolpath"));
+        assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40, flow: Number = 0) -> Toolpath"));
         assert!(cat.contains("fade(distance: Number | Field, inside: Number | Field, outside: Number | Field, band: Number | Field = 0) -> Number | Field"));
     }
 

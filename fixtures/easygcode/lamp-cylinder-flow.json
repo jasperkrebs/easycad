@@ -1,0 +1,54 @@
+{
+  "project": "lamp",
+  "printer": {
+    "mode": "pellet",
+    "multiplier": 1,
+    "includeStartEnd": true,
+    "endLift": 50,
+    "filament": {
+      "diameter": 1.75,
+      "nozzle": 205,
+      "bed": 60,
+      "fan": 100
+    },
+    "pellet": {
+      "up": 210,
+      "mid": 210,
+      "down": 210,
+      "bed": 50,
+      "pa": 0.3,
+      "purge": 5000,
+      "fan": 0
+    }
+  },
+  "lineWidth": 0.8,
+  "printFeed": 1200,
+  "travelFeed": 6000,
+  "tolerance": 0.002745,
+  "centerX": 125,
+  "centerY": 125,
+  "brim": {
+    "enabled": false
+  },
+  "lamp": {
+    "socket": "custom",
+    "customDiameter": 40,
+    "customPitch": 0.5,
+    "fitTolerance": 0,
+    "bottomDiameter": 40.8,
+    "throatLength": 10,
+    "transitionHeight": 10,
+    "shape": "cone",
+    "fillet": 0,
+    "maxAngle": 0,
+    "orientation": "throat",
+    "lip": {
+      "enabled": false
+    },
+    "compMode": "off",
+    "flowFeed": {
+      "enabled": true,
+      "rate": 8
+    }
+  }
+}

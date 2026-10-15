@@ -1,5 +1,5 @@
 ; EasyGCode — lampshade (threaded throat + conical shade) generator
-; 2026-10-15T14:42:15.776Z
+; 2026-10-15T20:22:27.079Z
 ; socket=custom threadDia=40 pitch=0.5 fit=0mm -> throat inner dia=40.00
 ; shape=cone throat=10 transition=10 fillet=0.0 bottomDia=40.8 totalHeight=20.00
 ; layerHeight=0.5 (= thread pitch) lineWidth=0.8 orientation=throat down

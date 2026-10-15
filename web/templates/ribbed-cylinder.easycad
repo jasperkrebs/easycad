@@ -14,11 +14,11 @@ param size   = 1.5 mm  in 0..5                 "Rib size"
 group "Print"
 param layer  = 0.3 mm  in 0.08..3              "Layer height"
 param line   = 0.8 mm  in 0.2..10              "Line width"
-param speed  = 30      in 2..300               "Speed (mm/s)"
+param flow   = 7       in 1..25                "Flow (mm³/s)"
 
 base = circle(radius)
 wall = loft([base, base |> move(z: height)])
-path = vase_spiral(wall, layer: layer, width: line, speed: speed)
+path = vase_spiral(wall, layer: layer, width: line, flow: flow)
        |> wave(amplitude: size, count: ribs + drift)
 
 print path

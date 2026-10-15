@@ -1,0 +1,45 @@
+{
+  "project": "sdisc",
+  "printer": {
+    "mode": "pellet",
+    "multiplier": 1,
+    "includeStartEnd": true,
+    "endLift": 50,
+    "filament": {
+      "diameter": 1.75,
+      "nozzle": 205,
+      "bed": 60,
+      "fan": 100
+    },
+    "pellet": {
+      "up": 210,
+      "mid": 210,
+      "down": 210,
+      "bed": 50,
+      "pa": 0.3,
+      "purge": 5000,
+      "fan": 0
+    }
+  },
+  "layerHeight": 0.6,
+  "lineWidth": 2,
+  "printFeed": 1200,
+  "travelFeed": 6000,
+  "tolerance": 0.05,
+  "centerX": 125,
+  "centerY": 125,
+  "sdisc": {
+    "outerRadius": 60,
+    "attractorRadius": 35,
+    "maxSpacingPct": 200,
+    "fullBand": 0,
+    "falloffIn": 15,
+    "falloffOut": 15,
+    "bumps": 21,
+    "layers": 1,
+    "flowFeed": {
+      "enabled": true,
+      "rate": 20
+    }
+  }
+}

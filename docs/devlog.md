@@ -3,6 +3,19 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-15: speeds as volumetric flow
+
+**Landed**
+- The toolpath steps take `flow:` (mm³/s). Each move's speed is flow ÷ its bead area and the
+  G-code feed is flow · 60 ÷ area, rounded, as in EasyGCode's flow mode. Moves can also carry
+  their own layer height (for non-planar layers, next), and the bead area follows it.
+- Golden-tested against EasyGCode's flow mode: the spiral disc template (now `flow: 20` by
+  default) and the vase spiral (`flow: 8`). Every command identical, six cases in all. The
+  speed-mode cases still pass.
+- All templates set flow instead of speed. The Print tab shows the flow and the nozzle speed it
+  gives, and checks the flow against a new printer setting, "max flow" (P1P: 20 mm³/s).
+- The agent's guide says to use flow, and each message tells it the printer's max flow.
+
 ## 2026-10-15: the agent in the app (Chat tab) and the AI proxy
 
 **Landed**

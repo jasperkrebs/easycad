@@ -44,5 +44,6 @@ Outputs
 - \`export shape as "name.stl"\` offers shapes (surfaces and solids, or a list of them) as an STL file; \`export path as "name.gcode"\` offers another toolpath as G-code. A recipe without \`print\` is plain geometry.
 
 Printing
-- Vase mode: \`vase_spiral(wall, layer: …, width: …)\` needs a loft of closed sections stacked upward (lift them with \`move(z: …)\`).
-- Line width about 1–2× the nozzle (0.4 mm on the P1P); layer height up to about 75 % of the line width; overhangs under about 45°.`;
+- Set print speed as volumetric flow: \`flow:\` in mm³/s on the toolpath steps (a \`param flow = 8 in 1..25 "Flow (mm³/s)"\` setting). Each move's speed then follows from its bead size (speed = flow ÷ bead area), so a thicker bead is printed slower. \`speed:\` in mm/s exists too, for when it's asked for.
+- Vase mode: \`vase_spiral(wall, layer: …, width: …, flow: …)\` needs a loft of closed sections stacked upward (lift them with \`move(z: …)\`).
+- Line width about 1–2× the nozzle (0.4 mm on the P1P); layer height up to about 75 % of the line width; overhangs under about 45°; flow within what the printer melts (the P1P about 20 mm³/s with PLA).`;

@@ -114,6 +114,30 @@ const cases = {
       flowFeed: { enabled: false, rate: 20 },
     },
   },
+  // The spiral disc's defaults in EasyGCode's volumetric flow mode: the feed follows from
+  // 20 mm³/s (EasyCAD's spiral disc template).
+  'sdisc-flow': {
+    project: 'sdisc',
+    printer: pellet(),
+    layerHeight: 0.6,
+    lineWidth: 2.0,
+    printFeed: 1200,
+    travelFeed: 6000,
+    tolerance: 0.05,
+    centerX: 125,
+    centerY: 125,
+    sdisc: {
+      outerRadius: 60,
+      attractorRadius: 35,
+      maxSpacingPct: 200,
+      fullBand: 0,
+      falloffIn: 15,
+      falloffOut: 15,
+      bumps: 21,
+      layers: 1,
+      flowFeed: { enabled: true, rate: 20 },
+    },
+  },
   'lamp-cylinder': {
     project: 'lamp',
     printer: pellet(),
@@ -142,6 +166,9 @@ const cases = {
     },
   },
 };
+// The same cylinder in flow mode, 8 mm³/s throughout.
+cases['lamp-cylinder-flow'] = JSON.parse(JSON.stringify(cases['lamp-cylinder']));
+cases['lamp-cylinder-flow'].lamp.flowFeed = { enabled: true, rate: 8 };
 
 const out = path.join(__dirname, '..', 'fixtures', 'easygcode');
 fs.mkdirSync(out, { recursive: true });
