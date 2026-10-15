@@ -3,7 +3,7 @@
 use crate::eval::{Evaluation, Quality, Severity, evaluate};
 use easycad_lang::{Literal, set_values};
 
-const TEMPLATES: [(&str, &str); 4] = [
+const TEMPLATES: [(&str, &str); 6] = [
     (
         "twisted-vase",
         include_str!("../../../web/templates/twisted-vase.easycad"),
@@ -20,7 +20,18 @@ const TEMPLATES: [(&str, &str); 4] = [
         "spiral-disc",
         include_str!("../../../web/templates/spiral-disc.easycad"),
     ),
+    (
+        "cut-cylinder",
+        include_str!("../../../web/templates/cut-cylinder.easycad"),
+    ),
+    (
+        "turned-vase",
+        include_str!("../../../web/templates/turned-vase.easycad"),
+    ),
 ];
+
+/// Templates that are geometry only: an STL to save, nothing to print.
+const GEOMETRY_ONLY: [&str; 1] = ["turned-vase"];
 
 fn run(src: &str) -> Evaluation {
     evaluate(src, Quality::Preview)
@@ -60,11 +71,17 @@ fn templates_run_cleanly() {
         for quality in [Quality::Preview, Quality::Final] {
             let e = evaluate(src, quality);
             assert!(e.diagnostics.is_empty(), "{name}: {:?}", e.diagnostics);
-            assert!(e.print.is_some(), "{name}: nothing to print");
             assert!(
                 e.project.is_some() && !e.params.is_empty() && !e.notes.is_empty(),
                 "{name}"
             );
+            if GEOMETRY_ONLY.contains(&name) {
+                assert!(!e.exports.is_empty(), "{name}: nothing to save");
+                assert!(e.print.is_none() && e.drawing.paths.is_empty(), "{name}");
+                assert!(!e.drawing.mesh.indices.is_empty(), "{name}: nothing drawn");
+                continue;
+            }
+            assert!(e.print.is_some(), "{name}: nothing to print");
             assert!(!e.drawing.paths.is_empty(), "{name}");
             let s = &e.print.as_ref().unwrap().stats;
             assert!(
@@ -425,7 +442,20 @@ fn every_node_is_documented_in_the_language_doc() {
 /// them must return (an error is fine, a panic is not).
 #[test]
 fn random_recipes_never_crash() {
-    let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+    fuzz(0x2545_f491_4f6c_dd1d, 400);
+}
+
+/// The same with many more recipes (a minute or so in release mode):
+/// `cargo test --release -p easycad-core fuzz_harder -- --ignored`.
+#[test]
+#[ignore]
+fn fuzz_harder() {
+    for seed in 1..=8u64 {
+        fuzz(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15), 25_000);
+    }
+}
+
+fn fuzz(mut seed: u64, recipes: usize) {
     let mut next = move |n: usize| -> usize {
         seed ^= seed << 13;
         seed ^= seed >> 7;
@@ -437,7 +467,7 @@ fn random_recipes_never_crash() {
         "0.001", "18 %",
     ];
     let nodes: Vec<&str> = crate::nodes::NODES.iter().map(|n| n.name).collect();
-    for _ in 0..400 {
+    for _ in 0..recipes {
         let mut src = String::from("param a = 3\nparam b = 0.5 mm\n");
         let steps = 1 + next(6);
         for i in 0..steps {
@@ -461,7 +491,7 @@ fn gen_expr(
     let pick = if depth == 0 { next(3) } else { next(8) };
     match pick {
         0 => out.push_str(numbers[next(numbers.len())]),
-        1 => out.push_str(["a", "b", "pi"][next(3)]),
+        1 => out.push_str(["a", "b", "pi", "x", "y", "z"][next(6)]),
         2 => out.push_str(&format!("s{}", next(steps))),
         3 | 4 => {
             out.push_str(nodes[next(nodes.len())]);
@@ -496,6 +526,43 @@ fn gen_expr(
             out.push('(');
             gen_expr(next, numbers, nodes, steps, depth - 1, out);
             out.push(')');
+        }
+    }
+}
+
+/// The cut cylinder prints at every corner of its settings: the cut never reaches the bed, and
+/// a level cut (0°) is plain vase mode with even layers.
+#[test]
+fn cut_cylinder_prints_across_its_ranges() {
+    let src = TEMPLATES
+        .iter()
+        .find(|(name, _)| *name == "cut-cylinder")
+        .map(|(_, src)| *src)
+        .unwrap();
+    for diameter in [20.0, 120.0] {
+        for height in [40.0, 250.0] {
+            for angle in [0.0, 30.0] {
+                let values = [
+                    ("diameter".to_string(), Literal::Number(diameter)),
+                    ("height".to_string(), Literal::Number(height)),
+                    ("angle".to_string(), Literal::Number(angle)),
+                ];
+                let e = run(&set_values(src, &values).unwrap());
+                assert!(
+                    e.errors().next().is_none(),
+                    "{diameter} {height} {angle}: {:?}",
+                    e.diagnostics
+                );
+                let path = &e.print.as_ref().unwrap().path;
+                let heights: Vec<f64> = path.height.iter().copied().filter(|h| *h > 0.0).collect();
+                let spread = heights.iter().copied().fold(0.0f64, f64::max)
+                    - heights.iter().copied().fold(f64::INFINITY, f64::min);
+                if angle == 0.0 {
+                    assert!(spread < 1e-9, "a level cut has even layers");
+                } else {
+                    assert!(spread > 0.01, "a tilted cut has thin and thick sides");
+                }
+            }
         }
     }
 }

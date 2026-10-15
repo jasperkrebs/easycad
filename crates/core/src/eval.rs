@@ -3,7 +3,7 @@
 //! that don't depend on a failed step still run, like Grasshopper turning one component red.
 
 use crate::field::Field;
-use crate::geom::{Bounds, P3};
+use crate::geom::{Bounds, P3, add3, scale3, sub3};
 use crate::nodes::{self, Node};
 use crate::surface::Mesh;
 use crate::toolpath::{Toolpath, ToolpathStats};
@@ -254,15 +254,45 @@ pub fn evaluate(source: &str, quality: Quality) -> Evaluation {
     out
 }
 
+/// Runs a recipe and returns every step that worked with its value, for tests that look at
+/// the values themselves.
+#[cfg(test)]
+pub(crate) fn step_values(source: &str, quality: Quality) -> (Evaluation, HashMap<String, Value>) {
+    let mut out = Evaluation::default();
+    let Ok(program) = easycad_lang::parse(source) else {
+        return (out, HashMap::new());
+    };
+    let mut runner = Runner::new(&program, quality, &mut out);
+    runner.run();
+    let values = program
+        .bindings
+        .iter()
+        .zip(&runner.state)
+        .filter_map(|(b, s)| match s {
+            State::Done(v) => Some((b.name.clone(), v.clone())),
+            _ => None,
+        })
+        .collect();
+    drop(runner);
+    (out, values)
+}
+
 // ---------------------------------------------------------------------------------------------
 
-/// Named constants every recipe can use (a setting or step with the same name wins).
-fn constant(name: &str) -> Option<f64> {
+/// Names every recipe can use (a setting or step with the same name wins): `pi`, and `x`, `y`,
+/// `z`, the coordinates of each point as fields (`move(z: 0.2 * x)` tilts a curve).
+fn builtin(name: &str) -> Option<Value> {
     match name {
-        "pi" => Some(std::f64::consts::PI),
+        "pi" => Some(Value::Number(std::f64::consts::PI)),
+        "x" => Some(Value::Field(Rc::new(Field::coordinate(0)))),
+        "y" => Some(Value::Field(Rc::new(Field::coordinate(1)))),
+        "z" => Some(Value::Field(Rc::new(Field::coordinate(2)))),
         _ => None,
     }
 }
+
+/// The built-in names, for "did you mean" suggestions.
+const BUILTINS: [&str; 4] = ["pi", "x", "y", "z"];
 
 enum Slot {
     Param(Value),
@@ -316,7 +346,7 @@ impl<'a> Runner<'a> {
         });
     }
 
-    fn run(mut self) {
+    fn run(&mut self) {
         let program = self.program;
         let mut defined: HashMap<&str, u32> = HashMap::new();
 
@@ -449,7 +479,7 @@ impl<'a> Runner<'a> {
                 match self.names.get(name.as_str()) {
                     Some(Slot::Binding(j)) => deps[i].push(*j),
                     Some(Slot::Param(_)) => {}
-                    None if constant(&name).is_some() => {}
+                    None if builtin(&name).is_some() => {}
                     None => {
                         let msg = self.unknown_name(&name);
                         self.diag(span, Severity::Error, msg);
@@ -525,7 +555,7 @@ impl<'a> Runner<'a> {
     }
 
     fn unknown_name(&self, name: &str) -> String {
-        let known = self.names.keys().copied().chain(["pi"]);
+        let known = self.names.keys().copied().chain(BUILTINS);
         match closest(name, known) {
             Some(s) => format!("unknown name `{name}`; did you mean `{s}`?"),
             None => {
@@ -543,9 +573,7 @@ impl<'a> Runner<'a> {
                 Some(State::Done(v)) => Ok(v.clone()),
                 _ => Err(Fail::Skipped),
             },
-            None => constant(name)
-                .map(Value::Number)
-                .ok_or_else(|| Fail::Error(span, self.unknown_name(name))),
+            None => builtin(name).ok_or_else(|| Fail::Error(span, self.unknown_name(name))),
         }
     }
 
@@ -604,7 +632,7 @@ impl<'a> Runner<'a> {
         for (input, slot) in node.inputs.iter().zip(&slots) {
             values.push(match slot {
                 Some(expr) => self.eval(expr)?,
-                None => Value::Number(input.default.unwrap_or(0.0)),
+                None => input.default_value(),
             });
         }
         let result = nodes::call(&mut self.ctx, node, values);
@@ -757,6 +785,17 @@ impl<'a> Runner<'a> {
     /// Adds a value to the drawing. Returns whether there was anything to draw.
     fn draw(&mut self, v: &Value) -> bool {
         let fine = self.ctx.quality == Quality::Final;
+        if let Some(lines) = marker(v) {
+            if self.drawn + 12 > MAX_DRAWN_POINTS {
+                return true;
+            }
+            self.drawn += 12;
+            for l in lines {
+                self.out.drawing.bounds.union(&Bounds::of(&l));
+                self.out.drawing.curves.push(l);
+            }
+            return true;
+        }
         let cost = match v {
             Value::Curve(c) => c.points.len() + 1,
             Value::Surface(s) => s.point_count() * if fine { 2 } else { 1 },
@@ -841,9 +880,44 @@ fn file_name(file: &str) -> String {
     }
 }
 
+/// How points and planes are drawn: a small cross for a point; for a plane, a square in it
+/// (20 mm) with a short line along its x axis and its normal, as in Grasshopper.
+fn marker(v: &Value) -> Option<Vec<Vec<P3>>> {
+    match v {
+        Value::Point(p) => {
+            let s = 1.5;
+            Some(
+                (0..3)
+                    .map(|k| {
+                        let mut a = *p;
+                        let mut b = *p;
+                        a[k] -= s;
+                        b[k] += s;
+                        vec![a, b]
+                    })
+                    .collect(),
+            )
+        }
+        Value::Plane(pl) => {
+            let at = |u: f64, v: f64| add3(pl.origin, add3(scale3(pl.x, u), scale3(pl.y, v)));
+            let h = 10.0;
+            Some(vec![
+                vec![at(-h, -h), at(h, -h), at(h, h), at(-h, h), at(-h, -h)],
+                vec![pl.origin, add3(pl.origin, scale3(pl.x, h))],
+                vec![pl.origin, add3(pl.origin, scale3(pl.z, h))],
+            ])
+        }
+        _ => None,
+    }
+}
+
 fn drawable(v: &Value) -> bool {
     match v {
-        Value::Curve(_) | Value::Surface(_) | Value::Toolpath(_) => true,
+        Value::Curve(_)
+        | Value::Surface(_)
+        | Value::Toolpath(_)
+        | Value::Point(_)
+        | Value::Plane(_) => true,
         Value::List(l) => l.items.iter().any(drawable),
         _ => false,
     }
@@ -900,7 +974,7 @@ fn bind<'e>(node: &Node, args: &'e [Arg], span: Span) -> Result<Vec<Option<&'e E
         .inputs
         .iter()
         .zip(&slots)
-        .find(|(i, s)| s.is_none() && i.default.is_none())
+        .find(|(i, s)| s.is_none() && i.required())
     {
         let msg = format!(
             "{}: missing `{}` ({})",
@@ -943,6 +1017,28 @@ fn arithmetic(op: BinOp, ab: &[Value]) -> Result<Value, String> {
         }
         (Some(Value::Text(x)), Some(Value::Text(y))) if op == BinOp::Add => {
             Ok(Value::Text(format!("{x}{y}").into()))
+        }
+        // Points are vectors too: add and subtract them, scale them by numbers.
+        (Some(Value::Point(p)), Some(Value::Point(q))) if matches!(op, BinOp::Add | BinOp::Sub) => {
+            Ok(Value::Point(if op == BinOp::Add {
+                add3(*p, *q)
+            } else {
+                sub3(*p, *q)
+            }))
+        }
+        (Some(Value::Point(p)), Some(Value::Number(k)))
+            if matches!(op, BinOp::Mul | BinOp::Div) =>
+        {
+            if op == BinOp::Div && *k == 0.0 {
+                return Err("division by zero".into());
+            }
+            Ok(Value::Point(scale3(
+                *p,
+                if op == BinOp::Mul { *k } else { 1.0 / k },
+            )))
+        }
+        (Some(Value::Number(k)), Some(Value::Point(p))) if op == BinOp::Mul => {
+            Ok(Value::Point(scale3(*p, *k)))
         }
         // With a field on either side, the result is a field: the same arithmetic, point by point.
         (

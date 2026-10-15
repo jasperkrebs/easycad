@@ -71,6 +71,111 @@ impl Surface {
         })
     }
 
+    /// The curve swept straight up by `height` (Grasshopper's Extrude along Z).
+    pub fn extrude(curve: &Curve, height: f64) -> Result<Surface, String> {
+        if curve.points.len() < 2 {
+            return Err("the curve needs at least 2 points".into());
+        }
+        let top = curve.transformed(&Xform::translate(0.0, 0.0, height));
+        Surface::loft(&[curve, &top])
+    }
+
+    /// A surface of revolution about the Z axis (Grasshopper's Revolution): `profile` is drawn
+    /// in the XZ plane, x being the distance from the axis and z the height. Each profile
+    /// point becomes a horizontal circle of `samples` points, so the result lofts, caps and
+    /// prints in vase mode like any other wall.
+    pub fn revolve(profile: &Curve, samples: usize) -> Result<Surface, String> {
+        if profile.closed {
+            return Err("the profile must be an open curve (from the axis side to the rim)".into());
+        }
+        if profile.points.len() < 2 {
+            return Err("the profile needs at least 2 points".into());
+        }
+        if let Some(p) = profile.points.iter().find(|p| p[0] < 0.0) {
+            return Err(format!(
+                "the profile must stay on the +X side of the axis (x ≥ 0), but reaches x = {}",
+                easycad_lang::format_number((p[0] * 1000.0).round() / 1000.0)
+            ));
+        }
+        let n = samples.max(3);
+        let sections = profile
+            .points
+            .iter()
+            .map(|p| {
+                (0..n)
+                    .map(|j| {
+                        let a = std::f64::consts::TAU * j as f64 / n as f64;
+                        [p[0] * a.cos(), p[0] * a.sin(), p[2]]
+                    })
+                    .collect()
+            })
+            .collect();
+        Ok(Surface {
+            sections,
+            closed: true,
+            capped: false,
+        })
+    }
+
+    /// Flat layers through the surface (Grasshopper's Contour), `layer` apart: the first at its
+    /// bottom, then one per layer up to its top, the height snapped to whole layers with the
+    /// surface stretched to fit, exactly as `vase_spiral` prints it. Sections must stack upward.
+    pub fn contour(&self, layer: f64, max_points: usize) -> Result<Vec<Curve>, String> {
+        if !(layer > 0.0 && layer.is_finite()) {
+            return Err(format!("`layer` must be more than 0, got {layer}"));
+        }
+        let n = self.sections.len();
+        let m = self.samples();
+        if n < 2 || m < 2 {
+            return Err("needs a surface with at least 2 sections".into());
+        }
+        let levels: Vec<f64> = self
+            .sections
+            .iter()
+            .map(|s| s.iter().map(|p| p[2]).sum::<f64>() / s.len().max(1) as f64)
+            .collect();
+        if levels.iter().any(|z| !z.is_finite()) {
+            return Err("the surface has points at an invalid height".into());
+        }
+        if let Some(i) = levels.windows(2).position(|w| w[1] <= w[0]) {
+            return Err(format!(
+                "the sections must be stacked upward, but section {} is not above section {}",
+                i + 2,
+                i + 1
+            ));
+        }
+        let (z0, z1) = (levels[0], levels[n - 1]);
+        let height = z1 - z0;
+        let layers = (height / layer).round().max(1.0) as usize;
+        if (layers + 1).saturating_mul(m) > max_points {
+            return Err(format!(
+                "this needs too many points ({} layers of {m}); use a larger layer height",
+                layers + 1
+            ));
+        }
+        let v_at = |z: f64| -> f64 {
+            let i = levels
+                .partition_point(|l| *l <= z)
+                .saturating_sub(1)
+                .min(n - 2);
+            let (lo, hi) = (levels[i], levels[i + 1]);
+            i as f64 + ((z - lo) / (hi - lo)).clamp(0.0, 1.0)
+        };
+        Ok((0..=layers)
+            .map(|k| {
+                let v = v_at(z0 + height * k as f64 / layers as f64);
+                let z = z0 + layer * k as f64;
+                let points = (0..m)
+                    .map(|j| {
+                        let p = self.point_at(v, j);
+                        [p[0], p[1], z]
+                    })
+                    .collect();
+                Curve::new(points, self.closed)
+            })
+            .collect())
+    }
+
     /// Points per section.
     pub fn samples(&self) -> usize {
         self.sections.first().map_or(0, Vec::len)
@@ -220,6 +325,31 @@ mod tests {
             .map(|i| c.transformed(&Xform::translate(0.0, 0.0, 10.0 * i as f64)))
             .collect();
         Surface::loft(&curves.iter().collect::<Vec<_>>()).unwrap()
+    }
+
+    #[test]
+    fn extrude_revolve_and_contour() {
+        let c = Curve::circle(10.0, 32);
+        let tube = Surface::extrude(&c, 20.0).unwrap();
+        assert_eq!(tube.sections.len(), 2);
+        assert_eq!(tube.sections[1][0], [10.0, 0.0, 20.0]);
+
+        // A cone from radius 10 at the bottom to 5 at z = 10.
+        let profile = Curve::new(vec![[10.0, 0.0, 0.0], [5.0, 0.0, 10.0]], false);
+        let cone = Surface::revolve(&profile, 16).unwrap();
+        assert_eq!((cone.sections.len(), cone.samples()), (2, 16));
+        assert!(dist3(cone.sections[1][4], [0.0, 5.0, 10.0]) < 1e-12);
+        let bad = Curve::new(vec![[-1.0, 0.0, 0.0], [5.0, 0.0, 10.0]], false);
+        assert!(Surface::revolve(&bad, 16).is_err());
+        assert!(Surface::revolve(&Curve::circle(3.0, 8), 16).is_err());
+
+        // 20 mm at 0.3 mm snaps to 67 layers (20.1 mm), 68 contours from the bottom up.
+        let layers = tube.contour(0.3, 1_000_000).unwrap();
+        assert_eq!(layers.len(), 68);
+        assert!((layers[67].points[0][2] - 20.1).abs() < 1e-9);
+        assert!(layers.iter().all(|l| l.closed && l.points.len() == 32));
+        assert!(tube.contour(0.0, 1000).is_err());
+        assert!(tube.contour(0.001, 1000).is_err());
     }
 
     #[test]

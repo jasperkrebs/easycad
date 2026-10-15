@@ -2,8 +2,12 @@
 
 *Status: **v0.1 is implemented** (Phase 1a, 15 Oct 2026): the parser is `crates/lang`, the
 evaluator and nodes are `crates/core`. Phase 1b (15 Oct 2026) added fields (numbers that vary
-over space), general toolpath steps, and files: G-code and STL (§2.1). §2 says exactly which
-syntax works today and what comes later; §6 lists the steps you can use. The format was approved
+over space), general toolpath steps, and files: G-code and STL (§2.1). Phase 1c added the
+Grasshopper-style toolbox: points and planes, the coordinate fields `x`, `y`, `z`, 3D transforms
+that take fields (a different move, turn or scale for every point), curve and list tools,
+surfaces from curves, and `spiralize` (vase mode through any layers, tilted ones included). §2
+says exactly which syntax works today and what comes later; §6 lists the steps you can use, with
+their Grasshopper names. The format was approved
 on 14 Oct 2026; syntax and node names may still change, and every file starts with its version
 so old files can be migrated.*
 
@@ -232,6 +236,54 @@ away from it. Arithmetic with a field gives a field, so `spacing` is a field too
 spreads its turns wherever `spacing` is larger. Nothing in these steps knows about discs: the
 same `fade`, `spiral`, `interlock`, `toolpath` and `stack` build other things.
 
+### 1.6 A cylinder cut by a tilted plane (tilted layers)
+
+The fifth template (`web/templates/cut-cylinder.easycad`). The top of a cylinder is cut at an
+angle. The layers in between blend from the flat bottom to the slanted top, like Tween Curve in
+Grasshopper. They are printed as one spiral, each move extruded for its own layer height:
+
+```
+base   = circle(diameter / 2)
+cut    = plane([0, 0, height]) |> rotate(angle, axis: [0, 1, 0], center: [0, 0, height])
+top    = base |> project_along(cut)
+layers = tween(base, top, range(0, 1, count: round(height / layer) + 1))
+path   = spiralize(layers, width: line, flow: flow)
+```
+
+Read it like a Grasshopper definition:
+- **Circle** → `base`.
+- **Plane Normal** at the height, then **Rotate 3D** about Y → `cut`.
+- **Project Along** Z onto it → `top`, the slanted top edge.
+- **Tween Curve** with a **Range** of factors → `layers`.
+
+`spiralize` blends each layer into the next in one continuous spiral (vase mode). Layers are
+thin on the low side and thick on the high side, and every move is extruded for its own height.
+The flow (mm³/s) stays the same, so the thin side is printed faster. With the angle at 0 it is
+ordinary vase mode, and through flat, evenly spaced layers `spiralize` prints exactly like
+`vase_spiral` (both golden-tested against EasyGCode). Through tilted layers it is checked
+against a hand-checked fixture (`fixtures/hand-checked/`).
+
+The same toolbox does it another way too: `move(z: height + tan(angle) * x)` lifts every point
+of the circle by its own amount (a *field*, §3). It lands on the same slanted top.
+
+### 1.7 Geometry only
+
+Not every project is printed by EasyCAD. A recipe without `print` is plain geometry: shown,
+and saved with `export … as "….stl"` for a slicer or another program. The sixth template
+(`web/templates/turned-vase.easycad`) turns a profile through five points around the Z axis:
+
+```
+profile = interpolate([[foot, 0, 0], [belly, 0, height * belly_at], [neck, 0, height * neck_at], [lip, 0, height]])
+body    = revolve(profile)
+solid   = cap(body)
+
+show solid, profile
+export solid as "turned-vase.stl"
+```
+
+`[foot, 0, 0]` is a point written as a list. Every radius and height is a setting, like number
+sliders feeding Construct Point.
+
 ---
 
 ## 2. Syntax
@@ -280,7 +332,11 @@ comment   = "#" … end of line
   Inches are written `inch` because `in` is the range keyword. A setting keeps its own unit in
   the settings window (18 %, 90°).
 - **Reserved words** (they can't name a setting or a step): `easycad project printer note group
-  param show export print true false in of step as with`. `pi` is a built-in constant.
+  param show export print true false in of step as with`.
+- **Built-in names:** `pi` is 3.14159…, and `x`, `y`, `z` are the coordinates of each point as
+  fields (§3). A setting or step with the same name wins.
+- **Points** are written `point(x, y, z)` or as a list of 2 or 3 numbers, `[x, y, z]`, wherever a
+  point or vector is asked for. `[[0, 0], [10, 0], [10, 10]]` is a list of points.
 - **Limits**, so a hostile file can't hang or crash the app: 256 kB per recipe, expressions
   nested at most 128 deep, lists at most 32 levels deep, at most 4 million points and list
   items per run, and 1 million points per toolpath. Going over gives an error message.
@@ -352,7 +408,10 @@ conversation {                               # optional; the engine ignores it
   - with several lists, the longest-list rule applies (the shorter list repeats its last item);
   - `cross(a, b)` gives all combinations (later);
   - operators replicate too: `twist * t` with a list `t` gives a list;
-  - list inputs (`loft(curves)`, `union(solids)`, `difference(a, many)`) take the whole list.
+  - list inputs (`loft(curves)`, `polyline(points)`) take the whole list;
+  - a list of lists works like a Grasshopper tree: a list input runs once per inner list
+    (`count([[1, 2], [3]])` is `[2, 1]`), and `flatten` makes it one list;
+  - a point input reads `[x, y, z]` as one point, and runs once per point for a list of them.
 - **Records** (later): nodes with several outputs return records. `b = bbox(vase)` gives `b.min`,
   `b.max` and `b.size`; `d = divide(curve, count: 20)` gives `d.points`, `d.tangents` and
   `d.params`. In the graph they are separate output ports.
@@ -362,6 +421,14 @@ conversation {                               # optional; the engine ignores it
   `line * (1 + near)` is a field too. A step that takes a field (`spiral`'s spacing, `wave`'s
   amplitude) reads it at every point it makes. That's how one setting can affect only part of a
   shape, like Grasshopper's attractors.
+- **`x`, `y` and `z` are fields** too: each point's own coordinates. Given a field, the
+  transforms work point by point:
+  - `move(c, z: 0.1 * x)` tilts a flat curve into a slope;
+  - `rotate(wall, z * 0.5)` twists 0.5° per mm of height;
+  - `scale(wall, 1 + 0.002 * z)` flares a wall upward.
+
+  In Grasshopper you would Deconstruct Point, do the maths and Construct Point again; here the
+  expression is the maths. `sample(field, point)` reads a field's value at one point.
 - **Errors belong to nodes.** Syntax errors point to a line and column. Mistakes in a step
   ("circle: `r` must be more than 0, got -10") mark that step; steps that need it are skipped
   quietly; everything else still runs and draws. Typos get a suggestion ("unknown name
@@ -425,25 +492,50 @@ input (it's generated from the code, `crates/core/src/nodes.rs`, so it can't go 
 
 | Group | Steps |
 |---|---|
-| Numbers & lists | `range(start, end, count)` evenly spaced numbers, both ends included · `lerp(a, b, t)` · `count(list)` · `min(a, b)` · `max(a, b)` · `clamp(value, low, high)` · `mod(a, b)` · `abs(x)` · `sqrt(x)` · `round(x)` · `floor(x)` · `ceil(x)` · `sin(angle)` · `cos(angle)` · `tan(angle)` · `smoothstep(t)` (an S-curve from 0 to 1). All except `range` and `count` also work on fields |
-| Fields | `distance(to)` how far each point is from a curve (negative inside a closed one; exact for circles) · `fade(distance, inside, outside, band)` 1 on the curve, easing to 0 `inside`/`outside` mm away (EasyGCode's spiral-disc falloff) |
-| Curves | `circle(r)` · `polygon(sides, r)` · `star(points, outer, inner)` (sharp corners) · `smooth(curve)` (a cubic NURBS through every point) · `spiral(outer, spacing, tolerance, min_samples)` (a flat spiral from the centre out; `spacing` can be a field) · `interlock(spiral, bumps, width)` (wiggles spread-apart turns so each bump meets the next turn's dip) |
-| Transforms | `scale(geometry, factor, x, y, z)` · `rotate(geometry, angle)` about the Z axis · `move(geometry, x, y, z)` |
-| Surfaces | `loft(sections)` (smooth through the sections; each section's first point is its seam) · `cap(surface)` (flat ends: a solid) |
-| Toolpaths | `toolpath(curves, width, layer, speed, flow)` (prints any curves as drawn, in order) · `vase_spiral(wall, layer, width, speed, flow)` (EasyGCode's vase mode: start ramp, whole layers, flat cap turn) · `stack(path, count)` (the same layer `count` times) · `join(paths)` (one after another, each with its own settings) · `wave(geometry, amplitude, count, phase)` (on a toolpath, curve or surface; the amplitude can be a field) |
+| Numbers & lists | `range(start, end, count)` evenly spaced numbers, both ends included · `series(start, step, count)` · `random(count, low, high, seed)` (the same numbers for the same seed) · `count(list)` · `item(list, index)` (wraps: -1 is the last) · `reverse(list)` · `shift(list, offset)` · `flatten(list)` · `lerp(a, b, t)` · `remap(value, from_low, from_high, to_low, to_high)` · `min(a, b)` · `max(a, b)` · `clamp(value, low, high)` · `mod(a, b)` · `abs(x)` · `sqrt(x)` · `round(x)` · `floor(x)` · `ceil(x)` · `sin(angle)` · `cos(angle)` · `tan(angle)` · `asin(x)` · `acos(x)` · `atan(x)` · `atan2(y, x)` · `exp(x)` · `ln(x)` · `sign(x)` · `smoothstep(t)` (an S-curve from 0 to 1). The maths steps (from `lerp` on) also work on fields |
+| Fields | `x`, `y`, `z` (each point's coordinates) · `distance(to)` how far each point is from a curve (negative inside a closed one; exact for circles) · `fade(distance, inside, outside, band)` 1 on the curve, easing to 0 `inside`/`outside` mm away (EasyGCode's spiral-disc falloff) |
+| Points & planes | `point(x, y, z)` · `vector(x, y, z)` · `plane(origin, normal)` · `sample(field, at)` (a field's value at a point) |
+| Curves | `circle(r)` · `ellipse(rx, ry)` · `rectangle(width, height, radius)` · `arc(r, start, end)` · `line(start, end)` · `polyline(points, closed)` · `interpolate(points, closed)` (smooth, through every point) · `polygon(sides, r)` · `star(points, outer, inner)` (sharp corners) · `smooth(curve)` (a cubic NURBS through every point) · `spiral(outer, spacing, tolerance, min_samples)` (a flat spiral from the centre out; `spacing` can be a field) · `interlock(spiral, bumps, width)` (wiggles spread-apart turns so each bump meets the next turn's dip) · `tween(a, b, t)` · `offset(curve, distance)` · `divide(curve, count)` (points) · `evaluate(curve, t)` (a point) · `length(curve)` · `flip(curve)` · `seam(curve, t)` · `resample(curve, count)` |
+| Transforms | `scale(geometry, factor, x, y, z, center)` · `rotate(geometry, angle, axis, center)` · `move(geometry, x, y, z)` (all three take fields: per point) · `mirror(geometry, plane)` · `project_along(geometry, plane, direction)`. They work on curves, surfaces, points and planes. On toolpaths, only what keeps layers level: fixed moves and scales, turns about the vertical, mirrors through upright planes |
+| Surfaces | `loft(sections)` (smooth through the sections; each section's first point is its seam) · `cap(surface)` (flat ends: a solid) · `extrude(curve, height)` · `revolve(profile)` (about the Z axis) · `contour(surface, layer)` (flat layer curves, as `vase_spiral` prints them) |
+| Toolpaths | `toolpath(curves, width, layer, speed, flow)` (prints any curves as drawn, in order) · `vase_spiral(wall, layer, width, speed, flow)` (EasyGCode's vase mode: start ramp, whole layers, flat cap turn) · `spiralize(layers, width, speed, flow)` (vase mode through any stack of closed layers, flat or tilted; each move extruded for its own layer height) · `stack(path, count)` (the same layer `count` times) · `join(paths)` (one after another, each with its own settings) · `wave(geometry, amplitude, count, phase)` (on a toolpath, curve or surface; the amplitude can be a field) |
+
+**For Grasshopper users.** The steps are named after Grasshopper's components, in lower case
+(each step's description in the app gives the component it matches):
+
+| Grasshopper | EasyCAD |
+|---|---|
+| Number Slider, Boolean Toggle, Value List, Panel | `param` lines: slider, toggle, dropdown, text |
+| Construct Point, Vector XYZ, Plane Normal | `point`, `vector` (or `[x, y, z]`), `plane` |
+| Deconstruct Point, Evaluate Field | the fields `x`, `y`, `z`; `sample` |
+| Range, Series, Random, List Item, List Length, Reverse List, Shift List, Flatten | `range`, `series`, `random`, `item`, `count`, `reverse`, `shift`, `flatten` |
+| Remap Numbers, Expression | `remap`; any arithmetic inside an argument |
+| Circle, Ellipse, Rectangle, Arc, Line, Polyline, Interpolate, Polygon | `circle`, `ellipse`, `rectangle`, `arc`, `line`, `polyline`, `interpolate`, `polygon` |
+| Tween Curve, Offset Curve, Divide Curve, Evaluate Length, Length, Flip Curve, Seam, Rebuild | `tween`, `offset`, `divide`, `evaluate`, `length`, `flip`, `seam`, `resample` |
+| Move, Rotate 3D, Scale / Scale NU, Mirror, Project Along | `move`, `rotate`, `scale`, `mirror`, `project_along` (and they take fields: an attractor per point) |
+| Loft, Cap Holes, Extrude, Revolution, Contour | `loft`, `cap`, `extrude`, `revolve`, `contour` |
+| Graph Mapper, attractor definitions | `smoothstep`, `fade`, `distance` and arithmetic on fields |
+
+Not there yet: data trees beyond nested lists, Brep solids and booleans, Sweep, Pipe, curve
+booleans, Graph Mapper's curve editor, and clusters (§7).
 
 ### 6.2 Planned (≈ 40 nodes for Phases 1–3)
 
 | Group | Nodes |
 |---|---|
-| Numbers & lists | `range`, `series`, `lerp`, `remap`, `random`, `min`, `max`, `clamp`, `sum`, `count`, `cross`, `flatten`, `zip`, `shift` |
-| Points & transforms | `point`, `vector`, `plane`, `move`, `rotate`, `scale`, `mirror`, `orient`, `linear_array`, `polar_array`, `grid_points`, `distance` |
-| Curves | `line`, `polyline`, `arc`, `circle`, `ellipse`, `rectangle`, `rounded_rect`, `polygon`, `star`, `interpolate`, `smooth`, `offset`, `fillet`, `divide`, `join`, `reverse`, `seam` |
+| Numbers & lists | `sum`, `cross`, `zip`, `cull`, `sort`, `graph` (a drawn curve, like Graph Mapper) |
+| Points & transforms | `orient`, `linear_array`, `polar_array`, `grid_points`, `closest_point` |
+| Curves | `fillet`, `join_curves`, `explode`, `curve_curve` (intersections), `trim`, `split` |
 | Regions (2D) | `region`, `region_union`, `region_difference`, `region_intersection` |
-| Surfaces | `extrude`, `revolve`, `loft`, `sweep`, `cap`, `thicken` |
+| Surfaces | `sweep`, `pipe`, `thicken`, `isocurves`, `surface_point` |
 | Solids | `box`, `cylinder`, `sphere`, `union`, `difference`, `intersection`, `hull`, `split`, `bbox`, `volume` |
-| Shape → curves | `spiral_on`, `offset_rings`, `contours`, `isocurves`, `project`, `unroll`, `fill` |
-| Toolpath & G-code | `printers`, `order`, `travel`, `ramp`, `brim`, `infill`, `overhang_comp`, `check_print` (`toolpath`, `vase_spiral`, `stack`, `join`, `wave` and G-code export are done) |
+| Shape → curves | `spiral_on`, `offset_rings`, `unroll`, `fill` |
+| Toolpath & G-code | `printers`, `order`, `travel`, `ramp`, `brim`, `infill`, `overhang_comp`, `check_print` |
+
+Done since the first plan: `series`, `random`, `remap`, `flatten`, `shift`, `point`, `vector`,
+`plane`, `mirror`, `line`, `polyline`, `arc`, `ellipse`, `rectangle` (with rounded corners),
+`interpolate`, `offset`, `divide`, `seam`, `flip`, `extrude`, `revolve`, `contour`,
+`project_along`, `spiralize`, and the toolpath steps with G-code export.
 
 The printing nodes and how they chain are described in
 [toolpaths-and-skills.md](toolpaths-and-skills.md).
@@ -456,7 +548,7 @@ The printing nodes and how they chain are described in
 |---|---|
 | User-defined functions | Later: `def leg(h, r) = …`, like Grasshopper clusters |
 | Importing other files | Later: `use "parts/hinge.easycad"` |
-| Full data trees | Nested lists first. Trees only if real definitions need them |
+| Full data trees | Nested lists work as branches (a list input runs once per inner list; `flatten`). Full trees with paths only if real definitions need them |
 | Loops, mutation, file/network access | Never |
 
 ---

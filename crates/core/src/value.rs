@@ -2,6 +2,7 @@
 
 use crate::curve::Curve;
 use crate::field::Field;
+use crate::geom::{P3, Plane};
 use crate::surface::Surface;
 use crate::toolpath::Toolpath;
 use easycad_lang::format_number;
@@ -22,6 +23,9 @@ pub enum Value {
     Toolpath(Rc<Toolpath>),
     /// A number that varies over space (see [`crate::field`]).
     Field(Rc<Field>),
+    /// A point, or a vector (a direction and length: the arrow from the origin to the point).
+    Point(P3),
+    Plane(Plane),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +66,8 @@ impl Value {
             Value::Surface(_) => "a surface",
             Value::Toolpath(_) => "a toolpath",
             Value::Field(_) => "a field",
+            Value::Point(_) => "a point",
+            Value::Plane(_) => "a plane",
         }
     }
 
@@ -76,6 +82,8 @@ impl Value {
             Value::Surface(_) => "surfaces",
             Value::Toolpath(_) => "toolpaths",
             Value::Field(_) => "fields",
+            Value::Point(_) => "points",
+            Value::Plane(_) => "planes",
         }
     }
 
@@ -139,6 +147,8 @@ impl Value {
                 format!("toolpath · {} layers · {} points", p.layers, p.points.len())
             }
             Value::Field(_) => "field (a number that varies over space)".into(),
+            Value::Point(p) => format!("point {}", xyz(*p)),
+            Value::Plane(p) => format!("plane · origin {} · normal {}", xyz(p.origin), xyz(p.z)),
         }
     }
 
@@ -154,8 +164,19 @@ impl Value {
             Value::Toolpath(p) => pts(&p.points),
             // Checked where the field is used, point by point.
             Value::Field(_) => true,
+            Value::Point(p) => p.iter().all(|v| v.is_finite()),
+            Value::Plane(p) => [p.origin, p.x, p.y, p.z]
+                .iter()
+                .flatten()
+                .all(|v| v.is_finite()),
         }
     }
+}
+
+/// `(1, 2.5, 0)`, rounded to 0.001 mm.
+fn xyz(p: P3) -> String {
+    let r = |v: f64| format_number((v * 1000.0).round() / 1000.0 + 0.0);
+    format!("({}, {}, {})", r(p[0]), r(p[1]), r(p[2]))
 }
 
 #[cfg(test)]

@@ -10,7 +10,12 @@
 //!   disc: its defaults in volumetric flow mode, and three cases at a set speed.
 //! - `vase_spiral` on a cylinder against EasyGCode's lampshade generator with a straight
 //!   "cone" whose ends are the same size: the same vase mode (ramped first turn, whole layers,
-//!   flat closing turn), at a set speed and in flow mode.
+//!   flat closing turn), at a set speed and in flow mode. `spiralize` through the same
+//!   cylinder's flat layers must print exactly the same.
+//!
+//! `spiralize` through tilted layers has no EasyGCode counterpart, so it's compared with a
+//! hand-checked fixture instead (`fixtures/hand-checked/`, worked out from the geometry in exact
+//! arithmetic by `scripts/hand-checked-fixtures.py`, every move annotated for checking by hand).
 
 use crate::eval::{Quality, evaluate};
 use crate::gcode::{self, Filament, Mode, Pellet, Profile};
@@ -230,4 +235,60 @@ print path
             .text;
         assert_matches(&ours, fixture);
     }
+}
+
+/// The same cylinder as layer curves instead of a wall: `spiralize` through flat, evenly spaced
+/// layers is EasyGCode's vase mode exactly.
+#[test]
+fn spiralize_through_flat_layers_matches_easygcodes_vase_mode() {
+    for (speed, fixture) in [
+        (
+            "speed: 20",
+            include_str!("../../../fixtures/easygcode/lamp-cylinder.gcode"),
+        ),
+        (
+            "flow: 8",
+            include_str!("../../../fixtures/easygcode/lamp-cylinder-flow.gcode"),
+        ),
+    ] {
+        let recipe = format!(
+            "easycad 0.1
+base = circle(20.4) |> rotate(90)
+layers = base |> move(z: range(0, 20, count: 41))
+path = spiralize(layers, width: 0.8, {speed})
+print path
+"
+        );
+        let e = evaluate(&recipe, Quality::Final);
+        assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+        let path = &e.print.as_ref().unwrap().path;
+        assert_eq!((path.samples_per_turn, path.layers), (192, 40));
+        let ours = gcode::write(path, &Profile::default(), "Cylinder")
+            .unwrap()
+            .text;
+        assert_matches(&ours, fixture);
+    }
+}
+
+/// A diamond whose top is cut by a tilted plane, three layers tweened in between: every move is
+/// extruded (and, at a set flow, sped up or slowed down) for its own layer height.
+#[test]
+fn spiralize_through_tilted_layers_matches_the_hand_checked_fixture() {
+    let fixture = include_str!("../../../fixtures/hand-checked/spiralize-tilted.gcode");
+    // The recipe is quoted in the fixture's header.
+    let recipe: String = fixture
+        .lines()
+        .filter_map(|l| l.strip_prefix(";   "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert!(recipe.starts_with("easycad 0.1\n") && recipe.contains("spiralize("));
+    let e = evaluate(&recipe, Quality::Final);
+    assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+    let path = &e.print.as_ref().unwrap().path;
+    let profile = Profile {
+        include_start_end: false,
+        ..Profile::default()
+    };
+    let ours = gcode::write(path, &profile, "Tilted diamond").unwrap().text;
+    assert_matches(&ours, fixture);
 }

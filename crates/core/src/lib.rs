@@ -32,3 +32,5 @@ pub use eval::{
 mod eval_tests;
 #[cfg(test)]
 mod golden_tests;
+#[cfg(test)]
+mod toolbox_tests;

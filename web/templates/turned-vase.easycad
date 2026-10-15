@@ -1,0 +1,25 @@
+easycad 0.1
+project "Turned vase (geometry only)"
+note "Geometry only: no toolpath and no G-code. Save it as an STL for a slicer or another program."
+note "A smooth profile through five points, turned around the Z axis like on a lathe. Each point's radius and height is a setting, like number sliders feeding Construct Point in Grasshopper."
+
+group "Size"
+param height   = 180 mm in 60..300         "Height"
+
+group "Profile (radius)"
+param foot     = 35 mm  in 10..80          "Foot"
+param belly    = 60 mm  in 20..120         "Belly"
+param neck     = 22 mm  in 8..80           "Neck"
+param lip      = 30 mm  in 8..100          "Lip"
+
+group "Profile (height)"
+param belly_at = 35 %   in 10..70          "Belly height"
+param neck_at  = 80 %   in 50..95          "Neck height"
+
+# The profile in the XZ plane: x is the radius, z the height.
+profile = interpolate([[foot, 0, 0], [belly, 0, height * belly_at], [neck, 0, height * neck_at], [lip, 0, height]])
+body    = revolve(profile)
+solid   = cap(body)
+
+show solid, profile
+export solid as "turned-vase.stl"

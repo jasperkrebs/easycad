@@ -10,6 +10,40 @@ pub fn dist3(a: P3, b: P3) -> f64 {
     ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2) + (b[2] - a[2]).powi(2)).sqrt()
 }
 
+pub fn add3(a: P3, b: P3) -> P3 {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+pub fn sub3(a: P3, b: P3) -> P3 {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+pub fn scale3(a: P3, k: f64) -> P3 {
+    [a[0] * k, a[1] * k, a[2] * k]
+}
+
+pub fn dot3(a: P3, b: P3) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+pub fn cross3(a: P3, b: P3) -> P3 {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+pub fn norm3(a: P3) -> f64 {
+    dot3(a, a).sqrt()
+}
+
+/// The vector scaled to length 1, or `None` for a (near) zero vector.
+pub fn unit3(a: P3) -> Option<P3> {
+    let n = norm3(a);
+    (n > 1e-12 && n.is_finite()).then(|| scale3(a, 1.0 / n))
+}
+
 /// The point a fraction `t` of the way from `a` to `b`.
 pub fn lerp3(a: P3, b: P3, t: f64) -> P3 {
     [
@@ -67,6 +101,58 @@ impl Xform {
         }
     }
 
+    /// Rotates `degrees` counter-clockwise (right-hand rule) about the line through `center`
+    /// along `axis`. `None` when the axis has no length.
+    pub fn rotate_axis(degrees: f64, axis: P3, center: P3) -> Option<Self> {
+        let [x, y, z] = unit3(axis)?;
+        let (s, c) = degrees.to_radians().sin_cos();
+        let t = 1.0 - c;
+        // Rodrigues' rotation matrix.
+        let m = [
+            [t * x * x + c, t * x * y - s * z, t * x * z + s * y],
+            [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
+            [t * x * z - s * y, t * y * z + s * x, t * z * z + c],
+        ];
+        Some(Xform::linear_about(m, center))
+    }
+
+    /// Scales by `x`, `y`, `z` about `center`.
+    pub fn scale_about(x: f64, y: f64, z: f64, center: P3) -> Self {
+        Xform::linear_about([[x, 0.0, 0.0], [0.0, y, 0.0], [0.0, 0.0, z]], center)
+    }
+
+    /// Mirrors through the plane through `origin` with normal `normal`. `None` when the normal
+    /// has no length.
+    pub fn mirror(origin: P3, normal: P3) -> Option<Self> {
+        let [a, b, c] = unit3(normal)?;
+        // I − 2·n·nᵀ
+        let m = [
+            [1.0 - 2.0 * a * a, -2.0 * a * b, -2.0 * a * c],
+            [-2.0 * a * b, 1.0 - 2.0 * b * b, -2.0 * b * c],
+            [-2.0 * a * c, -2.0 * b * c, 1.0 - 2.0 * c * c],
+        ];
+        Some(Xform::linear_about(m, origin))
+    }
+
+    /// The linear map `m` applied about `center`: p' = m·(p − center) + center.
+    fn linear_about(m: [[f64; 3]; 3], center: P3) -> Self {
+        let mc = Xform { m, t: [0.0; 3] }.apply(center);
+        Xform {
+            m,
+            t: sub3(center, mc),
+        }
+    }
+
+    /// Applies only the linear part (rotation, scale, mirror) to a direction.
+    pub fn apply_vector(&self, v: P3) -> P3 {
+        let m = &self.m;
+        [
+            m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+            m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+            m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+        ]
+    }
+
     pub fn apply(&self, p: P3) -> P3 {
         let m = &self.m;
         [
@@ -96,6 +182,52 @@ impl Xform {
             - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
             + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
         det < 0.0
+    }
+}
+
+/// A plane: an origin and three perpendicular unit axes, `z` being the normal (Grasshopper's
+/// planes work the same way).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Plane {
+    pub origin: P3,
+    pub x: P3,
+    pub y: P3,
+    pub z: P3,
+}
+
+impl Plane {
+    /// The plane through `origin` facing `normal`. Its x axis is the world X axis tilted into
+    /// the plane (or the world Y axis when the plane faces along X), so it's predictable.
+    pub fn from_normal(origin: P3, normal: P3) -> Option<Plane> {
+        let z = unit3(normal)?;
+        let seed = if z[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let x = unit3(sub3(seed, scale3(z, dot3(seed, z))))?;
+        let y = cross3(z, x);
+        Some(Plane { origin, x, y, z })
+    }
+
+    /// The plane moved, turned or mirrored with the geometry around it.
+    pub fn transformed(&self, t: &Xform) -> Option<Plane> {
+        let origin = t.apply(self.origin);
+        let z = t.apply_vector(self.z);
+        let x = t.apply_vector(self.x);
+        let z = unit3(z)?;
+        let x = unit3(sub3(x, scale3(z, dot3(x, z))))?;
+        Some(Plane {
+            origin,
+            x,
+            y: cross3(z, x),
+            z,
+        })
+    }
+
+    /// How far `p` is above the plane (along its normal).
+    pub fn height_of(&self, p: P3) -> f64 {
+        dot3(sub3(p, self.origin), self.z)
     }
 }
 
@@ -316,6 +448,34 @@ mod tests {
         assert_eq!(Xform::scale(2.0, 2.0, 7.0).xy_similarity(), Some(2.0));
         assert_eq!(Xform::scale(-2.0, 2.0, 1.0).xy_similarity(), Some(2.0));
         assert_eq!(Xform::scale(2.0, 1.0, 1.0).xy_similarity(), None);
+    }
+
+    #[test]
+    fn rotations_about_any_axis_mirrors_and_planes() {
+        let close = |a: P3, b: P3| dist3(a, b) < 1e-12;
+        // A quarter turn about Y (right-hand rule) takes +X to -Z.
+        let r = Xform::rotate_axis(90.0, [0.0, 1.0, 0.0], [0.0; 3]).unwrap();
+        assert!(close(r.apply([1.0, 0.0, 0.0]), [0.0, 0.0, -1.0]));
+        // About a vertical line through (10, 0, 0): the origin goes to (10, -10, 0).
+        let r = Xform::rotate_axis(90.0, [0.0, 0.0, 1.0], [10.0, 0.0, 0.0]).unwrap();
+        assert!(close(r.apply([0.0, 0.0, 0.0]), [10.0, -10.0, 0.0]));
+        assert!(Xform::rotate_axis(10.0, [0.0; 3], [0.0; 3]).is_none());
+        let m = Xform::mirror([0.0, 0.0, 5.0], [0.0, 0.0, 2.0]).unwrap();
+        assert!(close(m.apply([1.0, 2.0, 7.0]), [1.0, 2.0, 3.0]));
+        assert!(m.mirrors());
+        let s = Xform::scale_about(2.0, 2.0, 2.0, [1.0, 1.0, 1.0]);
+        assert!(close(s.apply([2.0, 1.0, 1.0]), [3.0, 1.0, 1.0]));
+
+        let p = Plane::from_normal([0.0, 0.0, 10.0], [0.0, 0.0, 3.0]).unwrap();
+        assert!(close(p.x, [1.0, 0.0, 0.0]) && close(p.y, [0.0, 1.0, 0.0]));
+        assert!((p.height_of([4.0, 5.0, 12.0]) - 2.0).abs() < 1e-12);
+        let tilted = p
+            .transformed(&Xform::rotate_axis(45.0, [0.0, 1.0, 0.0], [0.0, 0.0, 10.0]).unwrap())
+            .unwrap();
+        assert!(close(tilted.origin, [0.0, 0.0, 10.0]));
+        let h = std::f64::consts::FRAC_1_SQRT_2;
+        assert!(close(tilted.z, [h, 0.0, h]));
+        assert!(Plane::from_normal([0.0; 3], [0.0; 3]).is_none());
     }
 
     #[test]

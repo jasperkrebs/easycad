@@ -27,6 +27,8 @@ const ASSETS = [
   './templates/ribbed-cylinder.easycad',
   './templates/star-bowl.easycad',
   './templates/spiral-disc.easycad',
+  './templates/cut-cylinder.easycad',
+  './templates/turned-vase.easycad',
   './pkg/easycad_wasm.js',
   './pkg/easycad_wasm_bg.wasm',
   './vendor/anthropic/anthropic-sdk.min.mjs',

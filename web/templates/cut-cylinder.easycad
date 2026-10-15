@@ -1,0 +1,31 @@
+easycad 0.1
+project "Cut cylinder"
+printer "Bambu P1P 0.4"
+note "A cylinder whose top is cut by a tilted plane, printed as one continuous spiral (vase mode)."
+note "The layers are tweens from the flat bottom to the slanted top, so they're thin on the low side and thick on the high side. spiralize extrudes every move for its own layer height, and the flow stays the same all round."
+note "Grasshopper-style: circle → plane, rotated → project the circle onto it → tween → spiralize."
+
+group "Shape"
+param diameter = 60 mm  in 20..120        "Diameter"
+param height   = 80 mm  in 40..250        "Height (at the centre)"
+param angle    = 20 deg in 0..30          "Cut angle"
+
+group "Print"
+param layer    = 0.3 mm in 0.1..0.5       "Layer height (average)"
+param line     = 0.6 mm in 0.4..1.2       "Line width"
+param flow     = 8      in 1..20          "Flow (mm³/s)"
+
+# The bottom is a circle on the bed. The cut is a level plane at `height`, tilted about the
+# Y axis through its centre; the top edge is the circle projected straight up onto it.
+base   = circle(diameter / 2)
+cut    = plane([0, 0, height]) |> rotate(angle, axis: [0, 1, 0], center: [0, 0, height])
+top    = base |> project_along(cut)
+# One layer curve per layer (counted at the centre), blending from the bottom to the top.
+layers = tween(base, top, range(0, 1, count: round(height / layer) + 1))
+path   = spiralize(layers, width: line, flow: flow)
+wall   = loft([base, top])
+solid  = cap(wall)
+
+show solid
+print path
+export solid as "cut-cylinder.stl"

@@ -4,7 +4,7 @@
 //! is sampled once, at the quality the evaluation asked for. That keeps transforms, lofts and
 //! toolpaths simple and fast, which is what interactive tuning needs.
 
-use crate::geom::{P3, Xform, dist3, lerp3, signed_area_xy};
+use crate::geom::{P3, Xform, dist3, lerp3, signed_area_xy, unit3};
 use curvo::prelude::*;
 use nalgebra::Point3;
 
@@ -256,6 +256,245 @@ impl Curve {
         }
         self.points.iter().map(|p| p[2]).sum::<f64>() / self.points.len() as f64
     }
+
+    /// A rectangle `width` × `height` around the origin, counter-clockwise, starting in the
+    /// middle of its +X side. With `radius` > 0 the corners are rounded (`per_corner` points
+    /// each).
+    pub fn rectangle(width: f64, height: f64, radius: f64, per_corner: usize) -> Curve {
+        let (hw, hh) = (width / 2.0, height / 2.0);
+        let r = radius.clamp(0.0, hw.min(hh));
+        let mut points = vec![[hw, 0.0, 0.0]];
+        // Corner centres, counter-clockwise from the top right, with the angle each arc starts at.
+        let corners = [
+            ([hw - r, hh - r], 0.0),
+            ([-hw + r, hh - r], 90.0),
+            ([-hw + r, -hh + r], 180.0),
+            ([hw - r, -hh + r], 270.0),
+        ];
+        for (c, start) in corners {
+            if r <= 0.0 {
+                points.push([c[0], c[1], 0.0]);
+            } else {
+                let n = per_corner.max(2);
+                for i in 0..=n {
+                    let a = (start + 90.0 * i as f64 / n as f64).to_radians();
+                    points.push([c[0] + r * a.cos(), c[1] + r * a.sin(), 0.0]);
+                }
+            }
+        }
+        let mut c = Curve::new(points, true);
+        c.points.dedup_by(|a, b| dist3(*a, *b) < 1e-9);
+        c
+    }
+
+    /// An ellipse around the origin with radii `rx` and `ry`, counter-clockwise from +X.
+    pub fn ellipse(rx: f64, ry: f64, samples: usize) -> Curve {
+        let points = ring(1.0, samples.max(3))
+            .into_iter()
+            .map(|p| [p[0] * rx, p[1] * ry, 0.0])
+            .collect();
+        Curve::new(points, true)
+    }
+
+    /// An open arc of radius `r` around the origin from `start` to `end` degrees
+    /// (counter-clockwise when `end` > `start`).
+    pub fn arc(r: f64, start: f64, end: f64, samples: usize) -> Curve {
+        let n = samples.max(2);
+        let points = (0..n)
+            .map(|i| {
+                let a = (start + (end - start) * i as f64 / (n - 1) as f64).to_radians();
+                [r * a.cos(), r * a.sin(), 0.0]
+            })
+            .collect();
+        Curve::new(points, false)
+    }
+
+    /// The point a fraction `t` (0..1) of the way along the curve, by length. A closed curve
+    /// wraps around (1 is back at the start).
+    pub fn point_at(&self, t: f64) -> P3 {
+        let total = self.length();
+        let first = self.points.first().copied().unwrap_or([0.0; 3]);
+        if total <= 0.0 || !t.is_finite() {
+            return first;
+        }
+        let t = if self.closed {
+            t.rem_euclid(1.0)
+        } else {
+            t.clamp(0.0, 1.0)
+        };
+        let target = total * t;
+        let mut walked = 0.0;
+        for (a, b) in self.segments() {
+            let len = dist3(a, b);
+            if walked + len >= target {
+                return if len > 0.0 {
+                    lerp3(a, b, ((target - walked) / len).clamp(0.0, 1.0))
+                } else {
+                    a
+                };
+            }
+            walked += len;
+        }
+        if self.closed {
+            first
+        } else {
+            self.points.last().copied().unwrap_or(first)
+        }
+    }
+
+    /// Points dividing the curve into `count` pieces of equal length (Grasshopper's Divide
+    /// Curve): `count` + 1 points on an open curve, `count` on a closed one.
+    pub fn divide(&self, count: usize) -> Vec<P3> {
+        let count = count.max(1);
+        self.resample(if self.closed { count } else { count + 1 })
+            .points
+    }
+
+    /// The same curve run the other way. A closed curve keeps its start point.
+    pub fn flipped(&self) -> Curve {
+        let mut points = self.points.clone();
+        if self.closed {
+            if let Some(rest) = points.get_mut(1..) {
+                rest.reverse();
+            }
+        } else {
+            points.reverse();
+        }
+        Curve::new(points, self.closed)
+    }
+
+    /// A closed curve starting a fraction `t` of the way along it (Grasshopper's Seam). The new
+    /// start point is added exactly where `t` falls.
+    pub fn with_seam(&self, t: f64) -> Result<Curve, String> {
+        if !self.closed {
+            return Err("only a closed curve has a seam to move".into());
+        }
+        let total = self.length();
+        if total <= 0.0 || self.points.len() < 3 {
+            return Ok(Curve::new(self.points.clone(), true));
+        }
+        let target = total * t.rem_euclid(1.0);
+        let n = self.points.len();
+        let mut walked = 0.0;
+        for i in 0..n {
+            let (a, b) = (self.points[i], self.points[(i + 1) % n]);
+            let len = dist3(a, b);
+            if walked + len > target || i == n - 1 {
+                let f = if len > 0.0 {
+                    ((target - walked) / len).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let start = lerp3(a, b, f);
+                let mut points = vec![start];
+                // Then every original point after the split, wrapping round to the split again.
+                for k in 1..=n {
+                    let p = self.points[(i + k) % n];
+                    if dist3(p, start) > 1e-9 && !(k == n && dist3(p, start) <= 1e-9) {
+                        points.push(p);
+                    }
+                }
+                points.dedup_by(|x, y| dist3(*x, *y) < 1e-9);
+                if points.len() > 1 && points.last().is_some_and(|q| dist3(*q, start) < 1e-9) {
+                    points.pop();
+                }
+                return Ok(Curve::new(points, true));
+            }
+            walked += len;
+        }
+        Ok(self.clone())
+    }
+
+    /// Between `a` (t = 0) and `b` (t = 1), point by point (Grasshopper's Tween Curve). Curves
+    /// with different point counts are first resampled evenly to the larger count.
+    pub fn tween(a: &Curve, b: &Curve, t: f64) -> Result<Curve, String> {
+        if a.closed != b.closed {
+            return Err("both curves must be closed, or both open".into());
+        }
+        if a.points.is_empty() || b.points.is_empty() {
+            return Err("both curves need points".into());
+        }
+        let n = a.points.len().max(b.points.len());
+        let (ra, rb);
+        let pa = if a.points.len() == n {
+            &a.points
+        } else {
+            ra = a.resample(n);
+            &ra.points
+        };
+        let pb = if b.points.len() == n {
+            &b.points
+        } else {
+            rb = b.resample(n);
+            &rb.points
+        };
+        let points = pa.iter().zip(pb).map(|(p, q)| lerp3(*p, *q, t)).collect();
+        // Spirals stay spirals: both ends wind the same way, point for point.
+        let winding = match (&a.winding, &b.winding) {
+            (Some(w), Some(_)) if a.points.len() == n && b.points.len() == n => Some(w.clone()),
+            _ => None,
+        };
+        Ok(Curve {
+            points,
+            closed: a.closed,
+            circle: None,
+            winding,
+        })
+    }
+
+    /// The curve moved sideways by `distance` in the XY plane: outward for a closed curve,
+    /// to the right of travel for an open one (negative goes the other way). Corners are
+    /// mitred, which is right for smooth curves and modest distances; a distance larger than a
+    /// curve's tightest bend makes it fold over.
+    pub fn offset(&self, distance: f64) -> Curve {
+        let n = self.points.len();
+        if n < 2 || distance == 0.0 {
+            return self.clone();
+        }
+        let sign = if self.closed && self.signed_area() < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        // The right-hand normal of each segment, in XY.
+        let normal = |a: P3, b: P3| unit3([b[1] - a[1], -(b[0] - a[0]), 0.0]);
+        let segs: Vec<Option<P3>> = (0..n)
+            .map(|i| {
+                if self.closed || i + 1 < n {
+                    normal(self.points[i], self.points[(i + 1) % n])
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let points = (0..n)
+            .map(|i| {
+                let p = self.points[i];
+                let before = if i > 0 {
+                    segs[i - 1]
+                } else if self.closed {
+                    segs[n - 1]
+                } else {
+                    None
+                };
+                let after = segs.get(i).copied().flatten();
+                let d = sign * distance;
+                match (before, after) {
+                    (Some(a), Some(b)) => match unit3([a[0] + b[0], a[1] + b[1], 0.0]) {
+                        Some(m) => {
+                            // Mitre: as far as needed to keep both sides at `distance`, capped.
+                            let k = (m[0] * a[0] + m[1] * a[1]).max(0.25);
+                            [p[0] + m[0] * d / k, p[1] + m[1] * d / k, p[2]]
+                        }
+                        None => [p[0] + a[0] * d, p[1] + a[1] * d, p[2]],
+                    },
+                    (Some(a), None) | (None, Some(a)) => [p[0] + a[0] * d, p[1] + a[1] * d, p[2]],
+                    (None, None) => p,
+                }
+            })
+            .collect();
+        Curve::new(points, self.closed)
+    }
 }
 
 /// `n` points evenly round a circle of radius `r`, the first on +X.
@@ -366,6 +605,100 @@ mod tests {
         assert!(c.transformed(&Xform::scale(3.0, 1.0, 1.0)).circle.is_none());
         assert!(Curve::polygon(6, 10.0).circle.is_none());
         assert!(c.smooth(2).is_err() || c.smooth(2).unwrap().circle.is_none());
+    }
+
+    #[test]
+    fn rectangles_ellipses_and_arcs() {
+        let r = Curve::rectangle(40.0, 20.0, 0.0, 4);
+        assert_eq!(
+            r.points,
+            vec![
+                [20.0, 0.0, 0.0],
+                [20.0, 10.0, 0.0],
+                [-20.0, 10.0, 0.0],
+                [-20.0, -10.0, 0.0],
+                [20.0, -10.0, 0.0]
+            ]
+        );
+        assert!((r.length() - 120.0).abs() < 1e-9 && r.signed_area() > 0.0);
+        let rounded = Curve::rectangle(40.0, 20.0, 5.0, 8);
+        let expected = 2.0 * (30.0 + 10.0) + std::f64::consts::TAU * 5.0;
+        assert!(
+            (rounded.length() - expected).abs() < 0.1,
+            "{}",
+            rounded.length()
+        );
+        let e = Curve::ellipse(10.0, 5.0, 64);
+        assert_eq!(e.points[16], [e.points[16][0], 5.0, 0.0]);
+        let a = Curve::arc(10.0, 0.0, 90.0, 10);
+        assert!(!a.closed && dist3(a.points[9], [0.0, 10.0, 0.0]) < 1e-12);
+    }
+
+    #[test]
+    fn points_along_seams_and_direction() {
+        let sq = Curve::polygon(4, 10.0); // corners on the axes
+        let side = dist3(sq.points[0], sq.points[1]);
+        assert!(dist3(sq.point_at(0.125), lerp3(sq.points[0], sq.points[1], 0.5)) < 1e-9);
+        assert_eq!(sq.point_at(1.0), sq.points[0]);
+        assert_eq!(sq.divide(4).len(), 4);
+        let line = Curve::new(vec![[0.0; 3], [10.0, 0.0, 0.0]], false);
+        assert_eq!(line.divide(5).len(), 6);
+        let seamed = sq.with_seam(0.125).unwrap();
+        assert_eq!(seamed.points.len(), 5);
+        assert!(dist3(seamed.points[0], sq.point_at(0.125)) < 1e-9);
+        assert!((seamed.length() - 4.0 * side).abs() < 1e-9);
+        assert!(line.with_seam(0.5).is_err());
+        let f = sq.flipped();
+        assert_eq!(f.points[0], sq.points[0]);
+        assert!(f.signed_area() < 0.0);
+        assert_eq!(line.flipped().points[0], [10.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn tweens_blend_point_by_point() {
+        let a = Curve::circle(10.0, 32);
+        let b = Curve::circle(20.0, 32).transformed(&Xform::translate(0.0, 0.0, 10.0));
+        let mid = Curve::tween(&a, &b, 0.5).unwrap();
+        assert!(dist3(mid.points[0], [15.0, 0.0, 5.0]) < 1e-12);
+        let sq = Curve::polygon(4, 10.0);
+        assert_eq!(Curve::tween(&a, &sq, 0.5).unwrap().points.len(), 32);
+        let open = Curve::new(vec![[0.0; 3], [1.0, 0.0, 0.0]], false);
+        assert!(Curve::tween(&a, &open, 0.5).is_err());
+    }
+
+    #[test]
+    fn offsets_go_outward() {
+        let c = Curve::circle(10.0, 256);
+        let out = c.offset(2.0);
+        assert!(
+            out.points
+                .iter()
+                .all(|p| (p[0].hypot(p[1]) - 12.0).abs() < 0.01)
+        );
+        let inward = c.flipped().offset(2.0); // clockwise: still outward
+        assert!(
+            inward
+                .points
+                .iter()
+                .all(|p| (p[0].hypot(p[1]) - 12.0).abs() < 0.01)
+        );
+        let sq = Curve::new(
+            vec![
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [10.0, 10.0, 0.0],
+                [0.0, 10.0, 0.0],
+            ],
+            true,
+        );
+        let big = sq.offset(1.0);
+        assert!(
+            dist3(big.points[0], [-1.0, -1.0, 0.0]) < 1e-9,
+            "{:?}",
+            big.points[0]
+        );
+        let line = Curve::new(vec![[0.0; 3], [10.0, 0.0, 0.0]], false);
+        assert!(dist3(line.offset(1.0).points[0], [0.0, -1.0, 0.0]) < 1e-12);
     }
 
     #[test]

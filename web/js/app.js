@@ -18,6 +18,8 @@ const TEMPLATES = [
   { id: 'ribbed-cylinder', name: 'Ribbed cylinder' },
   { id: 'star-bowl', name: 'Star bowl' },
   { id: 'spiral-disc', name: 'Spiral disc (from EasyGCode)' },
+  { id: 'cut-cylinder', name: 'Cut cylinder (tilted layers)' },
+  { id: 'turned-vase', name: 'Turned vase (geometry only)' },
 ];
 const STORAGE_KEY = 'easycad.project';
 const MAX_FILE_BYTES = 256 * 1024;

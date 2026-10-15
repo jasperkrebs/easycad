@@ -3,6 +3,48 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-15: the Grasshopper-style toolbox, and vase mode through tilted layers
+
+**Why:** the owner's test request was a cylinder whose top is cut by a tilted plane, with the
+layers in between tweened and printed as one spiral, the extrusion following the layer height.
+It couldn't be built: no 3D rotation, no planes, no tweens, and vase mode only for flat layers.
+The fix is a general Grasshopper-like vocabulary, not one step per project.
+
+**Landed**
+- **Points and planes** as values: `point`, `vector`, `plane`, and `[x, y, z]` anywhere a point
+  is asked for (a list of them is a list of points). `x`, `y`, `z` are built-in fields: each
+  point's own coordinates.
+- **Transforms take fields, axes and centres.** `move(c, z: 0.1 * x)` tilts a curve point by
+  point; `rotate` turns about any axis through any centre (`rotate(wall, z * 0.5)` twists),
+  `scale` about a centre and by fields; new `mirror` and `project_along`. Turns about the
+  vertical keep the exact old numbers (the Phase 0 parity test still passes).
+- **Curve and list tools** with Grasshopper's names in their descriptions: `ellipse`,
+  `rectangle`, `arc`, `line`, `polyline`, `interpolate`, `tween`, `offset`, `divide`,
+  `evaluate`, `length`, `flip`, `seam`, `resample`; `series`, `random` (seeded), `item`,
+  `reverse`, `shift`, `flatten`, `remap`, and more maths (`asin` … `sign`). A list of lists runs
+  a list step once per inner list, like a Grasshopper branch.
+- **Surfaces:** `extrude`, `revolve` (about Z, prints in vase mode), `contour` (flat layers).
+- **`spiralize(layers, width, flow)`**: vase mode through any stack of closed layers, tilted
+  ones too. Each move is extruded for its own layer height: the gap to the turn below, averaged
+  over the move. Through flat, even layers it prints exactly like `vase_spiral`, and is
+  golden-tested against EasyGCode's vase mode at a set speed and at a set flow. Tilted layers
+  have no EasyGCode counterpart, so they are checked against a **hand-checked fixture**
+  (`fixtures/hand-checked/`). It is worked out from the geometry in exact arithmetic by
+  `scripts/hand-checked-fixtures.py`, with every move annotated and one move worked by hand in
+  its README. CI checks that it's up to date.
+- **Templates:** "Cut cylinder" (the owner's example: circle → tilted plane → project →
+  tween → spiralize, 267 layers of 0.26–0.34 mm at 8 mm³/s) and "Turned vase", geometry only
+  (an interpolated profile turned around Z, saved as STL; no `print`). Both run at every corner
+  of their settings in the tests.
+- The language guide (agent and Copy for AI) and `docs/definition-language.md` describe the
+  toolbox, with a Grasshopper → EasyCAD table. 71 steps; engine 241 KB gzipped.
+
+**Open**
+- Still missing for many Grasshopper definitions: Brep solids and booleans, sweep/pipe, curve
+  booleans, fillets, data trees with paths, clusters (user-defined steps), Graph Mapper's curve.
+- `spiralize` needs the layers' points to correspond (tweens, contours and moves do). Arbitrary
+  slices of a solid come with the solid steps.
+
 ## 2026-10-15: speeds as volumetric flow
 
 **Landed**

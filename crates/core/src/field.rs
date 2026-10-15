@@ -35,6 +35,8 @@ impl PartialEq for Field {
 #[derive(Debug, Clone)]
 enum Kind {
     Const(f64),
+    /// The x (0), y (1) or z (2) coordinate of the point.
+    Coord(usize),
     /// Distance in the XY plane to a curve; negative inside a closed curve.
     Distance(Rc<CurveDistance>),
     Binary(BinOp, Rc<Field>, Rc<Field>),
@@ -47,6 +49,15 @@ impl Field {
     pub fn constant(v: f64) -> Field {
         Field {
             kind: Kind::Const(v),
+            depth: 1,
+        }
+    }
+
+    /// The x (`axis` 0), y (1) or z (2) coordinate of each point: `move(z: 2 * x)` lifts
+    /// points by twice their x.
+    pub fn coordinate(axis: usize) -> Field {
+        Field {
+            kind: Kind::Coord(axis.min(2)),
             depth: 1,
         }
     }
@@ -92,6 +103,7 @@ impl Field {
     pub fn at(&self, p: P3) -> f64 {
         match &self.kind {
             Kind::Const(v) => *v,
+            Kind::Coord(axis) => p.get(*axis).copied().unwrap_or(0.0),
             Kind::Distance(d) => d.at([p[0], p[1]]),
             Kind::Binary(op, a, b) => {
                 let (x, y) = (a.at(p), b.at(p));

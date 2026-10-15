@@ -495,6 +495,159 @@ pub fn vase_spiral(
     Ok(path)
 }
 
+/// What [`spiralize`] found out about its layers, for the step's warnings.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpiralInfo {
+    /// Thinnest and thickest local layer height, in mm.
+    pub thinnest: f64,
+    pub thickest: f64,
+    /// Whether layers with fewer points were resampled to match the others.
+    pub resampled: bool,
+}
+
+/// One continuous spiral through a stack of closed layer curves: vase mode for any layers, flat
+/// or not. The first curve is the bottom (usually on the bed); each turn blends one layer into
+/// the next, and every move is extruded for its own local layer height (the vertical gap to the
+/// turn below, averaged over the move), so the thin and thick sides of a tilted layer each get
+/// the right amount of plastic (and, at a set flow, the right speed). Same conventions as [`vase_spiral`]: the
+/// opening turn holds layer 1's shape while it climbs from the bottom curve with extrusion
+/// ramping up, and a flat closing turn on the top layer ramps it back down. Flat, evenly spaced
+/// layers give exactly `vase_spiral`'s toolpath. Point `j` of every layer must be the "same"
+/// point (curves made from one another by tweens and moves are).
+pub fn spiralize(
+    layers: &[&Curve],
+    width: f64,
+    speed: f64,
+    flow: f64,
+    max_points: usize,
+) -> Result<(Toolpath, SpiralInfo), String> {
+    if layers.len() < 2 {
+        return Err("needs at least 2 layer curves: the bottom one and one above it".into());
+    }
+    if let Some(i) = layers.iter().position(|c| !c.closed) {
+        return Err(format!(
+            "layer {} is an open curve; vase mode needs closed layers",
+            i + 1
+        ));
+    }
+    if let Some(i) = layers.iter().position(|c| c.points.len() < 3) {
+        return Err(format!("layer {} has fewer than 3 points", i + 1));
+    }
+    let m = layers.iter().map(|c| c.points.len()).max().unwrap_or(0);
+    let n = layers.len() - 1;
+    let needed = (n + 1).saturating_mul(m).saturating_add(1);
+    too_many(needed, max_points, "use fewer layers or simpler curves")?;
+    let resampled = layers.iter().any(|c| c.points.len() != m);
+    let rings: Vec<Vec<P3>> = layers
+        .iter()
+        .map(|c| {
+            if c.points.len() == m {
+                c.points.clone()
+            } else {
+                c.resample(m).points
+            }
+        })
+        .collect();
+
+    // Local layer heights: how far layer k sits above layer k − 1 at each point.
+    let mut h = vec![vec![0.0; m]; n + 1];
+    let (mut thinnest, mut thickest) = (f64::INFINITY, 0.0f64);
+    for (k, row) in h.iter_mut().enumerate().skip(1) {
+        let (Some(top), Some(below)) = (rings.get(k), rings.get(k - 1)) else {
+            continue;
+        };
+        for (j, (slot, (t, b))) in row.iter_mut().zip(top.iter().zip(below)).enumerate() {
+            let d = t[2] - b[2];
+            if !(d > 1e-6 && d.is_finite()) {
+                return Err(format!(
+                    "layer {} isn't above layer {} everywhere (at its point {} it's {} mm higher); the layers must stack upward",
+                    k + 1,
+                    k,
+                    j + 1,
+                    easycad_lang::format_number((d * 1000.0).round() / 1000.0)
+                ));
+            }
+            *slot = d;
+            thinnest = thinnest.min(d);
+            thickest = thickest.max(d);
+        }
+    }
+    let mean = h[1..].iter().flatten().sum::<f64>() / (n * m) as f64;
+    let settings = Settings::from_inputs(width, mean, speed, flow)?;
+    let mut path = Toolpath::empty(vec![settings], needed);
+    path.samples_per_turn = m;
+    path.layers = n;
+    let steps = m as f64;
+    let ring = |k: usize, j: usize| {
+        rings
+            .get(k)
+            .and_then(|r| r.get(j))
+            .copied()
+            .unwrap_or([0.0; 3])
+    };
+    let height = |k: usize, j: usize| h.get(k).and_then(|r| r.get(j)).copied().unwrap_or(0.0);
+
+    // Every point of the spiral: (position, extrusion factor, progress, local layer height).
+    let mut moves: Vec<(P3, f64, f64, f64)> = Vec::with_capacity(needed);
+    // Opening turn: layer 1's shape, climbing from the bottom curve as extrusion ramps up (each
+    // segment at its midpoint value).
+    for j in 0..m {
+        let u = j as f64 / steps;
+        let (a, b) = (ring(0, j), ring(1, j));
+        let p = [b[0], b[1], a[2] + (b[2] - a[2]) * u];
+        let ramp = (u + (j as f64 - 1.0) / steps) / 2.0;
+        moves.push((p, ramp, u, height(1, j)));
+    }
+    // The spiral: each turn blends one layer into the next.
+    for k in 1..n {
+        for j in 0..m {
+            let u = j as f64 / steps;
+            let p = lerp3(ring(k, j), ring(k + 1, j), u);
+            // The move into the first point of turn 1 still finishes the ramp.
+            let flow = if k == 1 && j == 0 {
+                (1.0 + (steps - 1.0) / steps) / 2.0
+            } else {
+                1.0
+            };
+            let local = height(k, j) + (height(k + 1, j) - height(k, j)) * u;
+            moves.push((p, flow, k as f64 + u, local));
+        }
+    }
+    // Closing turn: flat on the top layer while extrusion ramps back to zero, ending on the seam.
+    for j in 0..=m {
+        let u = j as f64 / steps;
+        let flow = if j == 0 {
+            if n == 1 {
+                (1.0 + (steps - 1.0) / steps) / 2.0
+            } else {
+                1.0
+            }
+        } else {
+            (1.0 - (u + (j as f64 - 1.0) / steps) / 2.0).max(0.0)
+        };
+        moves.push((ring(n, j % m), flow, n as f64 + u, height(n, j % m)));
+    }
+    // Each move is extruded for the gap under it. Where layers tilt, that gap changes along the
+    // move, so a move takes the mean of the local heights at its two ends.
+    let mut last = moves.first().map_or(0.0, |m| m.3);
+    for (i, (p, flow, t, h)) in moves.into_iter().enumerate() {
+        path.push_with_height(p, i == 0, flow, t, 0, (last + h) / 2.0);
+        last = h;
+    }
+    // The fan comes on after the ramp turn.
+    if n > 1 {
+        path.layer_starts.push(m + 1);
+    }
+    Ok((
+        path,
+        SpiralInfo {
+            thinnest,
+            thickest,
+            resampled,
+        },
+    ))
+}
+
 /// Prints curves as they are, in order: each one starts with a travel and sits one layer height
 /// above where it's drawn (a curve drawn at z = 0 is printed on the bed). Closed curves return
 /// to their first point.

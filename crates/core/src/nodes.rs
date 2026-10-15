@@ -6,19 +6,26 @@
 use crate::curve::Curve;
 use crate::eval::Ctx;
 use crate::field::{self, Field, MathFn};
-use crate::geom::Xform;
+use crate::geom::{P3, Plane, Xform};
 use crate::spiral;
 use crate::surface::Surface;
 use crate::toolpath::{self, MAX_PATH_POINTS, Settings, Toolpath};
 use crate::value::Value;
 use std::rc::Rc;
 
+mod toolbox;
+
 /// How an input takes a list. An *item* input that receives a list runs the node once per item
-/// (Grasshopper's list matching); a *list* input takes the whole list.
+/// (Grasshopper's list matching); a *list* input takes the whole list. A *point* input is an
+/// item input that also reads a list of 2 or 3 numbers as one point (`[0, 0, 1]`). A list input
+/// given a list of lists runs once per inner list, like a Grasshopper component once per branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Access {
     Item,
     List,
+    Point,
+    /// The whole value as it comes, nested lists and all (never run once per item).
+    Tree,
 }
 
 #[derive(Debug)]
@@ -27,9 +34,25 @@ pub struct Input {
     /// For the docs: `Number`, `Curve`, `Geometry`, …
     pub kind: &'static str,
     pub access: Access,
-    /// `None`: the input is required.
+    /// The default when it's a number. Neither this nor `point`: the input is required.
     pub default: Option<f64>,
+    /// The default when it's a point or vector.
+    pub point: Option<P3>,
     pub doc: &'static str,
+}
+
+impl Input {
+    pub fn required(&self) -> bool {
+        self.default.is_none() && self.point.is_none()
+    }
+
+    /// The value an input takes when the recipe leaves it out.
+    pub fn default_value(&self) -> Value {
+        match (self.point, self.default) {
+            (Some(p), _) => Value::Point(p),
+            (None, d) => Value::Number(d.unwrap_or(0.0)),
+        }
+    }
 }
 
 /// What a node does with its inputs.
@@ -56,6 +79,7 @@ const fn req(name: &'static str, kind: &'static str, doc: &'static str) -> Input
         kind,
         access: Access::Item,
         default: None,
+        point: None,
         doc,
     }
 }
@@ -66,6 +90,7 @@ const fn opt(name: &'static str, kind: &'static str, default: f64, doc: &'static
         kind,
         access: Access::Item,
         default: Some(default),
+        point: None,
         doc,
     }
 }
@@ -76,6 +101,43 @@ const fn all(name: &'static str, kind: &'static str, doc: &'static str) -> Input
         kind,
         access: Access::List,
         default: None,
+        point: None,
+        doc,
+    }
+}
+
+/// A required input that takes a nested list whole.
+const fn tree(name: &'static str, kind: &'static str, doc: &'static str) -> Input {
+    Input {
+        name,
+        kind,
+        access: Access::Tree,
+        default: None,
+        point: None,
+        doc,
+    }
+}
+
+/// A required point or vector input.
+const fn pt(name: &'static str, kind: &'static str, doc: &'static str) -> Input {
+    Input {
+        name,
+        kind,
+        access: Access::Point,
+        default: None,
+        point: None,
+        doc,
+    }
+}
+
+/// An optional point or vector input.
+const fn opt_pt(name: &'static str, kind: &'static str, default: P3, doc: &'static str) -> Input {
+    Input {
+        name,
+        kind,
+        access: Access::Point,
+        default: None,
+        point: Some(default),
         doc,
     }
 }
@@ -99,12 +161,79 @@ pub static NODES: &[Node] = &[
         run: Run::Op(range),
     },
     Node {
+        name: "series",
+        group: "Numbers & lists",
+        inputs: &[
+            req("start", "Number", "first number"),
+            req("step", "Number", "added each time"),
+            req("count", "Count", "how many numbers"),
+        ],
+        output: "List<Number>",
+        doc: "`count` numbers from `start`, `step` apart. (Grasshopper: Series)",
+        run: Run::Op(toolbox::series),
+    },
+    Node {
+        name: "random",
+        group: "Numbers & lists",
+        inputs: &[
+            req("count", "Count", "how many numbers"),
+            opt("low", "Number", 0.0, ""),
+            opt("high", "Number", 1.0, ""),
+            opt("seed", "Number", 1.0, "another seed gives other numbers"),
+        ],
+        output: "List<Number>",
+        doc: "Random numbers between `low` and `high`, the same every time for the same seed. (Grasshopper: Random)",
+        run: Run::Op(toolbox::random),
+    },
+    Node {
         name: "count",
         group: "Numbers & lists",
         inputs: &[all("list", "List", "any list")],
         output: "Number",
-        doc: "How many items a list has.",
+        doc: "How many items a list has. (Grasshopper: List Length)",
         run: Run::Op(count),
+    },
+    Node {
+        name: "item",
+        group: "Numbers & lists",
+        inputs: &[
+            all("list", "List", "any list"),
+            req(
+                "index",
+                "Number",
+                "0 is the first; it wraps around, so -1 is the last",
+            ),
+        ],
+        output: "Value",
+        doc: "One item of a list; a list of indices gives a list of items. (Grasshopper: List Item, with wrap)",
+        run: Run::Op(toolbox::item),
+    },
+    Node {
+        name: "reverse",
+        group: "Numbers & lists",
+        inputs: &[all("list", "List", "any list")],
+        output: "List",
+        doc: "The list in reverse order. (Grasshopper: Reverse List)",
+        run: Run::Op(toolbox::reverse),
+    },
+    Node {
+        name: "shift",
+        group: "Numbers & lists",
+        inputs: &[
+            all("list", "List", "any list"),
+            req("offset", "Number", "how many places; items wrap around"),
+        ],
+        output: "List",
+        doc: "The list rotated: `shift(list, 1)` starts at the second item. (Grasshopper: Shift List, with wrap)",
+        run: Run::Op(toolbox::shift),
+    },
+    Node {
+        name: "flatten",
+        group: "Numbers & lists",
+        inputs: &[tree("list", "List", "a list of lists (of lists…)")],
+        output: "List",
+        doc: "All items of all nested lists in one plain list. (Grasshopper: Flatten)",
+        run: Run::Op(toolbox::flatten),
     },
     Node {
         name: "lerp",
@@ -117,6 +246,20 @@ pub static NODES: &[Node] = &[
         output: NUM,
         doc: "Blends from `a` to `b`: a + (b − a)·t.",
         run: Run::Math(|a| Ok(arg(a, 0) + (arg(a, 1) - arg(a, 0)) * arg(a, 2))),
+    },
+    Node {
+        name: "remap",
+        group: "Numbers & lists",
+        inputs: &[
+            req("value", NUM, ""),
+            req("from_low", NUM, ""),
+            req("from_high", NUM, ""),
+            opt("to_low", NUM, 0.0, ""),
+            opt("to_high", NUM, 1.0, ""),
+        ],
+        output: NUM,
+        doc: "Maps `value` from the range from_low..from_high onto to_low..to_high (not clamped). (Grasshopper: Remap Numbers)",
+        run: Run::Math(toolbox::remap),
     },
     Node {
         name: "min",
@@ -219,6 +362,78 @@ pub static NODES: &[Node] = &[
         run: Run::Math(|a| Ok(arg(a, 0).to_radians().tan())),
     },
     Node {
+        name: "asin",
+        group: "Numbers & lists",
+        inputs: &[req("x", NUM, "-1..1")],
+        output: NUM,
+        doc: "The angle (degrees) whose sine is x.",
+        run: Run::Math(|a| inverse_trig(arg(a, 0), f64::asin)),
+    },
+    Node {
+        name: "acos",
+        group: "Numbers & lists",
+        inputs: &[req("x", NUM, "-1..1")],
+        output: NUM,
+        doc: "The angle (degrees) whose cosine is x.",
+        run: Run::Math(|a| inverse_trig(arg(a, 0), f64::acos)),
+    },
+    Node {
+        name: "atan",
+        group: "Numbers & lists",
+        inputs: &[req("x", NUM, "")],
+        output: NUM,
+        doc: "The angle (degrees) whose tangent is x.",
+        run: Run::Math(|a| Ok(arg(a, 0).atan().to_degrees())),
+    },
+    Node {
+        name: "atan2",
+        group: "Numbers & lists",
+        inputs: &[req("y", NUM, ""), req("x", NUM, "")],
+        output: NUM,
+        doc: "The angle (degrees, -180..180) of the direction (x, y) from +X; `atan2(y, x)` is each point's angle around the Z axis.",
+        run: Run::Math(|a| Ok(arg(a, 0).atan2(arg(a, 1)).to_degrees())),
+    },
+    Node {
+        name: "exp",
+        group: "Numbers & lists",
+        inputs: &[req("x", NUM, "")],
+        output: NUM,
+        doc: "e to the power x.",
+        run: Run::Math(|a| Ok(arg(a, 0).exp())),
+    },
+    Node {
+        name: "ln",
+        group: "Numbers & lists",
+        inputs: &[req("x", NUM, "more than 0")],
+        output: NUM,
+        doc: "The natural logarithm.",
+        run: Run::Math(|a| {
+            let x = arg(a, 0);
+            if x > 0.0 {
+                Ok(x.ln())
+            } else {
+                Err(format!("can't take the logarithm of {x}"))
+            }
+        }),
+    },
+    Node {
+        name: "sign",
+        group: "Numbers & lists",
+        inputs: &[req("x", NUM, "")],
+        output: NUM,
+        doc: "-1, 0 or 1.",
+        run: Run::Math(|a| {
+            let x = arg(a, 0);
+            Ok(if x > 0.0 {
+                1.0
+            } else if x < 0.0 {
+                -1.0
+            } else {
+                0.0
+            })
+        }),
+    },
+    Node {
         name: "smoothstep",
         group: "Numbers & lists",
         inputs: &[req("t", NUM, "0..1 (clamped)")],
@@ -251,14 +466,136 @@ pub static NODES: &[Node] = &[
         doc: "1 on the curve, easing smoothly to 0 `inside` mm inside and `outside` mm outside it (EasyGCode's spiral-disc falloff). Turns a distance into a 0..1 weight.",
         run: Run::Math(field::fade),
     },
+    // ------------------------------------------------------------------ points & planes
+    Node {
+        name: "point",
+        group: "Points & planes",
+        inputs: &[
+            opt("x", "Length", 0.0, ""),
+            opt("y", "Length", 0.0, ""),
+            opt("z", "Length", 0.0, ""),
+        ],
+        output: "Point",
+        doc: "A point. Lists of coordinates make lists of points. `[x, y, z]` also works wherever a point is asked for. (Grasshopper: Construct Point)",
+        run: Run::Op(toolbox::point),
+    },
+    Node {
+        name: "vector",
+        group: "Points & planes",
+        inputs: &[
+            opt("x", "Length", 0.0, ""),
+            opt("y", "Length", 0.0, ""),
+            opt("z", "Length", 0.0, ""),
+        ],
+        output: "Vector",
+        doc: "A direction and length (an arrow from the origin), for axes and moves; the same value as a point, so + - and * work on both. (Grasshopper: Vector XYZ)",
+        run: Run::Op(toolbox::point),
+    },
+    Node {
+        name: "plane",
+        group: "Points & planes",
+        inputs: &[
+            opt_pt("origin", "Point", [0.0, 0.0, 0.0], ""),
+            opt_pt(
+                "normal",
+                "Vector",
+                [0.0, 0.0, 1.0],
+                "the direction it faces",
+            ),
+        ],
+        output: "Plane",
+        doc: "A plane through `origin` facing `normal`. Move, rotate and mirror it like geometry. (Grasshopper: Plane Normal)",
+        run: Run::Op(toolbox::plane),
+    },
+    Node {
+        name: "sample",
+        group: "Points & planes",
+        inputs: &[
+            req("field", NUM, "a field, or x, y or z"),
+            pt("at", "Point", ""),
+        ],
+        output: "Number",
+        doc: "A field's value at a point: `sample(z, p)` is the height of point p, `sample(distance(c), p)` its distance to curve c. (Grasshopper: Deconstruct Point)",
+        run: Run::Op(toolbox::sample),
+    },
     // ------------------------------------------------------------------ curves
     Node {
         name: "circle",
         group: "Curves",
         inputs: &[req("r", "Length", "radius")],
         output: "Curve",
-        doc: "A circle around the origin, flat on the bed, starting on +X and running counter-clockwise.",
+        doc: "A circle around the origin, flat on the bed, starting on +X and running counter-clockwise. (Grasshopper: Circle)",
         run: Run::Op(circle),
+    },
+    Node {
+        name: "ellipse",
+        group: "Curves",
+        inputs: &[
+            req("rx", "Length", "radius along X"),
+            req("ry", "Length", "radius along Y"),
+        ],
+        output: "Curve",
+        doc: "An ellipse around the origin, counter-clockwise from +X. (Grasshopper: Ellipse)",
+        run: Run::Op(toolbox::ellipse),
+    },
+    Node {
+        name: "rectangle",
+        group: "Curves",
+        inputs: &[
+            req("width", "Length", "along X"),
+            req("height", "Length", "along Y"),
+            opt("radius", "Length", 0.0, "corner rounding"),
+        ],
+        output: "Curve",
+        doc: "A rectangle around the origin, counter-clockwise from the middle of its +X side, with rounded corners if `radius` > 0. (Grasshopper: Rectangle)",
+        run: Run::Op(toolbox::rectangle),
+    },
+    Node {
+        name: "arc",
+        group: "Curves",
+        inputs: &[
+            req("r", "Length", "radius"),
+            opt("start", "Angle", 0.0, "degrees from +X"),
+            opt("end", "Angle", 180.0, "degrees from +X"),
+        ],
+        output: "Curve",
+        doc: "An open arc around the origin, from `start` to `end`. (Grasshopper: Arc)",
+        run: Run::Op(toolbox::arc),
+    },
+    Node {
+        name: "line",
+        group: "Curves",
+        inputs: &[pt("start", "Point", ""), pt("end", "Point", "")],
+        output: "Curve",
+        doc: "A straight line. (Grasshopper: Line)",
+        run: Run::Op(toolbox::line),
+    },
+    Node {
+        name: "polyline",
+        group: "Curves",
+        inputs: &[
+            all("points", "List<Point>", "in order"),
+            opt(
+                "closed",
+                "Bool",
+                0.0,
+                "true joins the last point back to the first",
+            ),
+        ],
+        output: "Curve",
+        doc: "Straight segments through the points. (Grasshopper: Polyline)",
+        run: Run::Op(toolbox::polyline),
+    },
+    Node {
+        name: "interpolate",
+        group: "Curves",
+        inputs: &[
+            all("points", "List<Point>", "in order"),
+            opt("closed", "Bool", 0.0, ""),
+        ],
+        output: "Curve",
+        doc: "A smooth curve through the points (a cubic NURBS). (Grasshopper: Interpolate)",
+        run: Run::Op(toolbox::interpolate),
     },
     Node {
         name: "polygon",
@@ -334,20 +671,108 @@ pub static NODES: &[Node] = &[
         doc: "Wiggles a spiral's turns so that wherever they are spread wider than `width`, each outward bump meets the next turn's inward bump with one line width between them: the turns stay joined at those points and leave holes in between. Turns that touch stay straight.",
         run: Run::Op(interlock),
     },
+    Node {
+        name: "tween",
+        group: "Curves",
+        inputs: &[
+            req("a", "Curve", "at t = 0"),
+            req("b", "Curve", "at t = 1"),
+            req("t", "Number", "0..1; a list gives a list of curves"),
+        ],
+        output: "Curve",
+        doc: "A curve between `a` and `b`, point by point; `tween(bottom, top, range(0, 1, count: n))` makes n layers that change gradually from one to the other. Both closed or both open; different point counts are resampled to match. (Grasshopper: Tween Curve)",
+        run: Run::Op(toolbox::tween),
+    },
+    Node {
+        name: "offset",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req(
+                "distance",
+                "Length",
+                "outward for a closed curve, to the right of travel for an open one; negative goes the other way",
+            ),
+        ],
+        output: "Curve",
+        doc: "The curve moved sideways in plan, corners mitred; good for smooth curves and distances smaller than their tightest bend. (Grasshopper: Offset Curve)",
+        run: Run::Op(toolbox::offset),
+    },
+    Node {
+        name: "divide",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req("count", "Count", "number of equal pieces"),
+        ],
+        output: "List<Point>",
+        doc: "Points dividing the curve into `count` pieces of equal length: count + 1 points on an open curve, count on a closed one. (Grasshopper: Divide Curve)",
+        run: Run::Op(toolbox::divide),
+    },
+    Node {
+        name: "evaluate",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req("t", "Number", "0..1 along the length"),
+        ],
+        output: "Point",
+        doc: "The point a fraction `t` of the way along the curve. (Grasshopper: Evaluate Length, normalized)",
+        run: Run::Op(toolbox::evaluate),
+    },
+    Node {
+        name: "length",
+        group: "Curves",
+        inputs: &[req("curve", "Curve", "")],
+        output: "Number",
+        doc: "The curve's length in mm. (Grasshopper: Length)",
+        run: Run::Op(toolbox::length),
+    },
+    Node {
+        name: "flip",
+        group: "Curves",
+        inputs: &[req("curve", "Curve", "")],
+        output: "Curve",
+        doc: "The curve run the other way (a closed curve keeps its start point). (Grasshopper: Flip Curve)",
+        run: Run::Op(toolbox::flip),
+    },
+    Node {
+        name: "seam",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", "a closed curve"),
+            req("t", "Number", "0..1 along the length"),
+        ],
+        output: "Curve",
+        doc: "A closed curve starting at another point, a fraction `t` of the way along it: where a vase spiral starts and its layers change. (Grasshopper: Seam)",
+        run: Run::Op(toolbox::seam),
+    },
+    Node {
+        name: "resample",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req("count", "Count", "number of points"),
+        ],
+        output: "Curve",
+        doc: "The same curve with `count` points spaced evenly along it. (Grasshopper: Rebuild)",
+        run: Run::Op(toolbox::resample),
+    },
     // ------------------------------------------------------------------ transforms
     Node {
         name: "scale",
         group: "Transforms",
         inputs: &[
             req("geometry", GEOMETRY, "what to scale"),
-            opt("factor", "Number", 1.0, "uniform scale"),
-            opt("x", "Number", 1.0, "extra scale in X"),
-            opt("y", "Number", 1.0, "extra scale in Y"),
-            opt("z", "Number", 1.0, "extra scale in Z"),
+            opt("factor", NUM, 1.0, "uniform scale"),
+            opt("x", NUM, 1.0, "extra scale in X"),
+            opt("y", NUM, 1.0, "extra scale in Y"),
+            opt("z", NUM, 1.0, "extra scale in Z"),
+            opt_pt("center", "Point", [0.0, 0.0, 0.0], ""),
         ],
         output: GEOMETRY,
-        doc: "Scales about the origin. `scale(c, 2)` doubles everything; `scale(c, y: 0.5)` squashes Y only.",
-        run: Run::Op(scale),
+        doc: "Scales about `center`. `scale(c, 2)` doubles everything; `scale(c, y: 0.5)` squashes Y only. A field scales each point by its own value: `scale(wall, 1 + 0.002 * z)` flares a wall upward. (Grasshopper: Scale, Scale NU)",
+        run: Run::Op(toolbox::scale),
     },
     Node {
         name: "rotate",
@@ -356,26 +781,61 @@ pub static NODES: &[Node] = &[
             req("geometry", GEOMETRY, "what to rotate"),
             req(
                 "angle",
-                "Angle",
-                "degrees, counter-clockwise seen from above",
+                "Angle | Field",
+                "degrees, counter-clockwise looking against the axis",
             ),
+            opt_pt(
+                "axis",
+                "Vector",
+                [0.0, 0.0, 1.0],
+                "the direction to turn about",
+            ),
+            opt_pt("center", "Point", [0.0, 0.0, 0.0], "a point on the axis"),
         ],
         output: GEOMETRY,
-        doc: "Rotates about the vertical (Z) axis through the origin.",
-        run: Run::Op(rotate),
+        doc: "Rotates about an axis through `center` (the vertical one through the origin by default). `rotate(c, 30, axis: [0, 1, 0])` tilts about Y. A field turns each point by its own angle: `rotate(wall, z * 0.5)` twists 0.5° per mm of height. (Grasshopper: Rotate 3D)",
+        run: Run::Op(toolbox::rotate),
     },
     Node {
         name: "move",
         group: "Transforms",
         inputs: &[
             req("geometry", GEOMETRY, "what to move"),
-            opt("x", "Length", 0.0, ""),
-            opt("y", "Length", 0.0, ""),
-            opt("z", "Length", 0.0, ""),
+            opt("x", "Length | Field", 0.0, ""),
+            opt("y", "Length | Field", 0.0, ""),
+            opt("z", "Length | Field", 0.0, ""),
         ],
         output: GEOMETRY,
-        doc: "Moves by x, y and z. `move(c, z: 10)` lifts by 10 mm.",
-        run: Run::Op(translate),
+        doc: "Moves by x, y and z. `move(c, z: 10)` lifts by 10 mm. A field moves each point by its own value: `move(c, z: 0.3 * x)` tilts a flat curve into a slope, as if projected onto a tilted plane. (Grasshopper: Move)",
+        run: Run::Op(toolbox::translate),
+    },
+    Node {
+        name: "mirror",
+        group: "Transforms",
+        inputs: &[
+            req("geometry", GEOMETRY, ""),
+            req("plane", "Plane", "the mirror"),
+        ],
+        output: GEOMETRY,
+        doc: "Mirrors through a plane; `mirror(c, plane(normal: [1, 0, 0]))` flips X. (Grasshopper: Mirror)",
+        run: Run::Op(toolbox::mirror),
+    },
+    Node {
+        name: "project_along",
+        group: "Transforms",
+        inputs: &[
+            req("geometry", GEOMETRY, ""),
+            req("plane", "Plane", "where the points land"),
+            opt_pt(
+                "direction",
+                "Vector",
+                [0.0, 0.0, 1.0],
+                "the direction they travel (straight up and down by default)",
+            ),
+        ],
+        output: GEOMETRY,
+        doc: "Moves every point along `direction` until it lies in the plane: a circle projected onto a tilted plane is the top edge of a cylinder cut at that angle. (Grasshopper: Project Along)",
+        run: Run::Op(toolbox::project_along),
     },
     // ------------------------------------------------------------------ surfaces
     Node {
@@ -395,8 +855,42 @@ pub static NODES: &[Node] = &[
         group: "Surfaces",
         inputs: &[req("surface", "Surface", "a loft of closed sections")],
         output: "Solid",
-        doc: "Closes both ends of a lofted tube with flat caps, making a solid.",
+        doc: "Closes both ends of a lofted tube with flat caps, making a solid. (Grasshopper: Cap Holes)",
         run: Run::Op(cap),
+    },
+    Node {
+        name: "extrude",
+        group: "Surfaces",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req("height", "Length", "up along Z"),
+        ],
+        output: "Surface",
+        doc: "The curve swept straight up. (Grasshopper: Extrude)",
+        run: Run::Op(toolbox::extrude),
+    },
+    Node {
+        name: "revolve",
+        group: "Surfaces",
+        inputs: &[req(
+            "profile",
+            "Curve",
+            "drawn in the XZ plane: x is the distance from the Z axis, z the height",
+        )],
+        output: "Surface",
+        doc: "A surface of revolution about the Z axis, built from horizontal circles, so it caps and prints in vase mode like a loft. (Grasshopper: Revolution)",
+        run: Run::Op(toolbox::revolve),
+    },
+    Node {
+        name: "contour",
+        group: "Surfaces",
+        inputs: &[
+            req("surface", "Surface", "sections stacked upward"),
+            req("layer", "Length", "layer height"),
+        ],
+        output: "List<Curve>",
+        doc: "Flat layer curves through the surface, `layer` apart from bottom to top (height snapped to whole layers), ready for `spiralize` or `toolpath`, or to bend with fields first. (Grasshopper: Contour)",
+        run: Run::Op(toolbox::contour),
     },
     // ------------------------------------------------------------------ toolpaths
     Node {
@@ -440,6 +934,28 @@ pub static NODES: &[Node] = &[
         output: "Toolpath",
         doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up, snaps to whole layers, and ends with a flat turn that ramps extrusion down.",
         run: Run::Op(vase_spiral),
+    },
+    Node {
+        name: "spiralize",
+        group: "Toolpaths",
+        inputs: &[
+            all(
+                "layers",
+                "List<Curve>",
+                "closed curves from the bottom (on the bed) up; flat or not",
+            ),
+            req("width", "Length", "line width"),
+            opt("speed", "Speed", 40.0, "print speed in mm/s"),
+            opt(
+                "flow",
+                "Number",
+                0.0,
+                "volumetric flow in mm³/s; when set, it sets each move's speed (flow ÷ bead area)",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "Vase mode through any stack of layers, flat or tilted: one continuous spiral that blends each layer into the next, each move extruded for its own local layer height (thin where layers are close, thick where they're apart). Same start ramp and closing turn as vase_spiral; flat, evenly spaced layers print exactly like it.",
+        run: Run::Op(toolbox::spiralize),
     },
     Node {
         name: "stack",
@@ -493,14 +1009,25 @@ pub fn signature(node: &Node) -> String {
     let inputs: Vec<String> = node
         .inputs
         .iter()
-        .map(|i| match i.default {
-            Some(d) => format!(
+        .map(|i| match (i.default, i.point) {
+            (_, Some(p)) => format!(
+                "{}: {} = [{}, {}, {}]",
+                i.name,
+                i.kind,
+                easycad_lang::format_number(p[0]),
+                easycad_lang::format_number(p[1]),
+                easycad_lang::format_number(p[2])
+            ),
+            (Some(d), None) if i.kind == "Bool" => {
+                format!("{}: {} = {}", i.name, i.kind, d != 0.0)
+            }
+            (Some(d), None) => format!(
                 "{}: {} = {}",
                 i.name,
                 i.kind,
                 easycad_lang::format_number(d)
             ),
-            None => format!("{}: {}", i.name, i.kind),
+            (None, None) => format!("{}: {}", i.name, i.kind),
         })
         .collect();
     format!("{}({}) -> {}", node.name, inputs.join(", "), node.output)
@@ -540,9 +1067,21 @@ pub fn call(ctx: &mut Ctx, node: &'static Node, args: Vec<Value>) -> Result<Valu
     let replicable = |i: usize, v: &Value| -> bool {
         match (node.inputs.get(i).map(|x| x.access), v) {
             (Some(Access::Item), Value::List(_)) => true,
-            // A list of lists runs a list input once per inner list.
+            // `[0, 0, 1]` is one point; a list of points (or of such lists) runs once per point.
+            (Some(Access::Point), Value::List(l)) => as_point(l).is_none(),
+            // A list of lists runs a list input once per inner list, except that a list of
+            // `[x, y, z]` lists is one list of points for an input that takes points.
             (Some(Access::List), Value::List(l)) => {
-                !l.items.is_empty() && l.items.iter().all(|x| matches!(x, Value::List(_)))
+                let points = node
+                    .inputs
+                    .get(i)
+                    .is_some_and(|x| x.kind.starts_with("List<Point"))
+                    && l.items
+                        .iter()
+                        .all(|x| matches!(x, Value::List(p) if as_point(p).is_some()));
+                !points
+                    && !l.items.is_empty()
+                    && l.items.iter().all(|x| matches!(x, Value::List(_)))
             }
             _ => false,
         }
@@ -725,6 +1264,54 @@ impl Args<'_> {
             single => Ok(std::slice::from_ref(single)),
         }
     }
+
+    /// A point or vector: a point value, or a list of 2 or 3 numbers.
+    pub fn point(&self, i: usize) -> Result<P3, String> {
+        match self.get(i)? {
+            Value::Point(p) => Ok(*p),
+            Value::List(l) => as_point(l).ok_or_else(|| {
+                format!(
+                    "`{}` must be a point: point(x, y, z) or [x, y, z]",
+                    self.name(i)
+                )
+            }),
+            other => Err(self.wrong(i, "a point (point(x, y, z) or [x, y, z])", other)),
+        }
+    }
+
+    pub fn plane(&self, i: usize) -> Result<Plane, String> {
+        match self.get(i)? {
+            Value::Plane(p) => Ok(*p),
+            other => Err(self.wrong(i, "a plane (from plane)", other)),
+        }
+    }
+
+    /// Yes or no: `true`/`false`, or a number (0 is no).
+    pub fn flag(&self, i: usize) -> Result<bool, String> {
+        match self.get(i)? {
+            Value::Bool(b) => Ok(*b),
+            Value::Number(n) => Ok(*n != 0.0),
+            other => Err(self.wrong(i, "true or false", other)),
+        }
+    }
+
+    /// Whether input `i` holds a field (rather than a plain number).
+    pub fn is_field(&self, i: usize) -> bool {
+        matches!(self.values.get(i), Some(Value::Field(_)))
+    }
+}
+
+/// A list of 2 or 3 numbers read as a point (z = 0 when missing).
+pub fn as_point(l: &crate::value::List) -> Option<P3> {
+    let n = |k: usize| match l.items.get(k) {
+        Some(Value::Number(v)) => Some(*v),
+        _ => None,
+    };
+    match l.items.len() {
+        2 => Some([n(0)?, n(1)?, 0.0]),
+        3 => Some([n(0)?, n(1)?, n(2)?]),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -876,26 +1463,25 @@ fn transform(ctx: &mut Ctx, g: &Value, x: &Xform, z_scale: f64) -> Result<Value,
             ctx.spend(p.points.len())?;
             Ok(Value::Toolpath(Rc::new(p.transformed(x, z_scale)?)))
         }
+        Value::Point(p) => Ok(Value::Point(x.apply(*p))),
+        Value::Plane(p) => p
+            .transformed(x)
+            .map(Value::Plane)
+            .ok_or_else(|| "this transform flattens the plane".into()),
         other => Err(format!(
-            "works on curves, surfaces and toolpaths, got {}",
+            "works on curves, surfaces, toolpaths, points and planes, got {}",
             other.kind()
         )),
     }
 }
 
-fn scale(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let f = a.num(1)?;
-    let (x, y, z) = (f * a.num(2)?, f * a.num(3)?, f * a.num(4)?);
-    transform(ctx, a.get(0)?, &Xform::scale(x, y, z), z)
-}
-
-fn rotate(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    transform(ctx, a.get(0)?, &Xform::rotate_z(a.num(1)?), 1.0)
-}
-
-fn translate(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let (x, y, z) = (a.num(1)?, a.num(2)?, a.num(3)?);
-    transform(ctx, a.get(0)?, &Xform::translate(x, y, z), 1.0)
+/// asin/acos in degrees, for inputs within -1..1.
+fn inverse_trig(x: f64, f: fn(f64) -> f64) -> Result<f64, String> {
+    if (-1.0..=1.0).contains(&x) {
+        Ok(f(x).to_degrees())
+    } else {
+        Err(format!("needs a value between -1 and 1, got {x}"))
+    }
 }
 
 fn loft(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
@@ -1138,10 +1724,17 @@ mod tests {
             call(
                 &mut ctx,
                 find("scale").unwrap(),
-                vec![n(1.0), n(2.0), n(1.0), n(1.0), n(1.0)]
+                vec![
+                    n(1.0),
+                    n(2.0),
+                    n(1.0),
+                    n(1.0),
+                    n(1.0),
+                    Value::Point([0.0; 3])
+                ]
             )
             .unwrap_err(),
-            "works on curves, surfaces and toolpaths, got a number"
+            "works on curves, surfaces, toolpaths, points and planes, got a number"
         );
     }
 

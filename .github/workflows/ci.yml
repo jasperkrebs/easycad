@@ -43,6 +43,7 @@ jobs:
       - run: cargo check -p easycad-lang -p easycad-core -p easycad-wasm --target wasm32-unknown-unknown --locked
       # Licenses: permissive only, and the notices file must list every dependency.
       - run: python3 scripts/third-party-notices.py --check
+      - run: python3 scripts/hand-checked-fixtures.py --check
 
   proxy:
     name: AI proxy (Cloudflare Worker)
