@@ -135,6 +135,7 @@
 
         <section class="card" role="tabpanel" id="panel-chat" aria-labelledby="tab-chat" hidden>
           <div class="chat-log" id="chatLog" aria-live="polite"></div>
+          <ul class="chat-requests" id="chatRequests" aria-label="Feature requests" hidden></ul>
           <div class="confirm" id="chatUndo" hidden>
             <p>The AI changed the recipe.</p>
             <div class="buttons">
@@ -191,12 +192,18 @@
                 <option value="high">High: hard new projects</option>
               </select>
             </div>
+            <label class="check">
+              <input type="checkbox" id="aiAutoContinue" checked />
+              Carry on by itself when a step it asked for is ready
+            </label>
             <div class="field">
               <label for="aiRules">Your rules (the AI follows them in every project)</label>
               <textarea id="aiRules" rows="3" placeholder="e.g. Always set speeds as volumetric flow. Pellet printer: at most 60 mm³/s."></textarea>
             </div>
             <p class="hint">
               Setup and costs: <a href="https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/api-key.md" target="_blank" rel="noopener">docs/api-key.md</a>.
+              When the AI can't build something, it asks for a new step:
+              <a href="https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/feature-requests.md" target="_blank" rel="noopener">docs/feature-requests.md</a>.
               Never paste a password or key into a chat.
             </p>
           </details>

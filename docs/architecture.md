@@ -275,6 +275,7 @@ is cheap and can be kept forever. That also enables *variants* ("save as variant
 | `set_settings` | Move sliders (values clamped to their ranges) |
 | `look` | One picture, four views: perspective, plus front, side and top as orthographic views. The agent's eyes |
 | `read_recipe` | The current recipe with line numbers |
+| `request_feature` | When no combination of steps can do what the user wants: a precise, general proposal for the missing step, filed as a GitHub issue. Claude Code builds it, and the chat carries on when it's live (§8.8) |
 
 Every result is compact text: problems by line, each step and what it made, the settings, the
 drawn size, and print numbers (layers, height, volume, time, flow, overhang). Each message also
@@ -323,6 +324,25 @@ valid between requests.
   that. The chat shows each answer's cost (details in [api-key.md](api-key.md)).
 - What gets sent: your message, the definition text, parameter values and rendered images.
   No files, no keys, nothing else.
+
+### 8.8 Feature requests: the steps grow themselves (since 17 Oct 2026)
+
+When the steps can't do something, the agent files a feature request instead of faking it. A
+Claude Code session in GitHub Actions builds the step, and the workflow, not the AI, checks it,
+merges it, deploys it and comments on the issue. Then the app picks the conversation up again.
+How, with the safety rules and setup: [feature-requests.md](feature-requests.md).
+
+```
+agent: request_feature ──► proxy /feature-request ──► GitHub issue (label feature-request)
+                                                            │
+                     .github/workflows/feature-builder.yml ◄┘
+                       build: Claude Code (PROMPT.md) → branch, or an answer, or "stuck"
+                       ship:  CI on the branch → guard.sh → merge → CI + deploy → comment
+                              (failure: revert, try again; three attempts, then a person)
+                                                            │
+app: checks the issue (public API) ◄────────────────────────┘
+     shipped → reload for the new engine → "(EasyCAD: … is built and live)" → agent carries on
+```
 
 ---
 

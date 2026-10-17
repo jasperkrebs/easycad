@@ -1280,3 +1280,59 @@ fieldset.choice input {
     font-size: 0.86rem;
   }
 }
+
+/* ---------- feature requests the agent filed ---------- */
+.chat-requests {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-requests li {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 0.88rem;
+  background: var(--card2);
+  overflow-wrap: anywhere;
+}
+
+.chat-requests li.ready {
+  border-color: var(--accent2);
+}
+
+.chat-requests li.stuck {
+  border-color: var(--warn);
+}
+
+.chat-requests .request-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.chat-requests .request-status {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.chat-requests p {
+  margin: 4px 0 0;
+}
+
+.chat-requests .buttons {
+  margin-top: 8px;
+}
+
+label.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+  font-size: 0.92rem;
+}

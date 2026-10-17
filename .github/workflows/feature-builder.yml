@@ -1,0 +1,293 @@
+# The feature builder (docs/feature-requests.md). When EasyCAD's in-app agent can't build
+# something, it files a feature request: an issue labelled `feature-request`, opened with the
+# owner's token through the proxy, or by the owner. Then:
+#   build: Claude Code builds the step on a branch. Or it answers that existing steps can do it,
+#          or says why it can't be built unattended.
+#   ship:  this workflow, not the AI, does the rest:
+#          - runs CI on the branch;
+#          - checks the merge rules (.github/feature-builder/guard.sh);
+#          - merges, deploys (CI on the default branch) and comments on the issue (GitHub
+#            emails the owner).
+#          If anything fails, the change is undone and the builder tries again, three attempts
+#          in all; then it asks for a person.
+#
+# One-time setup (docs/feature-requests.md, "Setup"):
+# - a secret for Claude: CLAUDE_CODE_OAUTH_TOKEN (your Claude subscription, made with
+#   `claude setup-token`) or ANTHROPIC_API_KEY (pay per use);
+# - Settings → Actions → General → Workflow permissions: "Read and write permissions", and tick
+#   "Allow GitHub Actions to create and approve pull requests".
+# Optional: the repository variable BUILDER_MODEL picks Claude's model.
+name: Feature builder
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: The feature request (issue number) to build
+        required: true
+
+# One request at a time, never cancelled half-way.
+concurrency:
+  group: feature-builder
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+  id-token: write
+
+env:
+  ISSUE: ${{ github.event.issue.number || inputs.issue }}
+  BRANCH: feature/issue-${{ github.event.issue.number || inputs.issue }}
+  DEFAULT: ${{ github.event.repository.default_branch }}
+  MAX_ATTEMPTS: 3
+  GH_TOKEN: ${{ github.token }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  build:
+    name: Build the step
+    # Only the owner's requests: an issue anyone else opens does nothing, even labelled.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'feature-request' &&
+       github.event.issue.user.login == github.repository_owner &&
+       github.event.sender.login == github.repository_owner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Is it the owner's open request, and which attempt is this?
+        id: attempt
+        env:
+          OWNER: ${{ github.repository_owner }}
+          HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          info=$(gh issue view "$ISSUE" --json state,author,labels,comments)
+          state=$(jq -r .state <<<"$info")
+          author=$(jq -r .author.login <<<"$info")
+          labelled=$(jq '[.labels[].name] | index("feature-request") != null' <<<"$info")
+          if [ "$state" != OPEN ] || [ "$labelled" != true ] || [ "$author" != "$OWNER" ]; then
+            echo "::notice::#$ISSUE isn't an open feature request from the owner; nothing to build."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          while IFS='|' read -r name color text; do
+            gh label create "$name" --color "$color" --description "$text" --force > /dev/null
+          done <<'LABELS'
+          feature-request|5319e7|Asked for by EasyCAD's in-app agent
+          building|1d76db|The feature builder is on it
+          shipped|0e8a16|Built and live
+          answered|c5def5|Existing steps can do it
+          needs-human|d93f0b|The feature builder needs a person
+          needs-review|fbca04|Built; waits for the owner's review
+          LABELS
+          if [ "$HAS_CLAUDE" != true ]; then
+            gh issue comment "$ISSUE" --body "The feature builder isn't set up yet: it needs a secret for Claude, CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY (docs/feature-requests.md, Setup). Once it's there, *Run workflow* (Actions → Feature builder) with this issue's number builds it.
+          <!-- easycad-builder stuck -->"
+            gh issue edit "$ISSUE" --add-label needs-human
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Attempts since the last start by hand: the owner's "Run workflow" gives three more.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_ACTOR" = "$OWNER" ]; then
+            gh issue comment "$ISSUE" --body "Started again by hand.
+          <!-- easycad-builder reset -->"
+            gh issue edit "$ISSUE" --remove-label needs-human || true
+            done=0
+          else
+            done=$(jq '[.comments[].body] as $b
+              | (($b | map(contains("<!-- easycad-builder reset")) | rindex(true)) // -1) as $r
+              | [$b[($r + 1):][] | select(contains("<!-- easycad-builder attempt"))] | length' <<<"$info")
+          fi
+          if [ "$done" -ge "$MAX_ATTEMPTS" ]; then
+            gh issue edit "$ISSUE" --add-label needs-human --remove-label building || true
+            gh issue comment "$ISSUE" --body "The builder tried $done times without success, so this one needs a person. The comments above say what went wrong; *Run workflow* (Actions → Feature builder) tries again.
+          <!-- easycad-builder stuck -->"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          n=$((done + 1))
+          gh issue edit "$ISSUE" --add-label building
+          gh issue comment "$ISSUE" --body "Attempt $n of $MAX_ATTEMPTS: [building it]($RUN_URL).
+          <!-- easycad-builder attempt $n -->"
+          git checkout -B "$BRANCH"
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      # The same tools as CI, so Claude can run every check before it commits.
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.attempt.outputs.go == 'true'
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        if: steps.attempt.outputs.go == 'true'
+      - name: Install wasm-bindgen-cli, Node and Playwright
+        if: steps.attempt.outputs.go == 'true'
+        run: |
+          v=$(cargo metadata --format-version 1 --locked | python3 -c "import sys, json; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name'] == 'wasm-bindgen'))")
+          cargo install wasm-bindgen-cli --version "$v" --locked
+      - uses: actions/setup-node@v5
+        if: steps.attempt.outputs.go == 'true'
+        with:
+          node-version: 22
+      - name: Playwright
+        if: steps.attempt.outputs.go == 'true'
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: The builder's instructions
+        id: prompt
+        if: steps.attempt.outputs.go == 'true'
+        run: |
+          {
+            echo 'text<<END_OF_PROMPT'
+            sed -e "s|{{ISSUE}}|$ISSUE|g" -e "s|{{REPO}}|$GITHUB_REPOSITORY|g" -e "s|{{BRANCH}}|$BRANCH|g" .github/feature-builder/PROMPT.md
+            echo 'END_OF_PROMPT'
+          } >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p .builder
+
+      - name: Claude Code builds it
+        if: steps.attempt.outputs.go == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          allowed_bots: github-actions
+          prompt: ${{ steps.prompt.outputs.text }}
+          # Building and testing, nothing else: no pushes, no network tools.
+          claude_args: >-
+            --max-turns 300
+            ${{ vars.BUILDER_MODEL && format('--model {0}', vars.BUILDER_MODEL) || '' }}
+            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite,Bash(cargo:*),Bash(scripts/build-web.sh:*),Bash(node:*),Bash(python3:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git commit:*),Bash(git rm:*),Bash(git mv:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sed:*),Bash(grep:*),Bash(find:*),Bash(mkdir:*),Bash(rm .builder/:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(git push:*),Bash(curl:*),Bash(wget:*)"
+
+      - name: What came out
+        id: result
+        if: always() && steps.attempt.outputs.go == 'true'
+        run: |
+          set -euo pipefail
+          note() { printf '%s\n\n%s' "$1" "$2"; }
+          if [ -f .builder/answer.md ]; then
+            gh issue comment "$ISSUE" --body "$(note "$(cat .builder/answer.md)" '<!-- easycad-builder answered -->')"
+            gh issue edit "$ISSUE" --add-label answered --remove-label building || true
+            gh issue close "$ISSUE" --reason "not planned"
+            echo "result=answered" >> "$GITHUB_OUTPUT"
+          elif [ -f .builder/stuck.md ]; then
+            gh issue comment "$ISSUE" --body "$(note "$(cat .builder/stuck.md)" '<!-- easycad-builder stuck -->')"
+            gh issue edit "$ISSUE" --add-label needs-human --remove-label building || true
+            echo "result=stuck" >> "$GITHUB_OUTPUT"
+          elif [ "$(git rev-list --count "origin/$DEFAULT..HEAD")" -gt 0 ] && git diff --quiet && git diff --cached --quiet; then
+            git push --force origin "HEAD:refs/heads/$BRANCH"
+            title="$(gh issue view "$ISSUE" --json title --jq .title | sed 's/^Feature request: //') (#$ISSUE)"
+            summary=$(cat .builder/summary.md 2>/dev/null || echo "Built feature request #$ISSUE.")
+            body="$(note "$summary" "Feature request #$ISSUE, built by Claude Code in [this run]($RUN_URL). The feature builder merges it once CI passes and the merge rules allow it (docs/feature-requests.md).")"
+            pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+            if [ -n "$pr" ]; then
+              gh pr edit "$pr" --title "$title" --body "$body"
+            else
+              gh pr create --base "$DEFAULT" --head "$BRANCH" --title "$title" --body "$body"
+            fi
+            echo "result=built" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Try again (or ask for a person)
+        if: always() && steps.attempt.outputs.go == 'true' && steps.result.outputs.result != 'built' && steps.result.outputs.result != 'answered' && steps.result.outputs.result != 'stuck'
+        run: |
+          gh issue comment "$ISSUE" --body "This attempt ended without a finished change ([log]($RUN_URL)).
+          <!-- easycad-builder failed -->"
+          gh issue edit "$ISSUE" --remove-label building || true
+          gh workflow run feature-builder.yml -f issue="$ISSUE"
+
+  ship:
+    name: Check, merge and deploy
+    needs: build
+    if: needs.build.outputs.result == 'built'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - name: Check, merge, deploy; undo and retry on failure
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          # Says what went wrong, then tries again: the next attempt reads this comment.
+          retry() {
+            gh issue comment "$ISSUE" --body "$1
+          <!-- easycad-builder failed -->"
+            gh issue edit "$ISSUE" --remove-label building || true
+            gh workflow run feature-builder.yml -f issue="$ISSUE"
+            exit 0
+          }
+          failed_log() {
+            gh run view "$1" --log-failed 2>/dev/null | tail -n 60 | sed 's/^/    /'
+          }
+
+          # 1. CI on the branch.
+          if ! out=$(.github/feature-builder/run-ci.sh "$BRANCH" 2>&1); then
+            run=$(gh run list --workflow ci.yml --branch "$BRANCH" --limit 1 --json databaseId --jq '.[0].databaseId')
+            retry "CI failed on the branch ($out). The end of the log:
+
+          $(failed_log "$run")"
+          fi
+
+          # 2. The merge rules.
+          git fetch origin "$BRANCH" "$DEFAULT"
+          verdict=$(.github/feature-builder/guard.sh "origin/$DEFAULT" "origin/$BRANCH")
+          code=$?
+          if [ "$code" -eq 3 ]; then
+            gh issue comment "$ISSUE" --body "Built and tested, but not merged by itself: $verdict G-code drives real machines, so this one waits for your review. Merge pull request #$pr when you're happy with it (or ask a Claude Code session to review it with you).
+          <!-- easycad-builder stuck -->"
+            gh issue edit "$ISSUE" --add-label needs-review --remove-label building || true
+            exit 0
+          elif [ "$code" -ne 0 ]; then
+            retry "Not merged: $verdict Next time, stay inside the merge rules (docs/feature-requests.md)."
+          fi
+
+          # 3. Merge, then CI and deploy on the default branch.
+          summary=$(gh pr view "$pr" --json body --jq .body)
+          if ! gh pr merge "$pr" --squash --delete-branch; then
+            retry "The pull request couldn't be merged (the default branch moved on?). Starting again from the latest version."
+          fi
+          sha=$(gh pr view "$pr" --json mergeCommit --jq .mergeCommit.oid)
+          if ! out=$(.github/feature-builder/run-ci.sh "$DEFAULT" 2>&1); then
+            # Broken after the merge: put the previous version back, then try again.
+            run=$(gh run list --workflow ci.yml --branch "$DEFAULT" --limit 1 --json databaseId --jq '.[0].databaseId')
+            git fetch origin "$DEFAULT" && git checkout -B "$DEFAULT" "origin/$DEFAULT"
+            git revert --no-edit "$sha" && git push origin "$DEFAULT"
+            .github/feature-builder/run-ci.sh "$DEFAULT" > /dev/null 2>&1 || true
+            retry "CI failed after the merge ($out), so the change was undone and the site is back to the version before. The end of the log:
+
+          $(failed_log "$run")"
+          fi
+
+          # 4. Live: tell the issue (and so the owner, by email), and the app.
+          steps=$(printf '%s\n' "$summary" | grep -E '^steps:' | tail -n 1 | sed 's/^steps:[[:space:]]*//')
+          gh issue comment "$ISSUE" --body "Built and live, @${{ github.repository_owner }}: pull request #$pr is merged and deployed. Reload EasyCAD; a chat waiting for this carries on by itself.
+
+          $summary
+          <!-- easycad-builder shipped steps: $steps -->"
+          gh issue edit "$ISSUE" --add-label shipped --remove-label building || true
+          gh issue close "$ISSUE" --reason completed

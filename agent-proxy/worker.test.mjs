@@ -128,3 +128,76 @@ test('the health check needs no password and shows no secrets', async () => {
   const text = await res.text();
   assert.ok(!text.includes('sk-test-key') && !text.includes('horse'));
 });
+
+// ---------------------------------------------------------------------------------------------
+// Feature requests (POST /feature-request): filed as GitHub issues with a token only the proxy
+// knows. GitHub is replaced by a stub too.
+// ---------------------------------------------------------------------------------------------
+
+const GH_ENV = { ...ENV, GITHUB_TOKEN: 'ghp-test-token', GITHUB_REPO: 'owner/easycad' };
+const REQUEST = { title: 'Ring fill that follows the outline exactly', body: '<!-- easycad-feature-request v1 id:fr-abc123 -->\nWhat the user wants: …' };
+
+/** A stub GitHub: `open` issues are listed; creating one records it. */
+function stubGitHub(open = []) {
+  const created = [];
+  globalThis.fetch = async (url, init = {}) => {
+    upstreamCalls.push({ url: String(url), init });
+    const u = new URL(String(url));
+    if (init.method === 'POST' && u.pathname === '/repos/owner/easycad/issues') {
+      const issue = JSON.parse(String(init.body));
+      created.push(issue);
+      return Response.json({ number: 42, html_url: 'https://github.com/owner/easycad/issues/42' }, { status: 201 });
+    }
+    if (u.pathname === '/repos/owner/easycad/issues') return Response.json(open);
+    return new Response('not found', { status: 404 });
+  };
+  return created;
+}
+
+test('files a feature request as a labelled issue, with the token only the proxy knows', async () => {
+  const created = stubGitHub();
+  const res = await worker.fetch(post('/feature-request', REQUEST), GH_ENV);
+  assert.equal(res.status, 201);
+  assert.deepEqual(await res.json(), { number: 42, url: 'https://github.com/owner/easycad/issues/42' });
+  assert.equal(created.length, 1);
+  assert.deepEqual(created[0], { title: REQUEST.title, body: REQUEST.body, labels: ['feature-request'] });
+  const sent = new Headers(upstreamCalls[1].init.headers);
+  assert.equal(sent.get('authorization'), 'Bearer ghp-test-token');
+  assert.equal(res.headers.get('access-control-allow-origin'), ORIGIN);
+});
+
+test('feature requests: duplicates, too many open ones, bad input, no password, not set up', async () => {
+  // The same title still open: that issue, nothing new.
+  let created = stubGitHub([{ number: 7, title: REQUEST.title.toUpperCase(), html_url: 'https://github.com/owner/easycad/issues/7' }]);
+  let res = await worker.fetch(post('/feature-request', REQUEST), GH_ENV);
+  assert.deepEqual(await res.json(), { number: 7, url: 'https://github.com/owner/easycad/issues/7', duplicate: true });
+  assert.equal(created.length, 0);
+  // Five open ones: wait.
+  created = stubGitHub([1, 2, 3, 4, 5].map((n) => ({ number: n, title: `request ${n}`, html_url: '' })));
+  res = await worker.fetch(post('/feature-request', REQUEST), GH_ENV);
+  assert.equal(res.status, 429);
+  assert.equal(created.length, 0);
+  // Pull requests in the list don't count.
+  created = stubGitHub([1, 2, 3, 4, 5].map((n) => ({ number: n, title: `pr ${n}`, html_url: '', pull_request: {} })));
+  res = await worker.fetch(post('/feature-request', REQUEST), GH_ENV);
+  assert.equal(res.status, 201);
+  // Only the app's own requests, one-line titles of a sensible length.
+  for (const bad of [
+    { ...REQUEST, body: 'please add a step' },
+    { ...REQUEST, title: 'x' },
+    { ...REQUEST, title: 'two\nlines' },
+    { ...REQUEST, body: REQUEST.body + 'x'.repeat(20000) },
+  ]) {
+    res = await worker.fetch(post('/feature-request', bad), GH_ENV);
+    assert.equal(res.status, 400, JSON.stringify(bad).slice(0, 60));
+  }
+  // The password is checked first.
+  upstreamCalls = [];
+  res = await worker.fetch(post('/feature-request', REQUEST, { password: 'wrong' }), GH_ENV);
+  assert.equal(res.status, 401);
+  assert.equal(upstreamCalls.length, 0);
+  // Without a token or repo the proxy says how to set it up.
+  res = await worker.fetch(post('/feature-request', REQUEST), ENV);
+  assert.equal(res.status, 501);
+  assert.match((await res.json()).error.message, /feature-requests\.md/);
+});

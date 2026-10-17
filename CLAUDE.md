@@ -16,8 +16,9 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
 (recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL),
 1c (the Grasshopper toolbox, `spiralize`, the Graph tab) and 1d (every EasyGCode project from
 general steps; thread and spoon golden, `docs/easygcode-coverage.md`) are done, and so is the
-Chat tab (the agent with the user's key, behind a password proxy). Next: feature requests from
-the agent, built by Claude Code (`docs/feature-requests.md`).** Hosting: public repo + GitHub Pages. Priorities:
+Chat tab (the agent with the user's key, behind a password proxy), and feature requests (the
+agent asks for missing steps; Claude Code builds them in Actions; `docs/feature-requests.md`).
+Next: more EasyGCode projects as templates.** Hosting: public repo + GitHub Pages. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.
@@ -45,7 +46,8 @@ scripts/serve.sh                   # serves web/ at http://localhost:8080 (WASM 
 node scripts/smoke-test.cjs [dir]  # headless Chromium, phone + desktop; screenshots into [dir]
 node scripts/agent-test.cjs [dir]  # the Chat tab against a scripted stand-in for the AI
 node scripts/graph-test.cjs [dir]  # the Graph tab: every kind of edit, mouse and touch
-node --test agent-proxy/worker.test.mjs   # the AI proxy (Cloudflare Worker)
+node scripts/request-test.cjs [dir]  # feature requests: filed, shipped, the chat carries on
+node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs   # the AI proxy, feature requests
 python3 scripts/hand-checked-fixtures.py --check   # hand-checked G-code fixtures up to date
 python3 scripts/third-party-notices.py   # after adding/updating a dependency (CI runs --check)
 ```
@@ -99,6 +101,17 @@ any UI change.
 - **Docs move with the code.** When behaviour changes, update the relevant doc in the same
   change. Add a short entry to the dev log (what landed, what's still open).
 - `spikes/` are throwaway experiments with written results. Never import them from the app.
+
+## Feature requests (unattended builds)
+
+The in-app agent files a GitHub issue labelled `feature-request` when no combination of steps
+can do what the user asked. The Feature builder workflow runs Claude Code on it, unattended
+(`docs/feature-requests.md`). If that's you:
+- `.github/feature-builder/PROMPT.md` is your brief;
+- the workflow, not you, pushes, merges and deploys;
+- it refuses a merge that touches `.github/`, `agent-proxy/`, EasyGCode's fixtures,
+  `CLAUDE.md`, dependencies or `web/vendor/`, or that removes tests;
+- a change to `crates/core/src/gcode.rs` waits for the owner's review.
 
 ## Collaboration workflow
 

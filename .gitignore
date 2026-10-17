@@ -3,3 +3,6 @@ target/
 web/pkg/
 node_modules/
 agent-proxy/.wrangler/
+
+# The feature builder's notes to its workflow (docs/feature-requests.md)
+.builder/

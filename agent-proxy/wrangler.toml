@@ -8,3 +8,6 @@ workers_dev = true
 [vars]
 # The pages allowed to call the proxy. CI puts the GitHub Pages address first.
 ALLOWED_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080"
+# Where feature requests go ("owner/name"); CI fills it in. The token to file them is the
+# secret GITHUB_TOKEN (docs/feature-requests.md).
+GITHUB_REPO = ""

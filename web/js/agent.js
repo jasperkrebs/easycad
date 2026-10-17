@@ -12,6 +12,7 @@
 // model asks for them.
 
 import { LANGUAGE_GUIDE } from './language-guide.js';
+import { checkInput } from './requests.js';
 
 /** Prices in dollars per million tokens (Claude API, Oct 2026). Cache writes are 5-minute ones. */
 export const MODELS = {
@@ -58,7 +59,8 @@ How you work
 - Make every number the user may want to tune a param with a sensible range, step and short label, grouped (for example "Shape" and "Print"). Mark guesses @assumed. Derive dependent numbers in steps instead of asking for them twice.
 - Keep the project's memory in note lines at the top: what it is, the key decisions and constraints you learned from the user. Keep them short and current (edit them rather than piling up).
 - Write for a Grasshopper user: one clear step per line, names that say what they hold, pipes for chains, a short comment above anything non-obvious. Prefer lists and replication over repeating lines.
-- Use only the steps in the catalog below. If something can't be expressed with them, say so plainly, build the closest correct version, and name the step that is missing. Never add a setting that does nothing or fake a feature.
+- Use only the steps in the catalog below; fields, lists and maths combine them into a lot. If what the user wants truly can't be built from them, call request_feature with a precise, general proposal: a Claude Code session builds the step, tests it and ships it, and the app brings you back here when it's live. Then tell the user in a sentence or two what you asked for and stop; don't build a stand-in unless they ask for one. Never add a setting that does nothing or fake a feature.
+- A message that starts with "(EasyCAD:" comes from the app, not the user: a feature request you filed is done. Carry on with what the user asked for.
 - Before a bigger change, say in a line what you're about to do. Answer briefly and plainly: what you changed, what to try in the settings, and anything you couldn't do. The user may write in any language; answer in theirs.
 - Settings the user moved are deliberate: keep their values unless asked to change them.
 
@@ -108,6 +110,26 @@ export const TOOLS = [
     name: 'read_recipe',
     description: 'Returns the current recipe with line numbers. The user can change it between messages, so read it when unsure.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'request_feature',
+    description:
+      "Asks for a new step (or a new input on a step) when the catalog can't do what the user wants. Use it only after making sure no combination of existing steps can (fields, lists and maths cover a lot); one request per missing capability. A Claude Code session builds it as a general, reusable step, tests it and ships it, usually within an hour, or answers how to do it with the existing steps; either way the app brings the conversation back here. Describe the general capability, not the user's project.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'The capability in a few words, e.g. "Text outlines from a font".' },
+        wanted: { type: 'string', description: "What the user asked for, in their words, and what it's for." },
+        missing: { type: 'string', description: "Why the existing steps can't do it: what you tried or ruled out." },
+        proposal: {
+          type: 'string',
+          description: 'The step: its name, inputs (with units and defaults), output, and exactly what it does. General enough to reuse.',
+        },
+        example: { type: 'string', description: 'A short recipe that would use it.' },
+      },
+      required: ['title', 'wanted', 'missing', 'proposal'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'set_settings',
@@ -237,6 +259,8 @@ export function validate(name, input) {
     if (!isObj(input.values) || !Object.keys(input.values).length) return '`values` must map setting names to values';
   } else if (name === 'look') {
     if (input.show != null && !['shape', 'toolpath', 'both'].includes(input.show)) return '`show` must be shape, toolpath or both';
+  } else if (name === 'request_feature') {
+    return checkInput(input) || null;
   } else if (name !== 'read_recipe') {
     return `there is no tool called ${name}`;
   }

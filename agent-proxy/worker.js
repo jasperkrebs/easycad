@@ -11,6 +11,11 @@
 // It only forwards what the app needs: the Messages API (and token counting), for EasyCAD's
 // three models, with a cap on max_tokens and on the request size. A wrong password waits a
 // moment before answering, so guessing is slow.
+//
+// It also files the in-app agent's feature requests as GitHub issues (POST /feature-request),
+// when two more settings exist: the secret GITHUB_TOKEN (a fine-grained token that may only
+// write issues in EasyCAD's repo) and the variable GITHUB_REPO ("owner/name", set by CI). A
+// Claude Code session builds what they ask for (docs/feature-requests.md).
 
 const API = 'https://api.anthropic.com';
 const PATHS = new Set(['/v1/messages', '/v1/messages/count_tokens']);
@@ -20,11 +25,18 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024; // room for a few rendered views
 const FORWARD = ['anthropic-version', 'anthropic-beta'];
 const EXPOSE = ['request-id', 'retry-after', 'content-type'];
 const WRONG_PASSWORD_DELAY_MS = 800;
+const GITHUB_API = 'https://api.github.com';
+/** Open feature requests at most; more wait until some are built. */
+const MAX_OPEN_REQUESTS = 5;
+/** Every request the app files starts with this (docs/feature-requests.md). */
+const REQUEST_MARKER = '<!-- easycad-feature-request v1';
+const MAX_TITLE = 140;
+const MAX_ISSUE_BODY = 20000;
 
 export default {
   /**
    * @param {Request} request
-   * @param {{ ANTHROPIC_API_KEY?: string, EASYCAD_PASSWORD?: string, ALLOWED_ORIGINS?: string }} env
+   * @param {{ ANTHROPIC_API_KEY?: string, EASYCAD_PASSWORD?: string, ALLOWED_ORIGINS?: string, GITHUB_TOKEN?: string, GITHUB_REPO?: string }} env
    */
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -45,6 +57,7 @@ export default {
       return failure(401, 'authentication_error', 'wrong password', cors);
     }
     if (request.method === 'POST' && url.pathname === '/check') return json({ ok: true }, 200, cors);
+    if (request.method === 'POST' && url.pathname === '/feature-request') return fileFeatureRequest(request, env, cors);
     if (request.method !== 'POST' || !PATHS.has(url.pathname)) {
       return failure(404, 'not_found_error', `the proxy only forwards ${[...PATHS].join(' and ')}`, cors);
     }
@@ -92,6 +105,66 @@ export default {
     return new Response(upstream.body, { status: upstream.status, headers: out });
   },
 };
+
+/**
+ * Files a feature request as an issue labelled `feature-request` in EasyCAD's repo. The app
+ * writes the title and body (web/js/requests.js); this checks them, refuses a sixth open request
+ * and answers with the existing issue when one with the same title is still open.
+ * @param {Request} request
+ * @param {{ GITHUB_TOKEN?: string, GITHUB_REPO?: string }} env
+ * @param {Record<string, string>} cors
+ */
+async function fileFeatureRequest(request, env, cors) {
+  const repo = String(env.GITHUB_REPO || '');
+  if (!env.GITHUB_TOKEN || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+    return failure(501, 'not_configured', 'feature requests are not set up on this proxy (docs/feature-requests.md)', cors);
+  }
+  let body;
+  try {
+    body = JSON.parse(await request.text());
+  } catch {
+    return failure(400, 'invalid_request_error', 'the request is not JSON', cors);
+  }
+  const title = typeof body?.title === 'string' ? body.title.trim() : '';
+  const text = typeof body?.body === 'string' ? body.body : '';
+  if (title.length < 3 || title.length > MAX_TITLE || /[\r\n]/.test(title)) {
+    return failure(400, 'invalid_request_error', `the title must be one line of 3 to ${MAX_TITLE} characters`, cors);
+  }
+  if (!text.startsWith(REQUEST_MARKER) || text.length > MAX_ISSUE_BODY) {
+    return failure(400, 'invalid_request_error', 'not a feature request from the EasyCAD app', cors);
+  }
+  const headers = {
+    Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'easycad-agent',
+  };
+  let open;
+  try {
+    const r = await fetch(`${GITHUB_API}/repos/${repo}/issues?labels=feature-request&state=open&per_page=100`, { headers });
+    if (!r.ok) return failure(502, 'api_error', `GitHub answered ${r.status} when listing requests`, cors);
+    open = (await r.json()).filter((i) => !i.pull_request);
+  } catch {
+    return failure(502, 'api_error', 'GitHub could not be reached', cors);
+  }
+  const same = open.find((i) => String(i.title).toLowerCase() === title.toLowerCase());
+  if (same) return json({ number: same.number, url: same.html_url, duplicate: true }, 200, cors);
+  if (open.length >= MAX_OPEN_REQUESTS) {
+    return failure(429, 'rate_limit_error', `there are already ${open.length} open feature requests; wait until some are built`, cors);
+  }
+  try {
+    const r = await fetch(`${GITHUB_API}/repos/${repo}/issues`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ title, body: text, labels: ['feature-request'] }),
+    });
+    if (!r.ok) return failure(502, 'api_error', `GitHub answered ${r.status} when filing the request`, cors);
+    const issue = await r.json();
+    return json({ number: issue.number, url: issue.html_url }, 201, cors);
+  } catch {
+    return failure(502, 'api_error', 'GitHub could not be reached', cors);
+  }
+}
 
 /** The pages allowed to call the proxy (wrangler.toml / CI). */
 function origins(env) {

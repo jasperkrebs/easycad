@@ -115,3 +115,12 @@ estimates; the Console's **Usage** page has the exact numbers.
 - **You choose the effort:** low for quick edits, medium by default, high for hard new projects.
 - **Start a new chat** for a new topic: the project itself (its recipe and notes) carries what
   matters, so old messages don't need to come along.
+
+## When the AI asks for a new step
+
+If the steps can't do what you ask for, the AI asks for a new one, and a Claude Code session
+builds it, then the chat carries on: see [feature-requests.md](feature-requests.md). With the
+proxy set up, one more secret (`FEATURE_REQUEST_TOKEN`, a GitHub token that can only write this
+repo's issues) lets the proxy file those requests by itself; without it, you file each one with
+one tap. Building steps uses Claude Code in GitHub Actions, with its own secret (your
+subscription or this key), so it doesn't share the chat's monthly total.

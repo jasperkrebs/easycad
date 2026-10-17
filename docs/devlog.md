@@ -3,6 +3,53 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-17: feature requests: the agent asks, Claude Code builds, the chat carries on
+
+**Why:** the owner wants to work only in EasyCAD. When the agent can't do something, the
+missing step should get built by itself and the agent should carry on, with no one reviewing
+code.
+
+**Landed** ([feature-requests.md](feature-requests.md))
+- **`request_feature`**, the agent's sixth tool. It's for when no combination of steps can
+  do what's asked. It writes a precise, general proposal (what's wanted, what's missing and
+  why, the step, an example), then tells the user and stops. Its system prompt says so too.
+- **Filing:**
+  - the proxy's new `POST /feature-request` (password-protected) files it as an issue labelled
+    `feature-request`, with a token that may only write this repo's issues (secret
+    `FEATURE_REQUEST_TOKEN`);
+  - it refuses a sixth open request and returns the open one for a duplicate;
+  - without that token, the app offers GitHub's "new issue" page, filled in: one tap.
+- **The app keeps track** (`web/js/requests.js`):
+  - requests are listed above the message box;
+  - they're checked every five minutes and on coming back to the app (GitHub's public API, no
+    token);
+  - when one is done, the chat carries on by itself with a message from the app;
+  - a shipped step first reloads the app for the new engine: by itself when nobody is using
+    it, otherwise with a button;
+  - the "Carry on by itself" setting switches this off.
+- **The builder** (`.github/workflows/feature-builder.yml`):
+  - it runs only for the owner's requests;
+  - Claude Code (`anthropics/claude-code-action`) follows `.github/feature-builder/PROMPT.md`:
+    answer with existing steps, or say why not, or build the step the EasyCAD way and run
+    every check;
+  - **the workflow, not the AI, ships it:** CI on the branch, the merge rules (`guard.sh`:
+    no protected files, no new dependencies, no fewer tests, at most 3000 lines; G-code
+    writer changes wait for review), merge, CI and deploy, then a comment that GitHub emails;
+  - a failure after the merge is reverted;
+  - three attempts, then it asks for a person.
+- **Tests:**
+  - the proxy endpoint: filing, duplicates, the cap, bad input, password first, not set up;
+  - `scripts/request-test.cjs` (in CI) drives the whole loop in Chromium against stand-ins for
+    Claude, the proxy and GitHub: filing, shipping, carrying on, the reload, the one-tap link;
+  - actionlint and shellcheck are clean on the workflow and its scripts.
+
+**Open**
+- **Needs the owner's setup** before it runs: a Claude secret for Actions, workflow write
+  permissions, and optionally the proxy token (feature-requests.md, "Setup"). Not yet tried
+  end to end on GitHub.
+- The app carries on only while it's open, or the next time it's opened. There's no server
+  that runs the agent while you're away.
+
 ## 2026-10-17: every EasyGCode project from general steps; thread and spoon golden
 
 **Why:** the owner's goal is that every EasyGCode project (and future ones) can be made in

@@ -22,6 +22,7 @@ const ASSETS = [
   './js/language-guide.js',
   './js/print.js',
   './js/recipe.js',
+  './js/requests.js',
   './js/settings.js',
   './js/viewport.js',
   './templates/twisted-vase.easycad',

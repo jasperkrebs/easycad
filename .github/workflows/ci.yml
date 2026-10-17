@@ -10,7 +10,9 @@
 # from the default branch once four repository secrets exist: CLOUDFLARE_API_TOKEN,
 # CLOUDFLARE_ACCOUNT_ID, ANTHROPIC_API_KEY and EASYCAD_PASSWORD (docs/api-key.md). Its address
 # goes into the app's config.json, so the app finds it by itself. Without the secrets the job
-# leaves a notice and stays green; the app's "key on this device" mode works either way.
+# leaves a notice and stays green; the app's "key on this device" mode works either way. With a
+# fifth secret, FEATURE_REQUEST_TOKEN (a fine-grained token that may only write this repo's
+# issues), the proxy also files the agent's feature requests (docs/feature-requests.md).
 name: CI
 
 on:
@@ -65,7 +67,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EASYCAD_PASSWORD: ${{ secrets.EASYCAD_PASSWORD }}
+          FEATURE_REQUEST_TOKEN: ${{ secrets.FEATURE_REQUEST_TOKEN }}
           OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.repository }}
         run: |
           set -o pipefail
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
@@ -79,9 +83,16 @@ jobs:
           # Only this repo's GitHub Pages site (and a local server) may call the proxy.
           pages="https://$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]').github.io"
           sed -i "s|^ALLOWED_ORIGINS = .*|ALLOWED_ORIGINS = \"$pages,http://localhost:8080,http://127.0.0.1:8080\"|" wrangler.toml
+          # Feature requests go to this repository's issues.
+          sed -i "s|^GITHUB_REPO = .*|GITHUB_REPO = \"$REPO\"|" wrangler.toml
           npx --yes wrangler@4.146.0 deploy | tee deploy.log
           printf '%s' "$ANTHROPIC_API_KEY" | npx --yes wrangler@4.146.0 secret put ANTHROPIC_API_KEY
           printf '%s' "$EASYCAD_PASSWORD" | npx --yes wrangler@4.146.0 secret put EASYCAD_PASSWORD
+          if [ -n "$FEATURE_REQUEST_TOKEN" ]; then
+            printf '%s' "$FEATURE_REQUEST_TOKEN" | npx --yes wrangler@4.146.0 secret put GITHUB_TOKEN
+          else
+            echo "::notice::The proxy can't file feature requests: no FEATURE_REQUEST_TOKEN secret (docs/feature-requests.md). The app offers a prefilled GitHub page instead."
+          fi
           url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | head -n 1)
           if [ -z "$url" ]; then
             echo "::error::Deployed, but Wrangler printed no workers.dev address. Is a workers.dev subdomain set up (docs/api-key.md)?"
@@ -111,7 +122,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: node --test agent-proxy/worker.test.mjs
+      - run: node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs
       - name: Smoke test in headless Chromium
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
@@ -119,11 +130,13 @@ jobs:
           node scripts/smoke-test.cjs
           node scripts/agent-test.cjs
           node scripts/graph-test.cjs
-      - name: App config (the AI proxy's address, when it's deployed; the repo's copy is empty)
+          node scripts/request-test.cjs
+      - name: App config (the AI proxy's address, when it's deployed, and where feature requests go)
         env:
           AGENT_URL: ${{ needs.proxy.outputs.url }}
+          REPO: ${{ github.repository }}
         run: |
-          python3 -c "import json, os; json.dump({'agentUrl': os.environ.get('AGENT_URL', '')}, open('web/config.json', 'w'))"
+          python3 -c "import json, os; json.dump({'agentUrl': os.environ.get('AGENT_URL', ''), 'repo': os.environ['REPO']}, open('web/config.json', 'w'))"
       - uses: actions/upload-pages-artifact@v4
         if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         with:

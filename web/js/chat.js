@@ -9,9 +9,14 @@
 //
 // The chat is kept on this device (IndexedDB) with the project it's about; "New chat" starts
 // over. The project's own memory is its recipe and note lines, which travel with the file.
+//
+// When the agent can't build something, it files a feature request (web/js/requests.js). The
+// requests show above the message box; when one is done, the chat carries on by itself (a
+// message from the app), after a reload when the new step needs the new engine.
 
 import { CONTEXT_TAG, DEFAULT_MODEL, EFFORTS, MODELS, applyEdits, closeToolUses, numbered, projectContext, runStatus, runTurn, systemPrompt } from './agent.js';
 import { $, el } from './dom.js';
+import { createRequests, formatIssue, newId, newIssueUrl } from './requests.js';
 
 const SETTINGS_KEY = 'easycad.ai';
 const SECRET_KEY = 'easycad.ai.secret';
@@ -19,8 +24,16 @@ const SPEND_KEY = 'easycad.ai.spend';
 const DB_NAME = 'easycad';
 const DB_STORE = 'chat';
 
+/** How often open feature requests are checked while the app is open. */
+const REQUEST_POLL_MS = 5 * 60 * 1000;
+/** Reload by itself for a shipped step only after this long without a touch or key. */
+const IDLE_RELOAD_MS = 60 * 1000;
+const RELOAD_FLAG = 'easycad.requests.reloaded';
+const AFTER_FILING =
+  'Now tell the user in a sentence or two what you asked for and that you will carry on by yourself when it is ready, then stop.';
+
 /**
- * @typedef {{ mode: 'proxy' | 'key', proxyUrl: string, model: string, effort: string, rules: string }} AiSettings
+ * @typedef {{ mode: 'proxy' | 'key', proxyUrl: string, model: string, effort: string, rules: string, autoContinue: boolean }} AiSettings
  * @typedef {{ source: string, last: any, printerName: string, profile: any, values: Record<string, any>, editorDirty: boolean }} Project
  */
 
@@ -45,6 +58,12 @@ export function createChat(app) {
   /** A note for the model at the start of the next message (e.g. "I undid your change"). */
   let pendingNote = '';
   let defaultProxyUrl = '';
+  /** EasyCAD's GitHub repository ("owner/name"), where feature requests go. */
+  let repo = '';
+  const requests = createRequests({ repo: () => repo });
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let pollTimer = null;
+  let lastActivity = Date.now();
   /** @type {Promise<any> | null} */
   let sdk = null;
 
@@ -69,6 +88,7 @@ export function createChat(app) {
       model: s.model in MODELS ? s.model : DEFAULT_MODEL,
       effort: EFFORTS.includes(s.effort) ? s.effort : 'medium',
       rules: typeof s.rules === 'string' ? s.rules : '',
+      autoContinue: s.autoContinue !== false,
     };
   }
 
@@ -212,6 +232,8 @@ export function createChat(app) {
         return `Looked at the ${i.show === 'toolpath' ? 'toolpath' : i.show === 'shape' ? 'shape' : 'model'}`;
       case 'read_recipe':
         return 'Read the recipe';
+      case 'request_feature':
+        return `Asked for a new step: ${i.title || ''}`;
       default:
         return use.name;
     }
@@ -403,10 +425,175 @@ export function createChat(app) {
         ],
       };
     }
+    if (name === 'request_feature') return fileRequest(input);
     return { content: `There is no tool called ${name}.`, isError: true };
   }
 
   const hasErrors = (result) => !result || result.diagnostics.some((d) => d.severity === 'error');
+
+  // ---------------------------------------------------------------------------------------------
+  // Feature requests: filed by the agent, built by Claude Code, picked up again here
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * Files a request through the proxy, or, without one, as a link the user taps to file it.
+   * @param {import('./requests.js').RequestInput} input
+   */
+  async function fileRequest(input) {
+    const id = newId();
+    const issue = formatIssue(input, id);
+    const base = { id, title: issue.title, wanted: input.wanted.trim(), filedAt: Date.now() };
+    const s = settings();
+    if (s.mode === 'proxy' && s.proxyUrl && secret()) {
+      try {
+        const r = await fetch(`${s.proxyUrl.replace(/\/+$/, '')}/feature-request`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${secret()}`, 'content-type': 'application/json' },
+          body: JSON.stringify(issue),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok && Number.isInteger(data.number)) {
+          requests.add({ ...base, number: data.number, url: data.url, status: 'waiting' });
+          renderRequests();
+          schedulePoll(REQUEST_POLL_MS);
+          const same = data.duplicate ? ' (the same request was already open, so this is the one to wait for)' : '';
+          return { content: `Filed as feature request #${data.number}${same}: ${data.url}. ${AFTER_FILING}` };
+        }
+        if (r.status !== 501) {
+          return { content: `Not filed: ${data.error?.message || `the proxy answered ${r.status}`}. Tell the user what's missing instead.`, isError: true };
+        }
+      } catch {
+        // The proxy can't be reached: the user can still file it by hand.
+      }
+    }
+    if (!repo) return { content: "Not filed: this copy of the app doesn't know its GitHub repository. Tell the user what's missing instead.", isError: true };
+    requests.add({ ...base, fileUrl: newIssueUrl(repo, issue), status: 'unfiled' });
+    renderRequests();
+    schedulePoll(REQUEST_POLL_MS);
+    return {
+      content: `Not filed automatically (no proxy for feature requests on this device): the app shows the user a button that files it on GitHub with one tap. ${AFTER_FILING}`,
+    };
+  }
+
+  const STATUS_TEXT = {
+    unfiled: 'not filed yet',
+    waiting: 'waiting for the builder',
+    building: 'being built',
+    shipped: 'ready',
+    answered: 'answered',
+    declined: 'not built',
+    stuck: 'needs a person',
+  };
+
+  /** The strip of requests above the message box. */
+  function renderRequests() {
+    const list = $('chatRequests');
+    const shown = requests.list().filter((r) => !r.resumed);
+    list.hidden = !shown.length;
+    list.replaceChildren(
+      ...shown.map((r) => {
+        const head = el('div', { className: 'request-head' }, [
+          r.url ? el('a', { href: r.url, target: '_blank', rel: 'noopener', text: `#${r.number} ${r.title}` }) : el('span', { text: r.title }),
+          el('span', { className: 'request-status', text: STATUS_TEXT[r.status] || r.status }),
+        ]);
+        const parts = [head];
+        if (r.status === 'unfiled' && r.fileUrl) {
+          parts.push(el('p', { text: 'The AI asked for a new step. File the request on GitHub (one tap, signed in), and it gets built.' }));
+          parts.push(el('div', { className: 'buttons tight' }, [el('a', { className: 'btn primary', href: r.fileUrl, target: '_blank', rel: 'noopener', text: 'File it on GitHub' })]));
+        } else if (r.status === 'shipped' && !r.resumed) {
+          parts.push(el('p', { text: 'The new step is live. Reload to get it; the chat carries on by itself.' }));
+          const reload = el('button', { className: 'btn primary', type: 'button', text: 'Reload and carry on' });
+          reload.addEventListener('click', () => reloadForStep());
+          parts.push(el('div', { className: 'buttons tight' }, [reload]));
+        } else if (['stuck', 'declined'].includes(r.status)) {
+          if (r.message) parts.push(el('p', { text: r.message }));
+          const dismiss = el('button', { className: 'btn', type: 'button', text: 'Dismiss' });
+          dismiss.addEventListener('click', () => {
+            requests.update(r.id, { resumed: true });
+            renderRequests();
+          });
+          parts.push(el('div', { className: 'buttons tight' }, [dismiss]));
+        }
+        return el('li', { className: r.status === 'shipped' ? 'ready' : r.status === 'stuck' ? 'stuck' : '' }, parts);
+      }),
+    );
+  }
+
+  /** Requests still to check on, or shipped and waiting for the reload that brings their step. */
+  const pending = () => requests.open().length > 0 || requests.list().some((r) => r.status === 'shipped' && !r.resumed);
+
+  /** Checks on open requests now, and again later while any are pending. */
+  function schedulePoll(delay) {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+    if (!pending()) return;
+    pollTimer = setTimeout(async () => {
+      pollTimer = null;
+      await pollRequests();
+    }, delay);
+  }
+
+  async function pollRequests() {
+    const changed = await requests.check();
+    if (changed.length) renderRequests();
+    await carryOn();
+    schedulePoll(REQUEST_POLL_MS);
+  }
+
+  /** Reloads the app for a shipped step (the new engine), marking it so this happens once. */
+  function reloadForStep() {
+    try {
+      sessionStorage.setItem(RELOAD_FLAG, String(Date.now()));
+    } catch {
+      // Without session storage it may reload again later; harmless.
+    }
+    location.reload();
+  }
+
+  /** Whether the running engine has all of these steps. */
+  async function hasSteps(steps) {
+    if (!steps || !steps.length) return true;
+    const catalog = await app.catalog();
+    return steps.every((name) => new RegExp(`^${name}\\(`, 'm').test(catalog));
+  }
+
+  /**
+   * Picks the conversation up again for every request that's done: a message from the app
+   * that says what happened, in the chat. A shipped step needs the new engine: the app reloads
+   * by itself when nobody is using it, or asks.
+   */
+  async function carryOn() {
+    const s = settings();
+    for (const r of requests.list()) {
+      if (r.resumed || !['shipped', 'answered', 'declined', 'stuck'].includes(r.status)) continue;
+      if (r.status === 'stuck') {
+        pendingNote = `feature request #${r.number} ("${r.title}") needs a person to finish it: ${r.message || 'see the issue'}`;
+        continue;
+      }
+      if (r.status === 'shipped' && !(await hasSteps(r.steps))) {
+        let reloaded = 0;
+        try {
+          reloaded = Number(sessionStorage.getItem(RELOAD_FLAG) || 0);
+        } catch {
+          reloaded = 0;
+        }
+        // The new site can take a minute to reach every server: retry, but not in a loop.
+        const idle = document.hidden || Date.now() - lastActivity > IDLE_RELOAD_MS;
+        if (idle && !busy && !app.project().editorDirty && Date.now() - reloaded > 3 * 60 * 1000) reloadForStep();
+        continue;
+      }
+      if (!s.autoContinue || busy || !ready()) continue;
+      requests.update(r.id, { resumed: true });
+      renderRequests();
+      const what =
+        r.status === 'shipped'
+          ? `is built and live${r.steps?.length ? `: the catalog now has ${r.steps.map((n) => `\`${n}\``).join(', ')}` : ''}`
+          : r.status === 'answered'
+            ? `was answered without new steps: ${r.message || 'see the issue'}`
+            : `won't be built: ${r.message || 'see the issue'}`;
+      await send(`(EasyCAD: feature request #${r.number} "${r.title}" ${what}.) Carry on with what I asked for: ${r.wanted}`);
+    }
+  }
 
   // ---------------------------------------------------------------------------------------------
   // Sending
@@ -528,6 +715,8 @@ export function createChat(app) {
       }
       renderStatus();
     }
+    // A request that finished while this turn ran carries on after it.
+    if (requests.list().some((r) => !r.resumed && ['shipped', 'answered', 'declined'].includes(r.status))) setTimeout(carryOn, 0);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -597,6 +786,19 @@ export function createChat(app) {
     const rules = /** @type {HTMLTextAreaElement} */ ($('aiRules'));
     rules.value = s.rules;
     rules.addEventListener('change', () => saveSettings({ rules: rules.value }));
+    const auto = /** @type {HTMLInputElement} */ ($('aiAutoContinue'));
+    auto.checked = s.autoContinue;
+    auto.addEventListener('change', () => {
+      saveSettings({ autoContinue: auto.checked });
+      if (auto.checked) carryOn();
+    });
+
+    // Requests are checked when the app comes back into view, and it notices being used (so a
+    // reload for a new step never interrupts anyone).
+    for (const type of ['pointerdown', 'keydown']) document.addEventListener(type, () => (lastActivity = Date.now()), { passive: true });
+    document.addEventListener('visibilitychange', () => {
+      if (pending()) pollRequests();
+    });
 
     const secretInput = /** @type {HTMLInputElement} */ ($('aiSecret'));
     $('aiSave').addEventListener('click', async () => {
@@ -642,14 +844,24 @@ export function createChat(app) {
         if (r.ok) {
           const config = await r.json();
           if (typeof config.agentUrl === 'string') defaultProxyUrl = config.agentUrl;
+          if (typeof config.repo === 'string' && /^[\w.-]+\/[\w.-]+$/.test(config.repo)) repo = config.repo;
         }
       } catch {
         // No config (local server): the address can be typed in AI settings.
+      }
+      // On GitHub Pages the repository follows from the address (owner.github.io/name/).
+      if (!repo && location.hostname.endsWith('.github.io')) {
+        const name = location.pathname.split('/').filter(Boolean)[0];
+        if (name) repo = `${location.hostname.split('.')[0]}/${name}`;
       }
       wire();
       showSecretState();
       await load();
       renderHistory();
+      renderRequests();
+      // Requests that finished while the app was closed carry on now (this is a fresh load, so
+      // the engine is the newest).
+      pollRequests();
     },
 
     /** The project changed outside the chat (a template or file was opened). */

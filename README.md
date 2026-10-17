@@ -5,24 +5,30 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status:** Phase 1c done (15 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
+> **Status:** Phase 1d done (17 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
 > - **Projects are recipes:** small `.easycad` text files. Each one opens with its own
 >   settings window, generated from the recipe. The Rust engine runs in the browser as
 >   WebAssembly, shows the shape and its toolpath, and gives a live print estimate.
 > - **Graph tab:** the recipe as Grasshopper-style components and wires. Build and edit
 >   without any AI (add components, wire inputs, sliders), or take what the AI made further by
->   hand. About 70 steps named after Grasshopper's components: points, planes, tweens,
->   transforms by fields (per point), surfaces, and vase mode through tilted layers.
+>   hand. About 100 steps, named after Grasshopper's components where one exists: points,
+>   planes, tweens, transforms by fields (per point), surfaces, vase mode through tilted
+>   layers. Plus EasyGCode's techniques as general steps: ring fills, helices, zone speeds,
+>   fan levels, dwells, spikes and overhang pacing.
 > - **Chat tab:** Claude writes and edits recipes in the app, with your own key (behind your
->   own password, or stored on your device; see [docs/api-key.md](docs/api-key.md)).
+>   own password, or stored on your device; see [docs/api-key.md](docs/api-key.md)). When the
+>   steps can't do something, it asks for the missing step. Claude Code builds it in GitHub
+>   Actions, and the chat carries on when it's live
+>   ([docs/feature-requests.md](docs/feature-requests.md)).
 > - **G-code** for the Bambu P1P and the Klipper pellet printer, written the way EasyGCode
 >   writes it, speeds set as volumetric flow, golden-tested against EasyGCode's own output.
 >   **STL** for plain geometry.
-> - **Templates:** EasyGCode's spiral disc as a ten-line recipe (same G-code as EasyGCode), a
->   cylinder cut by a tilted plane (tilted layers in one spiral), a geometry-only turned
->   vase, and three vase-mode vessels.
-> - **Next:** more of EasyGCode's projects as recipes (vessel, bend stool seat, lampshade),
->   skills for the agent, and 2D curve editors.
+> - **Templates:** EasyGCode's spiral disc, thread connector and spoon as short recipes (same
+>   G-code as EasyGCode), a cylinder cut by a tilted plane (tilted layers in one spiral), a
+>   geometry-only turned vase, and three vase-mode vessels. Every EasyGCode project can be
+>   built from the steps ([docs/easygcode-coverage.md](docs/easygcode-coverage.md)).
+> - **Next:** the rest of EasyGCode's projects as templates, skills for the agent, and 2D curve
+>   editors.
 >
 > See the [roadmap](docs/roadmap.md).
 
@@ -96,6 +102,8 @@ export vase as "twisted-vase.stl"
 | [docs/definition-language.md](docs/definition-language.md) | The `.easycad` project file / recipe language (v0.1) |
 | [docs/research.md](docs/research.md) | What exists, what doesn't, sources, measured kernel spike |
 | [docs/api-key.md](docs/api-key.md) | Connecting the AI: your Claude API key, the password-protected proxy, costs |
+| [docs/easygcode-coverage.md](docs/easygcode-coverage.md) | Every EasyGCode project, feature by feature, and the steps that build it |
+| [docs/feature-requests.md](docs/feature-requests.md) | When the AI can't build something: it asks, Claude Code builds the step, the chat carries on |
 | [docs/devlog.md](docs/devlog.md) | What landed, what's open |
 | [docs/mockup/index.html](docs/mockup/index.html) | Clickable UI mockup |
 | [CLAUDE.md](CLAUDE.md) | Guidance for AI agents (and humans) working in this repo |

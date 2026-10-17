@@ -80,11 +80,12 @@ Split into small steps (15 Oct):
     command for command (three cases each).
   - The vessel, lampshade, container, coat hanger and bend stool are recipe work now, written
     when wanted (by hand or by the agent).
-- **1d+: Feature requests** ← *next*: when the in-app agent can't build something, it files a
-  request; a Claude Code session builds the step, checks it and ships it, and the agent picks
-  up again ([feature-requests.md](feature-requests.md)).
-- **1e:** formatter, presets, project library on the device.
-
+- **1d+: Feature requests** ✓ *built 17 Oct 2026, waiting for its one-time setup*: when the
+  in-app agent can't build something, it files a request; a Claude Code session builds the step,
+  the workflow checks and ships it, and the chat carries on
+  ([feature-requests.md](feature-requests.md)).
+- **1e** ← *next*: the vessel, lampshade, container, coat hanger and bend stool as templates
+  (recipe work now); formatter, presets, project library on the device.
 The full Phase 1 scope:
 - **Definition language v0** (parser, formatter, clear errors) and the evaluator (dependency
   graph, caching, list handling).
