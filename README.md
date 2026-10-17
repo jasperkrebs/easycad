@@ -5,7 +5,7 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status:** Phase 1d done (17 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
+> **Status:** Phase 1e mostly done (17 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
 > - **Projects are recipes:** small `.easycad` text files. Each one opens with its own
 >   settings window, generated from the recipe. The Rust engine runs in the browser as
 >   WebAssembly, shows the shape and its toolpath, and gives a live print estimate.
