@@ -16,7 +16,7 @@ under each project and in [What's still missing](#whats-still-missing).
 | Thread connector | **G-code identical to EasyGCode** (3 cases) | `web/templates/thread-connector.easycad` |
 | Spoon | **G-code identical to EasyGCode** (3 cases) | `web/templates/spoon.easycad` |
 | Lampshade | **G-code identical to EasyGCode** (4 cases: cone, bell, dome, sphere with lip); flat sphere sampled evenly | `web/templates/lampshade.easycad` |
-| Vessel | Buildable | not written yet |
+| Vessel | **Template from general steps** (fillet bottom, star top with lifted corners, ring bottoms); not line-for-line | `web/templates/vessel.easycad` |
 | Container | Buildable | not written yet |
 | Coat hanger | Buildable, with three small approximations (below) | not written yet |
 | Bend stool | **G-code identical to EasyGCode** (4 cases, foaming included); legs buildable | `web/templates/bend-stool.easycad` (the seat) |
@@ -30,7 +30,7 @@ are compared comments included. Every command is byte-identical.
 recipe is now recipe work (an agent can do it), not engine work. Its G-code would be EasyCAD's
 own, not checked line by line against EasyGCode's.
 
-Recipes were written for five projects so far, on purpose. They prove the new steps produce
+Recipes were written for six projects so far, five of them golden. They prove the new steps produce
 exactly EasyGCode's numbers. The others are a matter of writing recipes when they're wanted.
 
 ## Thread connector (golden)
@@ -88,7 +88,16 @@ on a custom thread, no compensation, a set ramp height, no start/end blocks.
 Not exact: EasyGCode samples the flat sphere adaptively (finer where its angle changes fast);
 the template samples it evenly (400 points). The shape is the same ellipsoid.
 
-## Vessel
+## Vessel (template since 17 Oct)
+
+The template does what EasyGCode's vessel does, from general steps, but its G-code isn't
+checked line by line against EasyGCode's: EasyGCode places every point of the wall at its own
+height on the surface (its cross-section and profile evaluated there), while EasyCAD's
+`spiralize` blends between layer outlines, and the bottom fills and the fillet's layers are
+EasyCAD's own (`rings`, `link_rings`, `contour`). The shapes are the same; the numbers differ in
+the last fractions of a millimetre. The tests check what matters for printing: one continuous
+line from the bottom's centre to the rim, the squeeze (every turn extruded for a full layer),
+the lifted rim's height, every cross-section and bottom.
 
 | EasyGCode feature | EasyCAD steps |
 |---|---|
@@ -97,9 +106,9 @@ the template samples it evenly (400 points). The shape is the same ellipsoid.
 | Radius profile through control points (clamped Catmull-Rom) | `catmull_rom` through (h, s) points, then `sample`/`evaluate` it, or `scale` sections by a list |
 | Top curves: rounded star, custom points pushed along the normals with their own Z | `evaluate` + `normal` + `move`, then `catmull_rom(closed: true)` |
 | Cross-fade from the bottom shape to the top shape | `tween` |
-| Inner points lifted in Z | `move(z: …field…)` |
+| Inner points lifted in Z, more towards the rim (non-planar top) | `move(z: …field…)` on the layers: the lift times the height fraction times the star's inner weight, read by angle with `graph` |
 | Bottoms: staircase, zipper, true spiral (with the centre taper) | `rings` + `reverse` + `link_rings("staircase" / "zipper" / "spiral")`; taper with `adjust(extrude: (min(distance(c), w) + w) / (2 * w))` |
-| Filleted bottom | a quarter-arc profile, sections scaled per layer, `spiralize` |
+| Filleted bottom: a flat spiral rounding into the wall through a quarter circle (tilted to meet a leaning wall), squeezed turns | flat spiral (`rings` + `link_rings("spiral")`), fillet sections in the same `loft`, `contour(pace: 1)`, `spiralize(ramp: false)`, `bead(layer:)`, `join` |
 | Overhang-paced Z, fitted to the height | `contour(wall, layer, pace: 1)` + `spiralize` |
 | Top finish: flat or open | `vase_spiral` / `spiralize` with `flat_top: false` |
 | Randomize with a seed | `random` (in EasyGCode it only sets the UI's values) |
@@ -201,6 +210,11 @@ Machine commands that are new in EasyCAD's G-code:
 
 They are checked against a hand-checked fixture (`fixtures/hand-checked/machine-events.gcode`,
 worked out in exact arithmetic by `scripts/hand-checked-fixtures.py`).
+
+## Steps added for the vessel (17 Oct 2026)
+
+- `spiralize(…, ramp: false)`: the spiral carries on from a printed bottom at full extrusion,
+  blending the bottom layer into the next.
 
 ## Steps added for the lampshade (17 Oct 2026)
 

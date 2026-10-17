@@ -1351,9 +1351,15 @@ pub static NODES: &[Node] = &[
                 1.0,
                 "true: a flat closing turn for a level rim; false: an open top",
             ),
+            opt(
+                "ramp",
+                "Bool",
+                1.0,
+                "true: start on the bed, extrusion ramping up; false: carry on at full extrusion from something printed before (a flat bottom)",
+            ),
         ],
         output: "Toolpath",
-        doc: "Vase mode through any stack of layers, flat or tilted: one continuous spiral that blends each layer into the next, each move extruded for its own local layer height (thin where layers are close, thick where they're apart). Same start ramp and closing turn as vase_spiral; flat, evenly spaced layers print exactly like it.",
+        doc: "Vase mode through any stack of layers, flat or tilted: one continuous spiral that blends each layer into the next, each move extruded for its own local layer height (thin where layers are close, thick where they're apart). Same start ramp and closing turn as vase_spiral; flat, evenly spaced layers print exactly like it. `bead(path, layer: …)` extrudes it for one layer height throughout instead (EasyGCode's squeeze, where layers come closer on overhangs).",
         run: Run::Op(toolbox::spiralize),
     },
     Node {

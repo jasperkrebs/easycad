@@ -23,6 +23,7 @@ const TEMPLATES = [
   { id: 'spoon', name: 'Spoon (from EasyGCode)' },
   { id: 'bend-stool', name: 'Bend stool, with foaming (from EasyGCode)' },
   { id: 'lampshade', name: 'Lampshade, every shade (from EasyGCode)' },
+  { id: 'vessel', name: 'Vessel: fillet bottom, star top (from EasyGCode)' },
   { id: 'cut-cylinder', name: 'Cut cylinder (tilted layers)' },
   { id: 'turned-vase', name: 'Turned vase (geometry only)' },
 ];

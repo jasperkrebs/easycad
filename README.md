@@ -16,18 +16,22 @@ become toolpaths, toolpaths become G-code for your printer.
 >   layers. Plus EasyGCode's techniques as general steps: ring fills, helices, zone speeds,
 >   fan levels, dwells, spikes and overhang pacing.
 > - **Chat tab:** Claude writes and edits recipes in the app, with your own key (behind your
->   own password, or stored on your device; see [docs/api-key.md](docs/api-key.md)). When the
->   steps can't do something, it asks for the missing step. Claude Code builds it in GitHub
->   Actions, and the chat carries on when it's live
->   ([docs/feature-requests.md](docs/feature-requests.md)).
+>   own password, or stored on your device; see [docs/api-key.md](docs/api-key.md)). It can
+>   switch printers and change printer settings too. When the steps can't do something, it
+>   asks for the missing step. Claude Code builds it in GitHub Actions, and the chat carries on
+>   when it's live ([docs/feature-requests.md](docs/feature-requests.md)).
 > - **G-code** for the Bambu P1P and the Klipper pellet printer, written the way EasyGCode
 >   writes it, speeds set as volumetric flow, golden-tested against EasyGCode's own output.
 >   **STL** for plain geometry.
-> - **Templates:** EasyGCode's spiral disc, thread connector and spoon as short recipes (same
->   G-code as EasyGCode), a cylinder cut by a tilted plane (tilted layers in one spiral), a
->   geometry-only turned vase, and three vase-mode vessels. Every EasyGCode project can be
->   built from the steps ([docs/easygcode-coverage.md](docs/easygcode-coverage.md)).
-> - **Next:** the rest of EasyGCode's projects as templates, skills for the agent, and 2D curve
+> - **Templates:** EasyGCode's spiral disc, thread connector, spoon, bend stool (with foaming)
+>   and lampshade (every shade, or your own) as recipes with the same G-code as EasyGCode; its
+>   vessel (the bottom rounding into the wall, a non-planar star top) from general steps; a
+>   cylinder cut by a tilted plane (tilted layers in one spiral), a geometry-only turned vase,
+>   and three vase-mode vessels. Every EasyGCode project can be built from the steps
+>   ([docs/easygcode-coverage.md](docs/easygcode-coverage.md)).
+> - **Machine control** as steps: temperatures and waits, speed and extrusion overrides, fan
+>   levels, pauses (EasyGCode's foaming is built from them).
+> - **Next:** the container and coat hanger as templates, skills for the agent, and 2D curve
 >   editors.
 >
 > See the [roadmap](docs/roadmap.md).

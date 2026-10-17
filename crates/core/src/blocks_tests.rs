@@ -473,3 +473,64 @@ squeezed = vase_revolve(profile, layer: 2 - greater(z, 10), width: 3, bead_layer
             .contains("radius")
     );
 }
+
+#[test]
+fn the_vessel_rounds_its_bottom_into_the_wall_and_lifts_its_rim() {
+    use easycad_lang::{Literal, set_values};
+    let template = include_str!("../../../web/templates/vessel.easycad");
+    let run_with = |values: &[(&str, Literal)]| {
+        let values: Vec<(String, Literal)> = values
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        let recipe = set_values(template, &values).unwrap();
+        let (e, _) = step_values(&recipe, Quality::Final);
+        assert!(e.diagnostics.is_empty(), "{values:?}: {:?}", e.diagnostics);
+        e.print.unwrap().path
+    };
+    // As it ships: one line from the centre of the bottom, round the fillet, up to the rim;
+    // the only travel is the one to its start, on the first layer.
+    let p = run_with(&[]);
+    assert_eq!(p.travel.iter().filter(|t| **t).count(), 1);
+    assert!((p.points[0][2] - 0.6).abs() < 1e-9);
+    let top = p.points.iter().map(|q| q[2]).fold(0.0, f64::max);
+    assert!((top - 60.0).abs() < 1e-6, "{top}");
+    // The fillet: the first turns after the flat bottom rise far less than a layer.
+    let flat_end = p
+        .points
+        .iter()
+        .rposition(|q| (q[2] - 0.6).abs() < 1e-9)
+        .unwrap();
+    let rise = p.points[(flat_end + 240).min(p.points.len() - 1)][2] - 0.6;
+    assert!(rise > 0.0 && rise < 0.2, "{rise}");
+    // Every move extruded for a full layer (the squeeze), whatever its rise.
+    assert!((1..p.points.len()).all(|i| (p.area(i) - p.area(1)).abs() < 1e-9));
+    // A star top with lifted inner corners: the rim rises above the wall's height there.
+    for bottom in ["fillet", "staircase", "zipper", "spiral", "open"] {
+        let p = run_with(&[
+            ("bottom", Literal::Text(bottom.into())),
+            ("top_star", Literal::Bool(true)),
+            ("lift", Literal::Number(8.0)),
+        ]);
+        let top = p.points.iter().map(|q| q[2]).fold(0.0, f64::max);
+        assert!((top - 68.0).abs() < 0.5, "{bottom}: {top}");
+    }
+    // Ring bottoms: three layers of rings inside the wall, then the wall from the bed.
+    let p = run_with(&[("bottom", Literal::Text("zipper".into()))]);
+    assert!(p.points.iter().any(|q| (q[2] - 1.8).abs() < 1e-9));
+    let wall_start = p
+        .points
+        .iter()
+        .position(|q| q[2] < 0.3 && q[0].hypot(q[1]) > 29.0);
+    assert!(wall_start.is_some());
+    // Every cross-section runs.
+    for shape in [
+        "ellipse",
+        "squircle",
+        "rounded rectangle",
+        "polygon",
+        "star",
+    ] {
+        run_with(&[("shape", Literal::Text(shape.into()))]);
+    }
+}

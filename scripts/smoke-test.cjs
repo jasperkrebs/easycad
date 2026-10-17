@@ -174,6 +174,17 @@ async function waitForServer(url) {
         }
       }
 
+      // The vessel is built from general steps, not checked line by line against EasyGCode:
+      // the app must still make its G-code (one line from the bottom's centre to the rim).
+      await page.click('#tab-settings');
+      await page.selectOption('#template', 'vessel');
+      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Vessel', null, { timeout: 15000 });
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-vessel.png`), fullPage: name === 'phone' });
+      const vessel = (await saveFrom(page, '#exportButtons button.primary')).data.toString('utf8');
+      const travels = commands(vessel).filter((c) => c.startsWith('G0 X')).length;
+      if (!/^; EasyCAD — Vessel/.test(vessel) || travels !== 1) failures.push(`${name}: vessel G-code: ${travels} travels`);
+
       await page.click('#tab-print');
       if ((await page.inputValue('#printer')) !== 'pellet') failures.push(`${name}: the disc should pick the pellet printer`);
       await page.click('#panel-print summary');

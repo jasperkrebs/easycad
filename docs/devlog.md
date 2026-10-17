@@ -3,6 +3,42 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-17: the lampshade (golden) and the vessel
+
+**Why:** the owner asked for EasyGCode's lampshade ("works with all different shades, and easy
+to create different shades": it's their current project) and its vessel (the bottom rounding
+into the wall through a fillet, the non-planar top).
+
+**Landed**
+- **`vase_revolve`**: vase mode around a profile of revolution, turn by turn, as EasyGCode's
+  lampshade prints it (points per turn from the radius, the radius from the profile at every
+  point, a ramped first turn and a flat closing turn). Rise, width and flow can be fields read
+  once per turn: that's how overhang compensation and the throat-to-shade flow ramp work.
+- **`graph`** (Graph Mapper: a piecewise-linear table, also as a field), **`bounds`**,
+  **`graft`** (a toolpath per brim ring), **`spiralize(ramp: false)`**.
+- **The lampshade template** (`web/templates/lampshade.easycad`): E27/E14/custom sockets; the
+  cone, bell (capped or not), dome, sphere and flat sphere built as profiles, plus an own shade
+  (`own_shade`: any profile); EasyGCode's fillet blend onto any shade (clamped when too big);
+  the lip; wide edge down; width or layer-height compensation; the flow ramp; a brim. **Golden
+  in 4 cases** (cone as shipped, capped bell with a brim, sphere with a lip wide edge down,
+  dome on a custom thread) and through the app. The flat sphere is sampled evenly (EasyGCode
+  samples it adaptively), the one shade not checked line by line.
+- **The vessel template** (`web/templates/vessel.easycad`): six cross-sections, a radius
+  profile, a cross-fade into a rounded star whose inner corners rise at the rim, closer layers
+  on overhangs (each extruded for a full layer), and the bottom: a fillet (one continuous line
+  from the bottom's centre to the rim), ring fills or open. Built from general steps, not
+  golden: EasyGCode evaluates every wall point on its surface, EasyCAD blends layer outlines.
+- **The G-code writer** writes `F` whenever the exact feed changes (EasyGCode's rule). Every
+  earlier golden and hand-checked output is unchanged.
+- **The header** lists the first 8 parts (a lampshade has one per turn).
+
+**Numbers:** 148 core tests, wasm 338 KB gzipped.
+
+**Open**
+- The vessel's custom top and bottom curves (points pushed along the normals) and its
+  continuous spiral bottom (layers alternating into the wall) aren't in the template yet.
+- The lampshade's flat sphere isn't golden (adaptive sampling).
+
 ## 2026-10-17: printers from the chat; foaming; the bend stool, golden
 
 **Why:** the owner wants to switch printers and change printer settings from the chat, and to

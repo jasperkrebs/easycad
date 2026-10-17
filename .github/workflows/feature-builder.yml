@@ -13,7 +13,7 @@
 #
 # One-time setup (docs/feature-requests.md, "Setup"):
 # - a secret for Claude: CLAUDE_CODE_OAUTH_TOKEN (your Claude subscription, made with
-#   `claude setup-token`) or ANTHROPIC_API_KEY (pay per use);
+#   `claude setup-token`, valid for a year; used first) or ANTHROPIC_API_KEY (pay per use);
 # - Settings → Actions → General → Workflow permissions: "Read and write permissions", and tick
 #   "Allow GitHub Actions to create and approve pull requests".
 # Optional: the repository variable BUILDER_MODEL picks Claude's model.
@@ -164,12 +164,14 @@ jobs:
 
       # Agent mode (a prompt is given): it runs the prompt and nothing else; the workflow's own
       # token is all it needs (no GitHub app). Retries are started by github-actions[bot].
+      # The subscription comes first: Claude Code would use an API key over it whenever both are
+      # given, so the key is passed only when there's no subscription token.
       - name: Claude Code builds it
         if: steps.attempt.outputs.go == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' && secrets.ANTHROPIC_API_KEY || '' }}
           github_token: ${{ github.token }}
           allowed_bots: github-actions
           prompt: ${{ steps.prompt.outputs.text }}

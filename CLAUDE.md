@@ -14,11 +14,12 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
 
 **Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0, 1a
 (recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL),
-1c (the Grasshopper toolbox, `spiralize`, the Graph tab) and 1d (every EasyGCode project from
-general steps; thread and spoon golden, `docs/easygcode-coverage.md`) are done, and so is the
-Chat tab (the agent with the user's key, behind a password proxy), and feature requests (the
-agent asks for missing steps; Claude Code builds them in Actions; `docs/feature-requests.md`).
-Next: more EasyGCode projects as templates.** Hosting: public repo + GitHub Pages. Priorities:
+1c (the Grasshopper toolbox, `spiralize`, the Graph tab), 1d (every EasyGCode project from
+general steps; thread and spoon golden, `docs/easygcode-coverage.md`) and most of 1e (bend stool
+with foaming and lampshade golden, vessel from general steps) are done, and so is the Chat tab
+(the agent with the user's key, behind a password proxy; it can switch printers), and feature
+requests (the agent asks for missing steps; Claude Code builds them in Actions;
+`docs/feature-requests.md`). Next: the container and coat hanger as templates.** Hosting: public repo + GitHub Pages. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.

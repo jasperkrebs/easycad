@@ -1,0 +1,101 @@
+easycad 0.1
+project "Vessel"
+printer "Klipper pellet"
+note "EasyGCode's vessel from general steps: a cross-section that a radius profile resizes up the wall, cross-fading into a rounded star at the top whose inner corners can rise above the rim (a non-planar top). One continuous spiral prints the wall; layers come closer where it leans out, each still extruded for a full layer (the squeeze that holds an overhang)."
+note "The bottom rounds into the wall through a fillet (one line from the centre of the bottom up to the rim), or is filled with rings (staircase, zipper or spiral), or left open."
+
+group "Shape"
+param shape      = "circle" of ["circle", "ellipse", "squircle", "rounded rectangle", "polygon", "star"] "Cross-section"
+param size       = 30 mm   in 5..150                "Size (radius)"
+param aspect     = 0.7     in 0.2..1 step 0.05      "Ellipse, rectangle: width ÷ length"
+param corner     = 8 mm    in 0..50                 "Rectangle corner radius"
+param sides      = 6       in 3..16 step 1          "Polygon sides, star points"
+param star_inner = 50 %    in 10..95                "Star's inner corners"
+param squareness = 4       in 1..10 step 0.5        "Squircle exponent"
+param height     = 60 mm   in 5..400                "Height"
+
+group "Profile (radius × the cross-section)"
+param bottom_scale = 1     in 0.3..3 step 0.05      "At the bottom"
+param mid_scale    = 1     in 0.3..3 step 0.05      "In the middle"
+param mid_at       = 50 %  in 5..95                 "Middle point's height"
+param top_scale    = 1     in 0.3..3 step 0.05      "At the top"
+
+group "Top"
+param top_star   = false                            "Cross-fade into a rounded star"
+param top_points = 5       in 2..24 step 1          "Star points"
+param top_outer  = 35 mm   in 5..200                "Star tips (radius)"
+param top_inner  = 18 mm   in 2..200                "Star inner corners (radius)"
+param lift       = 0 mm    in 0..25                 "Lift the inner corners at the rim (non-planar)"
+param flat_top   = true                             "Flat closing turn (off: open spiral)"
+
+group "Bottom"
+param bottom        = "fillet" of ["fillet", "staircase", "zipper", "spiral", "open"] "Bottom"
+param fillet        = 10 mm in 1..100               "Fillet height (bottom into wall)"
+param bottom_layers = 3     in 1..20 step 1         "Bottom layers (ring fills)"
+
+group "Print"
+param layer = 0.6 mm in 0.1..2 step 0.05            "Layer height"
+param line  = 2 mm   in 0.4..6 step 0.1             "Line width"
+param flow  = 20     in 1..100                      "Flow (mm³/s)"
+param pace  = 100 %  in 0..100                      "Closer layers on overhangs"
+
+# ---- The cross-section, its seam at the back (+Y), 240 points so it can blend into the top.
+k_shape  = index_of(["circle", "ellipse", "squircle", "rounded rectangle", "polygon", "star"], shape)
+section0 = pick(less(k_shape, 0.5), circle(size), pick(less(k_shape, 1.5), ellipse(size * aspect, size), pick(less(k_shape, 2.5), superellipse(size, size, squareness), pick(less(k_shape, 3.5), rectangle(2 * size * aspect, 2 * size, corner), pick(less(k_shape, 4.5), polygon(sides, size), star(sides, size, size * star_inner))))))
+outline  = section0 |> rotate(90) |> resample(240)
+
+# The top: the same cross-section, or a rounded star (a closed spline through a star's corners).
+star_top = catmull_rom(vertices(star(top_points, top_outer, top_inner) |> rotate(90)), closed: true) |> resample(240)
+top      = pick(top_star, star_top, outline)
+
+# ---- The radius profile: a spline through (scale, height fraction), read as a table.
+profile  = catmull_rom([[bottom_scale, 0, 0], [mid_scale, 0, mid_at], [top_scale, 0, 1]])
+prof_h   = sample(z, vertices(profile))
+prof_s   = sample(x, vertices(profile))
+# The wall snaps to whole layers.
+wall_h   = max(1, round(height / layer)) * layer
+
+# ---- The fillet: the bottom, scaled down, rounds into the wall along a quarter circle (tilted to
+# meet a wall that leans), starting flat on the first layer.
+filleted = less(index_of(["fillet", "staircase", "zipper", "spiral", "open"], bottom), 0.5)
+fillet_h = min(fillet, (wall_h - layer) * 0.95)
+reach    = item(bounds(sqrt(sample(x, vertices(outline)) ^ 2 + sample(y, vertices(outline)) ^ 2)), 1) * bottom_scale
+flat_s   = max(0.05 * bottom_scale, bottom_scale - fillet_h / reach)
+end_h    = (layer + fillet_h) / wall_h
+end_s    = graph(prof_h, prof_s, end_h)
+end_lean = max(0, atan2((graph(prof_h, prof_s, min(1, end_h + 0.01)) - graph(prof_h, prof_s, max(0, end_h - 0.01))) * reach / bottom_scale, 0.02 * wall_h))
+phi_max  = 90 - min(end_lean, 85)
+arc_r    = fillet_h / max(0.000001, 1 - cos(phi_max))
+fz       = series(0, 1, 25) / 24 * fillet_h
+fs       = flat_s + (end_s - flat_s) * sin(acos(clamp(1 - fz / arc_r, -1, 1))) / max(0.000001, sin(phi_max))
+fillet_sections = tween(outline, top, (layer + fz) / wall_h) |> scale(x: fs, y: fs) |> move(z: layer + fz)
+
+# ---- The wall: the cross-section blending into the top and resized by the profile, up to the rim.
+wall_t   = series(0, 1, 41) / 40
+from_h   = pick(filleted, layer + fillet_h, 0)
+wall_f   = (from_h + wall_t * (wall_h - from_h)) / wall_h
+wall_s   = graph(prof_h, prof_s, wall_f)
+sections = tween(outline, top, wall_f) |> scale(x: wall_s, y: wall_s) |> move(z: wall_f * wall_h)
+wall     = loft(pick(filleted, flatten([fillet_sections, item(sections, series(1, 1, 40))]), sections))
+
+# Layers, closer where the wall leans out; then the star's inner corners lifted, more towards the
+# rim (by their place around the star).
+top_pts  = vertices(star_top)
+top_ang  = mod(atan2(sample(y, top_pts), sample(x, top_pts)) - 89.999, 360) - 0.001
+top_w    = clamp((top_outer - sqrt(sample(x, top_pts) ^ 2 + sample(y, top_pts) ^ 2)) / max(0.001, top_outer - top_inner), 0, 1)
+raise    = pick(top_star, lift * clamp(z / wall_h, 0, 1) * graph(top_ang, top_w, mod(atan2(y, x) - 89.999, 360) - 0.001), 0)
+layers   = contour(wall, layer, pace: pace) |> move(z: raise)
+spiral   = spiralize(layers, width: line, flow: flow, flat_top: flat_top, ramp: pick(filleted, false, true)) |> bead(layer: layer)
+
+# ---- Bottoms. The fillet's flat part: a spiral from the centre out to where the fillet starts.
+flat     = outline |> scale(x: flat_s, y: flat_s)
+centre_out = link_rings(reverse(rings(flat, line)), "spiral", line)
+rounded  = join([toolpath(centre_out, width: line, layer: layer, flow: flow), spiral])
+# Ring fills one line inside the wall, stacked; then the wall from the bed.
+style    = pick(filleted, "staircase", pick(less(index_of(["fillet", "staircase", "zipper", "spiral", "open"], bottom), 3.5), bottom, "staircase"))
+fill     = link_rings(rings(offset(outline |> scale(x: bottom_scale, y: bottom_scale), -line), line), style, line)
+ringed   = join([toolpath(fill, width: line, layer: layer, flow: flow) |> stack(bottom_layers, lift: 0), spiral])
+path     = pick(filleted, rounded, pick(less(index_of(["fillet", "staircase", "zipper", "spiral", "open"], bottom), 3.5), ringed, spiral))
+
+show wall, path
+print path

@@ -82,11 +82,17 @@ What's left as a risk, plainly:
 Steps 1 and 2 are required: without them nothing gets built. Step 3 saves you a tap per
 request.
 
-1. **Let Claude Code run in Actions.** Pick one, as a repository secret (Settings → Secrets
-   and variables → Actions):
-   - `CLAUDE_CODE_OAUTH_TOKEN`: uses your Claude subscription. Make it on your computer with
-     `claude setup-token`, then paste it into the secret (not into a chat);
-   - `ANTHROPIC_API_KEY`: pay per use. The same key as the proxy's works.
+1. **Let Claude Code run in Actions.** As a repository secret (Settings → Secrets and
+   variables → Actions):
+   - **`CLAUDE_CODE_OAUTH_TOKEN` (recommended): your Claude subscription.** Make it on your
+     computer with `claude setup-token` (it's valid for a year; make a new one then), and paste
+     it into the secret, never into a chat. Builds count against your plan's usage limits;
+     a build that hits a limit fails and is tried again later (three attempts), and *Run
+     workflow* starts it again once the limit resets;
+   - `ANTHROPIC_API_KEY`: pay per use, no plan limits. The same key as the proxy's works.
+
+   With both set, the subscription is used and the key only when the token is missing (the
+   workflow makes sure of that: Claude Code alone would prefer the key).
 2. **Allow workflows to write.** Settings → Actions → General → Workflow permissions:
    - "Read and write permissions";
    - and tick "Allow GitHub Actions to create and approve pull requests".
@@ -115,14 +121,31 @@ Optional:
 
 - **Building a step** is a long Claude Code session: reading the code, writing the step and
   tests, running the checks, fixing what fails.
-  - Expect from about one to a few dollars of API use per request; more for hard ones and for
-    retries.
-  - With `CLAUDE_CODE_OAUTH_TOKEN` it counts against your subscription's usage instead.
+  - With `CLAUDE_CODE_OAUTH_TOKEN` (recommended) it's part of what your subscription already
+    pays for: it counts against its usage limits, nothing more.
+  - With an API key, expect from about one to a few dollars per request; more for hard ones and
+    for retries.
   - The workflow caps a run at 300 turns and two and a half hours, and a request at three
     attempts.
 - **Answering** ("existing steps can do it") is much cheaper.
 - **GitHub Actions** minutes are free for public repositories.
 - **Filing and checking** costs nothing: the app checks the public issue, no token needed.
+
+## Your subscription, the API key and the in-app agent
+
+- **The builder runs on your subscription** (above): the app's agent files the request, GitHub
+  starts Claude Code with your subscription token, nobody copies anything.
+- **The in-app agent can't use your subscription.** Anthropic's terms let an app call Claude only
+  with an API key; a claude.ai login or subscription token may not be used by (or stored in) an
+  app like EasyCAD or its proxy. So the Chat tab stays on an API key, billed per use (small for
+  tuning: a few cents a message; Haiku for small edits).
+- **The other way round works:** your Claude app (desktop, phone, web), on your subscription,
+  can work on EasyCAD through a custom connector (a small MCP server, for example on the proxy,
+  that offers the same tools as the Chat tab: read and edit the recipe, move settings, look,
+  switch printers, request a step). That needs the project to live where both can reach it
+  (synced through the proxy), so it's a feature of its own: not built yet.
+- Claude Code's scheduled and API-started sessions on claude.ai ("routines") can be started over
+  HTTP too, but their GitHub triggers don't include issues, and Actions already does the job.
 
 ## Which model for the in-app agent?
 

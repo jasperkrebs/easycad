@@ -650,13 +650,16 @@ pub struct SpiralInfo {
 /// opening turn holds layer 1's shape while it climbs from the bottom curve with extrusion
 /// ramping up, and a flat closing turn on the top layer ramps it back down. Flat, evenly spaced
 /// layers give exactly `vase_spiral`'s toolpath. Point `j` of every layer must be the "same"
-/// point (curves made from one another by tweens and moves are).
+/// point (curves made from one another by tweens and moves are). Without `ramp`, the spiral
+/// carries on from something printed before (EasyGCode's flat bottom rounding into a wall): the
+/// opening turn blends the bottom layer into the next like every other turn, at full extrusion.
 pub fn spiralize(
     layers: &[&Curve],
     width: f64,
     speed: f64,
     flow: f64,
     flat_top: bool,
+    ramp: bool,
     max_points: usize,
 ) -> Result<(Toolpath, SpiralInfo), String> {
     if layers.len() < 2 {
@@ -732,9 +735,12 @@ pub fn spiralize(
     for j in 0..m {
         let u = j as f64 / steps;
         let (a, b) = (ring(0, j), ring(1, j));
-        let p = [b[0], b[1], a[2] + (b[2] - a[2]) * u];
-        let ramp = (u + (j as f64 - 1.0) / steps) / 2.0;
-        moves.push((p, ramp, u, height(1, j)));
+        if ramp {
+            let p = [b[0], b[1], a[2] + (b[2] - a[2]) * u];
+            moves.push((p, (u + (j as f64 - 1.0) / steps) / 2.0, u, height(1, j)));
+        } else {
+            moves.push((lerp3(a, b, u), 1.0, u, height(1, j)));
+        }
     }
     // The spiral: each turn blends one layer into the next.
     for k in 1..n {
@@ -742,7 +748,7 @@ pub fn spiralize(
             let u = j as f64 / steps;
             let p = lerp3(ring(k, j), ring(k + 1, j), u);
             // The move into the first point of turn 1 still finishes the ramp.
-            let flow = if k == 1 && j == 0 {
+            let flow = if ramp && k == 1 && j == 0 {
                 (1.0 + (steps - 1.0) / steps) / 2.0
             } else {
                 1.0
@@ -756,7 +762,7 @@ pub fn spiralize(
     for j in 0..=(if flat_top { m } else { 0 }) {
         let u = j as f64 / steps;
         let flow = if j == 0 {
-            if n == 1 {
+            if ramp && n == 1 {
                 (1.0 + (steps - 1.0) / steps) / 2.0
             } else {
                 1.0

@@ -84,8 +84,16 @@ Split into small steps (15 Oct):
   in-app agent can't build something, it files a request; a Claude Code session builds the step,
   the workflow checks and ships it, and the chat carries on
   ([feature-requests.md](feature-requests.md)).
-- **1e** ← *next*: the vessel, lampshade, container, coat hanger and bend stool as templates
-  (recipe work now); formatter, presets, project library on the device.
+- **1e: EasyGCode's projects as templates** ✓ *mostly done 17 Oct 2026* (see
+  [devlog.md](devlog.md))
+  - The bend stool with **foaming** (new machine-event steps: temperatures, waits, speed and
+    extrusion overrides) and the **lampshade** with every shade (`vase_revolve`): their G-code
+    matches EasyGCode's, command for command (four cases each).
+  - The **vessel** from general steps: the bottom rounding into the wall through a fillet, a
+    star top with lifted corners (non-planar), closer layers on overhangs.
+  - The agent can switch printers and change printer settings (`set_printer`).
+- **1f** ← *next*: the container and coat hanger as templates; formatter, presets, project
+  library on the device.
 The full Phase 1 scope:
 - **Definition language v0** (parser, formatter, clear errors) and the evaluator (dependency
   graph, caching, list handling).
@@ -99,7 +107,8 @@ The full Phase 1 scope:
     golden-tested against EasyGCode).
 - **Project files:** save, open, presets, plus a project library on the device and
   export/import as files.
-- **First templates:** EasyGCode's *spiral disc* (done) and *vessel* rebuilt as projects.
+- **First templates:** EasyGCode's *spiral disc*, thread connector, spoon, bend stool and
+  lampshade (golden) and *vessel* (from general steps) rebuilt as projects.
 
 **Done when:** you open the vessel project on your phone, change settings, export G-code, and
 it prints like EasyGCode's. (The spiral disc already does: same G-code as EasyGCode's.)

@@ -481,6 +481,7 @@ pub(super) fn spiralize(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         a.num(2)?,
         super::flow(a, 3)?,
         a.flag(4)?,
+        a.flag(5)?,
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
     if info.thickest > 0.8 * width {
