@@ -238,6 +238,14 @@ pub static NODES: &[Node] = &[
         run: Run::Op(toolbox::flatten),
     },
     Node {
+        name: "graft",
+        group: "Numbers & lists",
+        inputs: &[all("list", "List", "any list")],
+        output: "List",
+        doc: "Each item in a list of its own, so a step that takes a whole list runs once per item: `toolpath(graft(rings), …)` makes a toolpath per ring, for `join` to hop between. (Grasshopper: Graft Tree)",
+        run: Run::Op(toolbox::graft),
+    },
+    Node {
         name: "pick",
         group: "Numbers & lists",
         inputs: &[
@@ -267,6 +275,34 @@ pub static NODES: &[Node] = &[
         output: "Number",
         doc: "All the numbers added up. (Grasshopper: Mass Addition)",
         run: Run::Op(curve_tools::sum),
+    },
+    Node {
+        name: "bounds",
+        group: "Numbers & lists",
+        inputs: &[all("list", "List<Number>", "")],
+        output: "List<Number>",
+        doc: "The smallest and the largest number of a list, as [smallest, largest]: `item(bounds(xs), 1)` is the largest. (Grasshopper: Bounds)",
+        run: Run::Op(curve_tools::bounds),
+    },
+    Node {
+        name: "graph",
+        group: "Numbers & lists",
+        inputs: &[
+            all(
+                "xs",
+                "List<Number>",
+                "the graph's x values, never decreasing",
+            ),
+            all("ys", "List<Number>", "its y values, one for each x"),
+            req(
+                "x",
+                "Number | Field",
+                "where to read it; a field gives a field",
+            ),
+        ],
+        output: "Number | Field",
+        doc: "A piecewise-linear graph through the points (x, y), read at `x`, and flat beyond its ends: a table that blends between its rows. `graph(heights, angles, z)` is a field of height. (Grasshopper: Graph Mapper)",
+        run: Run::Op(curve_tools::graph),
     },
     Node {
         name: "accumulate",
@@ -1244,6 +1280,55 @@ pub static NODES: &[Node] = &[
         run: Run::Op(vase_spiral),
     },
     Node {
+        name: "vase_revolve",
+        group: "Toolpaths",
+        inputs: &[
+            req(
+                "profile",
+                "Curve",
+                "radius (x) against height (z), drawn in the XZ plane from the bottom up",
+            ),
+            req(
+                "layer",
+                "Length | Field",
+                "rise per turn; a field is read once per turn, at its middle",
+            ),
+            req(
+                "width",
+                "Length | Field",
+                "line width; a field is read once per turn, at its middle",
+            ),
+            opt("speed", "Speed", 40.0, "print speed in mm/s"),
+            opt(
+                "flow",
+                "Number | Field",
+                0.0,
+                "volumetric flow in mm³/s (sets the speed); a field is read once per turn",
+            ),
+            opt(
+                "bead_layer",
+                "Length",
+                0.0,
+                "extrude every turn for this layer height instead of its rise (0: its rise)",
+            ),
+            opt(
+                "tolerance",
+                "Length",
+                0.05,
+                "how far a chord may stray from the true circle (at least 24 points per turn)",
+            ),
+            opt(
+                "seam",
+                "Angle",
+                90.0,
+                "where each turn starts, degrees from +X (90: the back)",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed, a flat closing turn ramps it down.",
+        run: Run::Op(vase_revolve),
+    },
+    Node {
         name: "spiralize",
         group: "Toolpaths",
         inputs: &[
@@ -2117,6 +2202,42 @@ fn vase_spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         wall,
         settings,
         a.flag(5)?,
+        ctx.remaining().min(MAX_PATH_POINTS),
+    )?;
+    ctx.spend(path.points.len())?;
+    Ok(Value::Toolpath(Rc::new(path)))
+}
+
+fn vase_revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let profile = a.curve(0)?;
+    let (rise, width, flow) = (a.field(1)?, a.field(2)?, a.field(4)?);
+    let read = |f: &Rc<Field>, what: &'static str| {
+        let f = f.clone();
+        move |p: P3| -> Result<f64, String> {
+            let v = f.at(p);
+            if v.is_finite() {
+                Ok(v)
+            } else {
+                Err(format!("`{what}` has no value at height {:.2}", p[2]))
+            }
+        }
+    };
+    let (rise, width, flow) = (
+        read(&rise, "layer"),
+        read(&width, "width"),
+        read(&flow, "flow"),
+    );
+    let path = toolpath::vase_revolve(
+        profile,
+        &toolpath::PerTurn {
+            rise: &rise,
+            width: &width,
+            flow: &flow,
+        },
+        a.num(3)?,
+        a.num(5)?,
+        a.num(6)?,
+        a.num(7)?,
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
     ctx.spend(path.points.len())?;

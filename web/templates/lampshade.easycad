@@ -1,0 +1,222 @@
+easycad 0.1
+project "Lampshade"
+printer "Klipper pellet"
+note "EasyGCode's lampshade as a recipe: a threaded throat that screws onto an E27 or E14 lampholder's shade ring, a fillet, then the shade, printed as one vase-mode helix whose layer height is the thread's pitch. For the cone, bell, dome and sphere its G-code matches EasyGCode's command for command (the flat sphere is the same ellipsoid, sampled evenly)."
+note "Shades: a straight cone, a bell, a dome, a sphere, a flat sphere (UFO), or your own shape (`own_shade`: move its points, add more, or ask the AI for a new one). Every shade is a profile (radius against height); the rest of the recipe doesn't care which."
+note "Overhangs get wider beads (or squeezed layers), turn by turn, from the wall's angle. The flow can change from the throat to the shade over the fillet."
+
+group "Socket"
+param socket       = "E27" of ["E27", "E14", "custom"] "Socket"
+param fit          = 0 mm    in -2..2 step 0.1      "Fit tolerance (− is tighter)"
+param thread_d     = 40 mm   in 5..100 step 0.1     "Custom thread diameter"
+param thread_pitch = 2.5 mm  in 0.5..5 step 0.1     "Custom thread pitch"
+
+group "Shade"
+param shape      = "cone" of ["cone", "bell", "dome", "sphere", "flat sphere", "own"] "Shape"
+param throat     = 20 mm   in 0..100 step 1         "Throat length (straight)"
+param fillet     = 10 mm   in 0..100 step 1         "Fillet radius"
+param opening    = 150 mm  in 10..400 step 1        "Bottom opening diameter"
+param transition = 52 mm   in 1..400 step 1         "Transition height"
+param max_angle  = 0 deg   in 0..89 step 1          "Max angle (bell; 0: uncapped)"
+param sphere     = 200 mm  in 20..500 step 1        "Sphere diameter (at its widest)"
+param flatness   = 0.5     in 0.05..1 step 0.05     "Flatness (flat sphere: height ÷ width)"
+param lip        = false                            "Straight lip at the opening (spheres)"
+param lip_length = 10 mm   in 0..100 step 1         "Lip length"
+param lip_fillet = 0 mm    in 0..100 step 1         "Lip fillet (0: the throat's)"
+param wide_down  = false                            "Wide edge down"
+
+group "Own shade"
+param own_at     = 50 %    in 5..95                 "Own shade: middle point's height"
+param own_r      = 50 mm   in 5..250                "Own shade: middle point's radius"
+
+group "Print"
+param line       = 6 mm    in 1..12 step 0.1        "Line width"
+param flow       = 20      in 1..400                "Throat flow (mm³/s)"
+param shade_flow = 0       in 0..400                "Shade flow (mm³/s, 0: as the throat)"
+param flow_ramp  = 0 mm    in 0..200                "Flow ramp height (0: over the fillet)"
+param tolerance  = 0.1 mm  in 0.01..1               "Chord tolerance"
+
+group "Overhangs"
+param compensation = "width" of ["width", "layer height", "off"] "Compensation"
+param strength   = 100 %   in 0..100                "Strength"
+param max_width  = 2.5     in 1..5 step 0.1         "Max line width (× the line)"
+
+group "Brim"
+param brim       = false                            "Brim"
+param brim_lines = 4       in 1..20 step 1          "Brim lines"
+param brim_width = 6 mm    in 0.5..12 step 0.1      "Brim line width"
+param brim_layer = 2.5 mm  in 0.1..5 step 0.05      "Brim layer height"
+param brim_speed = 15      in 1..100                "Brim speed (mm/s)"
+
+# The socket's thread: its pitch is the layer height, so each turn of the helix lays down one
+# turn of thread. The wall's inner face sits on the thread; the nozzle runs half a line outside.
+row   = index_of(["E27", "E14", "custom"], socket)
+pitch = item([2.5, 2, thread_pitch], row)
+r_t   = (item([40, 28, thread_d], row) + fit + line) / 2
+r_b   = opening / 2
+h     = transition
+# Curved shades are sampled every 0.04 rad (2.3°) of wall angle, as EasyGCode samples them.
+flare_step = 0.04 * 180 / pi
+
+# ---- The shades. Each is radius `_r`, height `_z` and wall angle `_a` (degrees from vertical,
+# positive leaning out) along its curve, from the throat's radius at height 0 to the opening.
+cone_a = atan2(r_b - r_t, h)
+cone_r = [r_t, r_b]
+cone_z = [0, h]
+cone_l = [cone_a, cone_a]
+
+# Bell: leaves the throat straight up and bends outward; past `max_angle` it carries on straight.
+dr       = r_b - r_t
+natural  = 2 * atan2(dr, h)
+cap      = pick(max_angle, min(max_angle, 90 - 0.0001 * 180 / pi), natural)
+capped   = less(cap, natural - 0.000001 * 180 / pi)
+bell_on  = greater(dr, 0.000000001) * greater(cap, atan2(dr, h) + 0.000001 * 180 / pi)
+bell_end = pick(capped, cap, natural)
+bell_n   = max(12, ceil(bell_end / flare_step))
+bell_phi = bell_end * series(0, 1, bell_n + 1) / bell_n
+bell_big = pick(capped, (h * tan(cap) - dr) / max(0.000000001, 1 / cos(cap) - 1), h / max(0.000000001, sin(natural)))
+bell_r   = pick(bell_on, flatten([r_t + bell_big * (1 - cos(bell_phi)), pick(capped, [r_b], [])]), cone_r)
+bell_z   = pick(bell_on, flatten([bell_big * sin(bell_phi), pick(capped, [h], [])]), cone_z)
+bell_l   = pick(bell_on, flatten([bell_phi, pick(capped, [cap], [])]), cone_l)
+
+# Dome: leaves the throat steeply and curls back to vertical at the opening.
+dome_on  = greater(dr, 0.000000001)
+dome_top = 2 * atan2(dr, h)
+dome_big = h / max(0.000000001, sin(dome_top))
+dome_n   = max(12, ceil(dome_top / flare_step))
+dome_psi = -dome_top + dome_top * series(0, 1, dome_n + 1) / dome_n
+dome_r   = pick(dome_on, r_b - dome_big + dome_big * cos(dome_psi), cone_r)
+dome_z   = pick(dome_on, h + dome_big * sin(dome_psi), cone_z)
+dome_l   = pick(dome_on, -dome_psi, cone_l)
+
+# Sphere: the throat cuts one hole in it, the opening the other.
+big_r    = sphere / 2
+lat_1    = -acos(clamp(r_t / big_r, -1, 1))
+lat_2    = acos(clamp(r_b / big_r, -1, 1))
+sphere_n = max(16, ceil((lat_2 - lat_1) / flare_step))
+lat      = lat_1 + (lat_2 - lat_1) * series(0, 1, sphere_n + 1) / sphere_n
+sphere_r = big_r * cos(lat)
+sphere_z = big_r * sin(lat) - big_r * sin(lat_1)
+sphere_l = -lat
+
+# Flat sphere: an ellipsoid flattened to `flatness` of its width.
+flat_b   = big_r * clamp(flatness, 0.02, 1)
+flat_t   = lat_1 + (lat_2 - lat_1) * series(0, 1, 401) / 400
+flat_r   = big_r * cos(flat_t)
+flat_z   = flat_b * sin(flat_t) - flat_b * sin(lat_1)
+flat_l   = -atan(big_r / flat_b * tan(flat_t))
+
+# Your own shade: a smooth curve from the throat to the opening through points in between
+# (radius, 0, height). Its wall angle comes from its neighbours on each side.
+own_shade = catmull_rom([[r_t, 0, 0], [own_r, 0, h * own_at], [r_b, 0, h]])
+own_pts   = vertices(own_shade)
+own_rr    = sample(x, own_pts)
+own_zz    = sample(z, own_pts)
+own_i     = series(0, 1, count(own_pts))
+own_next  = min(own_i + 1, count(own_pts) - 1)
+own_prev  = max(own_i - 1, 0)
+own_l     = atan2(item(own_rr, own_next) - item(own_rr, own_prev), item(own_zz, own_next) - item(own_zz, own_prev))
+
+# The chosen shade.
+k_shape = index_of(["cone", "bell", "dome", "sphere", "flat sphere", "own"], shape)
+fl_r = pick(less(k_shape, 0.5), cone_r, pick(less(k_shape, 1.5), bell_r, pick(less(k_shape, 2.5), dome_r, pick(less(k_shape, 3.5), sphere_r, pick(less(k_shape, 4.5), flat_r, own_rr)))))
+fl_z = pick(less(k_shape, 0.5), cone_z, pick(less(k_shape, 1.5), bell_z, pick(less(k_shape, 2.5), dome_z, pick(less(k_shape, 3.5), sphere_z, pick(less(k_shape, 4.5), flat_z, own_zz)))))
+fl_l = pick(less(k_shape, 0.5), cone_l, pick(less(k_shape, 1.5), bell_l, pick(less(k_shape, 2.5), dome_l, pick(less(k_shape, 3.5), sphere_l, pick(less(k_shape, 4.5), flat_l, own_l)))))
+
+# ---- The fillet: a tangent arc from the vertical throat onto the shade, where the shade first
+# reaches it (EasyGCode's blend). Too big to touch this shade: as big as it can be.
+fl_n    = count(fl_r)
+fl_rest = series(1, 1, fl_n - 1)
+f_r     = max(0, min(fillet, item(bounds((item(fl_r, fl_rest) - r_t) / max(0.000000000001, 1 - cos(item(fl_l, fl_rest)))), 1) * (1 - 0.000000000001)))
+g       = fl_r + f_r * cos(fl_l) - (r_t + f_r)
+blended = greater(f_r, 0.000000001) * less(item(g, 0), -0.000000001)
+hit     = index_of(flatten([[0], 1 - less(item(g, fl_rest), 0), [1]]), 1)
+g_a     = item(g, hit - 1)
+f       = clamp(g_a / min(-0.000000000001, g_a - item(g, hit)), 0, 1)
+p_r     = item(fl_r, hit - 1) + (item(fl_r, hit) - item(fl_r, hit - 1)) * f
+p_z     = item(fl_z, hit - 1) + (item(fl_z, hit) - item(fl_z, hit - 1)) * f
+p_l     = item(fl_l, hit - 1) + (item(fl_l, hit) - item(fl_l, hit - 1)) * f
+z_start = p_z - f_r * sin(p_l)
+arc_n   = max(4, ceil(abs(p_l) / flare_step))
+arc_phi = p_l * series(0, 1, arc_n + 1) / arc_n
+arc_r   = r_t + f_r * (1 - cos(arc_phi))
+arc_z   = z_start + f_r * sin(arc_phi)
+fl_tail = series(hit, 1, max(fl_n - hit, 1))
+cur_r   = pick(blended, flatten([[p_r], item(fl_r, fl_tail)]), fl_r)
+cur_z   = pick(blended, flatten([[p_z], item(fl_z, fl_tail)]), fl_z)
+cur_l   = pick(blended, flatten([[p_l], item(fl_l, fl_tail)]), fl_l)
+
+# ---- The lip (spheres): the same blend, mirrored, turns the wall back to vertical at the
+# opening, and a straight lip carries on from there.
+lip_on   = pick(lip, greater(k_shape, 2.5) * less(k_shape, 4.5), 0)
+cur_top  = item(cur_z, count(cur_z) - 1)
+rv_r     = reverse(cur_r)
+rv_z     = cur_top - reverse(cur_z)
+rv_l     = -reverse(cur_l)
+rv_n     = count(rv_r)
+rv_rest  = series(1, 1, rv_n - 1)
+lf       = max(0, min(pick(lip_fillet, lip_fillet, max(0, fillet)), item(bounds((item(rv_r, rv_rest) - r_b) / max(0.000000000001, 1 - cos(item(rv_l, rv_rest)))), 1) * (1 - 0.000000000001)))
+g2       = rv_r + lf * cos(rv_l) - (r_b + lf)
+lip_arc  = greater(lf, 0.000000001) * less(item(g2, 0), -0.000000001)
+hit2     = index_of(flatten([[0], 1 - less(item(g2, rv_rest), 0), [1]]), 1)
+g2_a     = item(g2, hit2 - 1)
+f2       = clamp(g2_a / min(-0.000000000001, g2_a - item(g2, hit2)), 0, 1)
+q_r      = item(rv_r, hit2 - 1) + (item(rv_r, hit2) - item(rv_r, hit2 - 1)) * f2
+q_z      = item(rv_z, hit2 - 1) + (item(rv_z, hit2) - item(rv_z, hit2 - 1)) * f2
+q_l      = item(rv_l, hit2 - 1) + (item(rv_l, hit2) - item(rv_l, hit2 - 1)) * f2
+z_start2 = q_z - lf * sin(q_l)
+arc2_n   = max(4, ceil(abs(q_l) / flare_step))
+arc2_phi = q_l * series(0, 1, arc2_n + 1) / arc2_n
+arc2_r   = r_b + lf * (1 - cos(arc2_phi))
+arc2_z   = z_start2 + lf * sin(arc2_phi)
+rv_tail  = series(hit2, 1, max(rv_n - hit2, 1))
+# Back the right way up: what's left of the shade, the lip's arc down to vertical, the lip.
+arc2_down = series(arc2_n - 1, -1, arc2_n)
+lip_long  = greater(lip_length, 0.000000001)
+lipped_r  = pick(lip_arc, flatten([reverse(item(rv_r, rv_tail)), [q_r], item(arc2_r, arc2_down), pick(lip_long, [item(arc2_r, 0)], [])]), flatten([cur_r, pick(lip_long, [r_b], [])]))
+lipped_z  = pick(lip_arc, flatten([cur_top - reverse(item(rv_z, rv_tail)), [cur_top - q_z], cur_top - item(arc2_z, arc2_down), pick(lip_long, [cur_top - item(arc2_z, 0) + lip_length], [])]), flatten([cur_z, pick(lip_long, [cur_top + lip_length], [])]))
+lipped_l  = pick(lip_arc, flatten([-reverse(item(rv_l, rv_tail)), [-q_l], -item(arc2_phi, arc2_down), pick(lip_long, [0], [])]), flatten([cur_l, pick(lip_long, [0], [])]))
+end_r     = pick(lip_on, lipped_r, cur_r)
+end_z     = pick(lip_on, lipped_z, cur_z)
+end_l     = pick(lip_on, lipped_l, cur_l)
+
+# ---- The whole profile: the throat, the fillet, then the shade (and lip).
+throat_on = greater(throat, 0.000000001)
+shift     = pick(blended, throat - z_start, throat)
+end_i     = series(blended, 1, count(end_r) - blended)
+prof_r    = flatten([pick(throat_on, [r_t, r_t], [r_t]), pick(blended, arc_r, []), item(end_r, end_i)])
+prof_z    = flatten([pick(throat_on, [0, throat], [0]), pick(blended, arc_z + shift, []), item(end_z, end_i) + shift])
+prof_l    = flatten([pick(throat_on, [0, 0], [0]), pick(blended, arc_phi, []), item(end_l, end_i)])
+fillet_top = pick(blended, item(arc_z, arc_n) + shift, throat)
+
+# Printed throat down, or wide edge down (the profile turned over).
+top_z   = item(prof_z, count(prof_z) - 1)
+print_r = pick(wide_down, reverse(prof_r), prof_r)
+print_z = pick(wide_down, top_z - reverse(prof_z), prof_z)
+print_l = pick(wide_down, -reverse(prof_l), prof_l)
+profile = polyline(point(print_r, 0, print_z))
+wall    = revolve(profile)
+
+# ---- Turn by turn: wider beads, or a shorter rise squeezing the bead, where the wall leans;
+# the flow ramps from the throat's to the shade's over the fillet.
+comp    = index_of(["width", "layer height", "off"], compensation)
+lean_at = graph(print_z, print_l, z)
+c       = max(0.05, cos(abs(lean_at)))
+width   = pick(less(comp, 0.5), line * min(max_width, 1 + strength * (1 / c - 1)), line)
+rise    = pick(less(abs(comp - 1), 0.5), pitch * (1 - strength * (1 - c)), pitch)
+from_throat = pick(wide_down, top_z - z, z)
+ramp_h  = pick(flow_ramp, flow_ramp, fillet_top - throat)
+ramp    = pick(greater(ramp_h, 0.000000001), clamp((from_throat - throat) / max(ramp_h, 0.000000001), 0, 1), 1 - less(from_throat, throat))
+flow_at = flow + ramp * (pick(shade_flow, shade_flow, flow) - flow)
+
+shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(less(abs(comp - 1), 0.5), pitch, 0), tolerance: tolerance)
+
+# A brim around the first turn, outermost ring first, hopping between rings and into the shade.
+first_rise  = sample(rise, [0, 0, min(top_z, sample(rise, [0, 0, 0]) / 2)])
+r_first     = graph(print_z, print_r, min(top_z, first_rise))
+brim_rings  = circle(r_first + brim_width / 2 + line / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
+brimmed     = join(flatten([toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed), [shade]]), clear: 2 * brim_layer)
+path        = pick(brim, brimmed, shade)
+
+show wall, path
+print path

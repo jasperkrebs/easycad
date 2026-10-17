@@ -22,6 +22,7 @@ const TEMPLATES = [
   { id: 'thread-connector', name: 'Thread connector (from EasyGCode)' },
   { id: 'spoon', name: 'Spoon (from EasyGCode)' },
   { id: 'bend-stool', name: 'Bend stool, with foaming (from EasyGCode)' },
+  { id: 'lampshade', name: 'Lampshade, every shade (from EasyGCode)' },
   { id: 'cut-cylinder', name: 'Cut cylinder (tilted layers)' },
   { id: 'turned-vase', name: 'Turned vase (geometry only)' },
 ];

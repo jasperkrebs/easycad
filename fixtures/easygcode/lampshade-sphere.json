@@ -1,0 +1,67 @@
+{
+  "project": "lamp",
+  "printer": {
+    "mode": "pellet",
+    "multiplier": 1,
+    "includeStartEnd": true,
+    "endLift": 50,
+    "filament": {
+      "diameter": 1.75,
+      "nozzle": 205,
+      "bed": 60,
+      "fan": 100
+    },
+    "pellet": {
+      "up": 210,
+      "mid": 210,
+      "down": 210,
+      "bed": 50,
+      "pa": 0.3,
+      "purge": 5000,
+      "fan": 0
+    }
+  },
+  "lineWidth": 6,
+  "printFeed": 1200,
+  "travelFeed": 6000,
+  "tolerance": 0.1,
+  "centerX": 125,
+  "centerY": 125,
+  "brim": {
+    "enabled": false,
+    "linesOuter": 4,
+    "lineWidth": 6,
+    "layerHeight": 2.5,
+    "feed": 900,
+    "multiplier": 0
+  },
+  "lamp": {
+    "socket": "e27",
+    "customDiameter": 40,
+    "customPitch": 2.5,
+    "fitTolerance": 0,
+    "shape": "sphere",
+    "throatLength": 12,
+    "fillet": 10,
+    "bottomDiameter": 120,
+    "transitionHeight": 52,
+    "maxAngle": 0,
+    "sphereDiameter": 220,
+    "flatRatio": 0.5,
+    "lip": {
+      "enabled": true,
+      "length": 8,
+      "fillet": 0
+    },
+    "orientation": "wide",
+    "compMode": "width",
+    "compStrength": 100,
+    "compMaxMult": 2,
+    "flowFeed": {
+      "enabled": true,
+      "rate": 18,
+      "shadeRate": 30,
+      "transitionHeight": 0
+    }
+  }
+}

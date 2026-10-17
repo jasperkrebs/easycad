@@ -4,7 +4,7 @@
 //! absolute positioning (G90) with relative extrusion (M83); every `G1 E` is the segment's
 //! volume (bead area × length × flow) in mm³ for the pellet printer or in mm of filament for
 //! the filament printer; coordinates with 3 decimals and E with 5, rounded like JavaScript's
-//! `toFixed`; F only when it changes; the part fan on after the first layer; the start and end
+//! `toFixed`; F whenever the feed changes (before rounding, as EasyGCode compares it); the part fan on after the first layer; the start and end
 //! blocks copied verbatim from EasyGCode; and the toolpath's machine events (fan levels, dwells,
 //! temperatures and waits for them, speed and extrusion overrides) in the commands EasyGCode
 //! uses for them. Golden tests compare the output with G-code produced by EasyGCode itself
@@ -349,7 +349,10 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
         fixed(stats.path_length_mm, 1),
         fixed(stats.volume_mm3, 1)
     ));
-    for (i, s) in path.parts.iter().enumerate() {
+    // A toolpath that changes its bead turn by turn has a part per turn: the first few are
+    // enough to read here.
+    const LISTED_PARTS: usize = 8;
+    for (i, s) in path.parts.iter().enumerate().take(LISTED_PARTS) {
         let speed = match s.flow {
             Some(q) => format!("flow {} mm3/s", num(q)),
             None => format!("feed {} mm/min", round(s.speed * 60.0)),
@@ -360,6 +363,12 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
             num(s.width),
             num(s.layer),
             fixed(s.area(), 3)
+        ));
+    }
+    if path.parts.len() > LISTED_PARTS {
+        lines.push(format!(
+            "; … and {} more parts",
+            path.parts.len() - LISTED_PARTS
         ));
     }
     lines.push(match mode {
@@ -396,7 +405,9 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
     sorted.sort_by_key(|e| e.after); // stable: events at one point keep their order
     let mut events = sorted.iter().peekable();
     let mut prev: Option<[f64; 3]> = None;
-    let mut last_feed: Option<i64> = None;
+    // The feed as it was last written, before rounding: like EasyGCode, F is written whenever
+    // the feed changes, even when it rounds to the same number.
+    let mut last_feed: Option<f64> = None;
     let mut first_extrude = true;
     let mut max_z = 0.0f64;
     let layers = path.layer_starts.len().max(1);
@@ -409,14 +420,14 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
         let cur = [p[0] + cx, p[1] + cy, p[2]];
         let travel = i == 0 || path.travel.get(i).copied().unwrap_or(false);
         if travel {
-            let feed = round(travel_feed);
             lines.push(format!(
-                "G0 X{} Y{} Z{} F{feed}",
+                "G0 X{} Y{} Z{} F{}",
                 f3(cur[0]),
                 f3(cur[1]),
-                f3(cur[2])
+                f3(cur[2]),
+                round(travel_feed)
             ));
-            last_feed = Some(feed);
+            last_feed = Some(travel_feed);
             prev = Some(cur);
         } else if let Some(from) = prev {
             let seg = dist3(from, cur);
@@ -432,9 +443,9 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
                     f3(cur[2]),
                     f5(volume * e_factor)
                 );
-                let feed = round(s.feed_for(area) * path.speed_factor(i));
+                let feed = s.feed_for(area) * path.speed_factor(i);
                 if last_feed != Some(feed) || first_extrude {
-                    let _ = write!(line, " F{feed}");
+                    let _ = write!(line, " F{}", round(feed));
                     last_feed = Some(feed);
                 }
                 lines.push(line);

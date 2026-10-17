@@ -360,3 +360,116 @@ none = stack(layer, 0)"#);
             .contains("percent")
     );
 }
+
+#[test]
+fn every_lampshade_shade_prints_both_ways_up() {
+    use easycad_lang::{Literal, set_values};
+    let template = include_str!("../../../web/templates/lampshade.easycad");
+    for shape in ["cone", "bell", "dome", "sphere", "flat sphere", "own"] {
+        for (wide, lip, brim, comp) in [
+            (false, false, false, "width"),
+            (true, true, true, "layer height"),
+            (false, true, false, "off"),
+        ] {
+            let values: Vec<(String, Literal)> = vec![
+                ("shape".into(), Literal::Text(shape.into())),
+                ("wide_down".into(), Literal::Bool(wide)),
+                ("lip".into(), Literal::Bool(lip)),
+                ("brim".into(), Literal::Bool(brim)),
+                ("compensation".into(), Literal::Text(comp.into())),
+            ];
+            let recipe = set_values(template, &values).unwrap();
+            let (e, v) = step_values(&recipe, Quality::Final);
+            assert!(
+                e.errors().next().is_none(),
+                "{shape} {wide} {lip}: {:?}",
+                e.diagnostics
+            );
+            // The profile always rises, from the bed to the top.
+            let (pts, _) = curve_points(&v, "profile");
+            assert!(pts.windows(2).all(|w| w[1][2] >= w[0][2] - 1e-9), "{shape}");
+            assert!(
+                pts[0][2].abs() < 1e-9 && pts.iter().all(|p| p[0] > 0.0),
+                "{shape}"
+            );
+            let p = e.print.as_ref().unwrap();
+            assert!(p.path.points.len() > 100 && p.stats.layers > 10, "{shape}");
+        }
+    }
+}
+
+#[test]
+fn graphs_bounds_and_grafts() {
+    let v = run(r#"g = graph([0, 10, 10, 20], [1, 2, 5, 6], 15)
+below = graph([0, 10], [1, 2], -5)
+above = graph([0, 10], [1, 2], 50)
+field = graph([0, 10], [0, 100], z)
+at = sample(field, [0, 0, 2.5])
+b = bounds([3, -1, 7, 2])
+leaves = graft([1, 2, 3])
+widths = toolpath(graft([line([0, 0], [10, 0]), line([0, 5], [10, 5])]), width: 1, layer: 0.5)"#);
+    // Between the second 10 and 20: from 5 to 6.
+    assert!((num(&v, "g") - 5.5).abs() < 1e-12);
+    assert_eq!((num(&v, "below"), num(&v, "above")), (1.0, 2.0));
+    assert!((num(&v, "at") - 25.0).abs() < 1e-12);
+    assert_eq!(nums(&v, "b"), vec![-1.0, 7.0]);
+    match v.get("leaves") {
+        Some(Value::List(l)) => assert!(
+            l.items
+                .iter()
+                .all(|x| matches!(x, Value::List(i) if i.items.len() == 1))
+        ),
+        other => panic!("{other:?}"),
+    }
+    // One toolpath per grafted curve.
+    match v.get("widths") {
+        Some(Value::List(l)) => assert_eq!(l.items.len(), 2),
+        other => panic!("{other:?}"),
+    }
+    assert!(error("g = graph([0, 1], [1], 0.5)").contains("as many"));
+    assert!(error("g = graph([1, 0], [1, 2], 0.5)").contains("decrease"));
+}
+
+#[test]
+fn vase_revolve_follows_the_profile_turn_by_turn() {
+    let v = run(
+        r#"profile = polyline([[20, 0, 0], [20, 0, 10], [40, 0, 30]])
+path = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1)
+wide = vase_revolve(profile, layer: 2, width: 3 + greater(z, 10), tolerance: 0.1)
+squeezed = vase_revolve(profile, layer: 2 - greater(z, 10), width: 3, bead_layer: 2, tolerance: 0.1)"#,
+    );
+    let p = path(&v, "path");
+    // 15 turns of 2 mm to 30 mm, then the closing turn; the first holds radius 20 at the back.
+    assert_eq!(p.layers, 15);
+    assert_near(p.points[0], [20.0 * 90f64.to_radians().cos(), 20.0, 0.0]);
+    let top = p.points[p.points.len() - 1];
+    assert!((top[2] - 30.0).abs() < 1e-9 && (top[0].hypot(top[1]) - 40.0).abs() < 1e-9);
+    // Every point sits on the profile: radius 20 up to 10 mm, then 20 + (z - 10).
+    for q in &p.points[1..] {
+        let want = if q[2] <= 10.0 {
+            20.0
+        } else {
+            20.0 + (q[2] - 10.0)
+        };
+        assert!((q[0].hypot(q[1]) - want).abs() < 1e-9, "{q:?}");
+    }
+    // Wider beads above 10 mm: two widths (one part each, the closing turn as the last).
+    let w = path(&v, "wide");
+    let widths: Vec<f64> = w.parts.iter().map(|s| s.width).collect();
+    assert_eq!(widths.first(), Some(&3.0));
+    assert_eq!(widths.last(), Some(&4.0));
+    // A shorter rise above 10 mm, each turn still extruded for the full 2 mm.
+    let s = path(&v, "squeezed");
+    assert_eq!(s.layers, 5 + 20);
+    assert!(s.parts.iter().all(|p| p.layer == 2.0));
+    assert!(
+        error(
+            "p = vase_revolve(polyline([[20, 0, 0], [20, 0, 10], [30, 0, 5]]), layer: 2, width: 3)"
+        )
+        .contains("rise")
+    );
+    assert!(
+        error("p = vase_revolve(polyline([[0, 0, 0], [20, 0, 10]]), layer: 2, width: 3)")
+            .contains("radius")
+    );
+}

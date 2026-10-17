@@ -991,6 +991,245 @@ pub fn join(
     Ok(out)
 }
 
+/// What [`vase_revolve`] reads once per turn, at the point of the profile at the turn's middle:
+/// the turn's rise, its line width and its volumetric flow (0: by speed).
+pub struct PerTurn<'a> {
+    pub rise: &'a dyn Fn(P3) -> Result<f64, String>,
+    pub width: &'a dyn Fn(P3) -> Result<f64, String>,
+    pub flow: &'a dyn Fn(P3) -> Result<f64, String>,
+}
+
+/// One turn of [`vase_revolve`]: where it starts, how far it rises and its settings.
+struct Turn {
+    z: f64,
+    dz: f64,
+    width: f64,
+}
+
+/// A profile of revolution: radius against height, for [`vase_revolve`].
+struct Profile {
+    /// (radius, height), height never decreasing.
+    points: Vec<[f64; 2]>,
+}
+
+impl Profile {
+    /// The radius at height `z` (EasyGCode's `makeLampSampler`): between the last point at or
+    /// below `z` and the next, linearly; the end radii beyond the ends.
+    fn r(&self, z: f64) -> f64 {
+        let pts = &self.points;
+        let n = pts.len();
+        let (first, last) = (pts[0], pts[n - 1]);
+        if z <= first[1] {
+            return first[0];
+        }
+        if z >= last[1] {
+            return last[0];
+        }
+        let (mut lo, mut hi) = (0, n - 1);
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2;
+            if pts[mid][1] <= z {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let (a, b) = (pts[lo], pts[hi]);
+        let span = b[1] - a[1];
+        if span < 1e-9 {
+            return b[0];
+        }
+        let f = ((z - a[1]) / span).clamp(0.0, 1.0);
+        a[0] + (b[0] - a[0]) * f
+    }
+}
+
+/// Vase mode around the Z axis, following a profile of revolution: EasyGCode's lampshade
+/// (`generateLamp` in its gcode.js), whose arithmetic this follows. The profile's x is the
+/// radius and its z the height; it's printed from its lowest point up.
+///
+/// - Turn by turn: the rise and line width are read at the turn's middle (estimated from the
+///   rise at its start), the flow at its middle; a turn that would overshoot the top is cut
+///   short, unless that leaves less than a quarter of its rise (then the closing turn finishes).
+/// - Each turn goes once round, from the seam (`seam`, degrees from +X; EasyGCode: 90, the
+///   back), counter-clockwise, with enough points that no chord strays more than `tolerance`
+///   from the true circle (at least 24), the radius at each point read from the profile.
+/// - The first turn holds the radius the second one starts at, while extrusion ramps up
+///   0 → 100 %; a flat closing turn at the top ramps it back down.
+/// - Each turn is extruded for its own line width and, with `bead_layer` 0, its rise
+///   (EasyGCode's width compensation), or for `bead_layer` (its layer-height compensation:
+///   a shorter rise, the full bead).
+pub fn vase_revolve(
+    profile: &Curve,
+    per_turn: &PerTurn,
+    speed: f64,
+    bead_layer: f64,
+    tolerance: f64,
+    seam: f64,
+    max_points: usize,
+) -> Result<Toolpath, String> {
+    let mut points: Vec<[f64; 2]> = profile.points.iter().map(|p| [p[0], p[2]]).collect();
+    if profile.closed {
+        return Err("needs an open profile (radius against height), not a closed curve".into());
+    }
+    if points.len() < 2 {
+        return Err("needs a profile of at least 2 points".into());
+    }
+    if points.iter().flatten().any(|v| !v.is_finite()) {
+        return Err("the profile has a point that is not a number".into());
+    }
+    if points.first().map(|p| p[1]) > points.last().map(|p| p[1]) {
+        points.reverse();
+    }
+    if points.windows(2).any(|w| w[1][1] < w[0][1]) {
+        return Err("the profile must rise all the way (its height may never go down)".into());
+    }
+    if points.iter().any(|p| p[0] <= 0.0) {
+        return Err("the profile's radius (its x) must be more than 0 everywhere".into());
+    }
+    check("tolerance", tolerance, 0.001, 10.0, " mm")?;
+    check("bead_layer", bead_layer, 0.0, 10.0, " mm")?;
+    if !seam.is_finite() {
+        return Err("`seam` must be a number".into());
+    }
+    let profile = Profile { points };
+    let (z0, top) = (
+        profile.points[0][1],
+        profile.points[profile.points.len() - 1][1],
+    );
+    if top - z0 < 1e-6 {
+        return Err("the profile has no height".into());
+    }
+    let seam = seam.to_radians();
+    let on_profile = |z: f64| {
+        let r = profile.r(z);
+        [r * seam.cos(), r * seam.sin(), z]
+    };
+    let positive = |what: &str, v: f64, z: f64| -> Result<f64, String> {
+        if v.is_finite() && v > 0.0 {
+            Ok(v)
+        } else {
+            Err(format!(
+                "`{what}` must be more than 0, but it's {v} at height {}",
+                easycad_lang::format_number((z * 100.0).round() / 100.0)
+            ))
+        }
+    };
+
+    // The turns.
+    let mut turns: Vec<Turn> = Vec::new();
+    let mut zc = z0;
+    while zc < top - 1e-6 {
+        let first_rise = positive("layer", (per_turn.rise)(on_profile(zc))?, zc)?;
+        let mid = top.min(zc + first_rise / 2.0);
+        let rise = positive("layer", (per_turn.rise)(on_profile(mid))?, mid)?;
+        check("layer", rise, 0.02, 10.0, " mm")?;
+        let width = positive("width", (per_turn.width)(on_profile(mid))?, mid)?;
+        let mut dz = rise;
+        if zc + dz > top {
+            dz = top - zc;
+        }
+        if dz < rise * 0.25 {
+            break;
+        }
+        turns.push(Turn { z: zc, dz, width });
+        zc += dz;
+        too_many(turns.len(), max_points / 24, "use a larger layer height")?;
+    }
+    let (Some(first), Some(last)) = (turns.first(), turns.last()) else {
+        return Err("the profile is shorter than one layer".into());
+    };
+    let steps_for = |r: f64| {
+        let mut dth = 2.0 * (1.0 - tolerance / r.max(1e-6)).max(-1.0).acos();
+        if !dth.is_finite() || dth <= 0.0 {
+            dth = 0.2;
+        }
+        24.max((std::f64::consts::TAU / dth).ceil() as usize)
+    };
+    let r_first = profile.r(top.min(first.z + first.dz));
+    let z_top = last.z + last.dz;
+    let r_top = profile.r(z_top);
+    let counts: Vec<usize> = turns
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            steps_for(if i == 0 {
+                r_first
+            } else {
+                profile.r(t.z).max(profile.r(t.z + t.dz))
+            })
+        })
+        .collect();
+    let needed = counts
+        .iter()
+        .sum::<usize>()
+        .saturating_add(steps_for(r_top))
+        .saturating_add(1);
+    too_many(needed, max_points, "use a larger tolerance or layer height")?;
+
+    // Each turn's settings, and the closing turn's (the last turn's bead at the top's flow).
+    let settings = |width: f64, dz: f64, at: f64| -> Result<Settings, String> {
+        let layer = if bead_layer > 0.0 { bead_layer } else { dz };
+        let flow = (per_turn.flow)(on_profile(at))?;
+        if !flow.is_finite() || flow < 0.0 {
+            return Err(format!("`flow` must be 0 (by speed) or more, got {flow}"));
+        }
+        Settings::from_inputs(width, layer, speed, flow)
+    };
+    let mut path = Toolpath::empty(Vec::new(), needed);
+    let part_of = |path: &mut Toolpath, s: Settings| -> Result<u16, String> {
+        if path.parts.last() != Some(&s) {
+            path.parts.push(s);
+        }
+        u16::try_from(path.parts.len() - 1)
+            .map_err(|_| "too many different turns; use a larger layer height".to_string())
+    };
+    let tau = std::f64::consts::TAU;
+    let at = |r: f64, u: f64, z: f64| {
+        let a = seam + tau * u;
+        [r * a.cos(), r * a.sin(), z]
+    };
+    let start_part = part_of(
+        &mut path,
+        settings(first.width, first.dz, first.z + first.dz / 2.0)?,
+    )?;
+    path.push(at(r_first, 0.0, z0), true, 0.0, 0.0, start_part);
+    for (i, (t, &steps)) in turns.iter().zip(&counts).enumerate() {
+        let part = part_of(&mut path, settings(t.width, t.dz, t.z + t.dz / 2.0)?)?;
+        let n = steps as f64;
+        for s in 1..=steps {
+            let u = s as f64 / n;
+            let zp = t.z + t.dz * u;
+            let (r, ramp) = if i == 0 {
+                (r_first, (u + (s as f64 - 1.0) / n) / 2.0)
+            } else {
+                (profile.r(zp), 1.0)
+            };
+            path.push(at(r, u, zp), false, ramp, i as f64 + u, part);
+        }
+        if i == 0 {
+            // The fan comes on after the ramp turn.
+            path.layer_starts.push(path.points.len());
+        }
+    }
+    let part = part_of(&mut path, settings(last.width, last.dz, z_top)?)?;
+    let cap = steps_for(r_top);
+    let n = cap as f64;
+    for s in 1..=cap {
+        let u = s as f64 / n;
+        let ramp = (1.0 - (u + (s as f64 - 1.0) / n) / 2.0).max(0.0);
+        path.push(
+            at(r_top, u, z_top),
+            false,
+            ramp,
+            turns.len() as f64 + u,
+            part,
+        );
+    }
+    path.layers = turns.len();
+    Ok(path)
+}
+
 /// A helix around an exact circle: vase mode that rises exactly `pitch` per turn to exactly
 /// `height`, without snapping to whole turns (EasyGCode's thread connector, `generateThread` in
 /// its gcode.js, whose arithmetic this follows step by step). It starts on the circle's first

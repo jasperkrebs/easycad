@@ -34,6 +34,7 @@ const ASSETS = [
   './templates/thread-connector.easycad',
   './templates/spoon.easycad',
   './templates/bend-stool.easycad',
+  './templates/lampshade.easycad',
   './pkg/easycad_wasm.js',
   './pkg/easycad_wasm_bg.wasm',
   './vendor/anthropic/anthropic-sdk.min.mjs',

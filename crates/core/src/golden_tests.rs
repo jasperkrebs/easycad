@@ -543,6 +543,86 @@ fn toolpath_tuning_matches_the_hand_checked_fixture() {
     assert_matches(&body, fixture);
 }
 
+const LAMPSHADE: &str = include_str!("../../../web/templates/lampshade.easycad");
+
+/// The lampshade template against EasyGCode's lampshade (`vase_revolve` and the shades as
+/// profiles): as it ships (E27, a cone with a fillet, width compensation, volumetric flow); a
+/// capped bell on an E14 with layer-height compensation and a brim at a set feed; a sphere with
+/// a lip, wide edge down, its flow ramping over the fillet; and a dome on a custom thread
+/// without compensation, with a set ramp height and no start/end blocks.
+#[test]
+fn lampshade_recipe_matches_easygcode() {
+    use Literal::{Bool, Number, Text};
+    template_matches(
+        LAMPSHADE,
+        &[],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/lampshade-flow.gcode"),
+    );
+    template_matches(
+        &LAMPSHADE.replace("flow: flow_at", "speed: 20"),
+        &[
+            ("socket", Text("E14".into())),
+            ("fit", Number(-0.2)),
+            ("shape", Text("bell".into())),
+            ("throat", Number(15.0)),
+            ("opening", Number(180.0)),
+            ("transition", Number(60.0)),
+            ("max_angle", Number(55.0)),
+            ("compensation", Text("layer height".into())),
+            ("strength", Number(80.0)),
+            ("brim", Bool(true)),
+            ("brim_lines", Number(3.0)),
+            ("brim_width", Number(5.0)),
+            ("brim_layer", Number(2.0)),
+        ],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/lampshade-bell.gcode"),
+    );
+    template_matches(
+        LAMPSHADE,
+        &[
+            ("shape", Text("sphere".into())),
+            ("throat", Number(12.0)),
+            ("opening", Number(120.0)),
+            ("sphere", Number(220.0)),
+            ("lip", Bool(true)),
+            ("lip_length", Number(8.0)),
+            ("wide_down", Bool(true)),
+            ("max_width", Number(2.0)),
+            ("flow", Number(18.0)),
+            ("shade_flow", Number(30.0)),
+        ],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/lampshade-sphere.gcode"),
+    );
+    template_matches(
+        LAMPSHADE,
+        &[
+            ("socket", Text("custom".into())),
+            ("thread_d", Number(35.0)),
+            ("thread_pitch", Number(3.0)),
+            ("shape", Text("dome".into())),
+            ("throat", Number(10.0)),
+            ("fillet", Number(25.0)),
+            ("opening", Number(160.0)),
+            ("transition", Number(70.0)),
+            ("compensation", Text("off".into())),
+            ("flow", Number(15.0)),
+            ("shade_flow", Number(25.0)),
+            ("flow_ramp", Number(30.0)),
+            ("line", Number(5.0)),
+            ("tolerance", Number(0.08)),
+        ],
+        &Profile {
+            include_start_end: false,
+            center: [150.0, 150.0],
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/lampshade-dome.gcode"),
+    );
+}
+
 /// The machine events on the filament printer (`M104`, `M109`, `M220`, `M221`, back to the
 /// printer's own temperature) have no EasyGCode counterpart (its foaming is for the pellet
 /// printer, golden-tested above), so they're compared with a hand-checked fixture. The moves

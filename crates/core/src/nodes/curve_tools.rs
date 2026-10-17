@@ -82,6 +82,42 @@ pub(super) fn sum(_: &mut Ctx, a: &Args) -> Result<Value, String> {
     Ok(Value::Number(total))
 }
 
+/// The numbers of a list input.
+fn numbers(a: &Args, i: usize) -> Result<Vec<f64>, String> {
+    a.items(i)?
+        .iter()
+        .enumerate()
+        .map(|(k, v)| match v {
+            Value::Number(x) => Ok(*x),
+            other => Err(format!("item {} is {}, not a number", k + 1, other.kind())),
+        })
+        .collect()
+}
+
+/// The smallest and largest number of a list. (Grasshopper: Bounds)
+pub(super) fn bounds(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let xs = numbers(a, 0)?;
+    ctx.spend(xs.len())?;
+    let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if xs.is_empty() || !lo.is_finite() || !hi.is_finite() {
+        return Err("needs a list of numbers".into());
+    }
+    Value::list(vec![Value::Number(lo), Value::Number(hi)])
+}
+
+/// `graph(xs, ys, x)`: the piecewise-linear graph through the points, read at `x` (a number,
+/// or a field for a value at every point). (Grasshopper: Graph Mapper)
+pub(super) fn graph(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let (xs, ys) = (numbers(a, 0)?, numbers(a, 1)?);
+    ctx.spend(xs.len())?;
+    let g = crate::field::Graph::new(xs, ys)?;
+    if a.is_field(2) {
+        return Ok(Value::Field(Rc::new(Field::graph(g, a.field(2)?)?)));
+    }
+    Ok(Value::Number(g.at(a.num(2)?)))
+}
+
 // ------------------------------------------------------------------------------- curves
 
 /// `circle(r, tolerance)`: with a tolerance, as many points as keep the circle's flats within

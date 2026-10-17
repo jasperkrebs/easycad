@@ -45,6 +45,8 @@ enum Kind {
     Neg(Rc<Field>),
     /// A math step applied point by point.
     Map(MathFn, Vec<Rc<Field>>),
+    /// A piecewise-linear graph applied to a field's value.
+    Graph(Rc<Graph>, Rc<Field>),
 }
 
 impl Field {
@@ -109,6 +111,16 @@ impl Field {
         })
     }
 
+    /// A graph through points `(xs, ys)` read at the value of `input`: Grasshopper's Graph
+    /// Mapper as a field (`graph(heights, angles, z)` is a table of z).
+    pub fn graph(graph: Graph, input: Rc<Field>) -> Result<Field, String> {
+        let depth = deeper(&[&input])?;
+        Ok(Field {
+            kind: Kind::Graph(Rc::new(graph), input),
+            depth,
+        })
+    }
+
     /// The field's value at `p`. A math step that fails there gives NaN, which the step using
     /// the field reports.
     pub fn at(&self, p: P3) -> f64 {
@@ -135,7 +147,67 @@ impl Field {
                 }
                 f(values.get(..args.len()).unwrap_or(&[])).unwrap_or(f64::NAN)
             }
+            Kind::Graph(g, input) => g.at(input.at(p)),
         }
+    }
+}
+
+/// A piecewise-linear graph through points sorted by x, flat beyond its ends: the table
+/// lookup EasyGCode's lampshade does along its profile (`makeLampSampler` in its geometry.js),
+/// whose arithmetic this follows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Graph {
+    xs: Vec<f64>,
+    ys: Vec<f64>,
+}
+
+impl Graph {
+    /// At least one point; x never decreasing.
+    pub fn new(xs: Vec<f64>, ys: Vec<f64>) -> Result<Graph, String> {
+        if xs.is_empty() || xs.len() != ys.len() {
+            return Err(format!(
+                "needs as many y values as x values, at least one (got {} and {})",
+                xs.len(),
+                ys.len()
+            ));
+        }
+        if xs.iter().chain(&ys).any(|v| !v.is_finite()) {
+            return Err("the graph has a value that is not a number".into());
+        }
+        if xs.windows(2).any(|w| w[1] < w[0]) {
+            return Err("the x values must not decrease".into());
+        }
+        Ok(Graph { xs, ys })
+    }
+
+    pub fn at(&self, x: f64) -> f64 {
+        let n = self.xs.len();
+        let (first, last) = (self.xs[0], self.xs[n - 1]);
+        if !x.is_finite() {
+            return f64::NAN;
+        }
+        if x <= first {
+            return self.ys[0];
+        }
+        if x >= last {
+            return self.ys[n - 1];
+        }
+        // The last point at or below x, and the one after it.
+        let (mut lo, mut hi) = (0, n - 1);
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2;
+            if self.xs[mid] <= x {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let span = self.xs[hi] - self.xs[lo];
+        if span < 1e-9 {
+            return self.ys[hi];
+        }
+        let f = ((x - self.xs[lo]) / span).clamp(0.0, 1.0);
+        self.ys[lo] + (self.ys[hi] - self.ys[lo]) * f
     }
 }
 

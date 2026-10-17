@@ -150,12 +150,13 @@ async function waitForServer(url) {
           `${name}: spiral disc G-code ${gcode.name} differs from EasyGCode's: ${got.length} vs ${want.length} commands, first difference at ${differ}: "${got[differ]}" vs "${want[differ]}"`,
         );
       }
-      // So do the thread connector, the spoon and the bend stool (EasyGCode's defaults, its
-      // pellet printer).
+      // So do the thread connector, the spoon, the bend stool and the lampshade (EasyGCode's
+      // defaults, its pellet printer).
       for (const [id, title, fixture] of [
         ['thread-connector', 'Thread connector', 'thread-default.gcode'],
         ['spoon', 'Spoon', 'spoon-flow.gcode'],
         ['bend-stool', 'Bend stool', 'stool-flow.gcode'],
+        ['lampshade', 'Lampshade', 'lampshade-flow.gcode'],
       ]) {
         await page.click('#tab-settings');
         await page.selectOption('#template', id);

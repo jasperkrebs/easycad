@@ -15,7 +15,7 @@ under each project and in [What's still missing](#whats-still-missing).
 | Spiral disc | **G-code identical to EasyGCode** (4 cases) | `web/templates/spiral-disc.easycad` |
 | Thread connector | **G-code identical to EasyGCode** (3 cases) | `web/templates/thread-connector.easycad` |
 | Spoon | **G-code identical to EasyGCode** (3 cases) | `web/templates/spoon.easycad` |
-| Lampshade | Buildable. Its vase mode is golden-tested on a cylinder | not written yet |
+| Lampshade | **G-code identical to EasyGCode** (4 cases: cone, bell, dome, sphere with lip); flat sphere sampled evenly | `web/templates/lampshade.easycad` |
 | Vessel | Buildable | not written yet |
 | Container | Buildable | not written yet |
 | Coat hanger | Buildable, with three small approximations (below) | not written yet |
@@ -30,7 +30,7 @@ are compared comments included. Every command is byte-identical.
 recipe is now recipe work (an agent can do it), not engine work. Its G-code would be EasyCAD's
 own, not checked line by line against EasyGCode's.
 
-Recipes were written for four projects so far, on purpose. They prove the new steps produce
+Recipes were written for five projects so far, on purpose. They prove the new steps produce
 exactly EasyGCode's numbers. The others are a matter of writing recipes when they're wanted.
 
 ## Thread connector (golden)
@@ -64,18 +64,29 @@ exactly EasyGCode's numbers. The others are a matter of writing recipes when the
 
 `spiral` with a field spacing (`fade`, `distance`), `interlock`, `toolpath`, `stack`.
 
-## Lampshade
+## Lampshade (golden since 17 Oct)
+
+Four cases match EasyGCode command for command: as it ships (E27, a cone with a fillet, width
+compensation, volumetric flow); a capped bell on an E14 with layer-height compensation and a
+brim at a set feed; a sphere with a lip, wide edge down, its flow ramping over the fillet; a dome
+on a custom thread, no compensation, a set ramp height, no start/end blocks.
 
 | EasyGCode feature | EasyCAD steps |
 |---|---|
 | E14 / E27 / custom socket, pitch = layer height | dropdown + `index_of` + `item` |
-| Profile: straight throat, tangent fillet, then cone, bell, dome, sphere or flat sphere, and a lip | `line`, `arc`, `ellipse` (or `arc` + `scale`), `fillet`, `join_curves`; `revolve` |
-| Vase mode with ramp and flat closing turn | `vase_spiral` (golden-tested on a cylinder against this very generator) |
-| Overhang compensation, width mode: w × min(max, 1 + k(1/cos a − 1)) | `adjust(path, extrude: min(max, 1 + k * (1 / max(0.05, cos(lean(wall))) - 1)))` |
-| Overhang compensation, height mode: dz = lh(1 − k(1 − cos a)), E at the full layer | `contour(wall, pitch, pace: k)` + `spiralize` + `bead(layer: pitch)` |
-| Flow ramp from throat flow to shade flow across the fillet | `adjust(path, speed: lerp(1, shade / throat, smoothstep(…z…)))` (at a set flow, speed scales the flow) |
-| Wide edge down or up | `mirror` / `rotate` before the toolpath |
-| Brim | `offset` or `rings`, `toolpath`, `join(clear:)` |
+| Shades: cone, bell (capped or not), dome, sphere, flat sphere, each sampled every 0.04 rad | radius, height and wall-angle lists from `series` and trigonometry |
+| Tangent fillet from the throat onto any shade (where the shade first reaches it), clamped when too big | list arithmetic: `index_of` on a mask finds the point, `bounds` the largest radius that fits |
+| Lip: the same blend mirrored, then a straight lip | `reverse` of the lists, the same blend |
+| Wide edge down | the lists turned over (`reverse`, `top - z`) |
+| Vase mode turn by turn: points per turn from the radius, radius from the profile, ramped first turn, flat closing turn | `vase_revolve(profile, …)` |
+| Overhang compensation, width mode: w × min(max, 1 + k(1/cos a − 1)) per turn | `width:` a field of `graph(heights, angles, z)` |
+| Overhang compensation, height mode: rise lh(1 − k(1 − cos a)), E at the full layer | `layer:` a field the same way, `bead_layer: pitch` |
+| Flow ramp from throat flow to shade flow across the fillet | `flow:` a field of z (`clamp`, `pick`) |
+| Brim around the first turn, hopping between rings | `circle(radii)`, `graft`, `toolpath`, `join(clear:)` |
+| Your own shade | any profile curve (`own_shade`); its wall angle from its neighbouring points |
+
+Not exact: EasyGCode samples the flat sphere adaptively (finer where its angle changes fast);
+the template samples it evenly (400 points). The shape is the same ellipsoid.
 
 ## Vessel
 
@@ -190,6 +201,16 @@ Machine commands that are new in EasyCAD's G-code:
 
 They are checked against a hand-checked fixture (`fixtures/hand-checked/machine-events.gcode`,
 worked out in exact arithmetic by `scripts/hand-checked-fixtures.py`).
+
+## Steps added for the lampshade (17 Oct 2026)
+
+- `vase_revolve(profile, layer, width, speed, flow, bead_layer, tolerance, seam)`: vase mode
+  around a profile of revolution, turn by turn (rise, width and flow from fields).
+- `graph(xs, ys, x)` (Graph Mapper; a field for `x` gives a field), `bounds(list)`,
+  `graft(list)`.
+- The G-code writer now writes `F` whenever the exact feed changes, as EasyGCode does (a bead
+  that changes turn by turn changes it a little each turn). Every golden and hand-checked
+  fixture is unchanged by this.
 
 ## Steps added for the bend stool and foaming (17 Oct 2026)
 

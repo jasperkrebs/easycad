@@ -58,7 +58,7 @@ def spiral(layers, width, flow, center, travel_speed):
       height over layer k - 1 there, blended like the points. A move is extruded for the mean of
       the local heights at its two ends.
     - E = bead area * length * extrusion factor (pellet printer: mm^3, multiplier 1).
-    - F = round(flow * 60 / bead area), written when it changes.
+    - F = round(flow * 60 / bead area), written whenever the exact value changes.
     """
     n, m = len(layers) - 1, len(layers[0])
     gap = [[layers[k][j][2] - layers[k - 1][j][2] if k else Q(0) for j in range(m)] for k in range(n + 1)]
@@ -101,9 +101,9 @@ def spiral(layers, width, flow, center, travel_speed):
         feed = int((feed_exact + Decimal("0.5")).to_integral_value(rounding="ROUND_FLOOR"))
         x, y, z = (dec(p[0] + cx), dec(p[1] + cy), dec(p[2]))
         line = f"G1 X{fixed(x, 3)} Y{fixed(y, 3)} Z{fixed(z, 3)} E{fixed(e, 5)}"
-        if first or feed != prev_feed:
+        if first or feed_exact != prev_feed:
             line += f" F{feed}"
-            prev_feed, first = feed, False
+            prev_feed, first = feed_exact, False
         note = (
             f"; height {fmt(hm)} (ends {fmt(ends[0])}, {fmt(ends[1])}), length sqrt({fmt(d2)}) = {length:.6f},"
             f" area {area:.6f}, factor {fmt(factor)}"
@@ -183,9 +183,9 @@ def machine_events():
         feed = int((feed_exact + Decimal("0.5")).to_integral_value(rounding="ROUND_FLOOR"))
         x, y, z = (Decimal(b[0]) + cx, Decimal(b[1]) + cy, Decimal(b[2]))
         line = f"G1 X{fixed(x, 3)} Y{fixed(y, 3)} Z{fixed(z, 3)} E{fixed(e, 5)}"
-        if first or feed != last_feed:
+        if first or feed_exact != last_feed:
             line += f" F{feed}"
-            last_feed, first = feed, False
+            last_feed, first = feed_exact, False
         lines.append(f"{line} ; {note}: length {length:.6f}, E = area x length x {fmt(factor)}, F = {feed_exact:.4f}")
         for v, digits in ((x, 3), (y, 3), (z, 3), (e, 5), (feed_exact, 0)):
             closest = min(closest, margin(v, digits))
@@ -263,9 +263,9 @@ def filament_machine():
         feed = int((feed_exact + Decimal("0.5")).to_integral_value(rounding="ROUND_FLOOR"))
         x, y, z = (Decimal(b[0]) + cx, Decimal(b[1]) + cy, Decimal(b[2]))
         line = f"G1 X{fixed(x, 3)} Y{fixed(y, 3)} Z{fixed(z, 3)} E{fixed(e, 5)}"
-        if state["first"] or feed != state["feed"]:
+        if state["first"] or feed_exact != state["feed"]:
             line += f" F{feed}"
-            state["feed"], state["first"] = feed, False
+            state["feed"], state["first"] = feed_exact, False
         lines.append(f"{line} ; {note}: length {length:.6f}, E = area x length / filament area, F = {feed_exact:.4f}")
         for v, digits in ((x, 3), (y, 3), (z, 3), (e, 5), (feed_exact, 0)):
             closest = min(closest, margin(v, digits))

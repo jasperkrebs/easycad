@@ -95,6 +95,17 @@ pub(super) fn flatten(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     Value::list(out)
 }
 
+/// Each item in a list of its own: `toolpath(graft(rings), …)` makes one toolpath per ring.
+pub(super) fn graft(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let items = a.items(0)?;
+    ctx.spend(items.len())?;
+    let mut out = Vec::with_capacity(items.len());
+    for v in items {
+        out.push(Value::list(vec![v.clone()])?);
+    }
+    Value::list(out)
+}
+
 pub(super) fn remap(a: &[f64]) -> Result<f64, String> {
     let at = |i: usize| a.get(i).copied().unwrap_or(0.0);
     let (v, lo, hi, to_lo, to_hi) = (at(0), at(1), at(2), at(3), at(4));

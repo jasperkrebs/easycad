@@ -329,6 +329,76 @@ cases['stool-bare'] = stool(
   { diameter: 30, layers: 3 }
 );
 
+// The lampshade: its defaults (E27, a cone with a fillet, width compensation) in volumetric
+// flow mode as EasyCAD's template ships; a capped bell on an E14 with layer-height compensation
+// and a brim at a set feed; a sphere with a lip, wide edge down, its flow ramping from the
+// throat's to the shade's over the fillet; and a dome on a custom thread without compensation,
+// a set ramp height and no start/end blocks. Reference for EasyCAD's lampshade template
+// (`vase_revolve`, `graph`, `bounds`, `graft`).
+const lamp = (ls, over = {}) => ({
+  project: 'lamp',
+  printer: pellet(),
+  lineWidth: 6,
+  printFeed: 1200,
+  travelFeed: 6000,
+  tolerance: 0.1,
+  centerX: 125,
+  centerY: 125,
+  brim: { enabled: false, linesOuter: 4, lineWidth: 6, layerHeight: 2.5, feed: 900, multiplier: 0 },
+  ...over,
+  lamp: {
+    socket: 'e27',
+    customDiameter: 40,
+    customPitch: 2.5,
+    fitTolerance: 0,
+    shape: 'cone',
+    throatLength: 20,
+    fillet: 10,
+    bottomDiameter: 150,
+    transitionHeight: 52,
+    maxAngle: 0,
+    sphereDiameter: 200,
+    flatRatio: 0.5,
+    lip: { enabled: false, length: 10, fillet: 0 },
+    orientation: 'throat',
+    compMode: 'width',
+    compStrength: 100,
+    compMaxMult: 2.5,
+    flowFeed: { enabled: false, rate: 20, shadeRate: 0, transitionHeight: 0 },
+    ...ls,
+  },
+});
+cases['lampshade-flow'] = lamp({ flowFeed: { enabled: true, rate: 20, shadeRate: 0, transitionHeight: 0 } });
+cases['lampshade-bell'] = lamp(
+  { socket: 'e14', fitTolerance: -0.2, shape: 'arcOut', throatLength: 15, bottomDiameter: 180, transitionHeight: 60, maxAngle: 55, compMode: 'layerHeight', compStrength: 80 },
+  { brim: { enabled: true, linesOuter: 3, lineWidth: 5, layerHeight: 2, feed: 900, multiplier: 0 } }
+);
+cases['lampshade-sphere'] = lamp({
+  shape: 'sphere',
+  throatLength: 12,
+  bottomDiameter: 120,
+  sphereDiameter: 220,
+  lip: { enabled: true, length: 8, fillet: 0 },
+  orientation: 'wide',
+  compMaxMult: 2,
+  flowFeed: { enabled: true, rate: 18, shadeRate: 30, transitionHeight: 0 },
+});
+cases['lampshade-dome'] = lamp(
+  {
+    socket: 'custom',
+    customDiameter: 35,
+    customPitch: 3,
+    shape: 'arcIn',
+    throatLength: 10,
+    fillet: 25,
+    bottomDiameter: 160,
+    transitionHeight: 70,
+    compMode: 'off',
+    flowFeed: { enabled: true, rate: 15, shadeRate: 25, transitionHeight: 30 },
+  },
+  { printer: pellet({ includeStartEnd: false }), lineWidth: 5, tolerance: 0.08, centerX: 150, centerY: 150 }
+);
+
 const out = path.join(__dirname, '..', 'fixtures', 'easygcode');
 fs.mkdirSync(out, { recursive: true });
 for (const [name, cfg] of Object.entries(cases)) {
