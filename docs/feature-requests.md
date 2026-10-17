@@ -79,22 +79,21 @@ What's left as a risk, plainly:
 
 ## Setup (once)
 
-Steps 1 and 3 are required: without them nothing gets built. Steps 2 and 4 make it smoother.
+Steps 1 and 2 are required: without them nothing gets built. Step 3 saves you a tap per
+request.
 
 1. **Let Claude Code run in Actions.** Pick one, as a repository secret (Settings → Secrets
    and variables → Actions):
    - `CLAUDE_CODE_OAUTH_TOKEN`: uses your Claude subscription. Make it on your computer with
      `claude setup-token`, then paste it into the secret (not into a chat);
    - `ANTHROPIC_API_KEY`: pay per use. The same key as the proxy's works.
-2. **Install the Claude GitHub app** on the repo (https://github.com/apps/claude). The action
-   uses it to act on GitHub. Without it, the workflow's own token still works.
-3. **Allow workflows to write.** Settings → Actions → General → Workflow permissions:
+2. **Allow workflows to write.** Settings → Actions → General → Workflow permissions:
    - "Read and write permissions";
    - and tick "Allow GitHub Actions to create and approve pull requests".
 
    The builder pushes its branch, opens the pull request, merges it, and labels and closes the
    issue.
-4. **Let the proxy file requests** (optional; without it you file each request with one tap):
+3. **Let the proxy file requests** (optional; without it you file each request with one tap):
    - make a fine-grained personal access token at
      https://github.com/settings/personal-access-tokens:
      - repository access: only `easycad`;
@@ -103,7 +102,7 @@ Steps 1 and 3 are required: without them nothing gets built. Steps 2 and 4 make 
    - the next deploy gives it to the proxy (as its `GITHUB_TOKEN` secret).
 
    The proxy itself must be set up already (docs/api-key.md).
-5. **Email:** GitHub's notifications for issues you're part of, on by default (Settings →
+4. **Email:** GitHub's notifications for issues you're part of, on by default (Settings →
    Notifications → "Participating": email).
 
 Optional:

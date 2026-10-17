@@ -28,9 +28,11 @@ on:
         description: The feature request (issue number) to build
         required: true
 
-# One request at a time, never cancelled half-way.
+# One run per request at a time, never cancelled half-way. (Requests don't share one group:
+# GitHub drops a waiting run when another queues behind it.) Requests built side by side that
+# touch the same lines meet at the merge, which then fails and tries again from the newest version.
 concurrency:
-  group: feature-builder
+  group: feature-builder-${{ github.event.issue.number || inputs.issue }}
   cancel-in-progress: false
 
 permissions:
@@ -38,7 +40,6 @@ permissions:
   pull-requests: write
   issues: write
   actions: write
-  id-token: write
 
 env:
   ISSUE: ${{ github.event.issue.number || inputs.issue }}
@@ -133,7 +134,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         if: steps.attempt.outputs.go == 'true'
-      - name: Install wasm-bindgen-cli, Node and Playwright
+      - name: Install wasm-bindgen-cli (same version as Cargo.lock)
         if: steps.attempt.outputs.go == 'true'
         run: |
           v=$(cargo metadata --format-version 1 --locked | python3 -c "import sys, json; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name'] == 'wasm-bindgen'))")
@@ -161,6 +162,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p .builder
 
+      # Agent mode (a prompt is given): it runs the prompt and nothing else; the workflow's own
+      # token is all it needs (no GitHub app). Retries are started by github-actions[bot].
       - name: Claude Code builds it
         if: steps.attempt.outputs.go == 'true'
         uses: anthropics/claude-code-action@v1
@@ -174,7 +177,7 @@ jobs:
           claude_args: >-
             --max-turns 300
             ${{ vars.BUILDER_MODEL && format('--model {0}', vars.BUILDER_MODEL) || '' }}
-            --allowedTools "Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite,Bash(cargo:*),Bash(scripts/build-web.sh:*),Bash(node:*),Bash(python3:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git commit:*),Bash(git rm:*),Bash(git mv:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sed:*),Bash(grep:*),Bash(find:*),Bash(mkdir:*),Bash(rm .builder/:*)"
+            --allowedTools "Read,Edit,Write,Glob,Grep,TodoWrite,Bash(cargo:*),Bash(scripts/build-web.sh:*),Bash(node:*),Bash(python3:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git add:*),Bash(git commit:*),Bash(git rm:*),Bash(git mv:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sed:*),Bash(grep:*),Bash(find:*),Bash(mkdir:*),Bash(rm .builder/:*)"
             --disallowedTools "WebFetch,WebSearch,Bash(git push:*),Bash(curl:*),Bash(wget:*)"
 
       - name: What came out
