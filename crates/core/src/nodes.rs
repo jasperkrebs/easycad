@@ -13,6 +13,8 @@ use crate::toolpath::{self, MAX_PATH_POINTS, Settings, Toolpath};
 use crate::value::Value;
 use std::rc::Rc;
 
+mod curve_tools;
+mod printing;
 mod toolbox;
 
 /// How an input takes a list. An *item* input that receives a list runs the node once per item
@@ -236,6 +238,45 @@ pub static NODES: &[Node] = &[
         run: Run::Op(toolbox::flatten),
     },
     Node {
+        name: "pick",
+        group: "Numbers & lists",
+        inputs: &[
+            req("test", "Bool | Number | Field", "true, or any number but 0"),
+            tree("yes", "Any", "the result when `test` is true"),
+            tree("no", "Any", "the result otherwise"),
+        ],
+        output: "Any",
+        doc: "`yes` when `test` is true (or a number other than 0), `no` otherwise: `pick(line, line, 2.4 * pitch)` is the line width, or 2.4 × pitch when it's 0 (auto). With a field as test it picks point by point. (Grasshopper: Pick'n'Choose)",
+        run: Run::Op(curve_tools::pick),
+    },
+    Node {
+        name: "index_of",
+        group: "Numbers & lists",
+        inputs: &[
+            all("list", "List", "numbers, texts or true/false"),
+            tree("value", "Any", "what to look for"),
+        ],
+        output: "Number",
+        doc: "Where `value` first appears in the list, counting from 0 like `item`: `item(pitches, index_of(sizes, size))` looks a dropdown's choice up in a table. (Grasshopper: Member Index)",
+        run: Run::Op(curve_tools::index_of),
+    },
+    Node {
+        name: "sum",
+        group: "Numbers & lists",
+        inputs: &[all("list", "List<Number>", "")],
+        output: "Number",
+        doc: "All the numbers added up. (Grasshopper: Mass Addition)",
+        run: Run::Op(curve_tools::sum),
+    },
+    Node {
+        name: "accumulate",
+        group: "Numbers & lists",
+        inputs: &[all("list", "List<Number>", "")],
+        output: "List<Number>",
+        doc: "Running totals: [a, a + b, a + b + c, …]. Layer heights in, layer positions out. (Grasshopper: Mass Addition, partial results)",
+        run: Run::Op(curve_tools::accumulate),
+    },
+    Node {
         name: "lerp",
         group: "Numbers & lists",
         inputs: &[
@@ -444,13 +485,33 @@ pub static NODES: &[Node] = &[
             Ok(t * t * (3.0 - 2.0 * t))
         }),
     },
+    Node {
+        name: "greater",
+        group: "Numbers & lists",
+        inputs: &[req("a", NUM, ""), req("b", NUM, "")],
+        output: "Number | Field",
+        doc: "1 where `a` is more than `b`, else 0: a mask to multiply by, or a test for `pick`. `greater(z, 2)` is 1 above 2 mm. (Grasshopper: Larger Than)",
+        run: Run::Math(|a| Ok(if arg(a, 0) > arg(a, 1) { 1.0 } else { 0.0 })),
+    },
+    Node {
+        name: "less",
+        group: "Numbers & lists",
+        inputs: &[req("a", NUM, ""), req("b", NUM, "")],
+        output: "Number | Field",
+        doc: "1 where `a` is less than `b`, else 0. (Grasshopper: Smaller Than)",
+        run: Run::Math(|a| Ok(if arg(a, 0) < arg(a, 1) { 1.0 } else { 0.0 })),
+    },
     // ------------------------------------------------------------------ fields
     Node {
         name: "distance",
         group: "Fields",
-        inputs: &[req("to", "Curve", "a curve to measure from")],
+        inputs: &[pt(
+            "to",
+            "Curve | Point",
+            "a curve or a point to measure from",
+        )],
         output: "Field",
-        doc: "A field: how far each point is from the curve, in mm (in plan view; negative inside a closed curve). Exact for circles.",
+        doc: "A field: how far each point is from the curve, in mm (in plan view; negative inside a closed curve), or from a point. Exact for circles.",
         run: Run::Op(distance),
     },
     Node {
@@ -465,6 +526,18 @@ pub static NODES: &[Node] = &[
         output: NUM,
         doc: "1 on the curve, easing smoothly to 0 `inside` mm inside and `outside` mm outside it (EasyGCode's spiral-disc falloff). Turns a distance into a 0..1 weight.",
         run: Run::Math(field::fade),
+    },
+    Node {
+        name: "lean",
+        group: "Fields",
+        inputs: &[req(
+            "wall",
+            "Surface",
+            "a loft of closed sections stacked upward",
+        )],
+        output: "Field",
+        doc: "How far the wall leans from vertical at each point, in degrees (positive leaning out, an overhang): `adjust(path, extrude: 1 / max(0.05, cos(lean(wall))))` prints wider beads where it overhangs (EasyGCode's lampshade compensation).",
+        run: Run::Op(printing::lean),
     },
     // ------------------------------------------------------------------ points & planes
     Node {
@@ -518,14 +591,36 @@ pub static NODES: &[Node] = &[
         doc: "A field's value at a point: `sample(z, p)` is the height of point p, `sample(distance(c), p)` its distance to curve c. (Grasshopper: Deconstruct Point)",
         run: Run::Op(toolbox::sample),
     },
+    Node {
+        name: "scatter",
+        group: "Points & planes",
+        inputs: &[
+            req("width", "Length", "x from −width/2 to width/2"),
+            req("height", "Length", "y from 0 to height"),
+            req("count", "Count", "how many points"),
+            opt("seed", "Number", 1.0, "another seed gives other points"),
+            opt("relax", "Bool", 1.0, "push points that are too close apart"),
+        ],
+        output: "List<Point>",
+        doc: "Points spread evenly but irregularly over a rectangle (blue noise), the same every time for the same seed: EasyGCode's spike placement. Map them onto a wall with `evaluate` and `move`. (Grasshopper: Populate 2D)",
+        run: Run::Op(printing::scatter),
+    },
     // ------------------------------------------------------------------ curves
     Node {
         name: "circle",
         group: "Curves",
-        inputs: &[req("r", "Length", "radius")],
+        inputs: &[
+            req("r", "Length", "radius"),
+            opt(
+                "tolerance",
+                "Length",
+                0.0,
+                "0: points by quality; otherwise enough points that no flat strays more than this from the true circle (at least 24, as EasyGCode)",
+            ),
+        ],
         output: "Curve",
-        doc: "A circle around the origin, flat on the bed, starting on +X and running counter-clockwise. (Grasshopper: Circle)",
-        run: Run::Op(circle),
+        doc: "A circle around the origin, flat on the bed, starting on +X and running counter-clockwise. Stays an exact circle through moves, turns and even scaling, which `helix` and `distance` use. (Grasshopper: Circle)",
+        run: Run::Op(curve_tools::circle),
     },
     Node {
         name: "ellipse",
@@ -537,6 +632,23 @@ pub static NODES: &[Node] = &[
         output: "Curve",
         doc: "An ellipse around the origin, counter-clockwise from +X. (Grasshopper: Ellipse)",
         run: Run::Op(toolbox::ellipse),
+    },
+    Node {
+        name: "superellipse",
+        group: "Curves",
+        inputs: &[
+            req("rx", "Length", "radius along X"),
+            req("ry", "Length", "radius along Y"),
+            opt(
+                "exponent",
+                "Number",
+                4.0,
+                "2 is an ellipse, about 4 a squircle, more squarer, 1 a diamond",
+            ),
+        ],
+        output: "Curve",
+        doc: "|x/rx|ⁿ + |y/ry|ⁿ = 1 around the origin, counter-clockwise from +X: EasyGCode's squircle. (Grasshopper: no direct equivalent)",
+        run: Run::Op(curve_tools::superellipse),
     },
     Node {
         name: "rectangle",
@@ -598,6 +710,23 @@ pub static NODES: &[Node] = &[
         run: Run::Op(toolbox::interpolate),
     },
     Node {
+        name: "catmull_rom",
+        group: "Curves",
+        inputs: &[
+            all("points", "List<Point>", "in order"),
+            opt("closed", "Bool", 0.0, ""),
+            opt(
+                "samples",
+                "Count",
+                16.0,
+                "points per span between two points",
+            ),
+        ],
+        output: "Curve",
+        doc: "A Catmull-Rom spline through the points, the spline EasyGCode draws rounded stars and vessel profiles with (an open one starts heading straight for the second point). Unlike `interpolate`, each span depends only on its four nearest points.",
+        run: Run::Op(curve_tools::catmull_rom),
+    },
+    Node {
         name: "polygon",
         group: "Curves",
         inputs: &[
@@ -632,7 +761,12 @@ pub static NODES: &[Node] = &[
         name: "spiral",
         group: "Curves",
         inputs: &[
-            req("outer", "Length", "radius to end near"),
+            opt(
+                "outer",
+                "Length",
+                0.0,
+                "radius to end near (on a whole turn); or give `turns`",
+            ),
             req(
                 "spacing",
                 "Length | Field",
@@ -650,9 +784,16 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "at least this many points per turn",
             ),
+            opt("start", "Length", 0.0, "radius it starts at, with `turns`"),
+            opt(
+                "turns",
+                "Number",
+                0.0,
+                "exactly this many turns (fractions too) instead of ending near `outer`",
+            ),
         ],
         output: "Curve",
-        doc: "A flat spiral from the centre out, each turn one `spacing` outside the last, ending on the whole turn nearest `outer`. With a field as spacing, turns spread apart where the field is larger (EasyGCode's spiral disc).",
+        doc: "A flat spiral around the origin, starting on +X and turning counter-clockwise, each turn one `spacing` outside the last. From the centre out to the whole turn nearest `outer`; with a field as spacing, turns spread apart where the field is larger (EasyGCode's spiral disc). Or exactly `turns` turns from radius `start`, points spread evenly over the whole spiral (EasyGCode's spoon).",
         run: Run::Op(spiral),
     },
     Node {
@@ -758,6 +899,135 @@ pub static NODES: &[Node] = &[
         doc: "The same curve with `count` points spaced evenly along it. (Grasshopper: Rebuild)",
         run: Run::Op(toolbox::resample),
     },
+    Node {
+        name: "fillet",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", "with corners (a polyline, a polygon)"),
+            req("radius", "Length", "arc radius"),
+        ],
+        output: "Curve",
+        doc: "Every corner rounded with an arc of `radius` tangent to both sides; where a side is too short, the arc gets smaller (it uses at most half of each side). (Grasshopper: Fillet)",
+        run: Run::Op(curve_tools::fillet),
+    },
+    Node {
+        name: "simplify",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req("tolerance", "Length", "how far the result may stray"),
+        ],
+        output: "Curve",
+        doc: "The same curve with fewer points: every point it drops is within `tolerance` of the result (Douglas–Peucker). EasyGCode simplifies its dense outlines this way. (Grasshopper: Reduce)",
+        run: Run::Op(curve_tools::simplify),
+    },
+    Node {
+        name: "subcurve",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req("start", "Number", "0..1 along the length"),
+            req("end", "Number", "0..1 along the length"),
+        ],
+        output: "Curve",
+        doc: "The piece between two places along the curve, as an open curve (from `start` to `end`, backwards if `end` comes first). On a closed curve, an `end` before `start` goes on through the seam. (Grasshopper: Sub Curve)",
+        run: Run::Op(curve_tools::subcurve),
+    },
+    Node {
+        name: "join_curves",
+        group: "Curves",
+        inputs: &[
+            all(
+                "curves",
+                "List<Curve>",
+                "pieces that meet end to end, in order",
+            ),
+            opt(
+                "tolerance",
+                "Length",
+                0.001,
+                "how close two ends must be to count as meeting",
+            ),
+        ],
+        output: "Curve",
+        doc: "One curve from pieces: each piece is turned round if needed to carry on from the one before; closed if the last piece ends where the first began. (Grasshopper: Join Curves)",
+        run: Run::Op(curve_tools::join_curves),
+    },
+    Node {
+        name: "tangent",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req("t", "Number", "0..1 along the length"),
+        ],
+        output: "Vector",
+        doc: "The direction of travel at a place along the curve, as a vector 1 long. (Grasshopper: Evaluate Curve, tangent)",
+        run: Run::Op(curve_tools::tangent),
+    },
+    Node {
+        name: "normal",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", ""),
+            req("t", "Number", "0..1 along the length"),
+        ],
+        output: "Vector",
+        doc: "The sideways direction in plan at a place along the curve, 1 long: outward for a closed curve (either way round), to the right of travel for an open one. `move(evaluate(c, t), x: d * …)` places points along it; with `offset` it agrees.",
+        run: Run::Op(curve_tools::normal),
+    },
+    Node {
+        name: "closest",
+        group: "Curves",
+        inputs: &[req("curve", "Curve", ""), pt("point", "Point", "")],
+        output: "Number",
+        doc: "Where along the curve (0..1 by length) it comes closest to the point; `evaluate(c, closest(c, p))` is that closest point. (Grasshopper: Curve Closest Point)",
+        run: Run::Op(curve_tools::closest),
+    },
+    Node {
+        name: "centroid",
+        group: "Curves",
+        inputs: &[req("curve", "Curve", "")],
+        output: "Point",
+        doc: "The centre of the area a closed curve encloses (in plan, at its mean height); for an open curve, the middle of its length. (Grasshopper: Area, centroid)",
+        run: Run::Op(curve_tools::centroid),
+    },
+    Node {
+        name: "rings",
+        group: "Curves",
+        inputs: &[
+            req("curve", "Curve", "a closed outline"),
+            req(
+                "spacing",
+                "Length",
+                "from one ring to the next: the line width",
+            ),
+            opt(
+                "inset",
+                "Bool",
+                0.0,
+                "false: scaled toward the centre (exact for circles); true: true insets, every side one spacing in",
+            ),
+        ],
+        output: "List<Curve>",
+        doc: "Rings inside an outline, from the outline itself inward, one spacing apart, until there's no room: EasyGCode's ring fill for bottoms and seats. Link them into one line with `link_rings`.",
+        run: Run::Op(printing::rings),
+    },
+    Node {
+        name: "link_rings",
+        group: "Curves",
+        inputs: &[
+            all(
+                "rings",
+                "List<Curve>",
+                "closed rings in print order (`reverse` them to go from the centre out)",
+            ),
+            req("style", "Text", "\"staircase\", \"zipper\" or \"spiral\""),
+            req("width", "Length", "line width"),
+        ],
+        output: "Curve",
+        doc: "The rings joined into one continuous line, as EasyGCode joins them: a staircase (each ring stops a line width short and steps across), a zipper (each ring cut open at a slot and run the other way) or a spiral (each ring blending into the next, opening out of the middle). The seam is on the ray from the centre through the largest ring's first point.",
+        run: Run::Op(printing::link_rings),
+    },
     // ------------------------------------------------------------------ transforms
     Node {
         name: "scale",
@@ -837,6 +1107,18 @@ pub static NODES: &[Node] = &[
         doc: "Moves every point along `direction` until it lies in the plane: a circle projected onto a tilted plane is the top edge of a cylinder cut at that angle. (Grasshopper: Project Along)",
         run: Run::Op(toolbox::project_along),
     },
+    Node {
+        name: "center",
+        group: "Transforms",
+        inputs: &[all(
+            "geometry",
+            "Geometry | List",
+            "one thing, or a list moved together",
+        )],
+        output: GEOMETRY,
+        doc: "Moved in X and Y so the bounding box of all of it is centred on the origin, which prints at the bed's centre: `center(rotate(c, 45))` is EasyGCode's \"rotate onto the diagonal and recentre\". A list is moved together, by one offset. (Grasshopper: Move to bounding box centre)",
+        run: Run::Op(curve_tools::center),
+    },
     // ------------------------------------------------------------------ surfaces
     Node {
         name: "loft",
@@ -887,9 +1169,15 @@ pub static NODES: &[Node] = &[
         inputs: &[
             req("surface", "Surface", "sections stacked upward"),
             req("layer", "Length", "layer height"),
+            opt(
+                "pace",
+                "Number",
+                0.0,
+                "0..1: closer layers where the wall leans (1: each step is layer × cos(lean), EasyGCode's overhang-paced vessel)",
+            ),
         ],
         output: "List<Curve>",
-        doc: "Flat layer curves through the surface, `layer` apart from bottom to top (height snapped to whole layers), ready for `spiralize` or `toolpath`, or to bend with fields first. (Grasshopper: Contour)",
+        doc: "Flat layer curves through the surface, `layer` apart from bottom to top (height snapped to whole layers), ready for `spiralize` or `toolpath`, or to bend with fields first. With `pace`, layers come closer where the wall leans out or in, so the beads stay one layer apart along the wall, and the steps are fitted to end exactly at the top. (Grasshopper: Contour)",
         run: Run::Op(toolbox::contour),
     },
     // ------------------------------------------------------------------ toolpaths
@@ -930,9 +1218,15 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "volumetric flow in mm³/s; when set, it sets the speed (flow ÷ bead area)",
             ),
+            opt(
+                "flat_top",
+                "Bool",
+                1.0,
+                "true: a flat closing turn for a level rim; false: an open top",
+            ),
         ],
         output: "Toolpath",
-        doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up, snaps to whole layers, and ends with a flat turn that ramps extrusion down.",
+        doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up, snaps to whole layers, and ends with a flat turn that ramps extrusion down (or, with `flat_top: false`, stops at full flow as it reaches the top: EasyGCode's open top).",
         run: Run::Op(vase_spiral),
     },
     Node {
@@ -952,10 +1246,40 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "volumetric flow in mm³/s; when set, it sets each move's speed (flow ÷ bead area)",
             ),
+            opt(
+                "flat_top",
+                "Bool",
+                1.0,
+                "true: a flat closing turn for a level rim; false: an open top",
+            ),
         ],
         output: "Toolpath",
         doc: "Vase mode through any stack of layers, flat or tilted: one continuous spiral that blends each layer into the next, each move extruded for its own local layer height (thin where layers are close, thick where they're apart). Same start ramp and closing turn as vase_spiral; flat, evenly spaced layers print exactly like it.",
         run: Run::Op(toolbox::spiralize),
+    },
+    Node {
+        name: "helix",
+        group: "Toolpaths",
+        inputs: &[
+            req(
+                "circle",
+                "Curve",
+                "from `circle`: its centre and radius, where the helix starts and which way it turns",
+            ),
+            req("pitch", "Length", "rise per turn; also the layer height"),
+            req("height", "Length", "where it ends; more than one pitch"),
+            req("width", "Length", "line width"),
+            opt("speed", "Speed", 40.0, "print speed in mm/s"),
+            opt(
+                "flow",
+                "Number",
+                0.0,
+                "volumetric flow in mm³/s; when set, it sets the speed (flow ÷ bead area)",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "Vase mode around a circle, rising exactly `pitch` per turn to exactly `height` (any fraction of a turn included, nothing snapped): EasyGCode's thread connector. Starts on the circle's first point with extrusion ramping up over the first turn, ends with a flat turn that ramps it down. One move per point of the circle: `circle(r, tolerance: 0.01)` keeps within 0.01 mm of the true circle. Counter-clockwise rising (a right-hand thread) for a circle as `circle` makes it.",
+        run: Run::Op(helix),
     },
     Node {
         name: "stack",
@@ -963,18 +1287,135 @@ pub static NODES: &[Node] = &[
         inputs: &[
             req("path", "Toolpath", "one layer (or more)"),
             req("count", "Count", "how many copies"),
+            opt(
+                "lift",
+                "Number",
+                1.0,
+                "layers above the new copy that the nozzle travels back to the start at; 0 goes straight over at the new layer's height",
+            ),
         ],
         output: "Toolpath",
-        doc: "Prints the toolpath `count` times, each copy one layer higher. Between copies the nozzle lifts clear, returns to the start and lowers.",
+        doc: "Prints the toolpath `count` times, each copy one layer higher. Between copies the nozzle travels back to the start clear of the print, like EasyGCode: lift 1 (its spiral disc) or 0 (its spoon).",
         run: Run::Op(stack),
     },
     Node {
         name: "join",
         group: "Toolpaths",
-        inputs: &[all("paths", "List<Toolpath>", "printed in order")],
+        inputs: &[
+            all("paths", "List<Toolpath>", "printed in order"),
+            opt(
+                "clear",
+                "Length",
+                0.0,
+                "travel at least this high above the bed between parts (EasyGCode: twice the brim's layer height after a brim); 0 is one layer above the higher end",
+            ),
+        ],
         output: "Toolpath",
-        doc: "Toolpaths printed one after another (a bottom, then a wall), each with its own width, layer and speed. The nozzle lifts clear between them.",
+        doc: "Toolpaths printed one after another (a brim, then a wall), each with its own width, layer and speed. Between parts the nozzle goes up, over and down; a part that starts where the last one ended carries straight on (no travel), and empty parts are skipped. One-layer parts at the start belong to the first layer, so the fan comes on after the brim *and* the first layer printed inside it.",
         run: Run::Op(join),
+    },
+    Node {
+        name: "bead",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            opt(
+                "width",
+                "Length",
+                0.0,
+                "line width to extrude for; 0 keeps it",
+            ),
+            opt(
+                "layer",
+                "Length",
+                0.0,
+                "layer height to extrude for; 0 keeps it",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "The same moves extruded for another bead (EasyGCode's bead overrides, like its spoon's stick): nothing moves, only the plastic each move gets, and at a set flow its speed. Join it to the rest to print part of a path thicker or thinner.",
+        run: Run::Op(curve_tools::bead),
+    },
+    Node {
+        name: "adjust",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            opt(
+                "speed",
+                NUM,
+                1.0,
+                "speed factor (at a set flow, the flow scales with it)",
+            ),
+            opt("extrude", NUM, 1.0, "extrusion factor"),
+        ],
+        output: "Toolpath",
+        doc: "Every printing move's speed and extrusion multiplied by the fields at its middle: a slower band (`speed: 1 - 0.5 * greater(z, 50)`), a flow that ramps up over a fillet, wider beads where a wall overhangs. Travels are left alone.",
+        run: Run::Op(printing::adjust),
+    },
+    Node {
+        name: "accelerate",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            req("acceleration", "Number", "mm/s²"),
+        ],
+        output: "Toolpath",
+        doc: "Speed that only rises as fast as `acceleration` allows: wherever a move is faster than the one before, the stretch after it is cut into 8 pieces that speed up step by step (EasyGCode's acceleration ramps after its spikes and bridges).",
+        run: Run::Op(printing::accelerate),
+    },
+    Node {
+        name: "fan",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            req("level", NUM, "0–100 %; a field sets it zone by zone"),
+        ],
+        output: "Toolpath",
+        doc: "Part fan levels along the toolpath, read at each move: the fan changes wherever the level does (EasyGCode's fan on the bumps only). Replaces the automatic \"fan on after the first layer\"; like it, only written with the printer's start and end blocks.",
+        run: Run::Op(printing::fan),
+    },
+    Node {
+        name: "dwell",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            all(
+                "at",
+                "List<Point>",
+                "the printing move ending nearest each point gets a pause",
+            ),
+            req("seconds", "Number", "0..600"),
+        ],
+        output: "Toolpath",
+        doc: "A pause with the nozzle in place (`G4`) after the move nearest each point, as EasyGCode pauses at a spike's tip to let it set.",
+        run: Run::Op(printing::dwell),
+    },
+    Node {
+        name: "spikes",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", "usually a vase spiral"),
+            all(
+                "at",
+                "List<Point>",
+                "where the spikes go (the nearest place on the path)",
+            ),
+            req("width", "Length", "between the way out and the way back"),
+            req(
+                "length",
+                "Length",
+                "how far a spike sticks out; negative goes in",
+            ),
+            opt("angle", "Angle", 0.0, "tilts the spike up (degrees)"),
+            opt("out_speed", "Number", 1.0, "speed factor on the way out"),
+            opt("tip_speed", "Number", 1.0, "speed factor across the tip"),
+            opt("in_speed", "Number", 1.0, "speed factor on the way back"),
+            opt("dwell", "Number", 0.0, "pause at the tip, seconds"),
+        ],
+        output: "Toolpath",
+        doc: "Spikes pulled out of the toolpath (EasyGCode's staples): at each place the path leaves the wall, runs out `length`, across the tip, pauses, and comes back `width` further on. Out is the right of travel: outward on a counter-clockwise wall. `scatter` makes good places.",
+        run: Run::Op(printing::spikes),
     },
     Node {
         name: "wave",
@@ -1295,6 +1736,14 @@ impl Args<'_> {
         }
     }
 
+    /// A text, like a dropdown's choice.
+    pub fn text(&self, i: usize) -> Result<&str, String> {
+        match self.get(i)? {
+            Value::Text(t) => Ok(t),
+            other => Err(self.wrong(i, "a text in quotes", other)),
+        }
+    }
+
     /// Whether input `i` holds a field (rather than a plain number).
     pub fn is_field(&self, i: usize) -> bool {
         matches!(self.values.get(i), Some(Value::Field(_)))
@@ -1373,18 +1822,17 @@ fn sqrt(a: &[f64]) -> Result<f64, String> {
 }
 
 fn distance(_: &mut Ctx, a: &Args) -> Result<Value, String> {
+    if let Ok(p) = a.point(0) {
+        return Ok(Value::Field(Rc::new(Field::distance(&Curve::new(
+            vec![p],
+            false,
+        )))));
+    }
     let c = a.curve(0)?;
     if c.points.is_empty() {
         return Err("the curve has no points".into());
     }
     Ok(Value::Field(Rc::new(Field::distance(c))))
-}
-
-fn circle(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let r = a.positive(0)?;
-    let n = ctx.samples(96, 192);
-    ctx.spend(n)?;
-    Ok(Value::Curve(Rc::new(Curve::circle(r, n))))
 }
 
 fn polygon(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
@@ -1417,13 +1865,31 @@ fn spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let spacing = a.field(1)?;
     let tolerance = a.num(2)?;
     let min_samples = a.count(3, 0, 100_000)?;
-    let curve = spiral::spiral(
-        outer,
-        &spacing,
-        tolerance,
-        min_samples,
-        ctx.remaining().min(MAX_PATH_POINTS),
-    )?;
+    let (start, turns) = (a.num(4)?, a.num(5)?);
+    let max = ctx.remaining().min(MAX_PATH_POINTS);
+    let curve = if turns != 0.0 {
+        if outer != 0.0 {
+            ctx.warn("`outer` is ignored when `turns` is given".into());
+        }
+        let constant = if a.is_field(1) { None } else { Some(a.num(1)?) };
+        spiral::spiral_turns(
+            start,
+            turns,
+            &spacing,
+            constant,
+            tolerance,
+            min_samples,
+            max,
+        )?
+    } else {
+        if start != 0.0 {
+            return Err("`start` needs `turns`: how many turns to make from there".into());
+        }
+        if outer == 0.0 {
+            return Err("give `outer` (the radius to end near) or `turns`".into());
+        }
+        spiral::spiral(outer, &spacing, tolerance, min_samples, max)?
+    };
     ctx.spend(curve.points.len())?;
     Ok(Value::Curve(Rc::new(curve)))
 }
@@ -1526,7 +1992,12 @@ fn toolpath(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 fn vase_spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let wall = a.surface(0)?;
     let settings = Settings::from_inputs(a.num(2)?, a.num(1)?, a.num(3)?, flow(a, 4)?)?;
-    let path = toolpath::vase_spiral(wall, settings, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let path = toolpath::vase_spiral(
+        wall,
+        settings,
+        a.flag(5)?,
+        ctx.remaining().min(MAX_PATH_POINTS),
+    )?;
     ctx.spend(path.points.len())?;
     Ok(Value::Toolpath(Rc::new(path)))
 }
@@ -1540,10 +2011,25 @@ fn flow(a: &Args, i: usize) -> Result<f64, String> {
     Ok(q)
 }
 
+fn helix(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let circle = a.curve(0)?;
+    let (pitch, height) = (a.num(1)?, a.num(2)?);
+    let settings = Settings::from_inputs(a.num(3)?, pitch, a.num(4)?, flow(a, 5)?)?;
+    let path = toolpath::helix(
+        circle,
+        pitch,
+        height,
+        settings,
+        ctx.remaining().min(MAX_PATH_POINTS),
+    )?;
+    ctx.spend(path.points.len())?;
+    Ok(Value::Toolpath(Rc::new(path)))
+}
+
 fn stack(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let path = a.toolpath(0)?;
     let n = a.count(1, 1, 10_000)?;
-    let out = toolpath::stack(path, n, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let out = toolpath::stack(path, n, a.num(2)?, ctx.remaining().min(MAX_PATH_POINTS))?;
     ctx.spend(out.points.len())?;
     Ok(Value::Toolpath(Rc::new(out)))
 }
@@ -1565,7 +2051,7 @@ fn join(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     if paths.is_empty() {
         return Err("needs at least one toolpath".into());
     }
-    let out = toolpath::join(&paths, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let out = toolpath::join(&paths, a.num(1)?, ctx.remaining().min(MAX_PATH_POINTS))?;
     ctx.spend(out.points.len())?;
     Ok(Value::Toolpath(Rc::new(out)))
 }
@@ -1628,7 +2114,7 @@ mod tests {
         }
         let cat = catalog();
         assert!(cat.starts_with("## Numbers & lists"));
-        assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40, flow: Number = 0) -> Toolpath"));
+        assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40, flow: Number = 0, flat_top: Bool = true) -> Toolpath"));
         assert!(cat.contains("fade(distance: Number | Field, inside: Number | Field, outside: Number | Field, band: Number | Field = 0) -> Number | Field"));
     }
 

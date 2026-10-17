@@ -170,6 +170,98 @@ const cases = {
 cases['lamp-cylinder-flow'] = JSON.parse(JSON.stringify(cases['lamp-cylinder']));
 cases['lamp-cylinder-flow'].lamp.flowFeed = { enabled: true, rate: 8 };
 
+// The thread connector: its defaults (EasyGCode index.html), and two variations that exercise a
+// brim with its own layer height (the hop over it, and the fan after the helix's first turn on
+// the filament printer), a fraction of a turn, a tighter fit, a set line width and no start/end
+// blocks. Reference for EasyCAD's thread template (`helix`, `circle(r, tolerance)`, `join`).
+const thread = (over) => ({
+  project: 'thread',
+  printer: pellet(),
+  travelFeed: 6000,
+  tolerance: 0.01,
+  centerX: 125,
+  centerY: 125,
+  ...over,
+});
+cases['thread-default'] = thread({
+  thread: { size: 'm8', height: 20, fitTolerance: 0, lineWidth: 0, flowRate: 20 },
+  brim: { enabled: false, linesOuter: 4, lineWidth: 0, layerHeight: 0, flowRate: 20 },
+});
+cases['thread-brim'] = thread({
+  printer: pellet({
+    mode: 'filament',
+    endLift: 30,
+    filament: { diameter: 1.75, nozzle: 215, bed: 65, fan: 100 },
+  }),
+  travelFeed: 9000,
+  thread: { size: 'm12', height: 15.5, fitTolerance: -0.1, lineWidth: 0, flowRate: 15 },
+  brim: { enabled: true, linesOuter: 3, lineWidth: 0, layerHeight: 0.8, flowRate: 10 },
+});
+cases['thread-bare'] = thread({
+  printer: pellet({ includeStartEnd: false }),
+  tolerance: 0.02,
+  centerX: 100,
+  centerY: 110,
+  thread: { size: 'm3', height: 6, fitTolerance: 0.05, lineWidth: 1, flowRate: 5 },
+  brim: { enabled: true, linesOuter: 2, lineWidth: 1.2, layerHeight: 0, flowRate: 5 },
+});
+
+// The spoon: its defaults in volumetric flow mode (20 mm³/s), one printed stick first with a
+// thicker stick bead on the filament printer, and one with no stick and no start/end blocks.
+// Reference for EasyCAD's spoon template (`spiral(start, turns)`, `center`, `bead`, `stack`).
+const spoon = (over, sp) => ({
+  project: 'spoon',
+  printer: pellet(),
+  layerHeight: 0.6,
+  lineWidth: 2.0,
+  printFeed: 1200,
+  travelFeed: 6000,
+  centerX: 125,
+  centerY: 125,
+  ...over,
+  spoon: {
+    turns: 6,
+    startRadius: 0,
+    stickLength: 40,
+    layers: 3,
+    startPoint: 'center',
+    stickLineWidth: 0,
+    stickLayerHeight: 0,
+    stickFeed: 0,
+    flowFeed: { enabled: true, rate: 20 },
+    ...sp,
+  },
+});
+cases['spoon-flow'] = spoon({}, {});
+cases['spoon-stick'] = spoon(
+  {
+    printer: pellet({
+      mode: 'filament',
+      endLift: 30,
+      filament: { diameter: 1.75, nozzle: 210, bed: 60, fan: 80 },
+    }),
+    layerHeight: 0.4,
+    lineWidth: 1.2,
+    travelFeed: 9000,
+    centerX: 128,
+    centerY: 128,
+  },
+  {
+    turns: 4.5,
+    startRadius: 5,
+    stickLength: 30,
+    layers: 2,
+    startPoint: 'stick',
+    stickLineWidth: 3,
+    stickLayerHeight: 0.8,
+    flowFeed: { enabled: true, rate: 12 },
+  }
+);
+cases['spoon-bare'] = spoon(
+  { printer: pellet({ includeStartEnd: false }), layerHeight: 0.5, lineWidth: 1.5, centerX: 110, centerY: 120 },
+  { turns: 3, startRadius: 2, stickLength: 0, layers: 1, flowFeed: { enabled: true, rate: 10 } }
+);
+
 const out = path.join(__dirname, '..', 'fixtures', 'easygcode');
 fs.mkdirSync(out, { recursive: true });
 for (const [name, cfg] of Object.entries(cases)) {

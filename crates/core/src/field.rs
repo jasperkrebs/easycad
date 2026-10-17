@@ -39,6 +39,8 @@ enum Kind {
     Coord(usize),
     /// Distance in the XY plane to a curve; negative inside a closed curve.
     Distance(Rc<CurveDistance>),
+    /// How far a wall leans out from vertical, in degrees, at the point.
+    Lean(Rc<WallLean>),
     Binary(BinOp, Rc<Field>, Rc<Field>),
     Neg(Rc<Field>),
     /// A math step applied point by point.
@@ -67,6 +69,15 @@ impl Field {
             kind: Kind::Distance(Rc::new(CurveDistance::new(curve))),
             depth: 1,
         }
+    }
+
+    /// The lean of a wall of stacked sections: at each point, the angle (degrees from
+    /// vertical) between the wall there and the section above, positive leaning outward.
+    pub fn lean(sections: &[Vec<P3>]) -> Result<Field, String> {
+        Ok(Field {
+            kind: Kind::Lean(Rc::new(WallLean::new(sections)?)),
+            depth: 1,
+        })
     }
 
     pub fn binary(op: BinOp, a: Rc<Field>, b: Rc<Field>) -> Result<Field, String> {
@@ -105,6 +116,7 @@ impl Field {
             Kind::Const(v) => *v,
             Kind::Coord(axis) => p.get(*axis).copied().unwrap_or(0.0),
             Kind::Distance(d) => d.at([p[0], p[1]]),
+            Kind::Lean(w) => w.at(p),
             Kind::Binary(op, a, b) => {
                 let (x, y) = (a.at(p), b.at(p));
                 match op {
@@ -230,6 +242,75 @@ impl CurveDistance {
             }
         }
         if inside { -best } else { best }
+    }
+}
+
+/// A wall of stacked closed sections (a loft), to read its lean anywhere.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WallLean {
+    sections: Vec<Vec<P3>>,
+    levels: Vec<f64>,
+    /// +1 for counter-clockwise sections (right of travel is outside), −1 for clockwise.
+    outward: f64,
+}
+
+impl WallLean {
+    fn new(sections: &[Vec<P3>]) -> Result<Self, String> {
+        let m = sections.first().map_or(0, Vec::len);
+        if sections.len() < 2 || m < 3 || sections.iter().any(|s| s.len() != m) {
+            return Err(
+                "needs a wall of 2 or more closed sections with the same number of points".into(),
+            );
+        }
+        let levels: Vec<f64> = sections
+            .iter()
+            .map(|s| s.iter().map(|p| p[2]).sum::<f64>() / m as f64)
+            .collect();
+        if levels
+            .windows(2)
+            .any(|w| w[1].partial_cmp(&w[0]) != Some(std::cmp::Ordering::Greater))
+        {
+            return Err("the wall's sections must be stacked upward".into());
+        }
+        let outward = if crate::geom::signed_area_xy(&sections[0]) >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
+        Ok(WallLean {
+            sections: sections.to_vec(),
+            levels,
+            outward,
+        })
+    }
+
+    fn at(&self, p: P3) -> f64 {
+        let n = self.levels.len();
+        let k = self
+            .levels
+            .partition_point(|l| *l <= p[2])
+            .saturating_sub(1)
+            .min(n - 2);
+        let (Some(here), Some(above)) = (self.sections.get(k), self.sections.get(k + 1)) else {
+            return f64::NAN;
+        };
+        let m = here.len();
+        let Some(j) = (0..m).min_by(|&a, &b| {
+            let d = |q: &P3| (q[0] - p[0]).hypot(q[1] - p[1]);
+            d(&here[a]).total_cmp(&d(&here[b]))
+        }) else {
+            return f64::NAN;
+        };
+        let (prev, next) = (here[(j + m - 1) % m], here[(j + 1) % m]);
+        let (tx, ty) = (next[0] - prev[0], next[1] - prev[1]);
+        let len = tx.hypot(ty);
+        if len <= 0.0 {
+            return f64::NAN;
+        }
+        let (nx, ny) = (self.outward * ty / len, -self.outward * tx / len);
+        let (a, b) = (here[j], above[j]);
+        let out = (b[0] - a[0]) * nx + (b[1] - a[1]) * ny;
+        out.atan2(b[2] - a[2]).to_degrees()
     }
 }
 

@@ -3,6 +3,48 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-17: every EasyGCode project from general steps; thread and spoon golden
+
+**Why:** the owner's goal is that every EasyGCode project (and future ones) can be made in
+EasyCAD from recipes, with the steps simple enough that even a small model can build with them.
+
+**Landed**
+- **Audit** of all eight EasyGCode projects, feature by feature, against EasyCAD's steps:
+  [easygcode-coverage.md](easygcode-coverage.md). Seven are fully buildable; the bend stool
+  lacks only foaming (printer heater macros, left out until it can be golden-tested).
+- **About 35 general steps:**
+  - lists and logic: `pick`, `index_of`, `sum`, `accumulate`, `greater`, `less`;
+  - curves: `circle(r, tolerance)`, `superellipse`, `catmull_rom`, `fillet`, `simplify`,
+    `subcurve`, `join_curves`, `tangent`, `normal`, `closest`, `centroid`,
+    `spiral(start, turns)`, `offset` by a field;
+  - ring fills: `rings`, `link_rings` (staircase, zipper, spiral);
+  - fields and points: `lean`, `distance(point)`, `scatter`; transforms: `center`;
+    surfaces: `contour(pace)`;
+  - toolpaths: `helix`, `bead`, `adjust`, `accelerate`, `fan`, `dwell`, `spikes`,
+    `flat_top` on the vase steps.
+- **Toolpath model** (`toolpath.rs`):
+  - per-move speed factors and machine events (fan levels, dwells);
+  - EasyGCode's clearance hop in `stack` (`lift`) and `join` (`clear`);
+  - joins carry straight on where parts meet, and skip empty parts;
+  - one-layer parts at the start belong to the first layer, so the fan comes on where
+    EasyGCode turns it on.
+- **Templates** "Thread connector" and "Spoon": golden tests against six new EasyGCode fixtures
+  (three each, including a brim with its own layer height, a fraction of a turn, printing from
+  the stick's tip with a thicker stick bead, the filament printer and bare G-code). Every
+  command is byte-identical on the first run. The smoke test downloads both from the app and
+  compares them too.
+- **New G-code commands** (`M106`/`M107` from `fan`, `G4` from `dwell`, scaled `F`, extrusion
+  above one bead) are checked against a second hand-checked fixture
+  (`fixtures/hand-checked/machine-events.gcode`, exact arithmetic in Python).
+- The 3D view frames wide objects on a phone too (it used only the vertical view angle).
+- Engine 323 KB gzipped (of the 3 MB budget).
+
+**Open**
+- Foaming; spikes' arc way-out and bead override; zone tags carried through tweens (see the
+  coverage page). Each is a feature request waiting to be filed.
+- The vessel, lampshade, container, coat hanger and bend stool templates aren't written yet:
+  recipe work, not engine work.
+
 ## 2026-10-15: the Graph tab, Grasshopper-style components and wires
 
 **Why:** the owner works in Grasshopper and wants to build and extend recipes without AI,

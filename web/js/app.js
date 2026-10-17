@@ -19,6 +19,8 @@ const TEMPLATES = [
   { id: 'ribbed-cylinder', name: 'Ribbed cylinder' },
   { id: 'star-bowl', name: 'Star bowl' },
   { id: 'spiral-disc', name: 'Spiral disc (from EasyGCode)' },
+  { id: 'thread-connector', name: 'Thread connector (from EasyGCode)' },
+  { id: 'spoon', name: 'Spoon (from EasyGCode)' },
   { id: 'cut-cylinder', name: 'Cut cylinder (tilted layers)' },
   { id: 'turned-vase', name: 'Turned vase (geometry only)' },
 ];

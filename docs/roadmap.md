@@ -70,9 +70,19 @@ Split into small steps (15 Oct):
     layers, hand-checked fixture). Speeds as volumetric flow, golden-tested.
   - Templates: "Cut cylinder" (tilted layers) and "Turned vase" (geometry only).
   - The Graph tab: the recipe as components and wires, editable without AI.
-- **1d: More of EasyGCode as recipes** ← *next*: the vessel (wall + solid bottom as a joined
-  toolpath), the bend stool seat (`offset_rings`), the lampshade (`spiral_on`). Each one
-  golden-tested, and each new step general enough to reuse.
+- **1d: Everything EasyGCode does, from general steps** ✓ *done 17 Oct 2026* (see
+  [easygcode-coverage.md](easygcode-coverage.md))
+  - All eight EasyGCode projects audited feature by feature; about 35 general steps added so
+    every one can be built as a recipe (ring fills, `helix`, zone speeds and extrusion,
+    acceleration ramps, fan levels, dwells, spikes, overhang-paced layers, …). The one gap
+    left is the bend stool's foaming (printer heater macros).
+  - The thread connector and the spoon as templates: their G-code matches EasyGCode's,
+    command for command (three cases each).
+  - The vessel, lampshade, container, coat hanger and bend stool are recipe work now, written
+    when wanted (by hand or by the agent).
+- **1d+: Feature requests** ← *next*: when the in-app agent can't build something, it files a
+  request; a Claude Code session builds the step, checks it and ships it, and the agent picks
+  up again ([feature-requests.md](feature-requests.md)).
 - **1e:** formatter, presets, project library on the device.
 
 The full Phase 1 scope:

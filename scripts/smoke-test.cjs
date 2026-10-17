@@ -150,6 +150,27 @@ async function waitForServer(url) {
           `${name}: spiral disc G-code ${gcode.name} differs from EasyGCode's: ${got.length} vs ${want.length} commands, first difference at ${differ}: "${got[differ]}" vs "${want[differ]}"`,
         );
       }
+      // So do the thread connector and the spoon (EasyGCode's defaults, its pellet printer).
+      for (const [id, title, fixture] of [
+        ['thread-connector', 'Thread connector', 'thread-default.gcode'],
+        ['spoon', 'Spoon', 'spoon-flow.gcode'],
+      ]) {
+        await page.click('#tab-settings');
+        await page.selectOption('#template', id);
+        await page.waitForFunction((t) => document.getElementById('projectName').textContent === t, title, { timeout: 15000 });
+        await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+        if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-${id}.png`), fullPage: name === 'phone' });
+        const file = await saveFrom(page, '#exportButtons button.primary');
+        const expected = commands(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'easygcode', fixture), 'utf8'));
+        const ours = commands(file.data.toString('utf8'));
+        const at = ours.findIndex((c, i) => !sameCommand(c, expected[i] ?? ''));
+        if (file.name !== `${id}.gcode` || ours.length !== expected.length || at >= 0) {
+          failures.push(
+            `${name}: ${id} G-code ${file.name} differs from EasyGCode's: ${ours.length} vs ${expected.length} commands, first difference at ${at}: "${ours[at]}" vs "${expected[at]}"`,
+          );
+        }
+      }
+
       await page.click('#tab-print');
       if ((await page.inputValue('#printer')) !== 'pellet') failures.push(`${name}: the disc should pick the pellet printer`);
       await page.click('#panel-print summary');

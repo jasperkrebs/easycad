@@ -3,7 +3,7 @@
 use crate::eval::{Evaluation, Quality, Severity, evaluate};
 use easycad_lang::{Literal, set_values};
 
-const TEMPLATES: [(&str, &str); 6] = [
+const TEMPLATES: [(&str, &str); 8] = [
     (
         "twisted-vase",
         include_str!("../../../web/templates/twisted-vase.easycad"),
@@ -27,6 +27,14 @@ const TEMPLATES: [(&str, &str); 6] = [
     (
         "turned-vase",
         include_str!("../../../web/templates/turned-vase.easycad"),
+    ),
+    (
+        "thread-connector",
+        include_str!("../../../web/templates/thread-connector.easycad"),
+    ),
+    (
+        "spoon",
+        include_str!("../../../web/templates/spoon.easycad"),
     ),
 ];
 
@@ -221,8 +229,8 @@ fn typos_get_suggestions() {
         [
             (2, 5, "unknown name `hieght`; did you mean `height`?".to_string()),
             (3, 5, "there's no step called `lofft`; did you mean `loft`?".to_string()),
-            (4, 16, "circle: has no input called `rr`; did you mean `r`? (inputs: r)".to_string()),
-            (5, 26, "vase_spiral: has no input called `layr`; did you mean `layer`? (inputs: wall, layer, width, speed, flow)".to_string()),
+            (4, 16, "circle: has no input called `rr`; did you mean `r`? (inputs: r, tolerance)".to_string()),
+            (5, 26, "vase_spiral: has no input called `layr`; did you mean `layer`? (inputs: wall, layer, width, speed, flow, flat_top)".to_string()),
         ]
     );
     let e = run("x = zzz");
@@ -274,8 +282,8 @@ fn arguments_are_checked() {
             .collect()
     };
     assert_eq!(
-        msgs("x = circle(1, 2)"),
-        ["circle: too many values; it takes 1 (circle(r: Length) -> Curve)"]
+        msgs("x = circle(1, 0, 2)"),
+        ["circle: too many values; it takes 2 (circle(r: Length, tolerance: Length = 0) -> Curve)"]
     );
     assert_eq!(
         msgs("x = star(5, outer: 3)"),

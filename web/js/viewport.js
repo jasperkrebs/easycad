@@ -152,7 +152,10 @@ export function createViewport(canvas) {
     const b = bounds || { min: [-50, -50, 0], max: [50, 50, 100] };
     const size = [0, 1, 2].map((k) => b.max[k] - b.min[k]);
     const r = Math.max(10, Math.hypot(size[0], size[1], size[2]) / 2) * 1.1;
-    const dist = r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
+    // The narrower of the two view angles, so it fits across a phone's narrow view too.
+    const vertical = THREE.MathUtils.degToRad(camera.fov / 2);
+    const half = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
+    const dist = r / Math.sin(half);
     controls.target.set((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
     const dir = new THREE.Vector3(0.62, -0.78, 0.5).normalize();
     camera.position.copy(controls.target).addScaledVector(dir, dist);

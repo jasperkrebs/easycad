@@ -1,0 +1,43 @@
+easycad 0.1
+project "Spoon"
+printer "Klipper pellet"
+note "EasyGCode's spoon as a recipe: a flat spiral, one line width per turn, with a straight stick running out from its last turn. Printed in a few layers, turned onto the bed's diagonal."
+
+group "Spoon"
+param turns        = 6      in 0.5..40 step 0.5   "Turns"
+param start_radius = 0 mm   in 0..50              "Start radius"
+param stick        = 40 mm  in 0..300             "Stick length"
+param layers       = 3      in 1..20 step 1       "Layers"
+param from_stick   = false                        "Start at the stick's tip"
+
+group "Stick bead"
+param stick_line   = 0 mm   in 0..10 step 0.1     "Stick line width (0: same)"
+param stick_layer  = 0 mm   in 0..3 step 0.05     "Stick layer height (0: same)"
+
+group "Print"
+param layer        = 0.6 mm in 0.1..3             "Layer height"
+param line         = 2 mm   in 0.2..6             "Line width"
+param flow         = 20     in 1..100             "Flow (mm³/s)"
+
+# The spiral, then a stick straight out along the radius through its end.
+coil   = spiral(spacing: line, start: start_radius, turns: turns)
+tip    = evaluate(coil, 1)
+tx     = sample(x, tip)
+ty     = sample(y, tip)
+out    = sqrt(tx^2 + ty^2)
+end    = point(tx + tx / out * stick, ty + ty / out * stick)
+
+# Both turned 45° onto the bed's diagonal and centred together; run backwards from the stick's
+# tip if asked.
+fitted = center([coil, line(tip, end)] |> rotate(45))
+spiral_curve = pick(from_stick, flip(item(fitted, 0)), item(fitted, 0))
+stick_curve  = pick(from_stick, flip(item(fitted, 1)), item(fitted, 1))
+spiral_part  = toolpath(spiral_curve, width: line, layer: layer, flow: flow)
+stick_part   = toolpath(stick_curve, width: line, layer: layer, flow: flow)
+               |> bead(width: stick_line, layer: stick_layer)
+
+# One continuous line per layer, then the same one layer up (straight over, no lift).
+one    = join(pick(from_stick, [stick_part, spiral_part], [spiral_part, stick_part]))
+path   = stack(one, layers, lift: 0)
+
+print path

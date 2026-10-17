@@ -322,6 +322,10 @@ impl Curve {
         } else {
             t.clamp(0.0, 1.0)
         };
+        // An open curve's ends exactly, without rounding drift from walking along it.
+        if !self.closed && t >= 1.0 {
+            return self.points.last().copied().unwrap_or(first);
+        }
         let target = total * t;
         let mut walked = 0.0;
         for (a, b) in self.segments() {
@@ -447,8 +451,17 @@ impl Curve {
     /// mitred, which is right for smooth curves and modest distances; a distance larger than a
     /// curve's tightest bend makes it fold over.
     pub fn offset(&self, distance: f64) -> Curve {
+        if distance == 0.0 {
+            return self.clone();
+        }
+        self.offset_by(&|_| distance)
+    }
+
+    /// [`Curve::offset`] by a different distance at each point (`distance(point)`, read where
+    /// the point is before it moves).
+    pub fn offset_by(&self, distance: &dyn Fn(P3) -> f64) -> Curve {
         let n = self.points.len();
-        if n < 2 || distance == 0.0 {
+        if n < 2 {
             return self.clone();
         }
         let sign = if self.closed && self.signed_area() < 0.0 {
@@ -478,7 +491,7 @@ impl Curve {
                     None
                 };
                 let after = segs.get(i).copied().flatten();
-                let d = sign * distance;
+                let d = sign * distance(p);
                 match (before, after) {
                     (Some(a), Some(b)) => match unit3([a[0] + b[0], a[1] + b[1], 0.0]) {
                         Some(m) => {

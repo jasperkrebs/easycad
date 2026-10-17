@@ -120,9 +120,12 @@ impl Surface {
     /// Flat layers through the surface (Grasshopper's Contour), `layer` apart: the first at its
     /// bottom, then one per layer up to its top, the height snapped to whole layers with the
     /// surface stretched to fit, exactly as `vase_spiral` prints it. Sections must stack upward.
-    pub fn contour(&self, layer: f64, max_points: usize) -> Result<Vec<Curve>, String> {
+    pub fn contour(&self, layer: f64, pace: f64, max_points: usize) -> Result<Vec<Curve>, String> {
         if !(layer > 0.0 && layer.is_finite()) {
             return Err(format!("`layer` must be more than 0, got {layer}"));
+        }
+        if !(0.0..=1.0).contains(&pace) {
+            return Err(format!("`pace` must be between 0 and 1, got {pace}"));
         }
         let n = self.sections.len();
         let m = self.samples();
@@ -146,13 +149,6 @@ impl Surface {
         }
         let (z0, z1) = (levels[0], levels[n - 1]);
         let height = z1 - z0;
-        let layers = (height / layer).round().max(1.0) as usize;
-        if (layers + 1).saturating_mul(m) > max_points {
-            return Err(format!(
-                "this needs too many points ({} layers of {m}); use a larger layer height",
-                layers + 1
-            ));
-        }
         let v_at = |z: f64| -> f64 {
             let i = levels
                 .partition_point(|l| *l <= z)
@@ -161,10 +157,72 @@ impl Surface {
             let (lo, hi) = (levels[i], levels[i + 1]);
             i as f64 + ((z - lo) / (hi - lo)).clamp(0.0, 1.0)
         };
+        if pace > 0.0 {
+            return self.paced_contour(layer, pace, &v_at, z0, z1, max_points);
+        }
+        let layers = (height / layer).round().max(1.0) as usize;
+        if (layers + 1).saturating_mul(m) > max_points {
+            return Err(format!(
+                "this needs too many points ({} layers of {m}); use a larger layer height",
+                layers + 1
+            ));
+        }
         Ok((0..=layers)
             .map(|k| {
                 let v = v_at(z0 + height * k as f64 / layers as f64);
                 let z = z0 + layer * k as f64;
+                let points = (0..m)
+                    .map(|j| {
+                        let p = self.point_at(v, j);
+                        [p[0], p[1], z]
+                    })
+                    .collect();
+                Curve::new(points, self.closed)
+            })
+            .collect())
+    }
+
+    /// Layers closer together where the wall leans (EasyGCode's overhang-paced Z): each step is
+    /// `layer · (1 − pace · (1 − cos a))`, `a` being the lean of the seam (point 0) half a step
+    /// up (cos a no less than 0.05), and the steps are then scaled to end exactly at the top.
+    fn paced_contour(
+        &self,
+        layer: f64,
+        pace: f64,
+        v_at: &dyn Fn(f64) -> f64,
+        z0: f64,
+        z1: f64,
+        max_points: usize,
+    ) -> Result<Vec<Curve>, String> {
+        let m = self.samples();
+        let eps = (0.02 * layer).max(1e-3);
+        let seam = |z: f64| self.point_at(v_at(z.clamp(z0, z1)), 0);
+        let cos_at = |z: f64| -> f64 {
+            let (a, b) = (seam(z - eps), seam(z + eps));
+            let run = (b[0] - a[0]).hypot(b[1] - a[1]);
+            (2.0 * eps).atan2(run).sin().max(0.05) // cos of the angle from vertical
+        };
+        let step = |z: f64| layer * (1.0 - pace * (1.0 - cos_at(z)));
+        let mut zs = vec![z0];
+        let mut z = z0;
+        while z < z1 - 1e-9 {
+            let g = step(z);
+            z += step(z + g / 2.0);
+            zs.push(z);
+            if zs.len().saturating_mul(m) > max_points {
+                return Err(format!(
+                    "this needs too many points (over {} layers of {m}); use a larger layer height",
+                    zs.len()
+                ));
+            }
+        }
+        // Scaled to end exactly at the top.
+        let k = (z1 - z0) / (z - z0).max(1e-12);
+        Ok(zs
+            .into_iter()
+            .map(|z| {
+                let z = z0 + (z - z0) * k;
+                let v = v_at(z);
                 let points = (0..m)
                     .map(|j| {
                         let p = self.point_at(v, j);
@@ -344,12 +402,12 @@ mod tests {
         assert!(Surface::revolve(&Curve::circle(3.0, 8), 16).is_err());
 
         // 20 mm at 0.3 mm snaps to 67 layers (20.1 mm), 68 contours from the bottom up.
-        let layers = tube.contour(0.3, 1_000_000).unwrap();
+        let layers = tube.contour(0.3, 0.0, 1_000_000).unwrap();
         assert_eq!(layers.len(), 68);
         assert!((layers[67].points[0][2] - 20.1).abs() < 1e-9);
         assert!(layers.iter().all(|l| l.closed && l.points.len() == 32));
-        assert!(tube.contour(0.0, 1000).is_err());
-        assert!(tube.contour(0.001, 1000).is_err());
+        assert!(tube.contour(0.0, 0.0, 1000).is_err());
+        assert!(tube.contour(0.001, 0.0, 1000).is_err());
     }
 
     #[test]

@@ -12,7 +12,7 @@
 //! the build height, and every extrusion amount sane.
 
 use crate::geom::dist3;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{EventKind, Toolpath};
 use serde::Deserialize;
 use std::f64::consts::PI;
 use std::fmt::Write as _;
@@ -384,6 +384,14 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
         .get(1)
         .copied()
         .unwrap_or(path.points.len());
+    // A toolpath that sets its own fan levels doesn't get the automatic one.
+    let own_fan = path
+        .events
+        .iter()
+        .any(|e| matches!(e.kind, EventKind::Fan(_)));
+    let mut sorted = path.events.clone();
+    sorted.sort_by_key(|e| e.after); // stable: events at one point keep their order
+    let mut events = sorted.iter().peekable();
     let mut prev: Option<[f64; 3]> = None;
     let mut last_feed: Option<i64> = None;
     let mut first_extrude = true;
@@ -421,7 +429,7 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
                     f3(cur[2]),
                     f5(volume * e_factor)
                 );
-                let feed = round(s.feed_for(area));
+                let feed = round(s.feed_for(area) * path.speed_factor(i));
                 if last_feed != Some(feed) || first_extrude {
                     let _ = write!(line, " F{feed}");
                     last_feed = Some(feed);
@@ -431,10 +439,27 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
                 max_z = max_z.max(cur[2]);
             }
         }
-        if i + 1 == first_layer_end && profile.include_start_end && fan_pwm > 0 {
+        if i + 1 == first_layer_end && profile.include_start_end && fan_pwm > 0 && !own_fan {
             lines.push(format!(
                 "M106 S{fan_pwm} ; part cooling fan on after first layer"
             ));
+        }
+        while let Some(e) = events.next_if(|e| e.after <= i) {
+            match e.kind {
+                // Like the automatic fan, only with start/end blocks (they turn it off again).
+                EventKind::Fan(level) if profile.include_start_end => {
+                    let pwm = round(level.clamp(0.0, 100.0) * 2.55);
+                    lines.push(if pwm > 0 {
+                        format!("M106 S{pwm} ; part fan {} %", num(level))
+                    } else {
+                        "M107 ; part fan off".into()
+                    });
+                }
+                EventKind::Fan(_) => {}
+                EventKind::Dwell(seconds) => {
+                    lines.push(format!("G4 P{} ; dwell", round(seconds * 1000.0)));
+                }
+            }
         }
     }
     if profile.include_start_end {
@@ -450,6 +475,11 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
     text.push('\n');
     Ok(Output { text, lines: count })
 }
+
+/// The most a move may extrude, in beads (overhang compensation goes up to about 2.5).
+const MAX_EXTRUSION: f64 = 4.0;
+/// The most a move's speed may be scaled up.
+const MAX_SPEED_FACTOR: f64 = 20.0;
 
 /// Refuses toolpaths a machine shouldn't run: off the bed, out of reach, or with nonsense
 /// extrusion.
@@ -537,10 +567,29 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
             ));
         }
         let flow = path.flow.get(i).copied().unwrap_or(0.0);
-        if !(0.0..=1.0).contains(&flow) {
+        if !(0.0..=MAX_EXTRUSION).contains(&flow) {
             return Err(format!(
-                "move {i} extrudes {flow} of a bead; it must be between 0 and 1"
+                "move {i} extrudes {flow} times a bead; it must be between 0 and {MAX_EXTRUSION}"
             ));
+        }
+        let speed = path.speed_factor(i);
+        if !(speed.is_finite() && speed > 0.0 && speed <= MAX_SPEED_FACTOR) {
+            return Err(format!(
+                "move {i} has a speed factor of {speed}; it must be more than 0 and at most {MAX_SPEED_FACTOR}"
+            ));
+        }
+    }
+    for e in &path.events {
+        match e.kind {
+            EventKind::Dwell(s) if !(s.is_finite() && (0.0..=600.0).contains(&s)) => {
+                return Err(format!("a dwell of {s} s; it must be between 0 and 600 s"));
+            }
+            EventKind::Fan(f) if !(f.is_finite() && (0.0..=100.0).contains(&f)) => {
+                return Err(format!(
+                    "a fan level of {f} %; it must be between 0 and 100"
+                ));
+            }
+            _ => {}
         }
     }
     Ok(())

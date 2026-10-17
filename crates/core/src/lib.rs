@@ -12,6 +12,7 @@
 
 pub mod bead;
 pub mod curve;
+pub mod curve_ops;
 pub mod eval;
 pub mod field;
 pub mod files;
@@ -19,10 +20,13 @@ pub mod gcode;
 pub mod geom;
 pub mod graph;
 pub mod nodes;
+pub mod rings;
+pub mod scatter;
 pub mod spiral;
 pub mod stl;
 pub mod surface;
 pub mod toolpath;
+pub mod toolpath_ops;
 pub mod value;
 
 pub use eval::{
@@ -30,6 +34,8 @@ pub use eval::{
     evaluate, evaluate_with,
 };
 
+#[cfg(test)]
+mod blocks_tests;
 #[cfg(test)]
 mod eval_tests;
 #[cfg(test)]

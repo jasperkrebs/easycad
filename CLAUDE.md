@@ -13,10 +13,11 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
   (Bambu P1P filament, Klipper pellet).
 
 **Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0, 1a
-(recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL)
-and 1c (the Grasshopper toolbox, `spiralize`, the Graph tab) are done, and so is the Chat tab
-(the agent with the user's key, behind a password proxy). 1d (more of EasyGCode as recipes of
-general steps) is next.** Hosting: public repo + GitHub Pages. Priorities:
+(recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL),
+1c (the Grasshopper toolbox, `spiralize`, the Graph tab) and 1d (every EasyGCode project from
+general steps; thread and spoon golden, `docs/easygcode-coverage.md`) are done, and so is the
+Chat tab (the agent with the user's key, behind a password proxy). Next: feature requests from
+the agent, built by Claude Code (`docs/feature-requests.md`).** Hosting: public repo + GitHub Pages. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.
@@ -31,6 +32,7 @@ Slicers, 3MF and solids are "later".
    skills, project files)
 4. `docs/architecture.md`: how it's built and why
 5. `docs/definition-language.md`: the project file / recipe language (§2: what works today)
+   - `docs/easygcode-coverage.md`: which steps build each EasyGCode project, and what's missing
 6. `docs/devlog.md`: what landed recently, what's open
 7. `docs/research.md`: background and sources, when you need the "why"
 

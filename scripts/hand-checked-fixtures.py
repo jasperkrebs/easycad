@@ -139,6 +139,82 @@ path = spiralize(layers, width: 1, flow: 5)
 print path"""
 
 
+EVENTS_RECIPE = """easycad 0.1
+square = polyline([[0, 0], [20, 0], [20, 20], [0, 20]], closed: true)
+two = toolpath(square, width: 1, layer: 0.5, flow: 4) |> stack(2)
+tuned = adjust(two, speed: 1 - 0.5 * greater(x, 19), extrude: 1 + 0.5 * greater(y, 19))
+ramped = accelerate(tuned, 10)
+cooled = fan(ramped, level: 60 * greater(z, 0.6))
+path = dwell(cooled, [[20, 20, 1]], 0.5)
+print path"""
+
+
+def machine_events():
+    """A 20 mm square, two layers, tuned with the toolpath steps; worked out by their rules:
+
+    - `toolpath` prints the square at z = 0.5 (one layer up), `stack` the copy at z = 1.0, with
+      the hop between them: up to 1.5 (one layer above the new copy), over, down.
+    - `adjust` reads its fields at each move's middle: the right side (middle x = 20) at half
+      speed, the top side (middle y = 20) with 1.5 x extrusion.
+    - `accelerate` (10 mm/s^2): the top side starts faster than the right side, from
+      v0 = 2 / area to v1 = 4 / area mm/s (flow 4 mm^3/s), so its first
+      (v1^2 - v0^2) / 20 = 0.6 / area^2 mm are cut into 8 equal pieces, piece k running at
+      sqrt(v0^2 + 20 * k / 8 * 0.6 / area^2) = sqrt(4 + 1.5 k) / area; F = 60 x that.
+    - `fan` (60 % above z = 0.6): M106 S153 (round(60 * 2.55)) before layer 2's first move;
+      no automatic fan.
+    - `dwell`: G4 P500 after the move ending at (20, 20, 1).
+    """
+    area = bead_area(Q(1), Q(1, 2))
+    need = Decimal("0.6") / (area * area)
+    cx = cy = 125
+    lines, closest = [], Decimal("0.5")
+    last_feed, first = None, True
+
+    def travel(p):
+        nonlocal last_feed
+        lines.append(f"G0 X{fixed(Decimal(p[0]) + cx, 3)} Y{fixed(Decimal(p[1]) + cy, 3)} Z{fixed(Decimal(p[2]), 3)} F6000")
+        last_feed = "travel"
+
+    def move(a, b, speed, factor, note):
+        nonlocal last_feed, first, closest
+        length = sum((Decimal(b[k]) - Decimal(a[k])) ** 2 for k in range(3)).sqrt()
+        e = area * length * dec(factor)
+        feed_exact = speed * 60
+        feed = int((feed_exact + Decimal("0.5")).to_integral_value(rounding="ROUND_FLOOR"))
+        x, y, z = (Decimal(b[0]) + cx, Decimal(b[1]) + cy, Decimal(b[2]))
+        line = f"G1 X{fixed(x, 3)} Y{fixed(y, 3)} Z{fixed(z, 3)} E{fixed(e, 5)}"
+        if first or feed != last_feed:
+            line += f" F{feed}"
+            last_feed, first = feed, False
+        lines.append(f"{line} ; {note}: length {length:.6f}, E = area x length x {fmt(factor)}, F = {feed_exact:.4f}")
+        for v, digits in ((x, 3), (y, 3), (z, 3), (e, 5), (feed_exact, 0)):
+            closest = min(closest, margin(v, digits))
+
+    v1 = Decimal(4) / area
+    for layer, z in ((1, Decimal("0.5")), (2, Decimal("1.0"))):
+        if layer == 1:
+            travel((0, 0, z))
+        else:
+            lines.append("; hop: up to one layer above the new copy, over, down")
+            travel((0, 0, Decimal("1.5")))
+            travel((0, 0, Decimal("1.5")))
+            travel((0, 0, z))
+            lines.append("M106 S153 ; fan 60 % from layer 2 on")
+        move((0, 0, z), (20, 0, z), v1, Q(1), "bottom side, full speed")
+        move((20, 0, z), (20, 20, z), v1 / 2, Q(1), "right side, half speed")
+        if layer == 2:
+            lines.append("G4 P500 ; dwell at (20, 20, 1)")
+        prev = (Decimal(20), Decimal(20), z)
+        for k in range(1, 8):
+            mark = (Decimal(20) - need * k / 8, Decimal(20), z)
+            speed = (Decimal(4) + Decimal("1.5") * k).sqrt() / area
+            move(prev, mark, speed, Q(3, 2), f"top side, ramp piece {k} of 8")
+            prev = mark
+        move(prev, (0, 20, z), v1, Q(3, 2), "top side, piece 8 and the rest at full speed")
+        move((0, 20, z), (0, 0, z), v1, Q(1), "left side, full speed")
+    return lines, closest
+
+
 def main():
     lines, count, closest = tilted_diamond()
     header = [
@@ -152,16 +228,32 @@ def main():
         "M83",
     ]
     text = "\n".join(header + lines) + "\n"
-    target = OUT / "spiralize-tilted.gcode"
+    events, events_closest = machine_events()
+    events_text = "\n".join(
+        [
+            "; Hand-checked fixture: toolpath tuning steps (scripts/hand-checked-fixtures.py).",
+            "; The recipe (Klipper pellet printer, bed centre 125, 125; the moves between the",
+            "; start and end blocks, which are EasyGCode's and golden-tested elsewhere):",
+            *[f";   {l}" for l in EVENTS_RECIPE.splitlines()],
+            "; Bead area (w - h) h + pi (h/2)^2 = 0.25 + pi / 16 mm^2 for every move.",
+            "G90",
+            "M83",
+            *events,
+        ]
+    ) + "\n"
+    files = {OUT / "spiralize-tilted.gcode": text, OUT / "machine-events.gcode": events_text}
     if "--check" in sys.argv:
-        if not target.exists() or target.read_text() != text:
-            print(f"{target} is out of date; run python3 scripts/hand-checked-fixtures.py")
-            sys.exit(1)
+        for target, content in files.items():
+            if not target.exists() or target.read_text() != content:
+                print(f"{target} is out of date; run python3 scripts/hand-checked-fixtures.py")
+                sys.exit(1)
         print("hand-checked fixtures are up to date")
         return
     OUT.mkdir(parents=True, exist_ok=True)
-    target.write_text(text)
-    print(f"wrote {target} ({count} printing moves); closest call to a rounding boundary: {closest:.3e} of a digit")
+    for target, content in files.items():
+        target.write_text(content)
+    print(f"wrote spiralize-tilted.gcode ({count} printing moves); closest call to a rounding boundary: {closest:.3e} of a digit")
+    print(f"wrote machine-events.gcode; closest call to a rounding boundary: {events_closest:.3e} of a digit")
 
 
 if __name__ == "__main__":

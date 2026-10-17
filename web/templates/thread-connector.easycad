@@ -1,0 +1,49 @@
+easycad 0.1
+project "Thread connector"
+printer "Klipper pellet"
+note "EasyGCode's thread connector as a recipe: a vase-mode internal thread that screws onto a standard ISO bolt or threaded rod. The layer height is the thread's pitch, so each turn of the helix lays down one turn of thread, counter-clockwise as it rises (right-hand, like every ISO bolt)."
+
+group "Thread"
+param size       = "M8" of ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12", "M14", "M16", "M18", "M20", "M22", "M24", "M27", "M30", "M33", "M36", "M39", "M42", "M45", "M48", "M52", "M56", "M60", "M64"] "Size (ISO coarse)"
+param height     = 20 mm   in 2..200              "Height"
+param fit        = 0 mm    in -1..1 step 0.05     "Fit tolerance (on the diameter, − is tighter)"
+
+group "Print"
+param line       = 0 mm    in 0..15 step 0.1      "Line width (0: 2.4 × pitch)"
+param flow       = 20      in 0.5..60             "Flow (mm³/s)"
+param tolerance  = 0.01 mm in 0.001..0.2          "Chord tolerance"
+
+group "Brim"
+param brim       = false                          "Brim"
+param brim_lines = 4       in 1..20 step 1        "Brim lines"
+param brim_line  = 0 mm    in 0..15 step 0.1      "Brim line width (0: same as the helix)"
+param brim_layer = 0 mm    in 0..5 step 0.05      "Brim layer height (0: the pitch)"
+param brim_flow  = 20      in 0.5..60             "Brim flow (mm³/s)"
+
+# ISO 261 coarse threads: each size's diameter and pitch.
+sizes   = ["M2", "M2.5", "M3", "M4", "M5", "M6", "M8", "M10", "M12", "M14", "M16", "M18", "M20", "M22", "M24", "M27", "M30", "M33", "M36", "M39", "M42", "M45", "M48", "M52", "M56", "M60", "M64"]
+row     = index_of(sizes, size)
+d       = item([2, 2.5, 3, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 42, 45, 48, 52, 56, 60, 64], row)
+pitch   = item([0.4, 0.45, 0.5, 0.7, 0.8, 1, 1.25, 1.5, 1.75, 2, 2, 2.5, 2.5, 2.5, 3, 3, 3.5, 3.5, 4, 4, 4.5, 4.5, 5, 5, 5.5, 5.5, 6], row)
+
+# The bead's round inner edge (radius pitch / 2) sits in the bolt's groove touching both 60°
+# flanks: zero clearance at an inner diameter of d − (7√3/8 − 1) · pitch; `fit` moves it. The
+# nozzle runs half a line width outside that edge. A bead can't be narrower than it is tall.
+k_fit   = 7 * sqrt(3) / 8 - 1
+lw      = max(pick(line, line, 2.4 * pitch), pitch)
+inner_d = d - k_fit * pitch + fit
+rc      = (inner_d + lw) / 2
+
+# The helix starts at the back (+Y) and rises one pitch per turn to the full height.
+base    = circle(rc, tolerance: tolerance) |> rotate(90)
+coil    = helix(base, pitch: pitch, height: height, width: lw, flow: flow)
+
+# Brim rings outside the wall, outermost first; then up, over and down into the helix.
+bw      = pick(brim_line, brim_line, lw)
+bh      = pick(brim_layer, brim_layer, pitch)
+radii   = rc + lw / 2 + bw / 2 + bw * series(brim_lines - 1, -1, brim_lines)
+rings   = circle(radii, tolerance: tolerance) |> rotate(90)
+brimmed = join([toolpath(rings, width: bw, layer: bh, flow: brim_flow), coil], clear: 2 * bh)
+path    = pick(brim, brimmed, coil)
+
+print path

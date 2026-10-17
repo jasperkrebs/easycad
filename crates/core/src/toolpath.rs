@@ -124,12 +124,34 @@ pub struct Toolpath {
     /// (non-planar layers); 0 means the part's layer height.
     pub height: Vec<f64>,
     pub parts: Vec<Settings>,
+    /// Speed of the move that ends at each point, as a factor of its part's (1 = as set; at a
+    /// set flow, the flow scales with it): per-zone speeds and acceleration ramps.
+    pub speed: Vec<f64>,
+    /// Machine events (fan changes, dwells), each right after the move that ends at a point,
+    /// in order.
+    pub events: Vec<Event>,
     /// Index of the first point of each layer (the fan comes on after the first).
     pub layer_starts: Vec<usize>,
     /// Points per turn when the whole path is one regular spiral (for the overhang check).
     pub samples_per_turn: usize,
     /// Number of layers (for a spiral: turns, not counting the closing turn).
     pub layers: usize,
+}
+
+/// Something the machine does between two moves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Event {
+    /// Happens right after the move that ends at this point.
+    pub after: usize,
+    pub kind: EventKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EventKind {
+    /// Part fan to this level, 0–100 %.
+    Fan(f64),
+    /// Wait this many seconds with the nozzle where it is.
+    Dwell(f64),
 }
 
 /// Print statistics shown in the app (camelCase names for JavaScript).
@@ -190,6 +212,8 @@ impl Toolpath {
             part: Vec::with_capacity(capacity),
             height: Vec::with_capacity(capacity),
             parts,
+            speed: Vec::with_capacity(capacity),
+            events: Vec::new(),
             layer_starts: vec![0],
             samples_per_turn: 0,
             layers: 1,
@@ -216,6 +240,23 @@ impl Toolpath {
         self.turn.push(turn);
         self.part.push(part);
         self.height.push(if travel { 0.0 } else { height });
+        self.speed.push(1.0);
+    }
+
+    /// EasyGCode's clearance hop (`hopTravel` in its gcode.js) from the last point towards
+    /// `dest`: straight up to `clear_z` (only if that's higher than where the nozzle is), over
+    /// to above `dest`, and down to it (only if it's lower). Returns whether the move down is
+    /// still to come: when `dest` is at the travel height, the move over already ends on it.
+    fn hop(&mut self, dest: P3, clear_z: f64, part: u16) -> bool {
+        let Some(prev) = self.points.last().copied() else {
+            return true;
+        };
+        let z = clear_z.max(prev[2]).max(dest[2]);
+        if z > prev[2] + 1e-6 {
+            self.push([prev[0], prev[1], z], true, 0.0, 0.0, part);
+        }
+        self.push([dest[0], dest[1], z], true, 0.0, 0.0, part);
+        dest[2] < z - 1e-6
     }
 
     /// Copies point `i` of `other`, shifted by `dz`, with its part index moved by `part_offset`.
@@ -229,6 +270,35 @@ impl Toolpath {
             other.part.get(i).copied().unwrap_or(0) + part_offset,
             other.height.get(i).copied().unwrap_or(0.0),
         );
+        if let (Some(slot), Some(v)) = (self.speed.last_mut(), other.speed.get(i)) {
+            *slot = *v;
+        }
+    }
+
+    /// Copies `other`'s events, their points renumbered by `map` (`None`: the point wasn't
+    /// copied, so its events go after the copied point before it).
+    pub(crate) fn copy_events(&mut self, other: &Toolpath, map: &dyn Fn(usize) -> Option<usize>) {
+        for e in &other.events {
+            let after = (0..=e.after).rev().find_map(&map);
+            if let Some(after) = after {
+                self.events.push(Event { after, ..*e });
+            }
+        }
+    }
+
+    /// The same toolpath with no points (and no events or layers): parts and the rest kept,
+    /// for steps that rebuild the points.
+    pub(crate) fn emptied(&self) -> Toolpath {
+        let mut out = Toolpath::empty(self.parts.clone(), self.points.len());
+        out.layer_starts.clear();
+        out.layers = self.layers;
+        out.samples_per_turn = self.samples_per_turn;
+        out
+    }
+
+    /// The speed factor of move `i` (1 when not set).
+    pub fn speed_factor(&self, i: usize) -> f64 {
+        self.speed.get(i).copied().unwrap_or(1.0)
     }
 
     /// The settings of the part that prints move `i`.
@@ -288,7 +358,7 @@ impl Toolpath {
             } else {
                 let s = self.settings(i + 1);
                 let area = self.area(i + 1);
-                let speed = s.speed_for(area);
+                let speed = s.speed_for(area) * self.speed_factor(i + 1);
                 length += d;
                 volume += area * d * self.flow.get(i + 1).copied().unwrap_or(1.0);
                 time += d / speed;
@@ -298,6 +368,14 @@ impl Toolpath {
                 bounds.add(w[1]);
             }
         }
+        time += self
+            .events
+            .iter()
+            .map(|e| match e.kind {
+                EventKind::Dwell(s) => s,
+                EventKind::Fan(_) => 0.0,
+            })
+            .sum::<f64>();
         let first = self.parts.first().copied().unwrap_or(Settings {
             width: 0.0,
             layer: 0.0,
@@ -376,6 +454,7 @@ fn signed_area_2d(points: &[P2]) -> f64 {
 pub fn vase_spiral(
     wall: &Surface,
     settings: Settings,
+    flat_top: bool,
     max_points: usize,
 ) -> Result<Toolpath, String> {
     let layer = settings.layer;
@@ -475,9 +554,10 @@ pub fn vase_spiral(
         path.layer_starts.push(m + 1);
     }
     // Closing turn: flat at the top while extrusion ramps back to zero, ending on the seam so
-    // the rim closes cleanly.
+    // the rim closes cleanly. An open top stops as the spiral reaches the top instead.
     let top = (n - 1) as f64;
-    for j in 0..=m {
+    let last = if flat_top { m } else { 0 };
+    for j in 0..=last {
         let u = j as f64 / steps;
         let mut p = wall.point_at(top, j % m);
         p[2] = z0 + total;
@@ -519,6 +599,7 @@ pub fn spiralize(
     width: f64,
     speed: f64,
     flow: f64,
+    flat_top: bool,
     max_points: usize,
 ) -> Result<(Toolpath, SpiralInfo), String> {
     if layers.len() < 2 {
@@ -613,8 +694,9 @@ pub fn spiralize(
             moves.push((p, flow, k as f64 + u, local));
         }
     }
-    // Closing turn: flat on the top layer while extrusion ramps back to zero, ending on the seam.
-    for j in 0..=m {
+    // Closing turn: flat on the top layer while extrusion ramps back to zero, ending on the seam
+    // (or, for an open top, just the move up onto the top layer's seam).
+    for j in 0..=(if flat_top { m } else { 0 }) {
         let u = j as f64 / steps;
         let flow = if j == 0 {
             if n == 1 {
@@ -650,14 +732,18 @@ pub fn spiralize(
 
 /// Prints curves as they are, in order: each one starts with a travel and sits one layer height
 /// above where it's drawn (a curve drawn at z = 0 is printed on the bed). Closed curves return
-/// to their first point.
+/// to their first point. No curves make an empty toolpath, which `join` skips (so a brim with
+/// no rings is no brim).
 pub fn from_curves(
     curves: &[&Curve],
     settings: Settings,
     max_points: usize,
 ) -> Result<Toolpath, String> {
     if curves.is_empty() {
-        return Err("needs at least one curve".into());
+        let mut empty = Toolpath::empty(vec![settings], 0);
+        empty.layer_starts.clear();
+        empty.layers = 0;
+        return Ok(empty);
     }
     let needed = curves
         .iter()
@@ -691,27 +777,49 @@ pub fn from_curves(
 }
 
 /// The same toolpath printed `count` times, each copy one layer higher. Between copies the
-/// nozzle lifts one layer clear of the copy just printed, travels back to the start and lowers
-/// (EasyGCode's spiral-disc layer change).
-pub fn stack(path: &Toolpath, count: usize, max_points: usize) -> Result<Toolpath, String> {
+/// nozzle travels back to the start `lift` layers above the new copy (EasyGCode's clearance
+/// hop): with 1, it lifts a layer clear of the copy just printed, goes over and lowers (its
+/// spiral disc); with 0, it rises to the new layer and goes straight over (its spoon).
+pub fn stack(
+    path: &Toolpath,
+    count: usize,
+    lift: f64,
+    max_points: usize,
+) -> Result<Toolpath, String> {
+    check("lift", lift, 0.0, 100.0, " layers")?;
     let lh = path.layer_height();
     let needed = path.points.len().saturating_add(2).saturating_mul(count);
     too_many(needed, max_points, "use fewer layers")?;
     let mut out = Toolpath::empty(path.parts.clone(), needed);
     out.layer_starts.clear();
+    if path.points.is_empty() {
+        out.layers = 0;
+        return Ok(out);
+    }
     for k in 0..count {
         let dz = lh * k as f64;
-        if let (Some(prev), Some(start)) = (out.points.last().copied(), path.points.first()) {
-            out.layer_starts.push(out.points.len());
-            let clear = start[2] + dz + lh;
-            out.push([prev[0], prev[1], clear], true, 0.0, 0.0, 0);
-            out.push([start[0], start[1], clear], true, 0.0, 0.0, 0);
-        } else {
-            out.layer_starts.push(0);
+        let mut first = 0;
+        match path.points.first() {
+            Some(start) if !out.points.is_empty() => {
+                out.layer_starts.push(out.points.len());
+                let dest = [start[0], start[1], start[2] + dz];
+                if !out.hop(dest, dest[2] + lift * lh, 0) {
+                    first = 1; // the move over already ends on the copy's start
+                }
+            }
+            _ => out.layer_starts.push(0),
         }
-        for i in 0..path.points.len() {
+        let base = out.points.len();
+        for i in first..path.points.len() {
             out.push_from(path, i, dz, 0);
         }
+        out.copy_events(path, &|i| {
+            if i >= first {
+                Some(base + i - first)
+            } else {
+                base.checked_sub(1)
+            }
+        });
     }
     out.layers = path.layers * count;
     if count == 1 {
@@ -720,35 +828,173 @@ pub fn stack(path: &Toolpath, count: usize, max_points: usize) -> Result<Toolpat
     Ok(out)
 }
 
-/// Toolpaths printed one after another. Between them the nozzle lifts clear of both ends,
-/// travels over and lowers.
-pub fn join(paths: &[&Toolpath], max_points: usize) -> Result<Toolpath, String> {
+/// Toolpaths printed one after another, each with its own settings. Between two parts the
+/// nozzle travels clear (EasyGCode's clearance hop): straight up, over, and down to the next
+/// part's start, at least `clear` mm above the bed and never lower than either end; with
+/// `clear` 0, one layer (the next part's) above the higher end. A part that starts exactly
+/// where the one before ended carries on without any travel, and empty parts are skipped.
+///
+/// One-layer parts at the start count as the first layer together with the next part's first
+/// layer, so the part fan comes on where EasyGCode turns it on: after a brim *and* the first
+/// turn of the helix printed inside it, or after the first of several bottom layers.
+pub fn join(paths: &[&Toolpath], clear: f64, max_points: usize) -> Result<Toolpath, String> {
+    check("clear", clear, 0.0, 1000.0, " mm")?;
     let needed = paths.iter().map(|p| p.points.len() + 2).sum::<usize>();
     too_many(needed, max_points, "use fewer or simpler toolpaths")?;
     let mut out = Toolpath::empty(Vec::new(), needed);
     out.layer_starts.clear();
     out.layers = 0;
+    let mut parts_used = 0;
     for path in paths {
+        let Some(start) = path.points.first().copied() else {
+            continue;
+        };
+        parts_used += 1;
         let offset =
             u16::try_from(out.parts.len()).map_err(|_| "too many joined toolpaths".to_string())?;
-        if let (Some(prev), Some(start)) = (out.points.last().copied(), path.points.first()) {
-            let clear = prev[2].max(start[2]) + path.layer_height();
-            out.push([prev[0], prev[1], clear], true, 0.0, 0.0, offset);
-            out.push([start[0], start[1], clear], true, 0.0, 0.0, offset);
+        // Points of `path` before `first` aren't copied: its opening travel, when the nozzle is
+        // already there.
+        let mut first = 0;
+        if let Some(prev) = out.points.last().copied() {
+            if dist3(prev, start) <= 1e-6 {
+                first = 1;
+            } else {
+                let clear_z = if clear > 0.0 {
+                    clear
+                } else {
+                    prev[2].max(start[2]) + path.layer_height()
+                };
+                if !out.hop(start, clear_z, offset) {
+                    first = 1;
+                }
+            }
         }
+        let merge = out.layer_starts.len() == 1;
         let base = out.points.len();
-        out.layer_starts
-            .extend(path.layer_starts.iter().map(|s| s + base));
-        for i in 0..path.points.len() {
+        for (k, s) in path.layer_starts.iter().enumerate() {
+            if k == 0 && merge {
+                continue;
+            }
+            out.layer_starts.push(base + s.saturating_sub(first));
+        }
+        for i in first..path.points.len() {
             out.push_from(path, i, 0.0, offset);
         }
+        out.copy_events(path, &|i| {
+            if i >= first {
+                Some(base + i - first)
+            } else {
+                base.checked_sub(1)
+            }
+        });
         out.parts.extend(path.parts.iter().copied());
-        out.layers += path.layers;
+        out.layers += path.layers - usize::from(merge && path.layers > 0);
     }
-    if let [only] = paths {
+    if out.layer_starts.is_empty() && !out.points.is_empty() {
+        out.layer_starts.push(0);
+    }
+    if parts_used == 1
+        && let Some(only) = paths.iter().find(|p| !p.points.is_empty())
+    {
         out.samples_per_turn = only.samples_per_turn;
     }
     Ok(out)
+}
+
+/// A helix around an exact circle: vase mode that rises exactly `pitch` per turn to exactly
+/// `height`, without snapping to whole turns (EasyGCode's thread connector, `generateThread` in
+/// its gcode.js, whose arithmetic this follows step by step). It starts on the circle's first
+/// point, on the circle's plane, and climbs one pitch over the first turn while extrusion ramps
+/// 0 → 100 % (each segment at its midpoint value); the rest rises evenly, any fraction of a turn
+/// included; a flat closing turn at `height` ramps extrusion back to zero for a level top. The
+/// circle's point count is the number of moves per turn, and its direction the way the helix
+/// turns (counter-clockwise rising: a right-hand thread).
+pub fn helix(
+    base: &Curve,
+    pitch: f64,
+    height: f64,
+    settings: Settings,
+    max_points: usize,
+) -> Result<Toolpath, String> {
+    let Some(circle) = base.circle else {
+        return Err(
+            "needs a circle (from `circle`, maybe moved, turned or scaled evenly), not just any curve"
+                .into(),
+        );
+    };
+    let steps = base.points.len();
+    let Some(first) = base.points.first().copied() else {
+        return Err("the circle has no points".into());
+    };
+    if !base.closed || steps < 3 {
+        return Err("the circle needs at least 3 points".into());
+    }
+    check("pitch", pitch, 0.02, 10.0, " mm")?;
+    if !(height.is_finite() && height > pitch) {
+        return Err(format!(
+            "`height` must be more than one pitch ({} mm), got {height}",
+            easycad_lang::format_number(pitch)
+        ));
+    }
+    let turns = height / pitch;
+    let rest = turns - 1.0;
+    let rest_steps = ((rest * steps as f64).ceil() as usize).max(1);
+    let needed = steps
+        .saturating_mul(2)
+        .saturating_add(rest_steps)
+        .saturating_add(1);
+    too_many(
+        needed,
+        max_points,
+        "use a larger pitch or fewer points per turn",
+    )?;
+
+    let [cx, cy] = circle.center;
+    let r = circle.r;
+    let seam = (first[1] - cy).atan2(first[0] - cx);
+    let dir = if base.signed_area() >= 0.0 { 1.0 } else { -1.0 };
+    let z0 = first[2];
+    let at = |a: f64, z: f64| [cx + r * a.cos(), cy + r * a.sin(), z];
+    let n = steps as f64;
+    let tau = std::f64::consts::TAU;
+
+    let mut path = Toolpath::empty(vec![settings], needed);
+    path.samples_per_turn = steps;
+    path.layers = (turns.round() as usize).max(1);
+    path.push(at(seam, z0), true, 0.0, 0.0, 0);
+    // First turn: from the circle's plane up one pitch while extrusion ramps up.
+    for s in 1..=steps {
+        let u = s as f64 / n;
+        let ramp = (u + (s as f64 - 1.0) / n) / 2.0;
+        path.push(
+            at(seam + dir * (tau * u), z0 + pitch * u),
+            false,
+            ramp,
+            u,
+            0,
+        );
+    }
+    // The fan comes on after the ramp turn.
+    path.layer_starts.push(steps + 1);
+    // The rest at exactly one pitch per turn, any fraction of a turn included.
+    for s in 1..=rest_steps {
+        let t = 1.0 + (rest * s as f64) / rest_steps as f64;
+        path.push(at(seam + dir * (tau * t), z0 + pitch * t), false, 1.0, t, 0);
+    }
+    // Closing turn: flat at the top while extrusion ramps back to zero.
+    let end = seam + dir * (tau * turns);
+    for s in 1..=steps {
+        let u = s as f64 / n;
+        let flow = (1.0 - (u + (s as f64 - 1.0) / n) / 2.0).max(0.0);
+        path.push(
+            at(end + dir * (tau * u), z0 + height),
+            false,
+            flow,
+            turns + u,
+            0,
+        );
+    }
+    Ok(path)
 }
 
 /// Pushes points sideways by `amplitude · sin(2π · (count · s + phase))`, perpendicular to the
@@ -826,6 +1072,7 @@ pub fn wave_path(
     )?;
     let mut out = Toolpath::empty(path.parts.clone(), total);
     out.layer_starts.clear();
+    let mut new_index = Vec::with_capacity(path.points.len());
     let mut starts = path.layer_starts.iter().peekable();
     for i in 0..path.points.len() {
         // A layer starts with the move into its first point, split pieces included.
@@ -850,10 +1097,15 @@ pub fn wave_path(
                     path.part.get(i).copied().unwrap_or(0),
                     path.height.get(i).copied().unwrap_or(0.0),
                 );
+                if let Some(slot) = out.speed.last_mut() {
+                    *slot = path.speed_factor(i);
+                }
             }
         }
         out.push_from(path, i, 0.0, 0);
+        new_index.push(out.points.len() - 1);
     }
+    out.copy_events(path, &|i| new_index.get(i).copied());
     // A spiral is one long open path, but each turn is a loop that tells which side is outside.
     let first_turn = out
         .points
@@ -988,7 +1240,7 @@ mod tests {
     #[test]
     fn spiral_snaps_to_whole_layers_and_rises_monotonically() {
         let w = wall(0.8, 90.0);
-        let p = vase_spiral(&w, settings(0.6, 0.3, 40.0), MAX_PATH_POINTS).unwrap();
+        let p = vase_spiral(&w, settings(0.6, 0.3, 40.0), true, MAX_PATH_POINTS).unwrap();
         // 160 / 0.3 = 533.3 → 533 whole layers, like EasyGCode's height snapping.
         assert_eq!(p.layers, 533);
         let z: Vec<f64> = p.points.iter().map(|q| q[2]).collect();
@@ -1006,7 +1258,13 @@ mod tests {
 
     #[test]
     fn ramps_average_each_segment_like_easygcode() {
-        let p = vase_spiral(&wall(1.0, 0.0), settings(0.6, 0.3, 40.0), MAX_PATH_POINTS).unwrap();
+        let p = vase_spiral(
+            &wall(1.0, 0.0),
+            settings(0.6, 0.3, 40.0),
+            true,
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
         let m = 224.0;
         // Segment s of the ramp turn ends at u = s/m and extrudes (u + (s−1)/m) / 2.
         assert_eq!(p.flow[1], 1.0 / (2.0 * m));
@@ -1022,10 +1280,15 @@ mod tests {
     #[test]
     fn overhangs() {
         let o = |top: f64| {
-            vase_spiral(&wall(top, 0.0), settings(0.6, 0.3, 40.0), MAX_PATH_POINTS)
-                .unwrap()
-                .stats()
-                .max_overhang_deg
+            vase_spiral(
+                &wall(top, 0.0),
+                settings(0.6, 0.3, 40.0),
+                true,
+                MAX_PATH_POINTS,
+            )
+            .unwrap()
+            .stats()
+            .max_overhang_deg
         };
         assert!(o(1.0) < 0.5, "{}", o(1.0));
         // Radius grows 45 mm over 160 mm of height: about atan(45/160) ≈ 15.7° at the tips.
@@ -1046,14 +1309,14 @@ mod tests {
             capped: false,
         };
         assert!(
-            vase_spiral(&flat, ok, MAX_PATH_POINTS)
+            vase_spiral(&flat, ok, true, MAX_PATH_POINTS)
                 .unwrap_err()
                 .contains("same height")
         );
         let mut upside_down = w.clone();
         upside_down.sections.reverse();
         assert!(
-            vase_spiral(&upside_down, ok, MAX_PATH_POINTS)
+            vase_spiral(&upside_down, ok, true, MAX_PATH_POINTS)
                 .unwrap_err()
                 .contains("stacked upward")
         );
@@ -1068,7 +1331,7 @@ mod tests {
             ..w
         };
         assert!(
-            vase_spiral(&tall, settings(0.6, 0.02, 40.0), MAX_PATH_POINTS)
+            vase_spiral(&tall, settings(0.6, 0.02, 40.0), true, MAX_PATH_POINTS)
                 .unwrap_err()
                 .contains("too many points")
         );
@@ -1100,7 +1363,7 @@ mod tests {
             MAX_PATH_POINTS,
         )
         .unwrap();
-        let p = stack(&one, 3, MAX_PATH_POINTS).unwrap();
+        let p = stack(&one, 3, 1.0, MAX_PATH_POINTS).unwrap();
         assert_eq!(p.points.len(), 9 * 3 + 2 * 2);
         assert_eq!(p.layer_starts, vec![0, 9, 20]);
         // Lift one layer above the next layer, over to the start, then down onto it.
@@ -1110,6 +1373,128 @@ mod tests {
         assert!(near(p.points[11], [10.0, 0.0, 1.2]));
         assert!(p.travel[9] && p.travel[10] && p.travel[11] && !p.travel[12]);
         assert_eq!(p.layers, 3);
+
+        // Lift 0 (EasyGCode's spoon): up to the new layer where the last one ended, then
+        // straight over to the start; no move down.
+        let open = Curve::new(vec![[0.0; 3], [10.0, 0.0, 0.0], [10.0, 5.0, 0.0]], false);
+        let one = from_curves(&[&open], settings(2.0, 0.6, 20.0), MAX_PATH_POINTS).unwrap();
+        let p = stack(&one, 2, 0.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(p.points.len(), 3 + 2 + 2);
+        assert!(near(p.points[3], [10.0, 5.0, 1.2]) && near(p.points[4], [0.0, 0.0, 1.2]));
+        assert!(p.travel[3] && p.travel[4] && !p.travel[5]);
+        assert!(near(p.points[5], [10.0, 0.0, 1.2]));
+        assert_eq!(p.layer_starts, vec![0, 3]);
+        assert!(stack(&one, 2, -1.0, MAX_PATH_POINTS).is_err());
+    }
+
+    #[test]
+    fn joins_hop_clear_or_carry_straight_on() {
+        let near = |a: P3, b: P3| dist3(a, b) < 1e-9;
+        let flat = |pts: Vec<P3>, layer: f64| {
+            from_curves(
+                &[&Curve::new(pts, false)],
+                settings(1.0, layer, 20.0),
+                MAX_PATH_POINTS,
+            )
+            .unwrap()
+        };
+        let a = flat(vec![[0.0; 3], [10.0, 0.0, 0.0]], 0.8);
+        let b = flat(vec![[20.0, 0.0, -0.8], [30.0, 0.0, -0.8]], 1.25); // printed at z = 0.45
+        // An absolute travel height: up to 1.6, over, down (EasyGCode's 2 × brim layer).
+        let j = join(&[&a, &b], 1.6, MAX_PATH_POINTS).unwrap();
+        assert!(near(j.points[2], [10.0, 0.0, 1.6]) && near(j.points[3], [20.0, 0.0, 1.6]));
+        assert!(near(j.points[4], [20.0, 0.0, 0.45]) && j.travel[4] && !j.travel[5]);
+        // Automatic: one layer of the next part above the higher end.
+        let j = join(&[&a, &b], 0.0, MAX_PATH_POINTS).unwrap();
+        assert!(near(j.points[2], [10.0, 0.0, 0.8 + 1.25]));
+        // A part that starts where the last one ended carries straight on, no travel.
+        let c = flat(vec![[10.0, 0.0, 0.0], [10.0, 10.0, 0.0]], 0.8);
+        let j = join(&[&a, &c], 0.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(j.points.len(), 3);
+        assert_eq!(j.travel, vec![true, false, false]);
+        assert_eq!(j.part, vec![0, 0, 1]);
+        // Empty parts are skipped.
+        let none = from_curves(&[], settings(1.0, 0.8, 20.0), MAX_PATH_POINTS).unwrap();
+        assert!(none.points.is_empty());
+        let j = join(&[&none, &a, &none], 0.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!((j.points.len(), j.parts.len()), (2, 1));
+        assert!(join(&[&a], -1.0, MAX_PATH_POINTS).is_err());
+    }
+
+    #[test]
+    fn a_brim_and_the_helix_inside_it_are_one_first_layer() {
+        // EasyGCode turns the fan on after the helix's first turn, not after the brim.
+        let ring = Curve::circle(12.0, 24);
+        let brim = from_curves(&[&ring], settings(2.0, 1.25, 20.0), MAX_PATH_POINTS).unwrap();
+        let h = helix(
+            &Curve::circle(10.0, 24),
+            1.25,
+            5.0,
+            settings(3.0, 1.25, 20.0),
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
+        assert_eq!(h.layer_starts, vec![0, 25]);
+        let j = join(&[&brim, &h], 2.5, MAX_PATH_POINTS).unwrap();
+        // The brim (25 points), the hop (up, over), then the helix from its first point.
+        assert_eq!(j.layer_starts, vec![0, 25 + 2 + 25]);
+        // Several bottom layers keep their own first layer.
+        let two = stack(&brim, 2, 1.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&two, &h], 0.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(j.layer_starts[..2], [0, 25]);
+    }
+
+    #[test]
+    fn helices_rise_exactly_one_pitch_per_turn() {
+        let c = Curve::circle(10.0, 36).transformed(&Xform::rotate_z(90.0));
+        let h = helix(&c, 1.25, 20.0, settings(3.0, 1.25, 20.0), MAX_PATH_POINTS).unwrap();
+        // 16 turns: the travel, the ramp turn, 15 more turns, the closing turn.
+        assert_eq!(h.points.len(), 1 + 36 + 15 * 36 + 36);
+        let near = |a: P3, b: P3| dist3(a, b) < 1e-9;
+        assert!(near(h.points[0], [0.0, 10.0, 0.0]) && h.travel[0]);
+        assert!(near(h.points[36], [0.0, 10.0, 1.25]));
+        assert!(near(h.points[36 + 15 * 36], [0.0, 10.0, 20.0]));
+        assert!(h.points.iter().all(|p| p[2] <= 20.0 + 1e-12));
+        assert!((h.flow[1] - 1.0 / 72.0).abs() < 1e-12); // midpoint of 0 → 1/36
+        assert!(h.flow.last().is_some_and(|f| *f < 0.02));
+        // A fraction of a turn is spread evenly over the moves it needs.
+        let f = helix(&c, 1.25, 20.5, settings(3.0, 1.25, 20.0), MAX_PATH_POINTS).unwrap();
+        let rest = ((20.5 / 1.25 - 1.0) * 36.0_f64).ceil() as usize;
+        assert_eq!(f.points.len(), 1 + 36 + rest + 36);
+        assert!(near(f.points[36 + rest], {
+            let a = std::f64::consts::FRAC_PI_2 + std::f64::consts::TAU * 20.5 / 1.25;
+            [10.0 * a.cos(), 10.0 * a.sin(), 20.5]
+        }));
+        // Clockwise circles make left-hand helices.
+        let left = helix(
+            &c.flipped(),
+            1.25,
+            5.0,
+            settings(3.0, 1.25, 20.0),
+            MAX_PATH_POINTS,
+        );
+        assert!(
+            left.is_err(),
+            "a flipped circle is no longer an exact circle"
+        );
+        let cw = Curve {
+            circle: c.circle,
+            ..c.flipped()
+        };
+        let left = helix(&cw, 1.25, 5.0, settings(3.0, 1.25, 20.0), MAX_PATH_POINTS).unwrap();
+        assert!(left.points[1][0] > 0.0, "{:?}", left.points[1]); // clockwise from +Y
+        assert!(
+            helix(
+                &Curve::polygon(6, 10.0),
+                1.0,
+                5.0,
+                settings(3.0, 1.0, 20.0),
+                100
+            )
+            .is_err()
+        );
+        assert!(helix(&c, 1.25, 1.0, settings(3.0, 1.25, 20.0), MAX_PATH_POINTS).is_err());
+        assert!(helix(&c, 0.0, 10.0, settings(3.0, 1.25, 20.0), MAX_PATH_POINTS).is_err());
     }
 
     #[test]
@@ -1126,11 +1511,12 @@ mod tests {
             MAX_PATH_POINTS,
         )
         .unwrap();
-        let j = join(&[&a, &b], MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &b], 0.0, MAX_PATH_POINTS).unwrap();
         assert_eq!(j.parts.len(), 2);
         assert_eq!(j.settings(j.points.len() - 1).width, 1.0);
         assert_eq!(j.settings(3).width, 2.0);
-        assert_eq!(j.layer_starts, vec![0, 11]);
+        // Two one-layer parts are one layer.
+        assert_eq!((j.layer_starts.clone(), j.layers), (vec![0], 1));
     }
 
     #[test]
@@ -1138,7 +1524,7 @@ mod tests {
         let c = Curve::circle(40.0, 96);
         let top = c.transformed(&Xform::translate(0.0, 0.0, 30.0));
         let w = Surface::loft(&[&c, &top]).unwrap();
-        let p = vase_spiral(&w, settings(0.8, 0.5, 30.0), MAX_PATH_POINTS).unwrap();
+        let p = vase_spiral(&w, settings(0.8, 0.5, 30.0), true, MAX_PATH_POINTS).unwrap();
         let r = |q: P3| q[0].hypot(q[1]);
         let flutes = wave_path(&p, &constant(1.0), 9.0, 0.0, MAX_PATH_POINTS).unwrap();
         assert_eq!(flutes.samples_per_turn, 192); // 96 points < 12 × 9 → each segment split in two

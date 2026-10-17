@@ -225,7 +225,7 @@ async function waitForServer(url) {
       check(b.model === 'claude-sonnet-5-5' && b.output_config?.effort === 'medium' && b.stream === true, `${name}: model/effort/stream wrong`);
       check(b.thinking?.type === 'adaptive' && b.fallbacks === 'default', `${name}: thinking or fallbacks wrong`);
       check(b.system?.[0]?.cache_control?.type === 'ephemeral' && b.cache_control?.type === 'ephemeral', `${name}: caching not requested`);
-      check(b.system[0].text.length > 4000 && /circle\(r: Length\)/.test(b.system[0].text), `${name}: system prompt lacks the catalog`);
+      check(b.system[0].text.length > 4000 && /circle\(r: Length, tolerance: Length = 0\)/.test(b.system[0].text), `${name}: system prompt lacks the catalog`);
       const toolNames = b.tools.map((t) => t.name);
       check(JSON.stringify(toolNames) === JSON.stringify([...toolNames].sort()), `${name}: tools not in a fixed order`);
       check(b.tools.every((t) => t.input_schema), `${name}: a tool has no schema`);

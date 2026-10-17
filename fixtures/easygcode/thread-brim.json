@@ -1,0 +1,42 @@
+{
+  "project": "thread",
+  "printer": {
+    "mode": "filament",
+    "multiplier": 1,
+    "includeStartEnd": true,
+    "endLift": 30,
+    "filament": {
+      "diameter": 1.75,
+      "nozzle": 215,
+      "bed": 65,
+      "fan": 100
+    },
+    "pellet": {
+      "up": 210,
+      "mid": 210,
+      "down": 210,
+      "bed": 50,
+      "pa": 0.3,
+      "purge": 5000,
+      "fan": 0
+    }
+  },
+  "travelFeed": 9000,
+  "tolerance": 0.01,
+  "centerX": 125,
+  "centerY": 125,
+  "thread": {
+    "size": "m12",
+    "height": 15.5,
+    "fitTolerance": -0.1,
+    "lineWidth": 0,
+    "flowRate": 15
+  },
+  "brim": {
+    "enabled": true,
+    "linesOuter": 3,
+    "lineWidth": 0,
+    "layerHeight": 0.8,
+    "flowRate": 10
+  }
+}

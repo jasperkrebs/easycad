@@ -12,10 +12,15 @@
 //!   "cone" whose ends are the same size: the same vase mode (ramped first turn, whole layers,
 //!   flat closing turn), at a set speed and in flow mode. `spiralize` through the same
 //!   cylinder's flat layers must print exactly the same.
+//! - The thread connector template against EasyGCode's thread connector (`helix`, a brim and
+//!   the hop over it), and the spoon template against its spoon (`spiral` with exact turns,
+//!   `center`, `bead`, continuous joins, `stack` straight over): three cases each.
 //!
-//! `spiralize` through tilted layers has no EasyGCode counterpart, so it's compared with a
-//! hand-checked fixture instead (`fixtures/hand-checked/`, worked out from the geometry in exact
-//! arithmetic by `scripts/hand-checked-fixtures.py`, every move annotated for checking by hand).
+//! `spiralize` through tilted layers and the toolpath tuning steps (`adjust`, `accelerate`,
+//! `fan`, `dwell`) have no EasyGCode counterpart to compare with directly, so they're compared
+//! with hand-checked fixtures instead (`fixtures/hand-checked/`, worked out from the geometry
+//! in exact arithmetic by `scripts/hand-checked-fixtures.py`, every move annotated for checking
+//! by hand).
 
 use crate::eval::{Quality, evaluate};
 use crate::gcode::{self, Filament, Mode, Pellet, Profile};
@@ -291,4 +296,175 @@ fn spiralize_through_tilted_layers_matches_the_hand_checked_fixture() {
     };
     let ours = gcode::write(path, &profile, "Tilted diamond").unwrap().text;
     assert_matches(&ours, fixture);
+}
+
+/// Runs a template with some settings changed and compares its G-code with a fixture.
+fn template_matches(template: &str, values: &[(&str, Literal)], profile: &Profile, fixture: &str) {
+    let values: Vec<(String, Literal)> = values
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect();
+    let recipe = set_values(template, &values).unwrap();
+    let e = evaluate(&recipe, Quality::Final);
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+    let path = &e.print.as_ref().unwrap().path;
+    let ours = gcode::write(path, profile, "Golden").unwrap().text;
+    assert_matches(&ours, fixture);
+}
+
+const THREAD: &str = include_str!("../../../web/templates/thread-connector.easycad");
+
+/// The thread connector template against EasyGCode's thread connector: its defaults (M8,
+/// 20 mm, no brim); an M12 with a brim of its own layer height on the filament printer (the hop
+/// over the brim at twice its layer height, the fan after the helix's first turn, a fraction of
+/// a turn at the top, a tighter fit); and an M3 with a set line width, a brim of another width
+/// and no start/end blocks.
+#[test]
+fn thread_connector_recipe_matches_easygcode() {
+    use Literal::{Bool, Number, Text};
+    template_matches(
+        THREAD,
+        &[],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/thread-default.gcode"),
+    );
+    template_matches(
+        THREAD,
+        &[
+            ("size", Text("M12".into())),
+            ("height", Number(15.5)),
+            ("fit", Number(-0.1)),
+            ("flow", Number(15.0)),
+            ("brim", Bool(true)),
+            ("brim_lines", Number(3.0)),
+            ("brim_layer", Number(0.8)),
+            ("brim_flow", Number(10.0)),
+        ],
+        &Profile {
+            mode: Mode::Filament,
+            end_lift: 30.0,
+            travel_speed: 150.0,
+            filament: Filament {
+                diameter: 1.75,
+                nozzle: 215.0,
+                bed: 65.0,
+                fan: 100.0,
+            },
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/thread-brim.gcode"),
+    );
+    template_matches(
+        THREAD,
+        &[
+            ("size", Text("M3".into())),
+            ("height", Number(6.0)),
+            ("fit", Number(0.05)),
+            ("line", Number(1.0)),
+            ("flow", Number(5.0)),
+            ("tolerance", Number(0.02)),
+            ("brim", Bool(true)),
+            ("brim_lines", Number(2.0)),
+            ("brim_line", Number(1.2)),
+            ("brim_flow", Number(5.0)),
+        ],
+        &Profile {
+            include_start_end: false,
+            center: [100.0, 110.0],
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/thread-bare.gcode"),
+    );
+}
+
+const SPOON: &str = include_str!("../../../web/templates/spoon.easycad");
+
+/// The spoon template against EasyGCode's spoon: its defaults in volumetric flow mode; one
+/// printed from the stick's tip with a thicker stick bead on the filament printer; and one with
+/// no stick, one layer and no start/end blocks.
+#[test]
+fn spoon_recipe_matches_easygcode() {
+    use Literal::{Bool, Number};
+    template_matches(
+        SPOON,
+        &[],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/spoon-flow.gcode"),
+    );
+    template_matches(
+        SPOON,
+        &[
+            ("turns", Number(4.5)),
+            ("start_radius", Number(5.0)),
+            ("stick", Number(30.0)),
+            ("layers", Number(2.0)),
+            ("from_stick", Bool(true)),
+            ("stick_line", Number(3.0)),
+            ("stick_layer", Number(0.8)),
+            ("layer", Number(0.4)),
+            ("line", Number(1.2)),
+            ("flow", Number(12.0)),
+        ],
+        &Profile {
+            mode: Mode::Filament,
+            end_lift: 30.0,
+            travel_speed: 150.0,
+            center: [128.0, 128.0],
+            filament: Filament {
+                diameter: 1.75,
+                nozzle: 210.0,
+                bed: 60.0,
+                fan: 80.0,
+            },
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/spoon-stick.gcode"),
+    );
+    template_matches(
+        SPOON,
+        &[
+            ("turns", Number(3.0)),
+            ("start_radius", Number(2.0)),
+            ("stick", Number(0.0)),
+            ("layers", Number(1.0)),
+            ("layer", Number(0.5)),
+            ("line", Number(1.5)),
+            ("flow", Number(10.0)),
+        ],
+        &Profile {
+            include_start_end: false,
+            center: [110.0, 120.0],
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/spoon-bare.gcode"),
+    );
+}
+
+/// The toolpath tuning steps (`adjust`, `accelerate`, `fan`, `dwell`) write speeds, fan levels
+/// and pauses that EasyGCode has no single project for, so they're compared with a hand-checked
+/// fixture: the moves between the printer's start and end blocks (those are EasyGCode's, and
+/// golden-tested above).
+#[test]
+fn toolpath_tuning_matches_the_hand_checked_fixture() {
+    let fixture = include_str!("../../../fixtures/hand-checked/machine-events.gcode");
+    let recipe: String = fixture
+        .lines()
+        .filter_map(|l| l.strip_prefix(";   "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert!(recipe.starts_with("easycad 0.1\n") && recipe.contains("accelerate("));
+    let e = evaluate(&recipe, Quality::Final);
+    assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+    let path = &e.print.as_ref().unwrap().path;
+    let ours = gcode::write(path, &Profile::default(), "Tuned square")
+        .unwrap()
+        .text;
+    let body: String = ours
+        .lines()
+        .skip_while(|l| !l.starts_with("; --- end of start G-code"))
+        .skip(1)
+        .take_while(|l| !l.starts_with("; --- end G-code"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert_matches(&body, fixture);
 }

@@ -131,7 +131,7 @@ pub(super) fn sample(_: &mut Ctx, a: &Args) -> Result<Value, String> {
 // ------------------------------------------------------------------------------- curves
 
 /// Points from a list input: point values or `[x, y, z]` lists.
-fn points_of(a: &Args, i: usize) -> Result<Vec<P3>, String> {
+pub(super) fn points_of(a: &Args, i: usize) -> Result<Vec<P3>, String> {
     a.items(i)?
         .iter()
         .enumerate()
@@ -433,7 +433,7 @@ pub(super) fn revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 
 pub(super) fn contour(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let s = a.surface(0)?;
-    let layers = s.contour(a.num(1)?, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let layers = s.contour(a.num(1)?, a.num(2)?, ctx.remaining().min(MAX_PATH_POINTS))?;
     ctx.spend(layers.iter().map(|c| c.points.len()).sum())?;
     Value::list(
         layers
@@ -453,6 +453,7 @@ pub(super) fn spiralize(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         width,
         a.num(2)?,
         super::flow(a, 3)?,
+        a.flag(4)?,
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
     if info.thickest > 0.8 * width {

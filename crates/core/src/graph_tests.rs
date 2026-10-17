@@ -64,13 +64,21 @@ fn describes_components_inputs_and_wires() {
     assert_eq!(g.outputs.len(), 2);
     assert_eq!(g.outputs[1].file.as_deref(), Some("twisted-vase.stl"));
     // Misspelt and extra values are listed, not hidden.
-    let g = describe("a = circle(5, 6, rr: 2)\nb = circl(3)\n").unwrap();
+    let g = describe("a = circle(5, 0, 6, rr: 2)\nb = circl(3)\n").unwrap();
     let names: Vec<(&str, bool)> = g.steps[0].stages[0]
         .inputs
         .iter()
         .map(|i| (i.name.as_str(), i.unknown))
         .collect();
-    assert_eq!(names, [("r", false), ("value 2", true), ("rr", true)]);
+    assert_eq!(
+        names,
+        [
+            ("r", false),
+            ("tolerance", false),
+            ("value 3", true),
+            ("rr", true)
+        ]
+    );
     assert!(!g.steps[1].stages[0].known);
     // The palette lists every step with its inputs.
     let p = palette();

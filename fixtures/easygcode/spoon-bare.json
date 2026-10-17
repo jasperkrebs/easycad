@@ -1,0 +1,44 @@
+{
+  "project": "spoon",
+  "printer": {
+    "mode": "pellet",
+    "multiplier": 1,
+    "includeStartEnd": false,
+    "endLift": 50,
+    "filament": {
+      "diameter": 1.75,
+      "nozzle": 205,
+      "bed": 60,
+      "fan": 100
+    },
+    "pellet": {
+      "up": 210,
+      "mid": 210,
+      "down": 210,
+      "bed": 50,
+      "pa": 0.3,
+      "purge": 5000,
+      "fan": 0
+    }
+  },
+  "layerHeight": 0.5,
+  "lineWidth": 1.5,
+  "printFeed": 1200,
+  "travelFeed": 6000,
+  "centerX": 110,
+  "centerY": 120,
+  "spoon": {
+    "turns": 3,
+    "startRadius": 2,
+    "stickLength": 0,
+    "layers": 1,
+    "startPoint": "center",
+    "stickLineWidth": 0,
+    "stickLayerHeight": 0,
+    "stickFeed": 0,
+    "flowFeed": {
+      "enabled": true,
+      "rate": 10
+    }
+  }
+}

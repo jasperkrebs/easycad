@@ -127,6 +127,118 @@ pub fn spiral(
     })
 }
 
+/// A flat spiral (in the XY plane, around the origin) of exactly `turns` turns (any fraction
+/// too) from radius `start`, each turn one local `spacing` outside the one before. With a
+/// constant spacing it's the exact Archimedean spiral r = start + θ/2π · spacing, sampled as
+/// EasyGCode samples its spoon (`spoonPath` in its geometry.js): points evenly spaced in angle
+/// over the whole spiral, as many as keep within `tolerance` of the true curve at its outer
+/// end, at least 8 (and at least `min_samples` per turn). A field spacing is integrated like
+/// [`spiral`]'s.
+pub fn spiral_turns(
+    start: f64,
+    turns: f64,
+    spacing: &Field,
+    constant: Option<f64>,
+    tolerance: f64,
+    min_samples: usize,
+    max_points: usize,
+) -> Result<Curve, String> {
+    if !start.is_finite() || start < 0.0 {
+        return Err(format!("`start` must be 0 or more, got {start}"));
+    }
+    if !turns.is_finite() || turns <= 0.0 || turns > MAX_TURNS as f64 {
+        return Err(format!(
+            "`turns` must be more than 0 and at most {MAX_TURNS}, got {turns}"
+        ));
+    }
+    if !tolerance.is_finite() || !(0.001..=10.0).contains(&tolerance) {
+        return Err(format!(
+            "`tolerance` must be between 0.001 and 10 mm, got {tolerance}"
+        ));
+    }
+    let total = turns * TAU;
+    // r(θ) at any angle, and the radius the spiral ends at.
+    let r_at: Box<dyn Fn(f64) -> f64> = match constant {
+        Some(s) => {
+            if !(s.is_finite() && s > 0.0) {
+                return Err(format!("`spacing` must be more than 0, got {s}"));
+            }
+            // As EasyGCode writes it, so the numbers match to the last digit.
+            Box::new(move |th: f64| start + (th / TAU) * s)
+        }
+        None => {
+            let n = ((turns * SUB as f64).ceil() as usize).max(1);
+            let h = total / n as f64;
+            let drdt = |th: f64, r: f64| -> Result<f64, String> {
+                let s = spacing.at([r * th.cos(), r * th.sin(), 0.0]);
+                if !(s.is_finite() && s > 0.0) {
+                    return Err(format!(
+                        "the spacing must be more than 0, but it is {s} at r = {r:.2} mm"
+                    ));
+                }
+                Ok(s / TAU)
+            };
+            let mut rs = Vec::with_capacity(n + 1);
+            rs.push(start);
+            for i in 0..n {
+                let r = rs.last().copied().unwrap_or(start);
+                let th = h * i as f64;
+                let k1 = drdt(th, r)?;
+                let k2 = drdt(th + h / 2.0, r + (h / 2.0) * k1)?;
+                let k3 = drdt(th + h / 2.0, r + (h / 2.0) * k2)?;
+                let k4 = drdt(th + h, r + h * k3)?;
+                rs.push(r + (h / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4));
+            }
+            Box::new(move |th: f64| {
+                let x = (th / h).clamp(0.0, n as f64);
+                let i = (x.floor() as usize).min(n - 1);
+                let (a, b) = (
+                    rs.get(i).copied().unwrap_or(0.0),
+                    rs.get(i + 1).copied().unwrap_or(0.0),
+                );
+                a + (b - a) * (x - i as f64)
+            })
+        }
+    };
+    let r_end = match constant {
+        Some(s) => start + turns * s,
+        None => r_at(total),
+    };
+    let start_spacing = constant.unwrap_or_else(|| spacing.at([start, 0.0, 0.0]));
+    let mut dth = 2.0
+        * (1.0 - tolerance / r_end.max(start_spacing))
+            .max(-1.0)
+            .acos();
+    if !dth.is_finite() || dth <= 0.0 {
+        dth = 0.2;
+    }
+    let steps = 8
+        .max((total / dth).ceil() as usize)
+        .max((min_samples as f64 * turns).ceil() as usize);
+    if steps.saturating_add(1) > max_points {
+        return Err(format!(
+            "this spiral needs too many points ({steps}); use fewer turns or a larger tolerance"
+        ));
+    }
+    let mut points: Vec<P3> = Vec::with_capacity(steps + 1);
+    let mut turn: Vec<f64> = Vec::with_capacity(steps + 1);
+    for i in 0..=steps {
+        let th = (i as f64 / steps as f64) * total;
+        let r = r_at(th);
+        points.push([r * th.cos(), r * th.sin(), 0.0]);
+        turn.push((i as f64 / steps as f64) * turns);
+    }
+    Ok(Curve {
+        winding: Some(Winding {
+            turn,
+            // Only exact when the turns divide the points evenly; `interlock` checks.
+            per_turn: ((steps as f64 / turns).round() as usize).max(1),
+            center: [0.0; 2],
+        }),
+        ..Curve::new(points, false)
+    })
+}
+
 /// What `interlock` did, for messages.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interlock {
