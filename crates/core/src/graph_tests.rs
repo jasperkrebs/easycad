@@ -479,3 +479,36 @@ fn every_command_on_every_template_parses_or_says_why() {
     }
     assert!(worked > 1000, "{worked}");
 }
+
+#[test]
+fn set_printer_writes_the_printer_line() {
+    let pellet = |name: &str| Command::SetPrinter { name: name.into() };
+    // An existing line: only its name changes.
+    let (src, _) = ok(VASE, pellet("Klipper pellet"));
+    assert_eq!(changed(VASE, &src), ["printer \"Klipper pellet\""]);
+    assert_eq!(src.lines().count(), VASE.lines().count());
+    assert_eq!(
+        evaluate(&src, Quality::Preview).printer.as_deref(),
+        Some("Klipper pellet")
+    );
+    // No line yet: one is added after the title, before the notes.
+    let bare = VASE.replace("printer \"Bambu P1P 0.4\"\n", "");
+    let (src, _) = ok(&bare, pellet("Klipper pellet"));
+    let lines: Vec<&str> = src.lines().take(3).collect();
+    assert_eq!(
+        lines,
+        [
+            "easycad 0.1",
+            "project \"Twisted star vase\"",
+            "printer \"Klipper pellet\""
+        ]
+    );
+    // Quotes are written so they read back; a name is one line.
+    let (src, _) = ok(VASE, pellet("My \"big\" one"));
+    assert_eq!(
+        evaluate(&src, Quality::Preview).printer.as_deref(),
+        Some("My \"big\" one")
+    );
+    assert!(apply(VASE, &pellet("two\nlines")).is_err());
+    assert!(apply(VASE, &pellet("  ")).is_err());
+}

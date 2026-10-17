@@ -153,6 +153,9 @@ pub enum Command {
         step: Option<f64>,
         label: Option<String>,
     },
+    /// Names the printer the project is for: the `printer "…"` line, added after the title if
+    /// the recipe has none. The app opens the project with that printer.
+    SetPrinter { name: String },
 }
 
 /// The recipe after a command, and the name of anything it added.
@@ -401,6 +404,17 @@ pub fn apply(src: &str, cmd: &Command) -> Result<Applied, String> {
             edit::insert_line(src, param_slot(&o), &line)?
         }
         Command::SetParam { .. } => set_param(src, &o, cmd)?,
+        Command::SetPrinter { name } => {
+            let name = name.trim();
+            if name.is_empty() || name.chars().count() > 80 || name.contains(['\n', '\r']) {
+                return Err("a printer's name is one line of text (80 characters at most)".into());
+            }
+            let text = easycad_lang::format_literal(&easycad_lang::Literal::Text(name.to_string()));
+            match o.printer {
+                Some(range) => edit::replace(src, range, &text)?,
+                None => edit::insert_line(src, o.title_end, &format!("printer {text}"))?,
+            }
+        }
     };
     parse(&out).map_err(|e| format!("that would break the recipe ({})", e.message))?;
     Ok(Applied { source: out, name })

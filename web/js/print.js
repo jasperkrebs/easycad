@@ -20,9 +20,10 @@ const EASYGCODE = {
 
 // maxFlow: the most volumetric flow (mm³/s) the printer melts reliably, for the Print tab's check
 // (0: not checked). The P1P's hotend manages about 20 mm³/s with PLA; set your pellet printer's.
+// recipeName: what a recipe's `printer "…"` line says for it.
 export const PRINTERS = {
-  p1p: { name: 'Bambu P1P', nozzle: 0.4, defaults: { ...EASYGCODE, mode: 'filament', bed: [256, 256, 256], maxFlow: 20 } },
-  pellet: { name: 'Klipper pellet', nozzle: null, defaults: { ...EASYGCODE, mode: 'pellet', bed: [400, 400, 400], maxFlow: 0 } },
+  p1p: { name: 'Bambu P1P', recipeName: 'Bambu P1P 0.4', nozzle: 0.4, defaults: { ...EASYGCODE, mode: 'filament', bed: [256, 256, 256], maxFlow: 20 } },
+  pellet: { name: 'Klipper pellet', recipeName: 'Klipper pellet', nozzle: null, defaults: { ...EASYGCODE, mode: 'pellet', bed: [400, 400, 400], maxFlow: 0 } },
 };
 
 /** The fields of the printer settings, by path into the profile. `only`: for one mode. */
@@ -96,6 +97,58 @@ function saveProfile(id, profile) {
 /** The printer profile a recipe's `printer "…"` line names. */
 export function printerFor(name) {
   return /pellet|klipper/i.test(name || '') ? 'pellet' : 'p1p';
+}
+
+/**
+ * Changes settings by key (the agent's set_printer), as the Print tab's fields do: checked,
+ * clamped to each field's range, and saved on this device.
+ * @param {keyof typeof PRINTERS} id
+ * @param {any} profile edited in place
+ * @param {Record<string, unknown>} patch key (as in FIELDS) → new value
+ * @returns {{ changed: string[], notes: string[] }}
+ */
+export function changeSettings(id, profile, patch) {
+  const changed = [];
+  const notes = [];
+  for (const [key, raw] of Object.entries(patch)) {
+    const f = FIELDS.find((x) => x.key === key);
+    if (!f || (f.only && f.only !== profile.mode)) {
+      notes.push(`\`${key}\` is not a setting of the ${PRINTERS[id].name}`);
+      continue;
+    }
+    if (f.kind === 'toggle') {
+      if (typeof raw !== 'boolean') {
+        notes.push(`\`${key}\` is on or off: true or false`);
+        continue;
+      }
+      setPath(profile, key, raw);
+    } else {
+      const v = typeof raw === 'number' || (typeof raw === 'string' && raw.trim()) ? Number(raw) : NaN;
+      if (!Number.isFinite(v)) {
+        notes.push(`\`${key}\` needs a number`);
+        continue;
+      }
+      const tidy = Math.min(f.max ?? v, Math.max(f.min ?? v, v));
+      if (tidy !== v) notes.push(`\`${key}\` clamped to ${tidy} (range ${f.min}..${f.max})`);
+      setPath(profile, key, tidy);
+    }
+    changed.push(key);
+  }
+  if (changed.length) saveProfile(id, profile);
+  return { changed, notes };
+}
+
+/**
+ * The printers, the chosen one and all its settings, as text for the agent.
+ * @param {keyof typeof PRINTERS} id
+ * @param {any} profile
+ */
+export function describePrinter(id, profile) {
+  const all = Object.entries(PRINTERS).map(([k, p]) => `${k} (${p.name}, ${p.defaults.mode})`);
+  const fields = FIELDS.filter((f) => !f.only || f.only === profile.mode).map(
+    (f) => `${f.key} = ${getPath(profile, f.key)}${f.unit ? ` ${f.unit}` : ''} (${f.label})`,
+  );
+  return `${PRINTERS[id].name} (${id}). Printers: ${all.join(', ')}. Its machine settings on this device, by set_printer key: ${fields.join('; ')}.`;
 }
 
 /**

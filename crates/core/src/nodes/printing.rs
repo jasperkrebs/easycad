@@ -1,6 +1,7 @@
 //! Steps for EasyGCode's printing tricks, from general pieces: ring fills, scattered points,
-//! the lean of a wall, and tuning a toolpath (speeds and extrusion by zone, acceleration,
-//! fan levels, dwells, spikes). The table entries are in `nodes.rs`.
+//! the lean of a wall, tuning a toolpath (speeds and extrusion by zone, acceleration, fan
+//! levels, dwells, spikes) and machine events (temperatures, waits for them, the printer's
+//! speed and extrusion overrides: EasyGCode's foaming). The table entries are in `nodes.rs`.
 
 use super::{Args, curves_of};
 use crate::eval::Ctx;
@@ -8,7 +9,7 @@ use crate::field::Field;
 use crate::geom::P3;
 use crate::rings::{self, Link};
 use crate::scatter;
-use crate::toolpath::MAX_PATH_POINTS;
+use crate::toolpath::{EventKind, MAX_PATH_POINTS, Temperatures};
 use crate::toolpath_ops::{self, Spike};
 use crate::value::Value;
 use std::rc::Rc;
@@ -114,4 +115,44 @@ pub(super) fn spikes(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     }
     ctx.spend(out.points.len())?;
     Ok(Value::Toolpath(Rc::new(out)))
+}
+
+/// Temperatures from inputs `from..from + 4` (nozzle, up, mid, down); 0 is the printer's own.
+fn temperatures(a: &Args, from: usize) -> Result<Temperatures, String> {
+    let read = |k: usize| -> Result<Option<f64>, String> {
+        let v = a.num(from + k)?;
+        Ok((v != 0.0).then_some(v))
+    };
+    Ok(Temperatures {
+        nozzle: read(0)?,
+        zones: [read(1)?, read(2)?, read(3)?],
+    })
+}
+
+/// Adds a machine event to the toolpath in input 0.
+fn event(ctx: &mut Ctx, a: &Args, kind: EventKind, at_end: bool) -> Result<Value, String> {
+    let path = a.toolpath(0)?;
+    ctx.spend(path.points.len())?;
+    Ok(Value::Toolpath(Rc::new(toolpath_ops::machine_event(
+        path, kind, at_end,
+    )?)))
+}
+
+pub(super) fn temperature(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let temps = temperatures(a, 1)?;
+    event(ctx, a, EventKind::Heat(temps), a.flag(5)?)
+}
+
+pub(super) fn wait_temperature(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let temps = temperatures(a, 1)?;
+    let cool = a.flag(5)?;
+    event(ctx, a, EventKind::WaitHeat { temps, cool }, a.flag(6)?)
+}
+
+pub(super) fn speed_override(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    event(ctx, a, EventKind::SpeedOverride(a.num(1)?), a.flag(2)?)
+}
+
+pub(super) fn extrusion_override(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    event(ctx, a, EventKind::ExtrusionOverride(a.num(1)?), a.flag(2)?)
 }

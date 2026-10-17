@@ -262,6 +262,73 @@ cases['spoon-bare'] = spoon(
   { turns: 3, startRadius: 2, stickLength: 0, layers: 1, flowFeed: { enabled: true, rate: 10 } }
 );
 
+// The bend stool's seat without legs (EasyGCode's default): concentric rings with a staircase
+// seam, the first layer outside-in from a lead-in line, a wipe between layers. In volumetric
+// flow mode as EasyCAD's template ships; with foaming over four layers at a set feed; with
+// foaming, a cool-down below the normal temperatures, a zigzag exit primer, primers at a set
+// flow and the print centred elsewhere; and three plain layers without start/end blocks.
+// Reference for EasyCAD's bend stool template (`arc(tolerance:)`, `vertices`, `stack(wipe:)`,
+// `temperature`, `wait_temperature`, `speed_override`, `extrusion_override`).
+const stool = (over, disc) => ({
+  project: 'bendstool',
+  printer: pellet(),
+  materialDensity: 0,
+  materialPrice: 0,
+  layerHeight: 0.6,
+  lineWidth: 2.0,
+  printFeed: 1800,
+  travelFeed: 6000,
+  tolerance: 0.05,
+  centerX: 125,
+  centerY: 125,
+  ...over,
+  disc: {
+    diameter: 100,
+    layers: 1,
+    seamStyle: 'staircase',
+    dome: 1,
+    legs: { enabled: false, seatHeight: 200, width: 40, fillet: 8 },
+    attractor: { enabled: false, pos: 0, r1: 15, r2: 35, gap: 1, drop: 0.5 },
+    foam: {
+      enabled: false,
+      tempUp: 230,
+      tempMid: 230,
+      tempDown: 230,
+      extrusionPct: 38,
+      exitCool: 0,
+      primer1: { length: 40, lineWidth: 2, layerHeight: 0.3, feed: 600, flow: 0 },
+      primer2: { length: 60, lines: 1, lineWidth: 2, layerHeight: 0.3, feed: 600, flow: 0 },
+    },
+    flowFeed: { enabled: false, rate: 20 },
+    ...disc,
+  },
+  brim: { enabled: false, outerStyle: 'normal', base: 'bottom', linesOuter: 3, linesInner: 0, lineWidth: 2, layerHeight: 0.6, feed: 1200, multiplier: 1 },
+});
+cases['stool-flow'] = stool({}, { flowFeed: { enabled: true, rate: 20 } });
+cases['stool-foam'] = stool({}, { layers: 4, foam: { ...stool({}, {}).disc.foam, enabled: true } });
+cases['stool-cool'] = stool(
+  { layerHeight: 0.5, lineWidth: 1.5, tolerance: 0.04, centerX: 150, centerY: 140 },
+  {
+    diameter: 61,
+    layers: 5,
+    foam: {
+      enabled: true,
+      tempUp: 240,
+      tempMid: 235,
+      tempDown: 230,
+      extrusionPct: 45,
+      exitCool: 185,
+      primer1: { length: 30, lineWidth: 1.8, layerHeight: 0.4, feed: 600, flow: 5 },
+      primer2: { length: 50, lines: 3, lineWidth: 1.6, layerHeight: 0.35, feed: 600, flow: 4 },
+    },
+    flowFeed: { enabled: true, rate: 15 },
+  }
+);
+cases['stool-bare'] = stool(
+  { printer: pellet({ includeStartEnd: false }), layerHeight: 0.4, lineWidth: 1.2, printFeed: 1500, centerX: 100, centerY: 110 },
+  { diameter: 30, layers: 3 }
+);
+
 const out = path.join(__dirname, '..', 'fixtures', 'easygcode');
 fs.mkdirSync(out, { recursive: true });
 for (const [name, cfg] of Object.entries(cases)) {

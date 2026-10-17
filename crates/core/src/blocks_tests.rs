@@ -278,7 +278,7 @@ spiky = spikes(base, [[20, 0, 5], [-20, 0, 7]], width: 3, length: 4, angle: 20, 
         .iter()
         .filter_map(|e| match e.kind {
             EventKind::Fan(l) => Some(l),
-            EventKind::Dwell(_) => None,
+            _ => None,
         })
         .collect();
     assert_eq!(fans, vec![100.0]);
@@ -304,4 +304,59 @@ stacked = stack(b, 3)",
     assert_eq!(b.parts[0].layer, 0.5, "the layer for stacking stays");
     let stacked = path(&v, "stacked");
     assert!((stacked.points.last().unwrap()[2] - 1.5).abs() < 1e-9);
+}
+
+#[test]
+fn rings_with_radial_steps_and_machine_events() {
+    let v = run(r#"radii = series(1, 2, 3)
+sweeps = 360 - 2 / radii * 180 / pi
+starts = mod(90 + accumulate(sweeps) - sweeps, 360)
+rings = arc(radii, start: starts, end: starts + sweeps, tolerance: 0.05)
+seat = polyline(flatten(vertices(rings)))
+count_points = count(vertices(seat))
+layer = toolpath(seat, width: 2, layer: 0.6, speed: 30)
+heated = layer |> temperature(up: 230, mid: 230, down: 230, at_end: true)
+waited = heated |> wait_temperature(down: 230)
+sped = waited |> speed_override(263.2, at_end: true)
+layers = stack(layer, 3, wipe: 1.2)
+none = stack(layer, 0)"#);
+    // Three rings, each with its start point (the step out from the ring before) and at least
+    // 13 points; strung together in order.
+    let rings = curves(&v, "rings");
+    assert_eq!(rings.len(), 3);
+    let total: usize = rings.iter().map(|r| r.len()).sum();
+    assert!(rings.iter().all(|r| r.len() >= 13));
+    assert_eq!(num(&v, "count_points") as usize, total);
+    // Ring 2 starts where ring 1 stops, one line further out.
+    let end1 = rings[0][rings[0].len() - 1];
+    let start2 = rings[1][0];
+    assert!((start2[1].atan2(start2[0]) - end1[1].atan2(end1[0])).abs() < 1e-9);
+    assert!((start2[0].hypot(start2[1]) - 3.0).abs() < 1e-9);
+    // The events: in order, at the start or the end; the override in whole percent.
+    let sped = path(&v, "sped");
+    let n = sped.points.len();
+    let kinds: Vec<(usize, String)> = sped
+        .events
+        .iter()
+        .map(|e| (e.after, format!("{:?}", e.kind)))
+        .collect();
+    assert_eq!(kinds.len(), 3);
+    assert_eq!(kinds[0].0, 0);
+    assert!(kinds[0].1.starts_with("WaitHeat"));
+    assert_eq!((kinds[1].0, kinds[2].0), (n - 1, n - 1));
+    assert!(matches!(sped.events[2].kind, EventKind::SpeedOverride(p) if p == 263.0));
+    // Layers that wipe across: three copies, two wipes of two moves each.
+    assert_eq!(path(&v, "layers").points.len(), 3 * n + 2);
+    assert!(path(&v, "none").points.is_empty());
+    // Bad values are explained.
+    assert!(
+        error(
+            "p = toolpath(line([0, 0], [9, 0]), width: 1, layer: 0.5) |> temperature(nozzle: 999)"
+        )
+        .contains("350")
+    );
+    assert!(
+        error("p = toolpath(line([0, 0], [9, 0]), width: 1, layer: 0.5) |> speed_override(0)")
+            .contains("percent")
+    );
 }

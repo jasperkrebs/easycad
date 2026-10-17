@@ -440,6 +440,80 @@ fn spoon_recipe_matches_easygcode() {
     );
 }
 
+const STOOL: &str = include_str!("../../../web/templates/bend-stool.easycad");
+
+/// The bend stool template against EasyGCode's bend stool (its seat, without legs): as it
+/// ships, one layer in volumetric flow mode; foaming over four layers at EasyGCode's set feed
+/// (the heat-up after the first layer, the waits on primer lines at the bed's corner, the
+/// overrides, the hops at twice the tallest print so far); foaming with a cool-down below the
+/// printer's own temperatures and a reheat, a zigzag cool-down primer, primers at a set flow,
+/// another size and the print centred elsewhere; and three plain layers without start/end
+/// blocks (the wipe between layers).
+#[test]
+fn bend_stool_recipe_matches_easygcode() {
+    use Literal::{Bool, Number};
+    template_matches(
+        STOOL,
+        &[],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/stool-flow.gcode"),
+    );
+    template_matches(
+        &STOOL.replace("flow: flow", "speed: 30"),
+        &[("layers", Number(4.0)), ("foam", Bool(true))],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/stool-foam.gcode"),
+    );
+    template_matches(
+        STOOL,
+        &[
+            ("diameter", Number(61.0)),
+            ("layers", Number(5.0)),
+            ("layer", Number(0.5)),
+            ("line", Number(1.5)),
+            ("flow", Number(15.0)),
+            ("tolerance", Number(0.04)),
+            ("foam", Bool(true)),
+            ("foam_up", Number(240.0)),
+            ("foam_mid", Number(235.0)),
+            ("foam_down", Number(230.0)),
+            ("foam_extrusion", Number(45.0)),
+            ("exit_cool", Number(185.0)),
+            ("primer_x", Number(-150.0)),
+            ("primer_y", Number(-140.0)),
+            ("enter_length", Number(30.0)),
+            ("enter_width", Number(1.8)),
+            ("enter_layer", Number(0.4)),
+            ("enter_flow", Number(5.0)),
+            ("exit_length", Number(50.0)),
+            ("exit_lines", Number(3.0)),
+            ("exit_width", Number(1.6)),
+            ("exit_layer", Number(0.35)),
+            ("exit_flow", Number(4.0)),
+        ],
+        &Profile {
+            center: [150.0, 140.0],
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/stool-cool.gcode"),
+    );
+    template_matches(
+        &STOOL.replace("flow: flow", "speed: 25"),
+        &[
+            ("diameter", Number(30.0)),
+            ("layers", Number(3.0)),
+            ("layer", Number(0.4)),
+            ("line", Number(1.2)),
+        ],
+        &Profile {
+            include_start_end: false,
+            center: [100.0, 110.0],
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/stool-bare.gcode"),
+    );
+}
+
 /// The toolpath tuning steps (`adjust`, `accelerate`, `fan`, `dwell`) write speeds, fan levels
 /// and pauses that EasyGCode has no single project for, so they're compared with a hand-checked
 /// fixture: the moves between the printer's start and end blocks (those are EasyGCode's, and
@@ -467,4 +541,48 @@ fn toolpath_tuning_matches_the_hand_checked_fixture() {
         .map(|l| format!("{l}\n"))
         .collect();
     assert_matches(&body, fixture);
+}
+
+/// The machine events on the filament printer (`M104`, `M109`, `M220`, `M221`, back to the
+/// printer's own temperature) have no EasyGCode counterpart (its foaming is for the pellet
+/// printer, golden-tested above), so they're compared with a hand-checked fixture. The moves
+/// between the printer's start and end blocks, as for the tuning steps.
+#[test]
+fn machine_events_on_the_filament_printer_match_the_hand_checked_fixture() {
+    let fixture = include_str!("../../../fixtures/hand-checked/filament-machine.gcode");
+    let recipe: String = fixture
+        .lines()
+        .filter_map(|l| l.strip_prefix(";   "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert!(recipe.starts_with("easycad 0.1\n") && recipe.contains("wait_temperature("));
+    let e = evaluate(&recipe, Quality::Final);
+    assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+    let path = &e.print.as_ref().unwrap().path;
+    let profile = Profile {
+        mode: Mode::Filament,
+        bed: [256.0, 256.0, 256.0],
+        filament: Filament {
+            nozzle: 210.0,
+            ..Filament::default()
+        },
+        ..Profile::default()
+    };
+    let ours = gcode::write(path, &profile, "Filament events")
+        .unwrap()
+        .text;
+    let body: String = ours
+        .lines()
+        .skip_while(|l| !l.starts_with("; --- end of start G-code"))
+        .skip(1)
+        .take_while(|l| !l.starts_with("; --- end G-code"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert_matches(&body, fixture);
+    // The stats count the overrides: layer 1 (80 mm) and the primer (10 mm) as written, layer 2
+    // (80 mm) at 80 % extrusion.
+    let st = path.stats();
+    let full = 2.0 * 80.0 + 10.0;
+    let counted = 80.0 + 10.0 + 0.8 * 80.0;
+    assert!((st.volume_mm3 / path.parts[0].area() - counted).abs() < 1e-9 * full);
 }

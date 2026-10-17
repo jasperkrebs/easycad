@@ -112,6 +112,10 @@ pub struct Outline {
     pub outputs: Vec<OutputLine>,
     /// The end of the last header line (`easycad`, `project`, `printer`, `note`), or 0.
     pub header_end: usize,
+    /// The end of the `easycad` and `project` lines, or 0: where a new `printer` line goes.
+    pub title_end: usize,
+    /// The name in the `printer "…"` line, quotes included, if the recipe has one.
+    pub printer: Option<Range>,
 }
 
 impl Outline {
@@ -270,6 +274,15 @@ fn statement(out: &mut Outline, body: &[&Token], lines: Lines) {
         }
         "easycad" | "project" | "printer" | "note" => {
             out.header_end = out.header_end.max(lines.range.1);
+            if word == "easycad" || word == "project" {
+                out.title_end = out.title_end.max(lines.range.1);
+            }
+            if word == "printer" {
+                out.printer = rest
+                    .first()
+                    .filter(|t| matches!(t.tok, Tok::Str(_)))
+                    .map(|t| (t.start, t.end));
+            }
         }
         _ => {}
     }

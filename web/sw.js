@@ -33,6 +33,7 @@ const ASSETS = [
   './templates/turned-vase.easycad',
   './templates/thread-connector.easycad',
   './templates/spoon.easycad',
+  './templates/bend-stool.easycad',
   './pkg/easycad_wasm.js',
   './pkg/easycad_wasm_bg.wasm',
   './vendor/anthropic/anthropic-sdk.min.mjs',

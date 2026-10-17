@@ -4,9 +4,11 @@
 //! absolute positioning (G90) with relative extrusion (M83); every `G1 E` is the segment's
 //! volume (bead area × length × flow) in mm³ for the pellet printer or in mm of filament for
 //! the filament printer; coordinates with 3 decimals and E with 5, rounded like JavaScript's
-//! `toFixed`; F only when it changes; the part fan on after the first layer; and the start and
-//! end blocks copied verbatim from EasyGCode. Golden tests compare the output with G-code
-//! produced by EasyGCode itself (`fixtures/easygcode/`).
+//! `toFixed`; F only when it changes; the part fan on after the first layer; the start and end
+//! blocks copied verbatim from EasyGCode; and the toolpath's machine events (fan levels, dwells,
+//! temperatures and waits for them, speed and extrusion overrides) in the commands EasyGCode
+//! uses for them. Golden tests compare the output with G-code produced by EasyGCode itself
+//! (`fixtures/easygcode/`), and hand-checked fixtures cover what EasyGCode has no project for.
 //!
 //! Before writing anything, the toolpath is checked: every point must be on the bed and inside
 //! the build height, and every extrusion amount sane.
@@ -336,6 +338,7 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
     let fan_pwm = round(fan.clamp(0.0, 100.0) * 2.55);
     let travel_feed = profile.travel_speed * 60.0;
     let [cx, cy] = profile.center;
+    let own_zones = [profile.pellet.up, profile.pellet.mid, profile.pellet.down];
 
     let mut lines: Vec<String> = Vec::with_capacity(path.points.len() + 64);
     let stats = path.stats();
@@ -459,6 +462,51 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
                 EventKind::Dwell(seconds) => {
                     lines.push(format!("G4 P{} ; dwell", round(seconds * 1000.0)));
                 }
+                // EasyGCode's own commands for these (its bend stool's foaming): the pellet
+                // printer's zone macros and tolerant waits, and the filament printer's M104/M109.
+                EventKind::Heat(t) => match mode {
+                    Mode::Pellet => {
+                        let [up, mid, down] = t.zones_or(own_zones);
+                        lines.push(format!("_GINGER_EXTRUDER_SET_UP S={}", num(up)));
+                        lines.push(format!("_GINGER_EXTRUDER_SET_MID S={}", num(mid)));
+                        lines.push(format!("_GINGER_EXTRUDER_SET_DOWN S={}", num(down)));
+                    }
+                    Mode::Filament => lines.push(format!(
+                        "M104 S{} ; set hotend temp",
+                        num(t.nozzle_or(profile.filament.nozzle))
+                    )),
+                },
+                EventKind::WaitHeat { temps, cool } => match (mode, cool) {
+                    // Exact-match waits can hang on zones that settle near the target, never on
+                    // it: wait for the zone at the nozzle to be within 2 °C (EasyGCode).
+                    (Mode::Pellet, false) => {
+                        let [_, _, down] = temps.zones_or(own_zones);
+                        lines.push(format!(
+                            "TEMPERATURE_WAIT SENSOR=extruder2 MINIMUM={}",
+                            num(down - 2.0)
+                        ));
+                    }
+                    (Mode::Pellet, true) => {
+                        let zones = temps.zones_or(own_zones);
+                        for (sensor, t) in ["extruder", "extruder1", "extruder2"].iter().zip(zones)
+                        {
+                            lines.push(format!(
+                                "TEMPERATURE_WAIT SENSOR={sensor} MAXIMUM={}",
+                                num(t + 2.0)
+                            ));
+                        }
+                    }
+                    (Mode::Filament, _) => lines.push(format!(
+                        "M109 S{} ; wait for hotend temp",
+                        num(temps.nozzle_or(profile.filament.nozzle))
+                    )),
+                },
+                EventKind::SpeedOverride(pct) => {
+                    lines.push(format!("M220 S{} ; speed override", round(pct)));
+                }
+                EventKind::ExtrusionOverride(pct) => {
+                    lines.push(format!("M221 S{} ; extrusion override", round(pct)));
+                }
             }
         }
     }
@@ -480,6 +528,11 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
 const MAX_EXTRUSION: f64 = 4.0;
 /// The most a move's speed may be scaled up.
 const MAX_SPEED_FACTOR: f64 = 20.0;
+/// The hottest a heater may be set, in °C (the printer settings allow the same).
+const MAX_TEMPERATURE: f64 = 350.0;
+/// The range of the printer's speed and extrusion overrides, in %.
+const MIN_OVERRIDE: f64 = 1.0;
+const MAX_OVERRIDE: f64 = 1000.0;
 
 /// Refuses toolpaths a machine shouldn't run: off the bed, out of reach, or with nonsense
 /// extrusion.
@@ -579,6 +632,7 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
             ));
         }
     }
+    let own_zones = [p.pellet.up, p.pellet.mid, p.pellet.down];
     for e in &path.events {
         match e.kind {
             EventKind::Dwell(s) if !(s.is_finite() && (0.0..=600.0).contains(&s)) => {
@@ -587,6 +641,34 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
             EventKind::Fan(f) if !(f.is_finite() && (0.0..=100.0).contains(&f)) => {
                 return Err(format!(
                     "a fan level of {f} %; it must be between 0 and 100"
+                ));
+            }
+            EventKind::Heat(t) | EventKind::WaitHeat { temps: t, .. } => {
+                let used = match p.mode {
+                    Mode::Pellet => t.zones_or(own_zones).to_vec(),
+                    Mode::Filament => vec![t.nozzle_or(p.filament.nozzle)],
+                };
+                if let Some(bad) = used
+                    .iter()
+                    .find(|t| !(t.is_finite() && **t > 0.0 && **t <= MAX_TEMPERATURE))
+                {
+                    return Err(format!(
+                        "a temperature of {} °C; it must be more than 0 and at most {MAX_TEMPERATURE} °C",
+                        num(*bad)
+                    ));
+                }
+                if p.mode == Mode::Filament
+                    && matches!(e.kind, EventKind::WaitHeat { cool: true, .. })
+                {
+                    return Err("the filament printer can't wait for its nozzle to cool (only the pellet printer's zones can); wait until hot, or leave the wait out".into());
+                }
+            }
+            EventKind::SpeedOverride(v) | EventKind::ExtrusionOverride(v)
+                if !(v.is_finite() && (MIN_OVERRIDE..=MAX_OVERRIDE).contains(&v)) =>
+            {
+                return Err(format!(
+                    "an override of {} %; it must be between {MIN_OVERRIDE} and {MAX_OVERRIDE} %",
+                    num(v)
                 ));
             }
             _ => {}

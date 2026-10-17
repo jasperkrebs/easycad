@@ -1,0 +1,91 @@
+{
+  "project": "bendstool",
+  "printer": {
+    "mode": "pellet",
+    "multiplier": 1,
+    "includeStartEnd": true,
+    "endLift": 50,
+    "filament": {
+      "diameter": 1.75,
+      "nozzle": 205,
+      "bed": 60,
+      "fan": 100
+    },
+    "pellet": {
+      "up": 210,
+      "mid": 210,
+      "down": 210,
+      "bed": 50,
+      "pa": 0.3,
+      "purge": 5000,
+      "fan": 0
+    }
+  },
+  "materialDensity": 0,
+  "materialPrice": 0,
+  "layerHeight": 0.5,
+  "lineWidth": 1.5,
+  "printFeed": 1800,
+  "travelFeed": 6000,
+  "tolerance": 0.04,
+  "centerX": 150,
+  "centerY": 140,
+  "disc": {
+    "diameter": 61,
+    "layers": 5,
+    "seamStyle": "staircase",
+    "dome": 1,
+    "legs": {
+      "enabled": false,
+      "seatHeight": 200,
+      "width": 40,
+      "fillet": 8
+    },
+    "attractor": {
+      "enabled": false,
+      "pos": 0,
+      "r1": 15,
+      "r2": 35,
+      "gap": 1,
+      "drop": 0.5
+    },
+    "foam": {
+      "enabled": true,
+      "tempUp": 240,
+      "tempMid": 235,
+      "tempDown": 230,
+      "extrusionPct": 45,
+      "exitCool": 185,
+      "primer1": {
+        "length": 30,
+        "lineWidth": 1.8,
+        "layerHeight": 0.4,
+        "feed": 600,
+        "flow": 5
+      },
+      "primer2": {
+        "length": 50,
+        "lines": 3,
+        "lineWidth": 1.6,
+        "layerHeight": 0.35,
+        "feed": 600,
+        "flow": 4
+      }
+    },
+    "flowFeed": {
+      "enabled": true,
+      "rate": 15
+    }
+  },
+  "brim": {
+    "enabled": false,
+    "outerStyle": "normal",
+    "base": "bottom",
+    "linesOuter": 3,
+    "linesInner": 0,
+    "lineWidth": 2,
+    "layerHeight": 0.6,
+    "feed": 1200,
+    "multiplier": 1
+  }
+}

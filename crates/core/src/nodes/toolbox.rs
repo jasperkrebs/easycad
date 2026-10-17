@@ -194,13 +194,29 @@ pub(super) fn ellipse(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 
 pub(super) fn arc(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let r = a.positive(0)?;
-    let (start, end) = (a.num(1)?, a.num(2)?);
+    let (start, end, tolerance) = (a.num(1)?, a.num(2)?, a.num(3)?);
     if (end - start).abs() > 3600.0 {
         return Err("an arc can turn at most 10 times round".into());
+    }
+    if tolerance < 0.0 || !tolerance.is_finite() {
+        return Err(format!(
+            "`tolerance` must be 0 (by quality) or more, got {tolerance}"
+        ));
+    }
+    if tolerance > 0.0 {
+        let arc = Curve::arc_within(r, start, end, tolerance, MAX_PATH_POINTS)?;
+        ctx.spend(arc.points.len())?;
+        return Ok(Value::Curve(Rc::new(arc)));
     }
     let n = ((ctx.samples(96, 192) as f64 * (end - start).abs() / 360.0).ceil() as usize).max(2);
     ctx.spend(n)?;
     Ok(Value::Curve(Rc::new(Curve::arc(r, start, end, n))))
+}
+
+pub(super) fn vertices(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let c = a.curve(0)?;
+    ctx.spend(c.points.len())?;
+    Value::list(c.points.iter().copied().map(Value::Point).collect())
 }
 
 pub(super) fn divide(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {

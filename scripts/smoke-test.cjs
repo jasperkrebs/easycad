@@ -150,10 +150,12 @@ async function waitForServer(url) {
           `${name}: spiral disc G-code ${gcode.name} differs from EasyGCode's: ${got.length} vs ${want.length} commands, first difference at ${differ}: "${got[differ]}" vs "${want[differ]}"`,
         );
       }
-      // So do the thread connector and the spoon (EasyGCode's defaults, its pellet printer).
+      // So do the thread connector, the spoon and the bend stool (EasyGCode's defaults, its
+      // pellet printer).
       for (const [id, title, fixture] of [
         ['thread-connector', 'Thread connector', 'thread-default.gcode'],
         ['spoon', 'Spoon', 'spoon-flow.gcode'],
+        ['bend-stool', 'Bend stool', 'stool-flow.gcode'],
       ]) {
         await page.click('#tab-settings');
         await page.selectOption('#template', id);
@@ -177,6 +179,12 @@ async function waitForServer(url) {
       const fields = await page.locator('#printerSettings .setting').count();
       if (fields < 10) failures.push(`${name}: expected the printer settings, got ${fields} fields`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-disc-print.png`), fullPage: name === 'phone' });
+      // Choosing a printer names it in the recipe, so the project opens with it next time.
+      await page.selectOption('#printer', 'p1p');
+      await page
+        .waitForFunction(() => /^printer "Bambu P1P 0\.4"$/m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
+        .catch(() => failures.push(`${name}: choosing the P1P didn't rewrite the recipe's printer line`));
+      if (!/G-code for the Bambu P1P/.test(await page.textContent('#exportButtons'))) failures.push(`${name}: the G-code button didn't follow the printer`);
 
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       if (overflow) failures.push(`${name}: page scrolls sideways`);

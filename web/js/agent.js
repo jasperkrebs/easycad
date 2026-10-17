@@ -12,6 +12,7 @@
 // model asks for them.
 
 import { LANGUAGE_GUIDE } from './language-guide.js';
+import { PRINTERS } from './print.js';
 import { checkInput } from './requests.js';
 
 /** Prices in dollars per million tokens (Claude API, Oct 2026). Cache writes are 5-minute ones. */
@@ -63,6 +64,7 @@ How you work
 - A message that starts with "(EasyCAD:" comes from the app, not the user: a feature request you filed is done. Carry on with what the user asked for.
 - Before a bigger change, say in a line what you're about to do. Answer briefly and plainly: what you changed, what to try in the settings, and anything you couldn't do. The user may write in any language; answer in theirs.
 - Settings the user moved are deliberate: keep their values unless asked to change them.
+- The printer is the user's machine, not part of the design: set_printer switches printers and changes machine settings (temperatures, bed size, travel speed, fan, extrusion multiplier). They apply to everything printed on that printer from this device, so change them when the user asks, and say what you changed. Design numbers belong in the recipe's params.
 
 ${LANGUAGE_GUIDE}
 
@@ -132,6 +134,23 @@ export const TOOLS = [
     },
   },
   {
+    name: 'set_printer',
+    description:
+      "Chooses the printer and changes its machine settings, like the Print tab: G-code is written for that printer with those settings, and the print checks use them. `printer` switches printers (the recipe's printer line follows, so the project opens with it). `settings` changes the chosen printer's settings on this device, by the keys in the project snapshot, in the units shown there; values outside a setting's range are clamped. The printer's settings come back.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        printer: { type: 'string', enum: Object.keys(PRINTERS), description: 'The printer to use.' },
+        settings: {
+          type: 'object',
+          description: 'Setting key → new value, for the chosen printer (the new one, when `printer` is given). E.g. {"filament.nozzle": 215}.',
+          additionalProperties: { type: ['number', 'boolean'] },
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'set_settings',
     description:
       "Moves settings (params) to new values, each in the setting's own unit as shown in the settings window (18 for a setting of 18 %, 90 for 90°). Values outside a setting's range are clamped. The recipe runs right after and you get the result back.",
@@ -159,18 +178,13 @@ export const TOOLS = [
 ];
 
 /**
- * The project as the model should see it at the start of a message: the recipe with line
- * numbers, the last run, and the printer.
- * @param {{ source: string, last: any, printerName: string, profile: any }} project
+ * The project as the model should see it at the start of a message: the printer, the recipe
+ * with line numbers, and the last run.
+ * @param {{ source: string, last: any, printer: string }} project printer: print.js describePrinter
  */
 export function projectContext(project) {
-  const p = project.profile;
-  const printer = p
-    ? `${project.printerName}: ${p.mode} printer, bed ${p.bed[0]} × ${p.bed[1]} mm, build height ${p.bed[2]} mm, the recipe's origin sits at X${p.center[0]} Y${p.center[1]} on the bed` +
-      (p.maxFlow > 0 ? `, melts at most about ${p.maxFlow} mm³/s` : '')
-    : project.printerName;
   return `${CONTEXT_TAG}
-Printer: ${printer}.
+Printer: ${project.printer}
 The recipe now:
 ${numbered(project.source)}
 
@@ -257,6 +271,10 @@ export function validate(name, input) {
     if (typeof input.recipe !== 'string' || !input.recipe.trim()) return '`recipe` must be the recipe text';
   } else if (name === 'set_settings') {
     if (!isObj(input.values) || !Object.keys(input.values).length) return '`values` must map setting names to values';
+  } else if (name === 'set_printer') {
+    if (input.printer != null && !(input.printer in PRINTERS)) return `\`printer\` must be one of ${Object.keys(PRINTERS).join(', ')}`;
+    if (input.settings != null && !isObj(input.settings)) return '`settings` must map setting keys to values';
+    if (input.printer == null && !(isObj(input.settings) && Object.keys(input.settings).length)) return 'give `printer`, `settings` or both';
   } else if (name === 'look') {
     if (input.show != null && !['shape', 'toolpath', 'both'].includes(input.show)) return '`show` must be shape, toolpath or both';
   } else if (name === 'request_feature') {

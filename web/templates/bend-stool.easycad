@@ -1,0 +1,99 @@
+easycad 0.1
+project "Bend stool"
+printer "Klipper pellet"
+note "EasyGCode's bend stool seat, rebuilt from general steps: concentric rings one line apart, linked by a staircase seam (each ring stops a line short of a full turn and steps out to the next). The first layer runs outside-in from a short lead-in line; each layer after it wipes across to the centre. Its G-code matches EasyGCode's command for command."
+note "Foaming (pellet printer, foaming PLA): every layer between the first and the last prints hotter, at less extrusion and more speed (the same material flow). Primer lines at the bed's corner take what oozes while the zones heat up and cool back down."
+
+group "Shape"
+param diameter = 100 mm in 10..400 "Diameter (snaps to whole rings)"
+param layers = 1 in 1..100 step 1 "Layers"
+
+group "Print"
+param layer = 0.6 mm in 0.1..2 "Layer height"
+param line = 2 mm in 0.4..6 "Line width"
+param flow = 20 in 1..100 "Flow (mm³/s)"
+param tolerance = 0.05 mm in 0.01..1 "Chord tolerance"
+
+group "Foaming"
+param foam = false "Foaming (pellet printer, 3 layers or more)"
+param foam_up = 230 in 150..300 "Foam upper zone (°C)"
+param foam_mid = 230 in 150..300 "Foam middle zone (°C)"
+param foam_down = 230 in 150..300 "Foam lower zone (°C)"
+param foam_extrusion = 38 % in 1..100 "Foam extrusion"
+param exit_cool = 0 in 0..300 "Cool down to this before the last layer (°C, 0: straight to the printer's)"
+
+group "Foam primers"
+param primer_x = -125 mm in -1000..1000 "Primers start at X (from the print's centre)"
+param primer_y = -125 mm in -1000..1000 "Primers start at Y (from the print's centre)"
+param enter_length = 40 mm in 1..300 "Heat-up primer length"
+param enter_width = 2 mm in 0.4..6 "Heat-up primer line width"
+param enter_layer = 0.3 mm in 0.1..2 "Heat-up primer layer height"
+param enter_speed = 10 in 1..100 "Heat-up primer speed (mm/s)"
+param enter_flow = 0 in 0..100 "Heat-up primer flow (mm³/s, 0: by speed)"
+param exit_length = 60 mm in 1..300 "Cool-down primer length"
+param exit_lines = 1 in 1..20 step 1 "Cool-down primer lines (a zigzag)"
+param exit_width = 2 mm in 0.4..6 "Cool-down primer line width"
+param exit_layer = 0.3 mm in 0.1..2 "Cool-down primer layer height"
+param exit_speed = 10 in 1..100 "Cool-down primer speed (mm/s)"
+param exit_flow = 0 in 0..100 "Cool-down primer flow (mm³/s, 0: by speed)"
+
+# Rings one line apart from the centre out: the diameter snaps to whole rings.
+ring_count = max(1, round(diameter / (2 * line)))
+radii = series(line / 2, line, ring_count)
+# Each ring stops one line width short of a full turn, and the next starts where it stops.
+sweeps = 360 - line / radii * 180 / pi
+starts = mod(90 + accumulate(sweeps) - sweeps, 360)
+rings = arc(radii, start: starts, end: starts + sweeps, tolerance: tolerance)
+
+# Turned 15° and centred by the outer ring's outline, as EasyGCode fits the seat on the bed.
+outline = circle(item(radii, ring_count - 1), tolerance: tolerance) |> rotate(15)
+shift_x = sample(x, item(vertices(center(outline)), 0)) - sample(x, item(vertices(outline), 0))
+shift_y = sample(y, item(vertices(center(outline)), 0)) - sample(y, item(vertices(outline), 0))
+seat = polyline(flatten(vertices(rings))) |> rotate(15) |> move(x: shift_x, y: shift_y)
+
+# The first layer runs outside-in: the seat backwards (without the centre point it starts on),
+# led in along the radius to the outer seam by a line a quarter of the diameter long.
+backwards = reverse(vertices(seat))
+seam = item(backwards, 0)
+out_x = sample(x, seam) - shift_x
+out_y = sample(y, seam) - shift_y
+lead = 0.25 * 2 * ring_count * line / sqrt(out_x ^ 2 + out_y ^ 2)
+lead_in = point(sample(x, seam) + out_x * lead, sample(y, seam) + out_y * lead)
+inward = polyline(flatten([[lead_in], item(backwards, series(0, 1, count(backwards) - 1))]))
+
+first = toolpath(inward, width: line, layer: layer, flow: flow)
+second = toolpath(seat |> move(z: layer), width: line, layer: layer, flow: flow)
+top = toolpath(seat |> move(z: (layers - 1) * layer), width: line, layer: layer, flow: flow)
+
+# Without foaming: every layer after the first wipes across to the centre and down.
+plain = join([first, stack(second, layers - 1, wipe: 2 * layer)], wipe: 2 * layer)
+
+# Foaming: heat up after the first layer, wait on a primer line, then less extrusion and more
+# speed for the same flow. Before the last layer: back to 100 %, cool down (to the printer's
+# own temperatures, or first below them), wait on a second primer, reheat if it cooled further.
+middle = stack(second, max(layers - 2, 0), wipe: 2 * layer)
+heat_up = toolpath(line(point(primer_x, primer_y), point(primer_x + enter_length, primer_y)), width: enter_width, layer: enter_layer, speed: enter_speed, flow: enter_flow)
+  |> wait_temperature(up: foam_up, mid: foam_mid, down: foam_down)
+  |> extrusion_override(foam_extrusion * 100, at_end: true)
+  |> speed_override(10000 / max(1, foam_extrusion * 100), at_end: true)
+zig = series(0, 1, 2 * exit_lines)
+zigzag = polyline(point(primer_x + exit_length * greater(mod(zig, 4), 0.5) * less(mod(zig, 4), 2.5), primer_y + exit_width * floor(zig / 2)))
+cool_down = toolpath(zigzag, width: exit_width, layer: exit_layer, speed: exit_speed, flow: exit_flow)
+  |> wait_temperature(up: exit_cool, mid: exit_cool, down: exit_cool, cool: true)
+foamed = join([
+  join([
+    first |> temperature(up: foam_up, mid: foam_mid, down: foam_down, at_end: true),
+    heat_up,
+    middle
+      |> speed_override(100, at_end: true)
+      |> extrusion_override(100, at_end: true)
+      |> temperature(up: exit_cool, mid: exit_cool, down: exit_cool, at_end: true)
+  ], clear: 2 * layer),
+  pick(exit_cool, cool_down |> temperature() |> wait_temperature(), cool_down),
+  top
+], clear: 2 * (layers - 1) * layer)
+
+path = pick(foam, pick(greater(layers, 2.5), foamed, plain), plain)
+
+show path
+print path

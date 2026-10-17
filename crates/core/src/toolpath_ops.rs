@@ -217,6 +217,46 @@ pub fn dwell(path: &Toolpath, at: &[P3], seconds: f64) -> Result<Toolpath, Strin
     Ok(out)
 }
 
+/// A machine event (new temperatures, a wait for them, the printer's speed or extrusion
+/// override) right before the toolpath's first printing move (after the travel to its start),
+/// or with `at_end` right after its last move. Events at one place happen in the order they
+/// were added. An empty toolpath keeps the event, and `join` puts it where the toolpath would
+/// have been.
+pub fn machine_event(path: &Toolpath, kind: EventKind, at_end: bool) -> Result<Toolpath, String> {
+    match kind {
+        EventKind::Heat(t) | EventKind::WaitHeat { temps: t, .. } => {
+            for v in t.zones.iter().chain(std::iter::once(&t.nozzle)).flatten() {
+                if !(v.is_finite() && *v > 0.0 && *v <= 350.0) {
+                    return Err(format!(
+                        "a temperature must be more than 0 and at most 350 °C (0 is the printer's own), got {v}"
+                    ));
+                }
+            }
+        }
+        EventKind::SpeedOverride(v) | EventKind::ExtrusionOverride(v) => {
+            if !(v.is_finite() && (1.0..=1000.0).contains(&v)) {
+                return Err(format!("`percent` must be between 1 and 1000, got {v}"));
+            }
+        }
+        EventKind::Fan(_) | EventKind::Dwell(_) => {}
+    }
+    // The printer takes whole percent (EasyGCode rounds its foaming speed the same way).
+    let kind = match kind {
+        EventKind::SpeedOverride(v) => EventKind::SpeedOverride((v + 0.5).floor()),
+        EventKind::ExtrusionOverride(v) => EventKind::ExtrusionOverride((v + 0.5).floor()),
+        other => other,
+    };
+    let mut out = path.clone();
+    let after = if at_end {
+        path.points.len().saturating_sub(1)
+    } else {
+        0
+    };
+    out.events.push(Event { after, kind });
+    out.events.sort_by_key(|e| e.after);
+    Ok(out)
+}
+
 /// Settings for [`spikes`].
 #[derive(Debug, Clone, Copy)]
 pub struct Spike {
@@ -506,11 +546,62 @@ mod tests {
             .iter()
             .map(|e| match e.kind {
                 EventKind::Fan(l) => (e.after, l),
-                EventKind::Dwell(_) => (usize::MAX, 0.0),
+                _ => (usize::MAX, 0.0),
             })
             .collect();
         assert_eq!(levels, vec![(0, 40.0), (1, 100.0), (2, 40.0)]);
         assert!(fan(&p, &Field::constant(120.0)).is_err());
+    }
+
+    #[test]
+    fn machine_events_go_before_the_first_print_move_or_after_the_last() {
+        use crate::toolpath::{Temperatures, join};
+        let p = line_path(vec![[0.0; 3], [10.0, 0.0, 0.0], [20.0, 0.0, 0.0]], 20.0);
+        let hot = Temperatures {
+            nozzle: Some(230.0),
+            zones: [None; 3],
+        };
+        let a = machine_event(&p, EventKind::Heat(hot), true).unwrap();
+        let b = machine_event(
+            &a,
+            EventKind::WaitHeat {
+                temps: hot,
+                cool: false,
+            },
+            false,
+        )
+        .unwrap();
+        let c = machine_event(&b, EventKind::SpeedOverride(150.0), true).unwrap();
+        let places: Vec<(usize, &str)> = c
+            .events
+            .iter()
+            .map(|e| {
+                let what = match e.kind {
+                    EventKind::Heat(_) => "heat",
+                    EventKind::WaitHeat { .. } => "wait",
+                    EventKind::SpeedOverride(_) => "speed",
+                    _ => "?",
+                };
+                (e.after, what)
+            })
+            .collect();
+        // The wait right after the travel to the start; at the end, in the order added.
+        assert_eq!(places, vec![(0, "wait"), (2, "heat"), (2, "speed")]);
+        // Out of range: refused, with a message.
+        let bad = Temperatures {
+            nozzle: Some(500.0),
+            zones: [None; 3],
+        };
+        assert!(machine_event(&p, EventKind::Heat(bad), false).is_err());
+        assert!(machine_event(&p, EventKind::ExtrusionOverride(0.0), false).is_err());
+        // An empty toolpath keeps its event, and `join` puts it where it would have printed.
+        let none =
+            from_curves(&[], Settings::new(1.0, 0.5, 20.0).unwrap(), MAX_PATH_POINTS).unwrap();
+        let marked = machine_event(&none, EventKind::SpeedOverride(100.0), true).unwrap();
+        let q = line_path(vec![[30.0, 0.0, 0.0], [40.0, 0.0, 0.0]], 20.0);
+        let j = join(&[&p, &marked, &q], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(j.events.len(), 1);
+        assert_eq!(j.events[0].after, 2);
     }
 
     #[test]

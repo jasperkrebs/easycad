@@ -16,6 +16,7 @@
 
 import { CONTEXT_TAG, DEFAULT_MODEL, EFFORTS, MODELS, applyEdits, closeToolUses, numbered, projectContext, runStatus, runTurn, systemPrompt } from './agent.js';
 import { $, el } from './dom.js';
+import { PRINTERS } from './print.js';
 import { createRequests, formatIssue, newId, newIssueUrl } from './requests.js';
 
 const SETTINGS_KEY = 'easycad.ai';
@@ -34,7 +35,7 @@ const AFTER_FILING =
 
 /**
  * @typedef {{ mode: 'proxy' | 'key', proxyUrl: string, model: string, effort: string, rules: string, autoContinue: boolean }} AiSettings
- * @typedef {{ source: string, last: any, printerName: string, profile: any, values: Record<string, any>, editorDirty: boolean }} Project
+ * @typedef {{ source: string, last: any, printer: string, values: Record<string, any>, editorDirty: boolean }} Project
  */
 
 /**
@@ -42,6 +43,8 @@ const AFTER_FILING =
  * @param {() => Project} app.project the open project
  * @param {(source: string) => Promise<any>} app.applyRecipe replaces the recipe, runs it, returns the result
  * @param {(values: Record<string, any>) => Promise<any>} app.applyValues moves settings, runs, returns the result
+ * @param {(id: string | undefined, settings: Record<string, unknown> | undefined) => Promise<{ printer: string, notes: string[] }>} app.setPrinter
+ *   switches the printer and/or changes its settings; returns the printer as text for the agent
  * @param {(show: string) => string} app.look renders the four views, returns a JPEG data URL
  * @param {() => Promise<string>} app.catalog the engine's step catalog
  */
@@ -228,6 +231,13 @@ export function createChat(app) {
         return `Wrote the recipe (${String(i.recipe || '').split('\n').length} lines)`;
       case 'set_settings':
         return `Set ${Object.entries(i.values || {}).map(([k, v]) => `${k} = ${v}`).join(', ')}`;
+      case 'set_printer': {
+        const parts = [];
+        if (i.printer) parts.push(`Switched to the ${PRINTERS[i.printer]?.name || i.printer}`);
+        const set = Object.entries(i.settings || {}).map(([k, v]) => `${k} = ${v}`);
+        if (set.length) parts.push(`${parts.length ? 'set' : 'Set the printer’s'} ${set.join(', ')}`);
+        return parts.join('; ');
+      }
       case 'look':
         return `Looked at the ${i.show === 'toolpath' ? 'toolpath' : i.show === 'shape' ? 'shape' : 'model'}`;
       case 'read_recipe':
@@ -424,6 +434,10 @@ export function createChat(app) {
           { type: 'text', text: 'Top left: perspective. Top right: front (looking along +Y). Bottom left: right side (looking along -X). Bottom right: top (looking down, +Y up). The grid is the printer bed.' },
         ],
       };
+    }
+    if (name === 'set_printer') {
+      const { printer, notes } = await app.setPrinter(input.printer, input.settings);
+      return { content: (notes.length ? `Note: ${notes.join('; ')}.\n` : '') + `Printer: ${printer}` };
     }
     if (name === 'request_feature') return fileRequest(input);
     return { content: `There is no tool called ${name}.`, isError: true };

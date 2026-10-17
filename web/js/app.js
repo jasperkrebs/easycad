@@ -9,7 +9,7 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
-import { PRINTERS, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
+import { PRINTERS, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { createGraph } from './graph.js';
@@ -21,6 +21,7 @@ const TEMPLATES = [
   { id: 'spiral-disc', name: 'Spiral disc (from EasyGCode)' },
   { id: 'thread-connector', name: 'Thread connector (from EasyGCode)' },
   { id: 'spoon', name: 'Spoon (from EasyGCode)' },
+  { id: 'bend-stool', name: 'Bend stool, with foaming (from EasyGCode)' },
   { id: 'cut-cylinder', name: 'Cut cylinder (tilted layers)' },
   { id: 'turned-vase', name: 'Turned vase (geometry only)' },
 ];
@@ -108,10 +109,9 @@ async function run(quality, how = {}) {
   state.last = result;
   state.source = result.source;
   for (const p of result.params) if (!(p.name in state.values)) state.values[p.name] = p.value;
-  if (how.opened) {
-    state.openedValues = { ...state.values };
-    if (result.printer) setPrinter(printerFor(result.printer));
-  }
+  if (how.opened) state.openedValues = { ...state.values };
+  // The recipe's `printer` line decides the printer (choosing one in the Print tab rewrites it).
+  if (result.printer && printerFor(result.printer) !== state.printer) setPrinter(printerFor(result.printer));
 
   const errors = result.diagnostics.filter((d) => d.severity === 'error').length;
   const layout = layoutKey(result.params);
@@ -343,8 +343,7 @@ const chat = createChat({
   project: () => ({
     source: state.source,
     last: state.last,
-    printerName: PRINTERS[state.printer].name,
-    profile: state.profile,
+    printer: describePrinter(state.printer, state.profile),
     values: state.values,
     editorDirty,
   }),
@@ -353,6 +352,15 @@ const chat = createChat({
     return applyRecipe(text);
   },
   applyValues,
+  setPrinter: async (id, settings) => {
+    if (id) await choosePrinter(id);
+    const { notes } = settings ? changeSettings(state.printer, state.profile, settings) : { notes: [] };
+    if (settings) {
+      renderPrinterSettings($('printerSettings'), state.printer, state.profile, onProfileChange);
+      onProfileChange();
+    }
+    return { printer: describePrinter(state.printer, state.profile), notes };
+  },
   look: (show) => viewport.snapshot(/** @type {any} */ (show)),
   catalog: async () => state.catalog || (state.catalog = await engine.catalog()),
 });
@@ -422,6 +430,28 @@ function setPrinter(id) {
   /** @type {HTMLSelectElement} */ ($('printer')).value = id;
   renderPrinterSettings($('printerSettings'), id, state.profile, onProfileChange);
   onProfileChange();
+}
+
+/**
+ * Chooses the printer (from the Print tab or the agent), and names it in the recipe's `printer`
+ * line (a command, like a graph edit), so the project opens with it next time.
+ * @param {keyof typeof PRINTERS} id
+ */
+async function choosePrinter(id) {
+  setPrinter(id);
+  autosave();
+  await engine.idle();
+  const named = state.last?.printer;
+  if (editorDirty || (named && printerFor(named) === id)) return;
+  try {
+    const r = await engine.editGraph(state.source, { op: 'setPrinter', name: PRINTERS[id].recipeName });
+    if (r.source !== state.source) {
+      clearGraphUndo();
+      await applyRecipe(r.source);
+    }
+  } catch {
+    // A recipe with a problem keeps its line; the printer is still chosen for now.
+  }
 }
 
 /** The printer or its settings changed: the bed, the checks and the export buttons follow. */
@@ -514,8 +544,7 @@ function wire() {
   });
 
   $('printer').addEventListener('change', (e) => {
-    setPrinter(/** @type {any} */ (/** @type {HTMLSelectElement} */ (e.target).value));
-    autosave();
+    choosePrinter(/** @type {any} */ (/** @type {HTMLSelectElement} */ (e.target).value));
   });
   $('toPrinter').addEventListener('click', () => selectTab('print'));
 
@@ -543,6 +572,8 @@ function wire() {
       if (text === null) return;
       const data = JSON.parse(text);
       if (!data || typeof data.values !== 'object') throw new Error('this file has no EasyCAD settings in it.');
+      // The printer first: naming it in the recipe runs it again, from the values in the text.
+      if (typeof data.printer === 'string' && data.printer in PRINTERS) await choosePrinter(/** @type {any} */ (data.printer));
       let used = 0;
       for (const [k, v] of Object.entries(data.values)) {
         if (k in state.values && typeof v === typeof state.values[k]) {
@@ -550,7 +581,6 @@ function wire() {
           used++;
         }
       }
-      if (typeof data.printer === 'string' && data.printer in PRINTERS) setPrinter(/** @type {any} */ (data.printer));
       if (!used) throw new Error('none of its settings belong to this project.');
       state.unsaved = true;
       state.layout = '';
@@ -599,8 +629,9 @@ async function start() {
       editor.value = saved.source;
       state.source = saved.source;
       await run('final', { fresh: true, opened: true });
-      // Back to how it was left: the printer chosen, and "Reset" still meaning "as opened".
-      setPrinter(saved.printer in PRINTERS ? saved.printer : state.printer);
+      // Back to how it was left: the printer chosen (when the recipe doesn't name one), and
+      // "Reset" still meaning "as opened".
+      if (!state.last?.printer && saved.printer in PRINTERS) setPrinter(saved.printer);
       if (saved.openedValues && typeof saved.openedValues === 'object') state.openedValues = saved.openedValues;
       state.unsaved = saved.unsaved === true;
     } else {

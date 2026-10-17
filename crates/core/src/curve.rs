@@ -309,6 +309,38 @@ impl Curve {
         Curve::new(points, false)
     }
 
+    /// An arc from `start` to `end` (degrees) with as many points as keep its chords within
+    /// `tolerance` of the true arc, at least 12 segments: EasyGCode's sampling of its bend
+    /// stool's rings, whose arithmetic (in radians) this follows.
+    pub fn arc_within(
+        r: f64,
+        start: f64,
+        end: f64,
+        tolerance: f64,
+        max_points: usize,
+    ) -> Result<Curve, String> {
+        let a = start.to_radians();
+        let sweep = (end - start).to_radians();
+        let mut dth = 2.0 * (1.0 - tolerance / r.max(1e-9)).max(-1.0).acos();
+        if !dth.is_finite() || dth <= 0.0 {
+            dth = 0.2;
+        }
+        let steps = (sweep.abs() / dth).ceil();
+        if steps.is_nan() || steps >= max_points as f64 {
+            return Err(format!(
+                "a tolerance of {tolerance} mm needs too many points on this arc; use a larger tolerance"
+            ));
+        }
+        let steps = (steps as usize).max(12);
+        let points = (0..=steps)
+            .map(|s| {
+                let angle = a + (sweep * s as f64) / steps as f64;
+                [r * angle.cos(), r * angle.sin(), 0.0]
+            })
+            .collect();
+        Ok(Curve::new(points, false))
+    }
+
     /// The point a fraction `t` (0..1) of the way along the curve, by length. A closed curve
     /// wraps around (1 is back at the start).
     pub fn point_at(&self, t: f64) -> P3 {
@@ -523,6 +555,31 @@ fn ring(r: f64, n: usize) -> Vec<P3> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arcs_within_a_tolerance_follow_easygcodes_chord_rule() {
+        // r = 5, tolerance 0.05: each chord spans 2 acos(1 - 0.01) of arc, so a ring that stops
+        // a 2 mm line short of a full turn (2 pi - 0.4) needs ceil(5.883 / 0.2838) = 21 chords.
+        let sweep = 360.0 - (2.0f64 / 5.0).to_degrees();
+        let a = Curve::arc_within(5.0, 90.0, 90.0 + sweep, 0.05, 10_000).unwrap();
+        assert_eq!(a.points.len(), 22);
+        let first = a.points[0];
+        assert!((first[0]).abs() < 1e-12 && (first[1] - 5.0).abs() < 1e-12);
+        // Every chord's middle stays within the tolerance of the circle.
+        for w in a.points.windows(2) {
+            let m = [(w[0][0] + w[1][0]) / 2.0, (w[0][1] + w[1][1]) / 2.0];
+            assert!(5.0 - m[0].hypot(m[1]) <= 0.05 + 1e-12);
+        }
+        // At least 12 chords, however loose the tolerance.
+        assert_eq!(
+            Curve::arc_within(5.0, 0.0, 10.0, 1.0, 10_000)
+                .unwrap()
+                .points
+                .len(),
+            13
+        );
+        assert!(Curve::arc_within(500.0, 0.0, 360.0, 1e-9, 1000).is_err());
+    }
 
     #[test]
     fn circle_is_round_and_closed() {

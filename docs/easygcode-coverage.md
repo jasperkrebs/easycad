@@ -19,7 +19,7 @@ under each project and in [What's still missing](#whats-still-missing).
 | Vessel | Buildable | not written yet |
 | Container | Buildable | not written yet |
 | Coat hanger | Buildable, with three small approximations (below) | not written yet |
-| Bend stool | Buildable except **foaming** (printer temperature macros) | not written yet |
+| Bend stool | **G-code identical to EasyGCode** (4 cases, foaming included); legs buildable | `web/templates/bend-stool.easycad` (the seat) |
 
 **"G-code identical"** means a golden test (`crates/core/src/golden_tests.rs`) runs the
 template with the same settings as an EasyGCode configuration and compares the G-code command
@@ -30,8 +30,8 @@ are compared comments included. Every command is byte-identical.
 recipe is now recipe work (an agent can do it), not engine work. Its G-code would be EasyCAD's
 own, not checked line by line against EasyGCode's.
 
-Recipes were written for three projects only, on purpose. They prove the new steps produce
-exactly EasyGCode's numbers. The other five are a matter of writing recipes when they're wanted.
+Recipes were written for four projects so far, on purpose. They prove the new steps produce
+exactly EasyGCode's numbers. The others are a matter of writing recipes when they're wanted.
 
 ## Thread connector (golden)
 
@@ -123,20 +123,32 @@ Approximations (not missing features):
 
 The wall hanger's SVG export is a file format, not a step (other formats come later).
 
-## Bend stool
+## Bend stool (golden since 17 Oct)
+
+The template is the seat without legs (EasyGCode's default), with foaming. Four cases match
+EasyGCode command for command: as it ships (one layer, volumetric flow); foaming over four
+layers at a set feed; foaming with a cool-down below the printer's temperatures, a zigzag exit
+primer, primers at a set flow and another size and centre; three plain layers without start/end
+blocks.
 
 | EasyGCode feature | EasyCAD steps |
 |---|---|
-| Concentric rings, diameter snapped to whole rings | `circle` with a list of radii (exact rings); `round` |
-| Staircase or zipper seams | `link_rings("staircase" / "zipper")` |
+| Concentric rings, diameter snapped to whole rings | `series` of radii; `round` |
+| Staircase seam: each ring stops a line short and steps out to the next | `arc(radii, start:, end:, tolerance:)` with the starts accumulated (`accumulate`, `mod`), strung together with `polyline(flatten(vertices(rings)))` |
+| Zipper seams | `link_rings("zipper")` |
 | Three legs as nested hairpins with fillets and tip caps | `line`, `arc`, `join_curves`, `fillet` (or `polyline` + `fillet`), nested with `offset` |
 | Bend-zone spread around attractor points | `offset` or `move` by a field (`fade` of `distance`) |
 | Overhang drop, dome | `move(z: …field…)` per layer; `spiralize` or `toolpath` extrude for the local layer height |
-| First layer outside-in with an entrance primer line | `reverse`; `line` + `join` (parts that meet carry on) |
-| Two-move safety travel between layers | `stack(lift:)`, `join(clear:)` |
-| 15° rotation and bed recentre | `rotate`, `center` |
+| First layer outside-in with an entrance primer line | `reverse` of the seat's `vertices`, a lead-in point along the radius, `polyline` |
+| Two-move wipe between layers (diagonal to two layers above, then down) | `stack(wipe: 2 * layer)`, `join(wipe:)` |
+| 15° rotation and bed recentre by the outer ring's outline | `rotate`, `center`; the offset read back with `sample(x, …)` and applied with `move` |
 | Brim following the bottom or the top outline | `offset` or `rings` of either outline |
-| **Foaming** (temperatures changed mid-print, waits, prime lines, flow and speed factors) | **missing**, see below |
+| Foaming: hotter zones from the second layer to the one before last | `temperature(up:, mid:, down:, at_end: true)` after the first layer |
+| Tolerant waits (`TEMPERATURE_WAIT`, within 2 °C) on primer lines at the bed's corner | `wait_temperature(…)` and `wait_temperature(…, cool: true)` on `toolpath(line(…))` |
+| Less extrusion, more speed, the same flow (`M221`, `M220`) | `extrusion_override(38)`, `speed_override(10000 / 38)` |
+| Back to the printer's own temperatures, optionally cooling below them first | `temperature()` (nothing given: the printer's own), then `wait_temperature()` |
+| Hops at twice the tallest print so far | `join([...], clear: 2 * layer)`, then `clear: 2 * (layers - 1) * layer` |
+| Zigzag exit primer | `polyline` of points from `series`, `mod`, `greater`, `less`, `floor` |
 
 Not exact: the spread's fillets collapsing into true corners, as EasyGCode builds them per piece.
 A general offset by a field gets the same idea, not the same numbers.
@@ -145,7 +157,6 @@ A general offset by a field gets the same idea, not the same numbers.
 
 | Gap | Why it isn't built yet | What it takes |
 |---|---|---|
-| **Foaming** (bend stool) | It sends printer-specific heater commands mid-print (`_GINGER_EXTRUDER_SET_UP/MID/DOWN`, `TEMPERATURE_WAIT`, `M220`/`M221`). G-code safety asks for a golden test, which needs the whole bend stool recipe | A `temperature` event step that writes each printer's own commands, plus a bend stool template golden-tested with foaming on |
 | Spike way-out as an arc, and spike bead override | Small refinements of `spikes` | Two more inputs on `spikes` |
 | Zone tags carried through tweens | Fields cover the projects as they are | Per-point attributes on curves, if a project needs exact zone edges |
 | SVG export | An export format, not a step | Later, with 3MF and STEP |
@@ -179,3 +190,28 @@ Machine commands that are new in EasyCAD's G-code:
 
 They are checked against a hand-checked fixture (`fixtures/hand-checked/machine-events.gcode`,
 worked out in exact arithmetic by `scripts/hand-checked-fixtures.py`).
+
+## Steps added for the bend stool and foaming (17 Oct 2026)
+
+- **Curves:** `arc(…, tolerance:)` (EasyGCode's chord rule, at least 12 segments), `vertices`.
+- **Toolpaths:**
+  - `stack(wipe:)` and `join(wipe:)`: EasyGCode's wipe between layers;
+  - `stack` takes 0 copies, and `join` keeps an empty part's machine events;
+  - `join`'s first-layer rule now goes by height: a part that starts no higher than the first
+    layer (a brim, a primer) belongs to it, the next layer up doesn't.
+- **Machine events:** `temperature`, `wait_temperature`, `speed_override`,
+  `extrusion_override`. Each is placed before a toolpath prints (after the travel to it) or
+  after it.
+
+Their G-code:
+- the pellet printer (EasyGCode's foaming, golden-tested with the bend stool):
+  `_GINGER_EXTRUDER_SET_UP/MID/DOWN S=…`, `TEMPERATURE_WAIT SENSOR=extruder2 MINIMUM=…` (hot)
+  or one `MAXIMUM=…` per zone (cool), `M220 S…`, `M221 S…`;
+- the filament printer: `M104 S…`, `M109 S…` (it can wait for heating only), `M220`, `M221`.
+  These are checked against a hand-checked fixture (`fixtures/hand-checked/filament-machine.gcode`).
+
+The statistics count the overrides: time at the override's speed, material at its extrusion.
+
+One difference from EasyGCode remains: its cool-down never goes above a zone's own temperature
+(it caps the cool-down at each zone's normal one). A recipe doesn't know the printer's
+temperatures, so the template asks for a cool-down below them.

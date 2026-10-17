@@ -5,7 +5,7 @@
 //
 // The stand-in speaks the proxy's protocol (password as a bearer token, /check) and the Messages
 // API's streaming format. It plays one conversation: the model writes a recipe, looks at it,
-// edits it, and answers. The test checks what the app sends (model, caching, tools, password,
+// edits it, switches the printer (changing one of its settings), and answers. The test checks what the app sends (model, caching, tools, password,
 // an append-only history, a rendered picture) and what it does (recipe changed, undo, chat
 // saved across a reload, a wrong password explained). Needs Playwright and a built engine,
 // like scripts/smoke-test.cjs.
@@ -52,6 +52,7 @@ function reply(round) {
   }
   if (round === 1) return { tool: { name: 'look', input: { show: 'both' } } };
   if (round === 2) return { tool: { name: 'edit_recipe', input: { edits: [{ old: 'param height = 80 mm', new: 'param height = 120 mm' }] } } };
+  if (round === 3) return { tool: { name: 'set_printer', input: { printer: 'pellet', settings: { 'pellet.bed': 55, 'filament.nozzle': 230 } } } };
   return { text: 'Done: a 120 mm cylinder. Try **Radius** in the settings.' };
 }
 
@@ -210,14 +211,19 @@ async function waitForServer(url) {
       check(/param height = 120 mm/.test(recipe) && /project "Test cylinder"/.test(recipe), `${name}: the agent's recipe wasn't applied`);
       check((await page.textContent('#projectName')) === 'Test cylinder', `${name}: project name not updated`);
       const chips = await page.locator('#chatLog .tool').allTextContents();
-      check(chips.length === 3, `${name}: expected 3 tool steps in the chat, got ${chips.length}: ${chips.join(' | ')}`);
-      check((await page.locator('#chatLog .tool.ok').count()) === 3, `${name}: tool steps not marked as done`);
+      check(chips.length === 4, `${name}: expected 4 tool steps in the chat, got ${chips.length}: ${chips.join(' | ')}`);
+      check((await page.locator('#chatLog .tool.ok').count()) === 4, `${name}: tool steps not marked as done`);
+      // The printer switch: the Print tab follows, and the recipe names the new printer.
+      check((await page.inputValue('#printer')) === 'pellet', `${name}: the agent's printer switch didn't reach the Print tab`);
+      check((await page.inputValue('#printer-pellet-bed')) === '55', `${name}: the agent's printer setting didn't reach the Print tab`);
+      check(/^printer "Klipper pellet"$/m.test(recipe), `${name}: the recipe's printer line didn't follow the switch`);
+      check(/G-code for the Klipper pellet/.test(await page.textContent('#exportButtons')), `${name}: the G-code button didn't follow the switch`);
       check(/this chat \$0\.0[1-9]/.test(await page.textContent('#chatCost')), `${name}: cost not shown: ${await page.textContent('#chatCost')}`);
       if (shots) await page.screenshot({ path: path.join(shots, `agent-${name}-chat.png`), fullPage: name === 'phone' });
 
       // What the app sent.
       const reqs = mock.requests;
-      check(reqs.length === 4, `${name}: expected 4 model requests, got ${reqs.length}`);
+      check(reqs.length === 5, `${name}: expected 5 model requests, got ${reqs.length}`);
       const first = reqs[0];
       check(first.headers.authorization === `Bearer ${PASSWORD}` && !first.headers['x-api-key'], `${name}: the password must be the only credential sent`);
       check(String(first.headers['anthropic-beta']).includes('server-side-fallback-2026-07-01'), `${name}: fallback beta header missing`);
@@ -246,12 +252,18 @@ async function waitForServer(url) {
       const image = Array.isArray(lookResult.content) && lookResult.content.find((c) => c.type === 'image');
       check(image && image.source.media_type === 'image/jpeg' && image.source.data.length > 5000, `${name}: look didn't return a picture`);
       if (shots && image) require('node:fs').writeFileSync(path.join(shots, `agent-${name}-look.jpg`), Buffer.from(image.source.data, 'base64'));
+      check(/^Printer: Bambu P1P \(p1p\)\. Printers: p1p .*filament\.nozzle = 205 °C/m.test(String(b.messages[0].content[0].text)), `${name}: the project context lacks the printer's settings`);
+      const printerResult = String(reqs[4].body.messages.at(-1).content[0].content);
+      check(/filament\.nozzle` is not a setting of the Klipper pellet/.test(printerResult) && /pellet\.bed = 55 °C/.test(printerResult), `${name}: set_printer's result is wrong: ${printerResult}`);
       const writeResult = reqs[1].body.messages.at(-1).content[0];
       check(/No problems\./.test(String(writeResult.content)) && /Prints: \d+ layers/.test(String(writeResult.content)), `${name}: run result not reported back`);
 
-      // Undo puts the recipe back as it was before the message.
+      // Undo puts the recipe back as it was before the message, and with it the printer it names.
       await page.click('#chatUndoButton');
       await page.waitForFunction((src) => document.getElementById('recipe').value === src, original, { timeout: 15000 });
+      await page
+        .waitForFunction(() => document.getElementById('printer').value === 'p1p', null, { timeout: 15000 })
+        .catch(() => failures.push(`${name}: undo didn't bring the recipe's printer back`));
 
       // The chat survives a reload (saved on the device).
       await page.reload();

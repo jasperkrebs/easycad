@@ -273,13 +273,15 @@ is cheap and can be kept forever. That also enables *variants* ("save as variant
 | `edit_recipe` | Exact find/replace edits, all or none; the recipe runs and the result comes back |
 | `write_recipe` | A whole new recipe (new projects, rewrites) |
 | `set_settings` | Move sliders (values clamped to their ranges) |
+| `set_printer` | Switch printers (the recipe's `printer` line follows) and change the printer's settings by the Print tab's keys (checked and clamped like its fields, saved on the device) |
 | `look` | One picture, four views: perspective, plus front, side and top as orthographic views. The agent's eyes |
 | `read_recipe` | The current recipe with line numbers |
 | `request_feature` | When no combination of steps can do what the user wants: a precise, general proposal for the missing step, filed as a GitHub issue. Claude Code builds it, and the chat carries on when it's live (§8.8) |
 
 Every result is compact text: problems by line, each step and what it made, the settings, the
 drawn size, and print numbers (layers, height, volume, time, flow, overhang). Each message also
-carries the project as it is now (recipe with line numbers, last run, printer and bed).
+carries the project as it is now (recipe with line numbers, last run, and the printers with every
+setting of the chosen one: key, value, unit).
 Later: `check_print` (thin walls, bed fit), `ask_user` with quick replies, locked parameters.
 
 ### 8.4 The loop

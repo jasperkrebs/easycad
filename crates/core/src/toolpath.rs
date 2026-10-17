@@ -152,6 +152,44 @@ pub enum EventKind {
     Fan(f64),
     /// Wait this many seconds with the nozzle where it is.
     Dwell(f64),
+    /// New heater temperatures; printing carries on while they change.
+    Heat(Temperatures),
+    /// Wait until the heaters are hot enough (`cool` false: the one at the nozzle within 2 °C
+    /// below its target) or cool enough (`cool` true: every one within 2 °C above its target).
+    WaitHeat { temps: Temperatures, cool: bool },
+    /// The printer's speed override in % (M220): every move's speed is scaled by it.
+    SpeedOverride(f64),
+    /// The printer's extrusion override in % (M221): every move's extrusion is scaled by it.
+    ExtrusionOverride(f64),
+}
+
+/// Heater temperatures in °C for the machine events. `None` is the printer's own (its settings
+/// in the app), so a recipe can go back to them without knowing them.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Temperatures {
+    /// A filament printer's nozzle; also any zone of a pellet printer that isn't given.
+    pub nozzle: Option<f64>,
+    /// A pellet printer's upper, middle and lower extruder zones.
+    pub zones: [Option<f64>; 3],
+}
+
+impl Temperatures {
+    /// The pellet printer's three zones, given the printer's own.
+    pub fn zones_or(&self, own: [f64; 3]) -> [f64; 3] {
+        let mut out = own;
+        for (k, slot) in out.iter_mut().enumerate() {
+            if let Some(t) = self.zones[k].or(self.nozzle) {
+                *slot = t;
+            }
+        }
+        out
+    }
+
+    /// A filament printer's nozzle (or, for a recipe written for zones, the lower zone, the one
+    /// at the nozzle), given the printer's own.
+    pub fn nozzle_or(&self, own: f64) -> f64 {
+        self.nozzle.or(self.zones[2]).unwrap_or(own)
+    }
 }
 
 /// Print statistics shown in the app (camelCase names for JavaScript).
@@ -259,6 +297,12 @@ impl Toolpath {
         dest[2] < z - 1e-6
     }
 
+    /// EasyGCode's wipe (`travelWipe` in its gcode.js) towards `dest`: one straight move to
+    /// `height` above it; the move down onto it is still to come.
+    fn wipe(&mut self, dest: P3, height: f64, part: u16) {
+        self.push([dest[0], dest[1], dest[2] + height], true, 0.0, 0.0, part);
+    }
+
     /// Copies point `i` of `other`, shifted by `dz`, with its part index moved by `part_offset`.
     fn push_from(&mut self, other: &Toolpath, i: usize, dz: f64, part_offset: u16) {
         let p = other.points.get(i).copied().unwrap_or([0.0; 3]);
@@ -350,19 +394,32 @@ impl Toolpath {
         let mut flow_max: f64 = 0.0;
         let mut top = f64::NEG_INFINITY;
         let mut bounds = Bounds::empty();
+        // The printer's speed and extrusion overrides (M220, M221) as they stand at each move.
+        let mut events: Vec<&Event> = self.events.iter().collect();
+        events.sort_by_key(|e| e.after);
+        let mut pending = events.into_iter().peekable();
+        let (mut speed_override, mut extrusion_override) = (1.0, 1.0);
         for (i, w) in self.points.windows(2).enumerate() {
+            while let Some(e) = pending.next_if(|e| e.after <= i) {
+                match e.kind {
+                    EventKind::SpeedOverride(pct) => speed_override = pct / 100.0,
+                    EventKind::ExtrusionOverride(pct) => extrusion_override = pct / 100.0,
+                    _ => {}
+                }
+            }
             let d = dist3(w[0], w[1]);
             if self.travel.get(i + 1).copied().unwrap_or(false) {
                 travel += d;
-                time += d / TRAVEL_SPEED_MM_S;
+                time += d / (TRAVEL_SPEED_MM_S * speed_override);
             } else {
                 let s = self.settings(i + 1);
                 let area = self.area(i + 1);
-                let speed = s.speed_for(area) * self.speed_factor(i + 1);
+                let speed = s.speed_for(area) * self.speed_factor(i + 1) * speed_override;
                 length += d;
-                volume += area * d * self.flow.get(i + 1).copied().unwrap_or(1.0);
+                volume +=
+                    area * d * self.flow.get(i + 1).copied().unwrap_or(1.0) * extrusion_override;
                 time += d / speed;
-                flow_max = flow_max.max(speed * area);
+                flow_max = flow_max.max(speed * area * extrusion_override);
                 top = top.max(w[1][2]);
                 bounds.add(w[0]);
                 bounds.add(w[1]);
@@ -373,7 +430,7 @@ impl Toolpath {
             .iter()
             .map(|e| match e.kind {
                 EventKind::Dwell(s) => s,
-                EventKind::Fan(_) => 0.0,
+                _ => 0.0,
             })
             .sum::<f64>();
         let first = self.parts.first().copied().unwrap_or(Settings {
@@ -776,24 +833,31 @@ pub fn from_curves(
     Ok(path)
 }
 
-/// The same toolpath printed `count` times, each copy one layer higher. Between copies the
-/// nozzle travels back to the start `lift` layers above the new copy (EasyGCode's clearance
-/// hop): with 1, it lifts a layer clear of the copy just printed, goes over and lowers (its
-/// spiral disc); with 0, it rises to the new layer and goes straight over (its spoon).
+/// The same toolpath printed `count` times (0 is none), each copy one layer higher. Between
+/// copies the nozzle travels back to the start `lift` layers above the new copy (EasyGCode's
+/// clearance hop): with 1, it lifts a layer clear of the copy just printed, goes over and
+/// lowers (its spiral disc); with 0, it rises to the new layer and goes straight over (its
+/// spoon). With `wipe` (mm) it goes instead in one straight move to that far above the new
+/// copy's start and down onto it, without stopping to lift (its bend stool).
 pub fn stack(
     path: &Toolpath,
     count: usize,
     lift: f64,
+    wipe: f64,
     max_points: usize,
 ) -> Result<Toolpath, String> {
     check("lift", lift, 0.0, 100.0, " layers")?;
+    check("wipe", wipe, 0.0, 1000.0, " mm")?;
     let lh = path.layer_height();
     let needed = path.points.len().saturating_add(2).saturating_mul(count);
     too_many(needed, max_points, "use fewer layers")?;
     let mut out = Toolpath::empty(path.parts.clone(), needed);
     out.layer_starts.clear();
-    if path.points.is_empty() {
+    if path.points.is_empty() || count == 0 {
         out.layers = 0;
+        if count > 0 {
+            out.events = path.events.clone();
+        }
         return Ok(out);
     }
     for k in 0..count {
@@ -803,7 +867,9 @@ pub fn stack(
             Some(start) if !out.points.is_empty() => {
                 out.layer_starts.push(out.points.len());
                 let dest = [start[0], start[1], start[2] + dz];
-                if !out.hop(dest, dest[2] + lift * lh, 0) {
+                if wipe > 0.0 {
+                    out.wipe(dest, wipe, 0);
+                } else if !out.hop(dest, dest[2] + lift * lh, 0) {
                     first = 1; // the move over already ends on the copy's start
                 }
             }
@@ -831,14 +897,23 @@ pub fn stack(
 /// Toolpaths printed one after another, each with its own settings. Between two parts the
 /// nozzle travels clear (EasyGCode's clearance hop): straight up, over, and down to the next
 /// part's start, at least `clear` mm above the bed and never lower than either end; with
-/// `clear` 0, one layer (the next part's) above the higher end. A part that starts exactly
-/// where the one before ended carries on without any travel, and empty parts are skipped.
+/// `clear` 0, one layer (the next part's) above the higher end. With `wipe` (mm) it goes
+/// instead in one straight move to that far above the next part's start and down onto it. A
+/// part that starts exactly where the one before ended carries on without any travel. Empty
+/// parts are skipped, but their machine events happen where they would have printed.
 ///
-/// One-layer parts at the start count as the first layer together with the next part's first
-/// layer, so the part fan comes on where EasyGCode turns it on: after a brim *and* the first
-/// turn of the helix printed inside it, or after the first of several bottom layers.
-pub fn join(paths: &[&Toolpath], clear: f64, max_points: usize) -> Result<Toolpath, String> {
+/// A part that starts no higher than a one-layer start counts as that first layer, so the part
+/// fan comes on where EasyGCode turns it on: after a brim *and* the first turn of the helix
+/// printed inside it (not after the first of several bottom layers), and after a first layer
+/// and the primer line printed after it, before the next layer up.
+pub fn join(
+    paths: &[&Toolpath],
+    clear: f64,
+    wipe: f64,
+    max_points: usize,
+) -> Result<Toolpath, String> {
     check("clear", clear, 0.0, 1000.0, " mm")?;
+    check("wipe", wipe, 0.0, 1000.0, " mm")?;
     let needed = paths.iter().map(|p| p.points.len() + 2).sum::<usize>();
     too_many(needed, max_points, "use fewer or simpler toolpaths")?;
     let mut out = Toolpath::empty(Vec::new(), needed);
@@ -847,6 +922,9 @@ pub fn join(paths: &[&Toolpath], clear: f64, max_points: usize) -> Result<Toolpa
     let mut parts_used = 0;
     for path in paths {
         let Some(start) = path.points.first().copied() else {
+            let after = out.points.len().saturating_sub(1);
+            out.events
+                .extend(path.events.iter().map(|e| Event { after, ..*e }));
             continue;
         };
         parts_used += 1;
@@ -858,6 +936,8 @@ pub fn join(paths: &[&Toolpath], clear: f64, max_points: usize) -> Result<Toolpa
         if let Some(prev) = out.points.last().copied() {
             if dist3(prev, start) <= 1e-6 {
                 first = 1;
+            } else if wipe > 0.0 {
+                out.wipe(start, wipe, offset);
             } else {
                 let clear_z = if clear > 0.0 {
                     clear
@@ -869,7 +949,17 @@ pub fn join(paths: &[&Toolpath], clear: f64, max_points: usize) -> Result<Toolpa
                 }
             }
         }
-        let merge = out.layer_starts.len() == 1;
+        // A part that starts no higher than the first layer printed so far (a brim, a primer
+        // line, the object inside a brim) belongs to that first layer.
+        let printed = |p: &Toolpath| {
+            (0..p.points.len())
+                .filter(|&i| !p.travel.get(i).copied().unwrap_or(true))
+                .map(|i| p.points[i][2])
+                .collect::<Vec<f64>>()
+        };
+        let first_top = printed(&out).into_iter().fold(f64::NEG_INFINITY, f64::max);
+        let starts_at = printed(path).first().copied().unwrap_or(start[2]);
+        let merge = out.layer_starts.len() == 1 && starts_at <= first_top + 1e-6;
         let base = out.points.len();
         for (k, s) in path.layer_starts.iter().enumerate() {
             if k == 0 && merge {
@@ -1363,7 +1453,7 @@ mod tests {
             MAX_PATH_POINTS,
         )
         .unwrap();
-        let p = stack(&one, 3, 1.0, MAX_PATH_POINTS).unwrap();
+        let p = stack(&one, 3, 1.0, 0.0, MAX_PATH_POINTS).unwrap();
         assert_eq!(p.points.len(), 9 * 3 + 2 * 2);
         assert_eq!(p.layer_starts, vec![0, 9, 20]);
         // Lift one layer above the next layer, over to the start, then down onto it.
@@ -1378,13 +1468,13 @@ mod tests {
         // straight over to the start; no move down.
         let open = Curve::new(vec![[0.0; 3], [10.0, 0.0, 0.0], [10.0, 5.0, 0.0]], false);
         let one = from_curves(&[&open], settings(2.0, 0.6, 20.0), MAX_PATH_POINTS).unwrap();
-        let p = stack(&one, 2, 0.0, MAX_PATH_POINTS).unwrap();
+        let p = stack(&one, 2, 0.0, 0.0, MAX_PATH_POINTS).unwrap();
         assert_eq!(p.points.len(), 3 + 2 + 2);
         assert!(near(p.points[3], [10.0, 5.0, 1.2]) && near(p.points[4], [0.0, 0.0, 1.2]));
         assert!(p.travel[3] && p.travel[4] && !p.travel[5]);
         assert!(near(p.points[5], [10.0, 0.0, 1.2]));
         assert_eq!(p.layer_starts, vec![0, 3]);
-        assert!(stack(&one, 2, -1.0, MAX_PATH_POINTS).is_err());
+        assert!(stack(&one, 2, -1.0, 0.0, MAX_PATH_POINTS).is_err());
     }
 
     #[test]
@@ -1401,24 +1491,24 @@ mod tests {
         let a = flat(vec![[0.0; 3], [10.0, 0.0, 0.0]], 0.8);
         let b = flat(vec![[20.0, 0.0, -0.8], [30.0, 0.0, -0.8]], 1.25); // printed at z = 0.45
         // An absolute travel height: up to 1.6, over, down (EasyGCode's 2 × brim layer).
-        let j = join(&[&a, &b], 1.6, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &b], 1.6, 0.0, MAX_PATH_POINTS).unwrap();
         assert!(near(j.points[2], [10.0, 0.0, 1.6]) && near(j.points[3], [20.0, 0.0, 1.6]));
         assert!(near(j.points[4], [20.0, 0.0, 0.45]) && j.travel[4] && !j.travel[5]);
         // Automatic: one layer of the next part above the higher end.
-        let j = join(&[&a, &b], 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &b], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
         assert!(near(j.points[2], [10.0, 0.0, 0.8 + 1.25]));
         // A part that starts where the last one ended carries straight on, no travel.
         let c = flat(vec![[10.0, 0.0, 0.0], [10.0, 10.0, 0.0]], 0.8);
-        let j = join(&[&a, &c], 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &c], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
         assert_eq!(j.points.len(), 3);
         assert_eq!(j.travel, vec![true, false, false]);
         assert_eq!(j.part, vec![0, 0, 1]);
         // Empty parts are skipped.
         let none = from_curves(&[], settings(1.0, 0.8, 20.0), MAX_PATH_POINTS).unwrap();
         assert!(none.points.is_empty());
-        let j = join(&[&none, &a, &none], 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&none, &a, &none], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
         assert_eq!((j.points.len(), j.parts.len()), (2, 1));
-        assert!(join(&[&a], -1.0, MAX_PATH_POINTS).is_err());
+        assert!(join(&[&a], -1.0, 0.0, MAX_PATH_POINTS).is_err());
     }
 
     #[test]
@@ -1435,13 +1525,63 @@ mod tests {
         )
         .unwrap();
         assert_eq!(h.layer_starts, vec![0, 25]);
-        let j = join(&[&brim, &h], 2.5, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&brim, &h], 2.5, 0.0, MAX_PATH_POINTS).unwrap();
         // The brim (25 points), the hop (up, over), then the helix from its first point.
         assert_eq!(j.layer_starts, vec![0, 25 + 2 + 25]);
         // Several bottom layers keep their own first layer.
-        let two = stack(&brim, 2, 1.0, MAX_PATH_POINTS).unwrap();
-        let j = join(&[&two, &h], 0.0, MAX_PATH_POINTS).unwrap();
+        let two = stack(&brim, 2, 1.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&two, &h], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
         assert_eq!(j.layer_starts[..2], [0, 25]);
+    }
+
+    #[test]
+    fn a_primer_after_the_first_layer_belongs_to_it_and_wipes_go_straight_over() {
+        let ring = Curve::circle(10.0, 12);
+        let layer = |z: f64| {
+            from_curves(
+                &[&ring.transformed(&Xform::translate(0.0, 0.0, z))],
+                settings(1.0, 0.5, 20.0),
+                MAX_PATH_POINTS,
+            )
+            .unwrap()
+        };
+        let primer = from_curves(
+            &[&Curve::new(
+                vec![[-30.0, -30.0, 0.0], [-20.0, -30.0, 0.0]],
+                false,
+            )],
+            settings(1.0, 0.3, 10.0),
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
+        // The primer (z = 0.3) is no higher than layer 1 (z = 0.5); layer 2 (z = 1) is.
+        let j = join(
+            &[&layer(0.0), &primer, &layer(0.5)],
+            1.0,
+            0.0,
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
+        // Layer 1 (13 points), the hop to the primer (up, over, down) and its line, the hop to
+        // layer 2 (up, over): layer 2 starts with the move down onto it.
+        assert_eq!(j.layer_starts, vec![0, 13 + 3 + 1 + 2]);
+        assert_eq!(j.layers, 2);
+        // A wipe: one straight move to the wipe height above the next start, then down.
+        let w = join(&[&layer(0.0), &layer(0.5)], 0.0, 1.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(w.points[13], [10.0, 0.0, 2.0]);
+        assert_eq!(w.points[14], [10.0, 0.0, 1.0]);
+        assert!(w.travel[13] && w.travel[14] && !w.travel[15]);
+        let s = stack(&layer(0.0), 3, 1.0, 1.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(s.points[13], [10.0, 0.0, 2.0]);
+        assert_eq!(s.points[14], [10.0, 0.0, 1.0]);
+        assert_eq!(s.layer_starts, vec![0, 13, 13 + 14]);
+        // No copies: an empty toolpath, which `join` skips.
+        assert!(
+            stack(&layer(0.0), 0, 1.0, 0.0, MAX_PATH_POINTS)
+                .unwrap()
+                .points
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1511,7 +1651,7 @@ mod tests {
             MAX_PATH_POINTS,
         )
         .unwrap();
-        let j = join(&[&a, &b], 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &b], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
         assert_eq!(j.parts.len(), 2);
         assert_eq!(j.settings(j.points.len() - 1).width, 1.0);
         assert_eq!(j.settings(3).width, 2.0);

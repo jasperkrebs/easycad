@@ -215,6 +215,91 @@ def machine_events():
     return lines, closest
 
 
+FILAMENT_RECIPE = """easycad 0.1
+square = polyline([[0, 0], [20, 0], [20, 20], [0, 20]], closed: true)
+layer1 = toolpath(square, width: 0.6, layer: 0.3, flow: 6) |> temperature(nozzle: 230, at_end: true)
+primer = toolpath(line([-20, -20], [-10, -20]), width: 0.6, layer: 0.3, speed: 20)
+  |> wait_temperature(nozzle: 230)
+  |> extrusion_override(80, at_end: true)
+  |> speed_override(125, at_end: true)
+layer2 = toolpath(square |> move(z: 0.3), width: 0.6, layer: 0.3, flow: 6)
+  |> speed_override(100, at_end: true)
+  |> extrusion_override(100, at_end: true)
+  |> temperature(at_end: true)
+path = join([layer1, primer, layer2], clear: 1)
+print path"""
+
+
+def filament_machine():
+    """Machine events on the filament printer (nozzle 210 C in its settings, part fan 100 %,
+    filament 1.75 mm, travel 100 mm/s), worked out by the steps' rules:
+
+    - `temperature(nozzle: 230, at_end: true)`: M104 S230 after layer 1's last move;
+      `temperature(at_end: true)` with no temperature: back to the printer's own, M104 S210.
+    - `wait_temperature(nozzle: 230)` on the primer: M109 S230 after the travel to its start,
+      before it prints.
+    - `extrusion_override` / `speed_override`: M221 / M220 S<whole percent>, in the order added.
+    - `join(..., clear: 1)`: up to z = 1, over, down to the next part's start. The primer starts
+      no higher than layer 1 (z = 0.3), so it belongs to the first layer; layer 2 (z = 0.6)
+      doesn't, so the automatic fan (M106 S255) comes on right before layer 2's first point,
+      the move down onto it.
+    - E in mm of filament: bead area x length / (pi x 0.875^2); F = round(6 x 60 / area) at a
+      flow of 6 mm^3/s, 1200 for the primer's 20 mm/s.
+    """
+    area = bead_area(Q(3, 5), Q(3, 10))
+    filament = PI * Decimal("0.875") * Decimal("0.875")
+    cx = cy = 125
+    lines, closest = ["G90", "M83"], Decimal("0.5")
+    state = {"feed": None, "first": True}
+
+    def travel(x, y, z, note=""):
+        lines.append(f"G0 X{fixed(Decimal(x) + cx, 3)} Y{fixed(Decimal(y) + cy, 3)} Z{fixed(Decimal(z), 3)} F6000{note}")
+        state["feed"] = "travel"
+
+    def move(a, b, feed_exact, note):
+        nonlocal closest
+        length = sum((Decimal(b[k]) - Decimal(a[k])) ** 2 for k in range(3)).sqrt()
+        e = area * length / filament
+        feed = int((feed_exact + Decimal("0.5")).to_integral_value(rounding="ROUND_FLOOR"))
+        x, y, z = (Decimal(b[0]) + cx, Decimal(b[1]) + cy, Decimal(b[2]))
+        line = f"G1 X{fixed(x, 3)} Y{fixed(y, 3)} Z{fixed(z, 3)} E{fixed(e, 5)}"
+        if state["first"] or feed != state["feed"]:
+            line += f" F{feed}"
+            state["feed"], state["first"] = feed, False
+        lines.append(f"{line} ; {note}: length {length:.6f}, E = area x length / filament area, F = {feed_exact:.4f}")
+        for v, digits in ((x, 3), (y, 3), (z, 3), (e, 5), (feed_exact, 0)):
+            closest = min(closest, margin(v, digits))
+
+    layer_feed = Decimal(360) / area
+    corners = [(0, 0), (20, 0), (20, 20), (0, 20), (0, 0)]
+
+    def square(z, label):
+        for k in range(1, len(corners)):
+            a, b = corners[k - 1], corners[k]
+            move((a[0], a[1], z), (b[0], b[1], z), layer_feed, f"{label}, side {k}")
+
+    z1, z2 = Decimal("0.3"), Decimal("0.6")
+    travel(0, 0, z1)
+    square(z1, "layer 1")
+    lines.append("M104 S230 ; temperature(nozzle: 230, at_end: true)")
+    travel(0, 0, 1, " ; hop to the primer: up to 1")
+    travel(-20, -20, 1, " ; over")
+    travel(-20, -20, z1, " ; down onto the primer's start")
+    lines.append("M109 S230 ; wait_temperature(nozzle: 230)")
+    move((-20, -20, z1), (-10, -20, z1), Decimal(20 * 60), "primer")
+    lines.append("M221 S80 ; extrusion_override(80, at_end: true)")
+    lines.append("M220 S125 ; speed_override(125, at_end: true)")
+    travel(-10, -20, 1, " ; hop to layer 2: up to 1")
+    travel(0, 0, 1, " ; over")
+    lines.append("M106 S255 ; the automatic fan, right before layer 2's first point")
+    travel(0, 0, z2, " ; down onto layer 2's start")
+    square(z2, "layer 2")
+    lines.append("M220 S100 ; speed_override(100, at_end: true)")
+    lines.append("M221 S100 ; extrusion_override(100, at_end: true)")
+    lines.append("M104 S210 ; temperature(at_end: true): the printer's own")
+    return lines, closest
+
+
 def main():
     lines, count, closest = tilted_diamond()
     header = [
@@ -241,7 +326,22 @@ def main():
             *events,
         ]
     ) + "\n"
-    files = {OUT / "spiralize-tilted.gcode": text, OUT / "machine-events.gcode": events_text}
+    filament, filament_closest = filament_machine()
+    filament_text = "\n".join(
+        [
+            "; Hand-checked fixture: machine events on the filament printer (scripts/hand-checked-fixtures.py).",
+            "; The recipe (filament printer: nozzle 210 C, part fan 100 %, filament 1.75 mm, bed centre",
+            "; 125, 125; the moves between the start and end blocks, which are EasyGCode's):",
+            *[f";   {l}" for l in FILAMENT_RECIPE.splitlines()],
+            "; Bead area (w - h) h + pi (h/2)^2 = 0.09 + 0.0225 pi mm^2 for every move.",
+            *filament,
+        ]
+    ) + "\n"
+    files = {
+        OUT / "spiralize-tilted.gcode": text,
+        OUT / "machine-events.gcode": events_text,
+        OUT / "filament-machine.gcode": filament_text,
+    }
     if "--check" in sys.argv:
         for target, content in files.items():
             if not target.exists() or target.read_text() != content:
@@ -254,6 +354,7 @@ def main():
         target.write_text(content)
     print(f"wrote spiralize-tilted.gcode ({count} printing moves); closest call to a rounding boundary: {closest:.3e} of a digit")
     print(f"wrote machine-events.gcode; closest call to a rounding boundary: {events_closest:.3e} of a digit")
+    print(f"wrote filament-machine.gcode; closest call to a rounding boundary: {filament_closest:.3e} of a digit")
 
 
 if __name__ == "__main__":

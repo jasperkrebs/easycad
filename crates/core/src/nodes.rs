@@ -669,10 +669,24 @@ pub static NODES: &[Node] = &[
             req("r", "Length", "radius"),
             opt("start", "Angle", 0.0, "degrees from +X"),
             opt("end", "Angle", 180.0, "degrees from +X"),
+            opt(
+                "tolerance",
+                "Length",
+                0.0,
+                "0: points by quality; otherwise enough points that no chord strays more than this from the true arc (at least 12 segments, as EasyGCode)",
+            ),
         ],
         output: "Curve",
-        doc: "An open arc around the origin, from `start` to `end`. (Grasshopper: Arc)",
+        doc: "An open arc around the origin, from `start` to `end` (counter-clockwise when `end` is larger). (Grasshopper: Arc)",
         run: Run::Op(toolbox::arc),
+    },
+    Node {
+        name: "vertices",
+        group: "Curves",
+        inputs: &[req("curve", "Curve", "")],
+        output: "List<Point>",
+        doc: "The curve's own points, in order (a closed curve's first point isn't repeated): to reorder, drop or add points, then `polyline` them again. `flatten(vertices(rings))` strings rings together point by point. (Grasshopper: Control Points)",
+        run: Run::Op(toolbox::vertices),
     },
     Node {
         name: "line",
@@ -1286,16 +1300,22 @@ pub static NODES: &[Node] = &[
         group: "Toolpaths",
         inputs: &[
             req("path", "Toolpath", "one layer (or more)"),
-            req("count", "Count", "how many copies"),
+            req("count", "Count", "how many copies (0: none)"),
             opt(
                 "lift",
                 "Number",
                 1.0,
                 "layers above the new copy that the nozzle travels back to the start at; 0 goes straight over at the new layer's height",
             ),
+            opt(
+                "wipe",
+                "Length",
+                0.0,
+                "instead: one straight move to this far above the new copy's start, then down onto it",
+            ),
         ],
         output: "Toolpath",
-        doc: "Prints the toolpath `count` times, each copy one layer higher. Between copies the nozzle travels back to the start clear of the print, like EasyGCode: lift 1 (its spiral disc) or 0 (its spoon).",
+        doc: "Prints the toolpath `count` times, each copy one layer higher. Between copies the nozzle travels back to the start clear of the print, like EasyGCode: lift 1 (its spiral disc), 0 (its spoon), or a wipe of two layers (its bend stool, which wipes clear without stopping to lift).",
         run: Run::Op(stack),
     },
     Node {
@@ -1309,9 +1329,15 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "travel at least this high above the bed between parts (EasyGCode: twice the brim's layer height after a brim); 0 is one layer above the higher end",
             ),
+            opt(
+                "wipe",
+                "Length",
+                0.0,
+                "instead: one straight move to this far above the next part's start, then down onto it",
+            ),
         ],
         output: "Toolpath",
-        doc: "Toolpaths printed one after another (a brim, then a wall), each with its own width, layer and speed. Between parts the nozzle goes up, over and down; a part that starts where the last one ended carries straight on (no travel), and empty parts are skipped. One-layer parts at the start belong to the first layer, so the fan comes on after the brim *and* the first layer printed inside it.",
+        doc: "Toolpaths printed one after another (a brim, then a wall), each with its own width, layer and speed. Between parts the nozzle goes up, over and down (or wipes across, with `wipe`); a part that starts where the last one ended carries straight on (no travel), and empty parts are skipped (their machine events still happen). One-layer parts at the start belong to the first layer, so the fan comes on after the brim *and* the first layer printed inside it.",
         run: Run::Op(join),
     },
     Node {
@@ -1390,6 +1416,101 @@ pub static NODES: &[Node] = &[
         output: "Toolpath",
         doc: "A pause with the nozzle in place (`G4`) after the move nearest each point, as EasyGCode pauses at a spike's tip to let it set.",
         run: Run::Op(printing::dwell),
+    },
+    Node {
+        name: "temperature",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            opt(
+                "nozzle",
+                NUM,
+                0.0,
+                "°C: a filament printer's nozzle, and any pellet zone not given; 0 is the printer's own",
+            ),
+            opt(
+                "up",
+                NUM,
+                0.0,
+                "°C: the pellet printer's upper zone; 0 is `nozzle` or the printer's own",
+            ),
+            opt("mid", NUM, 0.0, "°C: its middle zone"),
+            opt(
+                "down",
+                NUM,
+                0.0,
+                "°C: its lower zone, at the nozzle (a filament printer uses it when `nozzle` is 0)",
+            ),
+            opt(
+                "at_end",
+                "Bool",
+                0.0,
+                "after the toolpath's last move, instead of before its first printing move",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "New heater temperatures, set right before the toolpath prints (after the travel to its start) or right after it; printing carries on while they change. With nothing given it goes back to the printer's own (the Print tab's). Written as the printer's own commands: the pellet printer's three zone macros, the filament printer's `M104`. EasyGCode's foaming heats this way after the first layer.",
+        run: Run::Op(printing::temperature),
+    },
+    Node {
+        name: "wait_temperature",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            opt("nozzle", NUM, 0.0, "°C to wait for; 0 is the printer's own"),
+            opt("up", NUM, 0.0, "°C: the pellet printer's upper zone"),
+            opt("mid", NUM, 0.0, "°C: its middle zone"),
+            opt("down", NUM, 0.0, "°C: its lower zone, at the nozzle"),
+            opt(
+                "cool",
+                "Bool",
+                0.0,
+                "wait until cool enough instead of hot enough (pellet printer only)",
+            ),
+            opt(
+                "at_end",
+                "Bool",
+                0.0,
+                "after the toolpath's last move, instead of before its first printing move",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "Waits, with the nozzle in place, until the heaters reach the temperatures: hot enough (the zone at the nozzle within 2 °C below; `M109` on a filament printer) or, with `cool`, cool enough (every zone within 2 °C above). Tolerant, as EasyGCode waits, because the zones settle near their target, never exactly on it. Put it on a primer line, so what oozes while waiting goes there.",
+        run: Run::Op(printing::wait_temperature),
+    },
+    Node {
+        name: "speed_override",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            req("percent", NUM, "1..1000; 100 is as written"),
+            opt(
+                "at_end",
+                "Bool",
+                0.0,
+                "after the toolpath's last move, instead of before its first printing move",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "The printer's speed override (`M220`, whole percent): every move from here on runs this much faster or slower, until the next override. With `extrusion_override` at 100 × 100 ÷ that percent, the material flow stays the same: EasyGCode's foaming prints foamed layers at 38 % extrusion and 263 % speed.",
+        run: Run::Op(printing::speed_override),
+    },
+    Node {
+        name: "extrusion_override",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            req("percent", NUM, "1..1000; 100 is as written"),
+            opt(
+                "at_end",
+                "Bool",
+                0.0,
+                "after the toolpath's last move, instead of before its first printing move",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "The printer's extrusion override (`M221`, whole percent): every move from here on extrudes this share of what it's written with, until the next override. Foaming material expands, so it needs less.",
+        run: Run::Op(printing::extrusion_override),
     },
     Node {
         name: "spikes",
@@ -2028,8 +2149,14 @@ fn helix(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 
 fn stack(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let path = a.toolpath(0)?;
-    let n = a.count(1, 1, 10_000)?;
-    let out = toolpath::stack(path, n, a.num(2)?, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let n = a.count(1, 0, 10_000)?;
+    let out = toolpath::stack(
+        path,
+        n,
+        a.num(2)?,
+        a.num(3)?,
+        ctx.remaining().min(MAX_PATH_POINTS),
+    )?;
     ctx.spend(out.points.len())?;
     Ok(Value::Toolpath(Rc::new(out)))
 }
@@ -2051,7 +2178,12 @@ fn join(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     if paths.is_empty() {
         return Err("needs at least one toolpath".into());
     }
-    let out = toolpath::join(&paths, a.num(1)?, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let out = toolpath::join(
+        &paths,
+        a.num(1)?,
+        a.num(2)?,
+        ctx.remaining().min(MAX_PATH_POINTS),
+    )?;
     ctx.spend(out.points.len())?;
     Ok(Value::Toolpath(Rc::new(out)))
 }

@@ -3,6 +3,48 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-17: printers from the chat; foaming; the bend stool, golden
+
+**Why:** the owner wants to switch printers and change printer settings from the chat, and to
+build things like EasyGCode's foaming in EasyCAD.
+
+**Landed**
+- **Printers from the chat:** the agent's seventh tool, `set_printer`, switches printers and
+  changes the chosen printer's settings (by the Print tab's keys, checked and clamped like the
+  Print tab's fields, saved on the device). The project snapshot it gets with every message
+  lists the printers and every setting with its key, unit and value.
+- **The recipe names its printer:** choosing a printer (in the Print tab or from the chat)
+  rewrites the recipe's `printer "…"` line through a new engine command (`SetPrinter`, which
+  touches only that line, or adds it after the title), so the project opens with that printer
+  next time; editing the line, or undoing, switches the printer back.
+- **Machine events, as general steps** (EasyGCode's foaming, from pieces):
+  - `temperature(path, nozzle, up, mid, down, at_end)`: new heater temperatures, before the
+    toolpath prints (after the travel to it) or after it; nothing given is the printer's own;
+  - `wait_temperature(…, cool)`: waits within 2 °C, hot or cool;
+  - `speed_override` and `extrusion_override`: `M220`, `M221`, in whole percent; the print
+    statistics count them;
+  - the pellet printer gets EasyGCode's own commands (zone macros, `TEMPERATURE_WAIT`), the
+    filament printer `M104`/`M109` (it can't wait for cooling: refused with a message).
+- **Also new:** `arc(…, tolerance:)` (EasyGCode's chord rule), `vertices(curve)`,
+  `stack(wipe:)`/`join(wipe:)` (EasyGCode's wipe between layers), `stack` with 0 copies,
+  `join` keeping an empty part's events, and `join`'s first-layer rule by height (a primer
+  after the first layer belongs to it).
+- **The bend stool template** (`web/templates/bend-stool.easycad`): EasyGCode's seat with
+  foaming. **Golden in 4 cases**: as it ships; foaming over four layers; foaming with a
+  cool-down and reheat, a zigzag primer, primers at a set flow, another size and centre; three
+  plain layers without start/end blocks. Checked through the app too (smoke test).
+- **G-code safety:** the pellet commands are golden-tested with the stool; the filament ones
+  against a new hand-checked fixture (`fixtures/hand-checked/filament-machine.gcode`).
+
+**Numbers:** 143 core tests (was 136), wasm 331 KB gzipped (was 323).
+
+**Open**
+- The template's cool-down isn't capped at each zone's own temperature, as EasyGCode's is (a
+  recipe doesn't know the printer's temperatures).
+- The stool's legs and bend spread aren't in the template (buildable, not golden).
+- New printer types (other start/end blocks) still need their own golden or hand-checked
+  start/end G-code before they can be offered.
+
 ## 2026-10-17: feature requests: the agent asks, Claude Code builds, the chat carries on
 
 **Why:** the owner wants to work only in EasyCAD. When the agent can't do something, the
