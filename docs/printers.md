@@ -27,14 +27,14 @@ messages, Klipper MCU communication lost.
 | | The G1 (wiki) | In EasyCAD |
 |---|---|---|
 | Build volume | 1000 × 1000 × 1000 mm (X travels to 1100, Z to 1050) | the default bed, and the bed check |
-| Where prints go | the bed's temperature sensor is in its centre (X500 Y500): a large solid bottom right over it can read low and overshoot the bed into its 110 °C cutoff | the recipe origin stays at EasyGCode's X125 Y125; a print bigger than about 250 mm needs it moved (the bed check says so) |
+| Where prints go | the bed's temperature sensor is in the middle of the plate (around X500 Y500): a large solid bottom right over it can make it read low, and the bed overshoots into its 110 °C cutoff | the recipe origin stays at EasyGCode's X125 Y125; a print bigger than about 250 mm needs it moved (the bed check says so) |
 | Nozzles | 1, 1.8, 3, 5 and 8 mm. Ginger's profiles: layers about half the nozzle (0.6, 0.9, 1.3, 2.5, 4 mm), lines a little wider than it (1.2, 1.9, 3.2, 5.5, 9.5 mm); thicker layers drag the nozzle on the layer below | the **nozzle** setting (the one in the machine; 1.8 mm to start, matching EasyGCode's 2 mm lines), and checks of line width and layer height against it |
 | Flow | Ginger's profiles run 200 mm³/s; the 1 mm nozzle tops out around 150, 3 mm around 300, 8 mm around 500. **Below about 150 mm³/s (really around 100) the barrel inlet can plug**: the passing pellets are what cool it, so the fix is a cooler upper zone, never a hotter one | max flow 200 (a material preset sets its own); the nozzle's ceiling; a **low-flow check** that passes once the upper zone runs at least 10 °C below the other two |
 | Heating zones | three: upper (feeding, Klipper's `extruder`, T0), middle (melting, `extruder1`), lower (nozzle, `extruder2`); 160–280 °C (`min_extrude_temp`, `max_temp`) | zone settings limited to 160–280 °C; the engine refuses G-code with a zone outside that, machine events included (printing on after cooling below 160 stops the print) |
 | Bed | up to 110 °C (watermark control, ±1 °C) | bed setting 0–110 °C; the engine refuses more |
 | Motion | 300 mm/s at most (prints at 120–150, travels up to 300), acceleration 1500 mm/s² | travel speed limited to 300 mm/s |
 | E | cubic millimetres: `filament_diameter` 1.1284 mm makes the "filament" 1 mm² | the pellet mode writes E in mm³ |
-| Part fan | keep it under about 70 %: full cooling can pull the nozzle zone into a heating error mid-print | a check, of the setting and of the recipe's own fan steps |
+| Part fan | keep it under about 70 % (the wiki's advice for filled grades; its error page lists the heating error for any): full cooling can pull the nozzle zone into a heating error mid-print | a check, of the setting and of the recipe's own fan steps |
 | Pressure advance | 0 for vase mode (otherwise a repeating texture on the wall); 0.2–0.7 otherwise, smooth time 0.5 s (Ginger's fork allows up to 5 s, stock Klipper 0.2 s) | a check for vase-mode prints (one continuous line over several layers) |
 | Tiny segments | G-code with thousands of very short moves stops the G1 with "stepper too far in past" | the agent knows to raise the recipe's chord tolerance |
 | Materials | Ginger Slicer's shipped profiles (below) | **material presets**: the three zones, the bed and the max flow in one go (Print tab, or `set_printer` with `material`) |
