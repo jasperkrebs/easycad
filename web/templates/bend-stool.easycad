@@ -1,6 +1,6 @@
 easycad 0.1
 project "Bend stool"
-printer "Klipper pellet"
+printer "Ginger G1"
 note "EasyGCode's bend stool seat, rebuilt from general steps: concentric rings one line apart, linked by a staircase seam (each ring stops a line short of a full turn and steps out to the next). The first layer runs outside-in from a short lead-in line; each layer after it wipes across to the centre. Its G-code matches EasyGCode's command for command."
 note "Foaming (pellet printer, foaming PLA): every layer between the first and the last prints hotter, at less extrusion and more speed (the same material flow). Primer lines at the bed's corner take what oozes while the zones heat up and cool back down."
 

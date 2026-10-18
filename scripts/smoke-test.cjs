@@ -190,7 +190,23 @@ async function waitForServer(url) {
       await page.click('#panel-print summary');
       const fields = await page.locator('#printerSettings .setting').count();
       if (fields < 10) failures.push(`${name}: expected the printer settings, got ${fields} fields`);
+      // The pellet printer is the Ginger G1: its bed, its nozzles, and checks from its wiki. The
+      // vessel's 20 mm³/s is in the G1's low-flow range, so the upper zone should run cooler;
+      // colorFabb FOAM PLA's profile does that.
+      const checksText = () => page.textContent('#checks');
+      if (!/On the 1[.,]?000 × 1[.,]?000 mm bed/.test(await checksText())) failures.push(`${name}: the G1's bed isn't checked: ${await checksText()}`);
+      if ((await page.inputValue('#printer-nozzle')) !== '1.8') failures.push(`${name}: the G1's nozzle should start at 1.8 mm`);
+      if (!/barrel inlet can plug/.test(await checksText())) failures.push(`${name}: no low-flow warning for the G1: ${await checksText()}`);
+      if (!/vase-mode spiral with pressure advance 0[.,]3/.test(await checksText())) failures.push(`${name}: no pressure-advance note for the vessel's spiral`);
+      await page.selectOption('#printer-material', 'colorFabb FOAM PLA');
+      const zones = await Promise.all(['up', 'mid', 'down', 'bed'].map((k) => page.inputValue(`#printer-pellet-${k}`)));
+      if (zones.join('/') !== '185/210/210/70') failures.push(`${name}: the FOAM PLA preset set ${zones.join('/')}`);
+      await page
+        .waitForFunction(() => /upper zone 25 °C below the others/.test(document.getElementById('checks').textContent), null, { timeout: 15000 })
+        .catch(() => failures.push(`${name}: the low-flow check didn't see the cooler upper zone`));
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-disc-print.png`), fullPage: name === 'phone' });
+      await page.click('#printerSettings button:text("Back to the defaults")');
+      if ((await page.inputValue('#printer-pellet-up')) !== '210') failures.push(`${name}: back to the defaults didn't reset the zones`);
       // Choosing a printer names it in the recipe, so the project opens with it next time.
       await page.selectOption('#printer', 'p1p');
       await page

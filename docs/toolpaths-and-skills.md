@@ -16,7 +16,7 @@ project, you (or the agent) build the project inside the app.
    - speed or volumetric flow;
    - order, seams and travel moves;
    - ramps, brims, overhang compensation.
-4. **Turn toolpaths into custom G-code** for your printers (Bambu P1P filament, Klipper pellet).
+4. **Turn toolpaths into custom G-code** for your printers (Bambu P1P filament, Ginger G1 pellets).
    No slicer, no 3MF.
 5. **Every project has its own settings window,** like an EasyGCode tab. Save the project, reopen
    it later, and the same window comes back with the same settings.
@@ -62,7 +62,7 @@ slicer or CAD program. Booleans, extrusions and fillets are the next geometry st
 | **Shape** | Surfaces and solids | revolved lampshade, lofted twisted vase, extruded seat outline |
 | **Curves** | 2D/3D curves and lists of curves | profile, helix, concentric rings, star outline, wave pattern |
 | **Toolpath** | Ordered moves with bead width/height, speed/flow, extrude on/off, fan | one continuous vase spiral, a seat's ring sequence with seams |
-| **G-code** | Text for one printer profile | P1P filament (Marlin-style E in mm), Klipper pellet (E as mm³) |
+| **G-code** | Text for one printer profile | P1P filament (Marlin-style E in mm), Ginger G1 pellets (Klipper, E as mm³) |
 
 Every operation is a **node**: a precise, tested Rust function. You and the agent use the same
 nodes.
@@ -110,7 +110,7 @@ nodes.
 
 ### Toolpath → G-code *(done in 1b)*
 - `print path` writes G-code for the chosen printer, with EasyGCode's proven start/end blocks
-  for **Bambu P1P** and **Klipper pellet**:
+  for the **Bambu P1P** and the **Ginger G1** (pellets, Klipper; [printers.md](printers.md)):
   - `G90` absolute positions, `M83` relative extrusion;
   - E is mm³ (pellet) or mm of filament;
   - extrusion multiplier, end lift above the tallest point (never past the build height);
@@ -212,7 +212,7 @@ it loads values into the project that's open.
 ```
 easycad 0.1
 project "E27 wavy lampshade"
-printer "Klipper pellet"
+printer "Ginger G1"
 
 group "Shape"
 param opening   = 220 mm  in 100..400  "Bottom opening ⌀"

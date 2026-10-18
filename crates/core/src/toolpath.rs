@@ -214,6 +214,8 @@ pub struct ToolpathStats {
     /// Steepest outward lean between consecutive layers, in degrees from vertical.
     pub max_overhang_deg: f64,
     pub samples_per_turn: usize,
+    /// The highest part-fan level the toolpath's own events set, 0–100 % (0: it sets none).
+    pub max_fan_pct: f64,
     pub path_points: usize,
     pub width_mm: f64,
     pub layer_mm: f64,
@@ -452,6 +454,14 @@ impl Toolpath {
             by_flow: first.flow.is_some(),
             max_overhang_deg: self.max_overhang_deg(),
             samples_per_turn: self.samples_per_turn,
+            max_fan_pct: self
+                .events
+                .iter()
+                .filter_map(|e| match e.kind {
+                    EventKind::Fan(level) => Some(level),
+                    _ => None,
+                })
+                .fold(0.0, f64::max),
             path_points: self.points.len(),
             width_mm: first.width,
             layer_mm: first.layer,

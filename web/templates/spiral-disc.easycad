@@ -1,6 +1,6 @@
 easycad 0.1
 project "Spiral disc"
-printer "Klipper pellet"
+printer "Ginger G1"
 note "EasyGCode's spiral disc as a recipe: a flat spiral from the centre out. Around the ring its turns spread apart and wiggle, so each bump meets the next turn's opposite bump: a solid disc with a ring of holes."
 
 group "Disc"

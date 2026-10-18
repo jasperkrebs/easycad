@@ -374,7 +374,7 @@ and `note` work today; `preset` comes in Phase 1c and `conversation` with the ag
 ```
 easycad 0.1
 project "E27 wavy lampshade"                 # name shown in the library and window title
-printer "Klipper pellet"                     # default printer profile for print/gcode
+printer "Ginger G1"                          # default printer profile for print/gcode
 note    "Tested 12 Oct: fit -0.2 is snug"    # free notes, any number of lines
 
 preset "tall"  { height = 240 mm, waves = 12 }   # named sets of settings

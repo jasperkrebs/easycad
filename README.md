@@ -20,8 +20,10 @@ become toolpaths, toolpaths become G-code for your printer.
 >   switch printers and change printer settings too. When the steps can't do something, it
 >   asks for the missing step. Claude Code builds it in GitHub Actions, and the chat carries on
 >   when it's live ([docs/feature-requests.md](docs/feature-requests.md)).
-> - **G-code** for the Bambu P1P and the Klipper pellet printer, written the way EasyGCode
->   writes it, speeds set as volumetric flow, golden-tested against EasyGCode's own output.
+> - **G-code** for the Bambu P1P and the **Ginger Additive G1** pellet printer (Klipper),
+>   written the way EasyGCode writes it, speeds set as volumetric flow, golden-tested against
+>   EasyGCode's own output. The app knows the G1 from Ginger's wiki: its bed, nozzles, flow
+>   window, heater limits and material profiles ([docs/printers.md](docs/printers.md)).
 >   **STL** for plain geometry.
 > - **Templates:** EasyGCode's spiral disc, thread connector, spoon, bend stool (with foaming)
 >   and lampshade (every shade, or your own) as recipes with the same G-code as EasyGCode; its
@@ -50,7 +52,7 @@ become toolpaths, toolpaths become G-code for your printer.
   - unroll flat.
 
   Curves turn into toolpaths with EasyGCode's bead model, then into **custom G-code** for a
-  **Bambu P1P** or a **Klipper pellet** printer.
+  **Bambu P1P** or the **Ginger Additive G1** pellet printer.
 - **The agent builds the system; you own the values.** The agent writes the recipe using
   *skills* (your recurring ways of doing things). Every number becomes a setting. Tuning never
   calls the AI: it's instant, free and works offline.

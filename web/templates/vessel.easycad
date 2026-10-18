@@ -1,6 +1,6 @@
 easycad 0.1
 project "Vessel"
-printer "Klipper pellet"
+printer "Ginger G1"
 note "EasyGCode's vessel from general steps: a cross-section that a radius profile resizes up the wall, cross-fading into a rounded star at the top whose inner corners can rise above the rim (a non-planar top). One continuous spiral prints the wall; layers come closer where it leans out, each still extruded for a full layer (the squeeze that holds an overhang)."
 note "The bottom rounds into the wall through a fillet (one line from the centre of the bottom up to the rim), or is filled with rings (staircase, zipper or spiral), or left open."
 

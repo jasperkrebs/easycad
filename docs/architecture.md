@@ -273,7 +273,7 @@ is cheap and can be kept forever. That also enables *variants* ("save as variant
 | `edit_recipe` | Exact find/replace edits, all or none; the recipe runs and the result comes back |
 | `write_recipe` | A whole new recipe (new projects, rewrites) |
 | `set_settings` | Move sliders (values clamped to their ranges) |
-| `set_printer` | Switch printers (the recipe's `printer` line follows) and change the printer's settings by the Print tab's keys (checked and clamped like its fields, saved on the device) |
+| `set_printer` | Switch printers (the recipe's `printer` line follows), apply a material preset (the Ginger G1's, from Ginger Slicer) and change the printer's settings by the Print tab's keys (checked and clamped like its fields, to the machine's own ranges, saved on the device) |
 | `look` | One picture, four views: perspective, plus front, side and top as orthographic views. The agent's eyes |
 | `read_recipe` | The current recipe with line numbers |
 | `request_feature` | When no combination of steps can do what the user wants: a precise, general proposal for the missing step, filed as a GitHub issue. Claude Code builds it, and the chat carries on when it's live (§8.8) |
@@ -432,7 +432,7 @@ viewport, like Rhino + Grasshopper.
 | Format | Direction | Notes |
 |---|---|---|
 | `.easycad` | open/save | The project (text, diffable, git-friendly). A trailing optional `layout` block stores graph-node positions. |
-| **G-code** | export/send | **The main output** (§11): custom toolpaths for Bambu P1P and Klipper pellet. |
+| **G-code** | export/send | **The main output** (§11): custom toolpaths for the Bambu P1P and the Ginger Additive G1 (`docs/printers.md`). |
 | Settings presets (`.json`) | export/import | Values only, like EasyGCode's "Save settings". |
 | **STL** | export | Since 1b: `export shape as "x.stl"` (binary STL of surfaces and solids). |
 | 3MF, OBJ, GLB | export | Later, only when needed. |

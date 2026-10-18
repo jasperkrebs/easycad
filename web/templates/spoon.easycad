@@ -1,6 +1,6 @@
 easycad 0.1
 project "Spoon"
-printer "Klipper pellet"
+printer "Ginger G1"
 note "EasyGCode's spoon as a recipe: a flat spiral, one line width per turn, with a straight stick running out from its last turn. Printed in a few layers, turned onto the bed's diagonal."
 
 group "Spoon"

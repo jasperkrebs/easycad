@@ -1,6 +1,6 @@
 easycad 0.1
 project "Thread connector"
-printer "Klipper pellet"
+printer "Ginger G1"
 note "EasyGCode's thread connector as a recipe: a vase-mode internal thread that screws onto a standard ISO bolt or threaded rod. The layer height is the thread's pitch, so each turn of the helix lays down one turn of thread, counter-clockwise as it rises (right-hand, like every ISO bolt)."
 
 group "Thread"

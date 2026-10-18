@@ -11,7 +11,8 @@
 //! (`fixtures/easygcode/`), and hand-checked fixtures cover what EasyGCode has no project for.
 //!
 //! Before writing anything, the toolpath is checked: every point must be on the bed and inside
-//! the build height, and every extrusion amount sane.
+//! the build height, every extrusion amount sane, and every temperature one the machine takes
+//! (on the pellet printer, the limits from its printer.cfg).
 
 use crate::geom::dist3;
 use crate::toolpath::{EventKind, Toolpath};
@@ -23,7 +24,8 @@ use std::fmt::Write as _;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    /// Klipper pellet printer: E in mm³.
+    /// The Ginger Additive G1 (Klipper, pellets): E in mm³, and EasyGCode's start and end blocks,
+    /// which call Ginger's own macros (another Klipper printer doesn't have them).
     #[default]
     Pellet,
     /// Marlin-style filament printer: E in mm of filament.
@@ -66,11 +68,17 @@ pub struct Pellet {
     pub purge: f64,
     /// Part fan, 0–100 %.
     pub fan: f64,
+    /// The machine's heater limits in °C, from its printer.cfg: Klipper stops a print that sets a
+    /// zone above `max_temp` or the bed above `max_bed`, and won't extrude below
+    /// `min_extrude_temp`, so G-code that would ask for that is refused before it's written.
+    pub max_temp: f64,
+    pub min_extrude_temp: f64,
+    pub max_bed: f64,
 }
 
 impl Default for Pellet {
     fn default() -> Self {
-        // EasyGCode's defaults.
+        // EasyGCode's defaults; the limits are the Ginger G1's (docs/printers.md).
         Pellet {
             up: 210.0,
             mid: 210.0,
@@ -79,11 +87,15 @@ impl Default for Pellet {
             pa: 0.3,
             purge: 5000.0,
             fan: 0.0,
+            max_temp: 280.0,
+            min_extrude_temp: 160.0,
+            max_bed: 110.0,
         }
     }
 }
 
-/// A printer: the machine settings G-code needs. Defaults are EasyGCode's.
+/// A printer: the machine settings G-code needs. Defaults are EasyGCode's, on the Ginger G1's
+/// bed.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Profile {
@@ -113,7 +125,7 @@ impl Default for Profile {
             end_lift: 50.0,
             travel_speed: 100.0,
             center: [125.0, 125.0],
-            bed: [400.0, 400.0, 400.0],
+            bed: [1000.0, 1000.0, 1000.0],
             filament: Filament::default(),
             pellet: Pellet::default(),
         }
@@ -545,8 +557,39 @@ const MAX_TEMPERATURE: f64 = 350.0;
 const MIN_OVERRIDE: f64 = 1.0;
 const MAX_OVERRIDE: f64 = 1000.0;
 
-/// Refuses toolpaths a machine shouldn't run: off the bed, out of reach, or with nonsense
-/// extrusion.
+/// The pellet printer's own temperatures against its limits (and the limits against sense).
+fn check_pellet_heaters(p: &Pellet) -> Result<(), String> {
+    let (lo, hi) = (p.min_extrude_temp, p.max_temp);
+    if !(lo > 0.0 && lo <= hi && hi <= MAX_TEMPERATURE && p.max_bed > 0.0 && p.max_bed <= 200.0) {
+        return Err(format!(
+            "the printer's heater limits don't make sense (extrudes from {} to {} °C, bed up to {} °C)",
+            num(lo),
+            num(hi),
+            num(p.max_bed)
+        ));
+    }
+    for (name, t) in [("upper", p.up), ("middle", p.mid), ("lower", p.down)] {
+        if !(lo..=hi).contains(&t) {
+            return Err(format!(
+                "the {name} zone is set to {} °C; the printer takes {} to {} °C (its min_extrude_temp and max_temp)",
+                num(t),
+                num(lo),
+                num(hi)
+            ));
+        }
+    }
+    if !(0.0..=p.max_bed).contains(&p.bed) {
+        return Err(format!(
+            "the bed is set to {} °C; the printer's bed goes up to {} °C",
+            num(p.bed),
+            num(p.max_bed)
+        ));
+    }
+    Ok(())
+}
+
+/// Refuses toolpaths a machine shouldn't run: off the bed, out of reach, with nonsense
+/// extrusion, or with temperatures the machine refuses.
 fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
     if path.points.is_empty() {
         return Err("the toolpath is empty".into());
@@ -581,6 +624,9 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
             p.pellet.pa,
             p.pellet.purge,
             p.pellet.fan,
+            p.pellet.max_temp,
+            p.pellet.min_extrude_temp,
+            p.pellet.max_bed,
         ]
         .iter(),
     )
@@ -605,6 +651,9 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
             "the filament diameter must be between 0.5 and 5 mm, got {}",
             p.filament.diameter
         ));
+    }
+    if p.mode == Mode::Pellet {
+        check_pellet_heaters(&p.pellet)?;
     }
     let [bx, by, bz] = p.bed;
     for (i, q) in path.points.iter().enumerate() {
@@ -668,6 +717,19 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
                         num(*bad)
                     ));
                 }
+                // A zone the printer won't heat to, or won't extrude at (cooling down to it
+                // and printing on stops the print just the same).
+                let (lo, hi) = (p.pellet.min_extrude_temp, p.pellet.max_temp);
+                if p.mode == Mode::Pellet
+                    && let Some(bad) = used.iter().find(|t| !(lo..=hi).contains(*t))
+                {
+                    return Err(format!(
+                        "a zone temperature of {} °C; the printer takes {} to {} °C (its min_extrude_temp and max_temp)",
+                        num(*bad),
+                        num(lo),
+                        num(hi)
+                    ));
+                }
                 if p.mode == Mode::Filament
                     && matches!(e.kind, EventKind::WaitHeat { cool: true, .. })
                 {
@@ -692,7 +754,7 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::curve::Curve;
-    use crate::toolpath::{self, MAX_PATH_POINTS, Settings};
+    use crate::toolpath::{self, Event, MAX_PATH_POINTS, Settings, Temperatures};
 
     #[test]
     fn numbers_round_like_javascript_to_fixed() {
@@ -826,5 +888,105 @@ mod tests {
         };
         let text = write(&path, &short, "x").unwrap().text;
         assert!(text.contains("G0 Z30.000 F3000 ; lift clear of the print for finishing\n"));
+    }
+
+    #[test]
+    fn temperatures_the_printer_refuses_are_refused() {
+        // The Ginger G1's printer.cfg: zones from 160 to 280 °C (min_extrude_temp, max_temp),
+        // the bed up to 110 °C. Klipper stops a print that asks for more, so no G-code is written.
+        let path = toolpath::from_curves(
+            &[&Curve::circle(10.0, 8)],
+            Settings::new(2.0, 0.6, 20.0).unwrap(),
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
+        let with = |pellet: Pellet| Profile {
+            pellet,
+            ..Profile::default()
+        };
+        let hot = with(Pellet {
+            up: 290.0,
+            ..Pellet::default()
+        });
+        let err = write(&path, &hot, "x").unwrap_err();
+        assert!(
+            err.contains("the upper zone is set to 290 °C") && err.contains("160 to 280 °C"),
+            "{err}"
+        );
+        let cold = with(Pellet {
+            down: 150.0,
+            ..Pellet::default()
+        });
+        assert!(write(&path, &cold, "x").unwrap_err().contains("lower zone"));
+        let bed = with(Pellet {
+            bed: 120.0,
+            ..Pellet::default()
+        });
+        assert!(
+            write(&path, &bed, "x")
+                .unwrap_err()
+                .contains("up to 110 °C")
+        );
+        // The edges are fine, and so is a bed that's off.
+        let edges = with(Pellet {
+            up: 160.0,
+            mid: 280.0,
+            down: 280.0,
+            bed: 0.0,
+            ..Pellet::default()
+        });
+        assert!(write(&path, &edges, "x").is_ok());
+        // Another printer's limits (from its printer.cfg) move them.
+        let other = with(Pellet {
+            up: 290.0,
+            max_temp: 300.0,
+            ..Pellet::default()
+        });
+        assert!(write(&path, &other, "x").is_ok());
+        let nonsense = with(Pellet {
+            min_extrude_temp: 300.0,
+            ..Pellet::default()
+        });
+        assert!(
+            write(&path, &nonsense, "x")
+                .unwrap_err()
+                .contains("don't make sense")
+        );
+        // The filament printer has its own temperatures.
+        let filament = Profile {
+            mode: Mode::Filament,
+            ..hot
+        };
+        assert!(write(&path, &filament, "x").is_ok());
+
+        // Machine events: a zone set or waited for outside the limits, cooling down included.
+        let zones = |zones: [Option<f64>; 3]| Temperatures {
+            nozzle: None,
+            zones,
+        };
+        let mut evented = path.clone();
+        evented.events = vec![Event {
+            after: 2,
+            kind: EventKind::Heat(zones([Some(300.0), None, None])),
+        }];
+        let err = write(&evented, &Profile::default(), "x").unwrap_err();
+        assert!(err.contains("a zone temperature of 300 °C"), "{err}");
+        evented.events = vec![Event {
+            after: 2,
+            kind: EventKind::WaitHeat {
+                temps: zones([Some(150.0); 3]),
+                cool: true,
+            },
+        }];
+        assert!(
+            write(&evented, &Profile::default(), "x")
+                .unwrap_err()
+                .contains("150 °C")
+        );
+        evented.events = vec![Event {
+            after: 2,
+            kind: EventKind::Heat(zones([Some(280.0), Some(170.0), None])),
+        }];
+        assert!(write(&evented, &Profile::default(), "x").is_ok());
     }
 }

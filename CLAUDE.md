@@ -10,7 +10,7 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
   as text).
 - The user tunes it in the project's settings window.
 - The Rust engine turns shapes into curves, curves into toolpaths, and toolpaths into G-code
-  (Bambu P1P filament, Klipper pellet).
+  (Bambu P1P filament; the Ginger Additive G1, a Klipper pellet printer, `docs/printers.md`).
 
 **Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0, 1a
 (recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL),
@@ -35,6 +35,7 @@ Slicers, 3MF and solids are "later".
 4. `docs/architecture.md`: how it's built and why
 5. `docs/definition-language.md`: the project file / recipe language (§2: what works today)
    - `docs/easygcode-coverage.md`: which steps build each EasyGCode project, and what's missing
+   - `docs/printers.md`: the printers (the Ginger G1 from its wiki), their limits and checks
 6. `docs/devlog.md`: what landed recently, what's open
 7. `docs/research.md`: background and sources, when you need the "why"
 
@@ -48,7 +49,7 @@ node scripts/smoke-test.cjs [dir]  # headless Chromium, phone + desktop; screens
 node scripts/agent-test.cjs [dir]  # the Chat tab against a scripted stand-in for the AI
 node scripts/graph-test.cjs [dir]  # the Graph tab: every kind of edit, mouse and touch
 node scripts/request-test.cjs [dir]  # feature requests: filed, shipped, the chat carries on
-node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs   # the AI proxy, feature requests
+node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs   # the AI proxy, feature requests, printers
 python3 scripts/hand-checked-fixtures.py --check   # hand-checked G-code fixtures up to date
 python3 scripts/third-party-notices.py   # after adding/updating a dependency (CI runs --check)
 ```

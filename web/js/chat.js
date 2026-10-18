@@ -43,7 +43,7 @@ const AFTER_FILING =
  * @param {() => Project} app.project the open project
  * @param {(source: string) => Promise<any>} app.applyRecipe replaces the recipe, runs it, returns the result
  * @param {(values: Record<string, any>) => Promise<any>} app.applyValues moves settings, runs, returns the result
- * @param {(id: string | undefined, settings: Record<string, unknown> | undefined) => Promise<{ printer: string, notes: string[] }>} app.setPrinter
+ * @param {(id: string | undefined, settings: Record<string, unknown> | undefined, material: string | undefined) => Promise<{ printer: string, notes: string[] }>} app.setPrinter
  *   switches the printer and/or changes its settings; returns the printer as text for the agent
  * @param {(show: string) => string} app.look renders the four views, returns a JPEG data URL
  * @param {() => Promise<string>} app.catalog the engine's step catalog
@@ -234,6 +234,7 @@ export function createChat(app) {
       case 'set_printer': {
         const parts = [];
         if (i.printer) parts.push(`Switched to the ${PRINTERS[i.printer]?.name || i.printer}`);
+        if (i.material) parts.push(`${parts.length ? 'used' : 'Used'} the ${i.material} profile`);
         const set = Object.entries(i.settings || {}).map(([k, v]) => `${k} = ${v}`);
         if (set.length) parts.push(`${parts.length ? 'set' : 'Set the printer’s'} ${set.join(', ')}`);
         return parts.join('; ');
@@ -436,7 +437,7 @@ export function createChat(app) {
       };
     }
     if (name === 'set_printer') {
-      const { printer, notes } = await app.setPrinter(input.printer, input.settings);
+      const { printer, notes } = await app.setPrinter(input.printer, input.settings, input.material);
       return { content: (notes.length ? `Note: ${notes.join('; ')}.\n` : '') + `Printer: ${printer}` };
     }
     if (name === 'request_feature') return fileRequest(input);

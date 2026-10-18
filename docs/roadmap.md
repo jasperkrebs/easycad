@@ -19,7 +19,7 @@ Sizes are relative (S ≈ one focused session, M ≈ a few, L ≈ many).
 | 1 | UI stack | **Rust engine (WebAssembly) + plain web interface.** EasyCAD is a web app: it runs in the browser on computer and phone and can be installed from the browser (PWA). A desktop wrapper is optional, later. |
 | 2 | Project format | **Own small text format (`.easycad`).** One file holds the recipe (nodes), all settings, presets and optionally the agent conversation. Opening it brings back the same settings window. |
 | 3 | License | **All rights reserved** (no open-source license). Everything we build on is permissively licensed (MIT/Apache/BSD; MPL is fine), so this limits nothing; we keep their license notices. The repo is *public* since 15 Oct (see hosting), which makes the code visible but doesn't grant anyone a license to reuse it. |
-| 4 | Printers | **Bambu P1P (filament) and Klipper pellet**, with EasyGCode's proven start/end G-code. |
+| 4 | Printers | **Bambu P1P (filament) and Klipper pellet**, with EasyGCode's proven start/end G-code. The pellet printer is the **Ginger Additive G1** (18 Oct): made for it, its specifics kept as data so another Klipper printer can follow ([printers.md](printers.md)). |
 | 5 | AI | **Built into the app with your own Claude API key** (standalone; see [api-key.md](api-key.md)). Claude Desktop/MCP control is optional, much later. |
 | 6 | Hosting (15 Oct) | **Public repo + GitHub Pages** (free), live at https://jasperkrebs.github.io/easycad/. CI deploys on every push to the default branch. Can go private + GitHub Pro later. |
 | 7 | Making shapes (15 Oct) | Recipes, not "AI every time": the agent (or you) writes a recipe once; it then runs locally, free and instantly. Five ways to make one: templates, describe, steps, draw curves, import. See [creating-shapes.md](creating-shapes.md). |
@@ -92,6 +92,9 @@ Split into small steps (15 Oct):
   - The **vessel** from general steps: the bottom rounding into the wall through a fillet, a
     star top with lifted corners (non-planar), closer layers on overhangs.
   - The agent can switch printers and change printer settings (`set_printer`).
+  - The pellet printer is the **Ginger Additive G1**, from its wiki: its bed, nozzles, flow
+    window, heater limits (the engine refuses G-code over them), material presets and checks
+    ([printers.md](printers.md)).
 - **1f** ← *next*: the container and coat hanger as templates; formatter, presets, project
   library on the device.
 The full Phase 1 scope:

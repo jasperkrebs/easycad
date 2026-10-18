@@ -282,6 +282,12 @@ spiky = spikes(base, [[20, 0, 5], [-20, 0, 7]], width: 3, length: 4, angle: 20, 
         })
         .collect();
     assert_eq!(fans, vec![100.0]);
+    assert_eq!(cooled.stats().max_fan_pct, 100.0);
+    assert_eq!(
+        path(&v, "base").stats().max_fan_pct,
+        0.0,
+        "no fan events, no fan level"
+    );
     assert_eq!(path(&v, "paused").events.len(), 1);
     let spiky = path(&v, "spiky");
     assert_eq!(spiky.events.len(), 2, "a dwell at each tip");

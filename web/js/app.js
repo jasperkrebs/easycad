@@ -9,7 +9,7 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
-import { PRINTERS, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
+import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { createGraph } from './graph.js';
@@ -354,10 +354,13 @@ const chat = createChat({
     return applyRecipe(text);
   },
   applyValues,
-  setPrinter: async (id, settings) => {
+  setPrinter: async (id, settings, material) => {
     if (id) await choosePrinter(id);
-    const { notes } = settings ? changeSettings(state.printer, state.profile, settings) : { notes: [] };
-    if (settings) {
+    const notes = [
+      ...(material ? applyMaterial(state.printer, state.profile, material).notes : []),
+      ...(settings ? changeSettings(state.printer, state.profile, settings).notes : []),
+    ];
+    if (settings || material) {
       renderPrinterSettings($('printerSettings'), state.printer, state.profile, onProfileChange);
       onProfileChange();
     }

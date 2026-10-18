@@ -52,7 +52,7 @@ function reply(round) {
   }
   if (round === 1) return { tool: { name: 'look', input: { show: 'both' } } };
   if (round === 2) return { tool: { name: 'edit_recipe', input: { edits: [{ old: 'param height = 80 mm', new: 'param height = 120 mm' }] } } };
-  if (round === 3) return { tool: { name: 'set_printer', input: { printer: 'pellet', settings: { 'pellet.bed': 55, 'filament.nozzle': 230 } } } };
+  if (round === 3) return { tool: { name: 'set_printer', input: { printer: 'pellet', material: 'colorFabb FOAM PLA', settings: { 'pellet.bed': 55, 'filament.nozzle': 230 } } } };
   return { text: 'Done: a 120 mm cylinder. Try **Radius** in the settings.' };
 }
 
@@ -216,8 +216,9 @@ async function waitForServer(url) {
       // The printer switch: the Print tab follows, and the recipe names the new printer.
       check((await page.inputValue('#printer')) === 'pellet', `${name}: the agent's printer switch didn't reach the Print tab`);
       check((await page.inputValue('#printer-pellet-bed')) === '55', `${name}: the agent's printer setting didn't reach the Print tab`);
-      check(/^printer "Klipper pellet"$/m.test(recipe), `${name}: the recipe's printer line didn't follow the switch`);
-      check(/G-code for the Klipper pellet/.test(await page.textContent('#exportButtons')), `${name}: the G-code button didn't follow the switch`);
+      check((await page.inputValue('#printer-pellet-up')) === '185' && (await page.inputValue('#printer-maxFlow')) === '500', `${name}: the agent's material preset didn't reach the Print tab`);
+      check(/^printer "Ginger G1"$/m.test(recipe), `${name}: the recipe's printer line didn't follow the switch`);
+      check(/G-code for the Ginger G1/.test(await page.textContent('#exportButtons')), `${name}: the G-code button didn't follow the switch`);
       check(/this chat \$0\.0[1-9]/.test(await page.textContent('#chatCost')), `${name}: cost not shown: ${await page.textContent('#chatCost')}`);
       if (shots) await page.screenshot({ path: path.join(shots, `agent-${name}-chat.png`), fullPage: name === 'phone' });
 
@@ -232,6 +233,7 @@ async function waitForServer(url) {
       check(b.thinking?.type === 'adaptive' && b.fallbacks === 'default', `${name}: thinking or fallbacks wrong`);
       check(b.system?.[0]?.cache_control?.type === 'ephemeral' && b.cache_control?.type === 'ephemeral', `${name}: caching not requested`);
       check(b.system[0].text.length > 4000 && /circle\(r: Length, tolerance: Length = 0\)/.test(b.system[0].text), `${name}: system prompt lacks the catalog`);
+      check(/Ginger Additive G1/.test(b.system[0].text) && /colorFabb FOAM PLA 185\/210\/210/.test(b.system[0].text), `${name}: system prompt lacks the G1's machine guide`);
       const toolNames = b.tools.map((t) => t.name);
       check(JSON.stringify(toolNames) === JSON.stringify([...toolNames].sort()), `${name}: tools not in a fixed order`);
       check(b.tools.every((t) => t.input_schema), `${name}: a tool has no schema`);
@@ -254,7 +256,10 @@ async function waitForServer(url) {
       if (shots && image) require('node:fs').writeFileSync(path.join(shots, `agent-${name}-look.jpg`), Buffer.from(image.source.data, 'base64'));
       check(/^Printer: Bambu P1P \(p1p\)\. Printers: p1p .*filament\.nozzle = 205 °C/m.test(String(b.messages[0].content[0].text)), `${name}: the project context lacks the printer's settings`);
       const printerResult = String(reqs[4].body.messages.at(-1).content[0].content);
-      check(/filament\.nozzle` is not a setting of the Klipper pellet/.test(printerResult) && /pellet\.bed = 55 °C/.test(printerResult), `${name}: set_printer's result is wrong: ${printerResult}`);
+      check(
+        /filament\.nozzle` is not a setting of the Ginger G1/.test(printerResult) && /pellet\.bed = 55 °C/.test(printerResult) && /pellet\.up = 185 °C/.test(printerResult),
+        `${name}: set_printer's result is wrong: ${printerResult}`,
+      );
       const writeResult = reqs[1].body.messages.at(-1).content[0];
       check(/No problems\./.test(String(writeResult.content)) && /Prints: \d+ layers/.test(String(writeResult.content)), `${name}: run result not reported back`);
 

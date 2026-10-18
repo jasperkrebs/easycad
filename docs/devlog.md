@@ -3,6 +3,53 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-18: the pellet printer is the Ginger Additive G1
+
+**Why:** the owner's pellet printer is a Ginger Additive G1; EasyCAD treated it as a generic
+"Klipper pellet" printer. It should work with a generic Klipper printer in general, but be made
+for the G1 (wiki.gingeradditive.com). The owner will add its printer.cfg later.
+
+**Landed** (sources and details: [printers.md](printers.md))
+- **The Ginger G1** replaces "Klipper pellet" in the Print tab, the chat and the templates
+  (`printer "Ginger G1"`; older projects' `"Klipper pellet"` still opens it). Its bed is
+  1000 × 1000 × 1000 mm (a saved 400 mm bed from before is replaced); the recipe origin stays
+  at EasyGCode's X125 Y125.
+- **The nozzle in the machine** (1, 1.8, 3, 5 or 8 mm; 1.8 to start), and **material presets**
+  from Ginger Slicer's shipped profiles (zones, bed, max flow), in the Print tab and through
+  `set_printer`'s new `material`.
+- **The machine's ranges:** zones 160–280 °C, bed up to 110 °C, travel up to 300 mm/s; saved
+  values outside them are clamped on load.
+- **The engine refuses heater settings the G1 refuses** (`gcode::Pellet::max_temp`,
+  `min_extrude_temp`, `max_bed`, from printer.cfg via the wiki): Klipper would stop such a print
+  midway. Machine events included, cooling below the extrusion minimum too. Golden output is
+  unchanged.
+- **G1 checks in the Print tab:**
+  - the flow ceiling (200, or the nozzle's own: ~150 on the 1 mm);
+  - the low-flow window (below ~150 mm³/s the barrel inlet can plug), which passes once the
+    upper zone runs 10 °C or more below the others;
+  - line width and layer height against the nozzle (layers over about half drag it);
+  - pressure advance on vase-mode prints (one continuous line over several layers);
+  - the part fan over ~70 % (the toolpath stats now carry `maxFanPct`).
+- **The agent's instructions** carry the G1's facts (generated from the same data), so it can
+  advise on nozzles, flow, zones and materials.
+- **Tests:** a heater-limits test in the writer, `scripts/print.test.mjs` (ranges, presets,
+  checks; in CI), the smoke test (the G1's bed, nozzle, low-flow check, the FOAM PLA preset)
+  and the agent test (`material`).
+
+**Numbers:** 149 core tests, 7 printer tests; wasm 339 KB gzipped.
+
+**Open**
+- **The feeder:** the wiki says `START_PRINT` switches the automatic pellet feeder on, and
+  EasyGCode's start block doesn't call `START_PRINT`. Does the hopper refill on EasyGCode prints?
+- The start block loads the saved bed mesh (`BED_MESH_PROFILE LOAD=global`): `BED_LEVEL` has to
+  be kept current (the Print tab says so).
+- It fixes Rotation Volume at 456 and the mixing stepper at 8000: calibrate with the extrusion
+  multiplier; a mixing setting (4000/12000) isn't there yet.
+- printer.cfg (and G1-Configs' `main.cfg`/`macro.cfg`) to check the limits and the macros
+  against: the list is in printers.md.
+- A generic Klipper printer needs its own start/end G-code (calling its `START_PRINT`): a new
+  start block, so it waits for the owner's OK and a hand-checked fixture.
+
 ## 2026-10-17: the lampshade (golden) and the vessel
 
 **Why:** the owner asked for EasyGCode's lampshade ("works with all different shades, and easy

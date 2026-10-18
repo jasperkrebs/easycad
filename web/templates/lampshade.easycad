@@ -1,6 +1,6 @@
 easycad 0.1
 project "Lampshade"
-printer "Klipper pellet"
+printer "Ginger G1"
 note "EasyGCode's lampshade as a recipe: a threaded throat that screws onto an E27 or E14 lampholder's shade ring, a fillet, then the shade, printed as one vase-mode helix whose layer height is the thread's pitch. For the cone, bell, dome and sphere its G-code matches EasyGCode's command for command (the flat sphere is the same ellipsoid, sampled evenly)."
 note "Shades: a straight cone, a bell, a dome, a sphere, a flat sphere (UFO), or your own shape (`own_shade`: move its points, add more, or ask the AI for a new one). Every shade is a profile (radius against height); the rest of the recipe doesn't care which."
 note "Overhangs get wider beads (or squeezed layers), turn by turn, from the wall's angle. The flow can change from the throat to the shade over the fillet."

@@ -9,7 +9,7 @@ A recipe is a small dataflow program, like a Grasshopper definition written as t
 
 Header
 - The first line is \`easycad 0.1\`.
-- \`project "Name"\`, \`printer "Bambu P1P 0.4"\` or \`printer "Klipper pellet"\`, and any number of \`note "…"\` lines (what the project is and why it's built this way: the project's memory, saved with the file).
+- \`project "Name"\`, \`printer "Bambu P1P 0.4"\` or \`printer "Ginger G1"\` (the pellet printer), and any number of \`note "…"\` lines (what the project is and why it's built this way: the project's memory, saved with the file).
 
 Settings (each \`param\` is one control in the settings window)
 - \`param height = 160 mm in 40..300 "Height"\`: a slider with a range, in the setting's own unit. Add \`step 1\` for whole numbers or fixed steps.
