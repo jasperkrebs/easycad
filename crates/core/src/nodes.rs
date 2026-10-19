@@ -843,9 +843,15 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "exactly this many turns (fractions too) instead of ending near `outer`",
             ),
+            opt(
+                "exact",
+                "Bool",
+                0.0,
+                "true: stretched a little (every turn alike) to end exactly on `outer`, to run straight into a wall that starts there",
+            ),
         ],
         output: "Curve",
-        doc: "A flat spiral around the origin, starting on +X and turning counter-clockwise, each turn one `spacing` outside the last. From the centre out to the whole turn nearest `outer`; with a field as spacing, turns spread apart where the field is larger (EasyGCode's spiral disc). Or exactly `turns` turns from radius `start`, points spread evenly over the whole spiral (EasyGCode's spoon).",
+        doc: "A flat spiral around the origin, starting on +X and turning counter-clockwise, each turn one `spacing` outside the last. From the centre out to the whole turn nearest `outer` (with `exact`, stretched to end right on it); with a field as spacing, turns spread apart where the field is larger (EasyGCode's spiral disc). Or exactly `turns` turns from radius `start`, points spread evenly over the whole spiral (EasyGCode's spoon).",
         run: Run::Op(spiral),
     },
     Node {
@@ -2084,10 +2090,16 @@ fn spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let tolerance = a.num(2)?;
     let min_samples = a.count(3, 0, 100_000)?;
     let (start, turns) = (a.num(4)?, a.num(5)?);
+    let exact = a.flag(6)?;
     let max = ctx.remaining().min(MAX_PATH_POINTS);
     let curve = if turns != 0.0 {
         if outer != 0.0 {
             ctx.warn("`outer` is ignored when `turns` is given".into());
+        }
+        if exact {
+            ctx.warn(
+                "`exact` is for `outer`; with `turns` the spiral ends where its turns do".into(),
+            );
         }
         let constant = if a.is_field(1) { None } else { Some(a.num(1)?) };
         spiral::spiral_turns(
@@ -2106,7 +2118,12 @@ fn spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         if outer == 0.0 {
             return Err("give `outer` (the radius to end near) or `turns`".into());
         }
-        spiral::spiral(outer, &spacing, tolerance, min_samples, max)?
+        let curve = spiral::spiral(outer, &spacing, tolerance, min_samples, max)?;
+        if exact {
+            spiral::end_exactly_at(curve, outer)
+        } else {
+            curve
+        }
     };
     ctx.spend(curve.points.len())?;
     Ok(Value::Curve(Rc::new(curve)))

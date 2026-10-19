@@ -124,6 +124,7 @@ async function run(quality, how = {}) {
   }
   viewport.show(result, { refit: refitNext });
   refitNext = false;
+  renderPartToggles(result);
 
   renderProject(result);
   renderPrintTab();
@@ -175,6 +176,32 @@ function renderHud(result) {
   msg.textContent = result.diagnostics.some((d) => d.severity === 'error')
     ? 'Nothing to draw: the recipe has a problem (see the Recipe tab).'
     : 'Nothing to draw yet: add a line like  show name  to the recipe.';
+}
+
+/** Printed parts hidden from the 3D view, by name (they stay hidden while the recipe changes). */
+const hiddenParts = new Set();
+
+/**
+ * The 3D view's part toggles, like layers: one per printed part when there are several, each
+ * showing or hiding that part's toolpath and the shapes only it is made from.
+ */
+function renderPartToggles(result) {
+  const prints = printsOf(result);
+  const host = $('viewParts');
+  host.hidden = prints.length < 2;
+  host.replaceChildren(
+    ...prints.map((p) => {
+      const shown = !hiddenParts.has(p.name);
+      const b = el('button', { type: 'button', 'aria-pressed': String(shown), title: `${shown ? 'Hide' : 'Show'} ${p.name}`, text: p.name });
+      b.addEventListener('click', () => {
+        if (hiddenParts.has(p.name)) hiddenParts.delete(p.name);
+        else hiddenParts.add(p.name);
+        renderPartToggles(state.last);
+      });
+      return b;
+    }),
+  );
+  viewport.setHiddenParts(prints.flatMap((p, i) => (hiddenParts.has(p.name) ? [i] : [])));
 }
 
 /** The parts the recipe prints (`print` lines), each with its statistics. */

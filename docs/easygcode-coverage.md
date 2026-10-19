@@ -123,15 +123,15 @@ the owner's changes:
 |---|---|
 | Body radii at heights 0–1, any number of them | a **list setting** (`param body = [[0, 33], [0.45, 38], [1, 32]]`), edited as a table |
 | A body that leaves the fillet and meets the neck straight up | `graph(heights, radii, t, smooth: true)`: smooth through the points, never past them, level at both ends |
-| Flat bottom, fillet, wall: one continuous line | `rings` + `link_rings(…, "spiral")` from the centre out, one line inside the fillet; a quarter-circle fillet and the body as `loft` sections; `contour(pace)` + `spiralize(ramp: false, flat_top: false)` + `bead(layer)`; `join` carries straight on |
+| Flat bottom, fillet, wall: one continuous line | `rings` of the fillet's foot + `link_rings(…, "spiral")` from the centre out: its last turn widens onto the foot and ends on the seam (EasyGCode's ring fill); a quarter-circle fillet and the body as `loft` sections; `contour(pace)` + `spiralize(ramp: false, flat_top: false)` + `bead(layer)`; `join` carries straight on |
 | Closer layers on the fillet's overhang (each still a full layer's bead) | `contour(wall, layer, pace: …)` + `bead(layer: …)` (EasyGCode's squeeze) |
 | The spiral discs with their own layer height and line width (0: the walls'), easing into the walls' through each fillet, point by point | a `smoothstep` field of `z` over the fillet: `contour(wall, layer field, pace)` for the spacing, `bead(width: field, layer: field)` for each move's extrusion and speed; the discs' `rings`, `spiral` and `interlock` take the disc's line (beyond EasyGCode, which prints the whole container with one bead) |
 | A neck as tall as the lid's skirt | arithmetic (the neck's height is the skirt's) |
 | The lid one line width outside the neck, plus a fit | arithmetic: `neck + line + fit` |
-| The lid's holes | EasyGCode's spiral disc: `spiral` with a `fade` spacing + `interlock` |
+| The lid's holes | EasyGCode's spiral disc: `spiral` with a `fade` spacing + `interlock`, ending right on the fillet's foot (`exact: true`) |
 | One extrusion for the spiral discs, another for the rest | `adjust(extrude: …)` on each part before `join` |
 | Same direction, so the skirt threads onto the neck | both built from the same counter-clockwise circle |
-| The lid beside the container, or on the same spot | `move(x: …)` with `pick` |
+| Both on the bed's centre, each its own file; shown or hidden part by part | the 3D view's part toggles (each part with the shapes only it is made from) |
 
 Not the same as EasyGCode's own container: its base has no holes in the lid, a body profile
 of scale points, and EasyGCode samples the fillet point by point; this one is checked by

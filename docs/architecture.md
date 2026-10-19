@@ -375,9 +375,15 @@ app: checks the issue (public API) ◄──────────────
 Code / Print, with the chat docked below. The Graph view can split side-by-side with the
 viewport, like Rhino + Grasshopper.
 
+**The page never scrolls** (an app shell that fills the screen): the panels scroll on their
+own under their pinned tab row, so the viewport stays in sight however long the settings are.
+On a phone the viewport takes the top 42 % (at least 180 px).
+
 ### 9.2 Panels
 - **Viewport** (three.js):
   - shaded + edges, curves as fat lines, toolpaths coloured by speed (as in EasyGCode);
+  - a project with several parts gets a toggle per part, like layers: each shows or hides its
+    toolpath and the shown shapes only it is made from (the engine tells which those are);
   - section plane, measure tool, x-ray;
   - **handles**: point parameters show as draggable dots, and transforms show a gizmo.
     Dragging writes parameter values, no AI involved.

@@ -32,14 +32,15 @@ export function createViewport(canvas) {
   const controls = new OrbitControls(camera, canvas);
   controls.addEventListener('change', requestRender);
 
+  // Shown surfaces: a mesh per printed part (and one for what belongs to none), so a part can be
+  // hidden. Each is drawn twice: its outside, and its other side, so an open surface (a
+  // lampshade, a cone seen from above) shows its inside, in a shade blended toward the
+  // background so inside and outside read apart (back faces only: three.js lights them with
+  // the normals turned around).
   const meshMaterial = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.0 });
-  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), meshMaterial);
-  // The other side of a surface: an open one (a lampshade, a cone seen from above) shows its
-  // inside, in a shade blended toward the background so inside and outside read apart. Same
-  // geometry, back faces only (three.js lights them with the normals turned around).
   const insideMaterial = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.0, side: THREE.BackSide });
-  const inside = new THREE.Mesh(mesh.geometry, insideMaterial);
-  scene.add(mesh, inside);
+  const shapes = new THREE.Group();
+  scene.add(shapes);
 
   // Toolpaths: fat lines coloured by height. Curves: thin lines.
   const lineMaterial = new LineMaterial({ linewidth: 1.1, vertexColors: true, worldUnits: false });
@@ -67,6 +68,8 @@ export function createViewport(canvas) {
   /** @type {{ min: number[], max: number[] } | null} */
   let lastBounds = null;
   let frame = 0;
+  /** Printed parts hidden from view (indices into the result's prints). */
+  let hiddenParts = new Set();
 
   function requestRender() {
     if (!frame) frame = requestAnimationFrame(render);
@@ -141,9 +144,16 @@ export function createViewport(canvas) {
     }
   }
 
+  /** Shows or hides each piece by its part (`userData.part`, -1: none). */
+  function applyParts() {
+    for (const group of [shapes, paths, curves]) {
+      for (const child of group.children) child.visible = !hiddenParts.has(child.userData.part);
+    }
+    requestRender();
+  }
+
   function applyMode() {
-    mesh.visible = mode !== 'path';
-    inside.visible = mesh.visible;
+    shapes.visible = mode !== 'path';
     paths.visible = mode !== 'shape';
     // With both visible, the shape turns see-through so the toolpath on its surface shows.
     for (const m of [meshMaterial, insideMaterial]) {
@@ -216,38 +226,71 @@ export function createViewport(canvas) {
     /**
      * Shows a new engine result: the merged mesh, curves as thin lines, toolpaths as fat lines.
      * Polylines arrive packed: `points` (x,y,z floats) and `starts` (where each one begins, in
-     * points, with the total at the end).
+     * points, with the total at the end). `parts` says which printed part each piece belongs to
+     * (-1: none): runs of `[end, part]` over the mesh's indices, and one per curve and path.
      * @param {{ mesh: { positions: Float32Array, indices: Uint32Array },
      *   curves: { points: Float32Array, starts: Uint32Array },
      *   paths: { points: Float32Array, starts: Uint32Array },
+     *   parts?: { mesh: Int32Array, curves: Int32Array, paths: Int32Array },
      *   bounds: { min: number[], max: number[] } | null }} result
      * @param {{ refit?: boolean }} [view]
      */
     show(result, view = {}) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(result.mesh.positions, 3));
-      geometry.setIndex(new THREE.BufferAttribute(result.mesh.indices, 1));
-      geometry.computeVertexNormals();
-      mesh.geometry.dispose();
-      mesh.geometry = geometry;
-      inside.geometry = geometry;
+      const parts = result.parts || { mesh: new Int32Array(0), curves: new Int32Array(0), paths: new Int32Array(0) };
+      const merged = new THREE.BufferGeometry();
+      merged.setAttribute('position', new THREE.BufferAttribute(result.mesh.positions, 3));
+      merged.setIndex(new THREE.BufferAttribute(result.mesh.indices, 1));
+      merged.computeVertexNormals();
+      // One geometry per part, sharing the merged points and normals.
+      /** @type {Map<number, Uint32Array[]>} */
+      const runs = new Map();
+      const indices = result.mesh.indices;
+      let start = 0;
+      for (let k = 0; k + 1 < parts.mesh.length; k += 2) {
+        const end = Math.min(parts.mesh[k], indices.length);
+        if (end > start) runs.set(parts.mesh[k + 1], [...(runs.get(parts.mesh[k + 1]) || []), indices.subarray(start, end)]);
+        start = Math.max(start, end);
+      }
+      if (start < indices.length) runs.set(-1, [...(runs.get(-1) || []), indices.subarray(start)]);
+      clear(shapes);
+      for (const [part, chunks] of runs) {
+        const index = new Uint32Array(chunks.reduce((n, c) => n + c.length, 0));
+        let at = 0;
+        for (const c of chunks) {
+          index.set(c, at);
+          at += c.length;
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', merged.getAttribute('position'));
+        g.setAttribute('normal', merged.getAttribute('normal'));
+        g.setIndex(new THREE.BufferAttribute(index, 1));
+        for (const material of [meshMaterial, insideMaterial]) {
+          const m = new THREE.Mesh(g, material);
+          m.userData.part = part;
+          shapes.add(m);
+        }
+      }
 
       lastBounds = result.bounds;
       clear(curves);
-      eachPolyline(result.curves, (points) => {
+      eachPolyline(result.curves, (points, i) => {
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(points, 3));
-        curves.add(new THREE.Line(g, curveMaterial));
+        const line = new THREE.Line(g, curveMaterial);
+        line.userData.part = parts.curves[i] ?? -1;
+        curves.add(line);
       });
       clear(paths);
-      eachPolyline(result.paths, (points) => {
+      eachPolyline(result.paths, (points, i) => {
         const g = new LineGeometry();
         g.setPositions(points);
         const line = new Line2(g, lineMaterial);
         line.userData.points = points;
+        line.userData.part = parts.paths[i] ?? -1;
         paths.add(line);
       });
       recolorPaths();
+      applyParts();
 
       const hl = result.highlight;
       const hlGeometry = new THREE.BufferGeometry();
@@ -282,6 +325,16 @@ export function createViewport(canvas) {
       fit(lastBounds);
     },
 
+    /**
+     * Hides these printed parts (indices into the result's prints) with the shapes only they are
+     * made from; shows the rest.
+     * @param {number[]} indices
+     */
+    setHiddenParts(indices) {
+      hiddenParts = new Set(indices);
+      applyParts();
+    },
+
     fit,
 
     /**
@@ -305,7 +358,10 @@ export function createViewport(canvas) {
       };
       mode = show === 'toolpath' ? 'path' : show === 'shape' ? 'shape' : 'both';
       applyMode();
-      // The AI sees the model, not what's selected in the graph.
+      // The AI sees the whole model: every part, and not what's selected in the graph.
+      const hidden = hiddenParts;
+      hiddenParts = new Set();
+      applyParts();
       hlMesh.visible = hlLines.visible = false;
       renderer.setPixelRatio(1);
       renderer.setSize(size, size, false);
@@ -356,6 +412,8 @@ export function createViewport(canvas) {
 
       // Back to the view on screen.
       hlMesh.visible = hlLines.visible = true;
+      hiddenParts = hidden;
+      applyParts();
       mode = saved.mode;
       camera.up.copy(saved.up);
       camera.position.copy(saved.position);
@@ -372,13 +430,14 @@ export function createViewport(canvas) {
 }
 
 /**
- * Calls `fn` with each polyline of a packed set (see `show`), skipping single points.
+ * Calls `fn` with each polyline of a packed set (see `show`) and its place in the set, skipping
+ * single points.
  * @param {{ points: Float32Array, starts: Uint32Array }} packed
- * @param {(points: Float32Array) => void} fn
+ * @param {(points: Float32Array, i: number) => void} fn
  */
 function eachPolyline(packed, fn) {
   for (let i = 0; i + 1 < packed.starts.length; i++) {
     const [a, b] = [packed.starts[i], packed.starts[i + 1]];
-    if (b - a >= 2) fn(packed.points.subarray(a * 3, b * 3));
+    if (b - a >= 2) fn(packed.points.subarray(a * 3, b * 3), i);
   }
 }

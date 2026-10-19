@@ -424,6 +424,35 @@ print lid |> move(x: 40) with \"Bambu P1P 0.4\"";
 }
 
 #[test]
+fn every_drawn_piece_knows_its_part() {
+    // The view hides a part with the shapes only it is made from; shared ones stay.
+    let src = "unit = circle(10)
+body = loft([unit, unit |> move(z: 3)])
+cap = loft([unit |> scale(1.2), unit |> scale(1.2) |> move(z: 2)])
+base = vase_spiral(body, layer: 1, width: 2)
+lid = vase_spiral(cap, layer: 1, width: 2)
+broken = vase_spiral(cap, layer: 0, width: 2)
+show body, cap, unit
+print base
+print broken
+print lid";
+    let e = run(src);
+    let names: Vec<&str> = e.prints.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["base", "lid"], "the broken one prints nothing");
+    let d = &e.drawing;
+    // body (base's), cap (the lid's and the broken print's: shared), then the circle (shared).
+    let runs: Vec<Option<usize>> = d.mesh_parts.iter().map(|r| r.1).collect();
+    assert_eq!(runs, [Some(0), None]);
+    assert_eq!(d.mesh_parts.last().map(|r| r.0), Some(d.mesh.indices.len()));
+    assert_eq!(d.curve_parts, [None]);
+    assert_eq!(d.path_parts, [Some(0), Some(1)]);
+    // Without the broken print, the cap is the lid's.
+    let e = run(&src.replace("print broken\n", ""));
+    let runs: Vec<Option<usize>> = e.drawing.mesh_parts.iter().map(|r| r.1).collect();
+    assert_eq!(runs, [Some(0), Some(1)]);
+}
+
+#[test]
 fn parse_errors_and_versions() {
     let e = run("x = (1");
     assert_eq!(

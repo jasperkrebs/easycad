@@ -136,6 +136,13 @@ pub struct Drawing {
     /// Shown and printed toolpaths.
     pub paths: Vec<Rc<Toolpath>>,
     pub bounds: Bounds,
+    /// The printed part (an index into [`Evaluation::prints`]) each piece belongs to, so the view
+    /// can show or hide a part: its toolpath, and every shown step that only it is made from
+    /// (the container's shape with the container). `None`: shared, or drawn on its own. The mesh
+    /// goes in runs: (where the run ends in `mesh.indices`, its part).
+    pub mesh_parts: Vec<(usize, Option<usize>)>,
+    pub curve_parts: Vec<Option<usize>>,
+    pub path_parts: Vec<Option<usize>>,
 }
 
 impl Default for Drawing {
@@ -145,6 +152,9 @@ impl Default for Drawing {
             curves: Vec::new(),
             paths: Vec::new(),
             bounds: Bounds::empty(),
+            mesh_parts: Vec::new(),
+            curve_parts: Vec::new(),
+            path_parts: Vec::new(),
         }
     }
 }
@@ -357,6 +367,11 @@ struct Runner<'a> {
     ctx: Ctx,
     names: HashMap<&'a str, Slot>,
     state: Vec<State>,
+    /// The steps each step reads (from `order`).
+    deps: Vec<Vec<usize>>,
+    /// While drawing outputs: the `print` line (counted among the `print` lines) what's being
+    /// drawn belongs to.
+    drawing_owner: Option<usize>,
     drawn: usize,
     too_much_drawn: bool,
 }
@@ -369,6 +384,8 @@ impl<'a> Runner<'a> {
             ctx: Ctx::new(quality),
             names: HashMap::new(),
             state: vec![State::Pending; program.bindings.len()],
+            deps: Vec::new(),
+            drawing_owner: None,
             drawn: 0,
             too_much_drawn: false,
         }
@@ -547,6 +564,7 @@ impl<'a> Runner<'a> {
             }
         }
 
+        self.deps = deps.clone();
         let mut waiting: Vec<usize> = deps.iter().map(Vec::len).collect();
         let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); n];
         for (i, ds) in deps.iter().enumerate() {
@@ -702,14 +720,61 @@ impl<'a> Runner<'a> {
 
     // ------------------------------------------------------------------------- outputs
 
+    /// Which `print` line (counted among the `print` lines) each step belongs to: the only one
+    /// made from it, directly or through other steps. `None` when several are, or none.
+    fn owners(&self) -> Vec<Option<usize>> {
+        let n = self.program.bindings.len();
+        let mut owner: Vec<Option<Option<usize>>> = vec![None; n];
+        let prints = self.program.outputs.iter().filter_map(|o| match o {
+            Output::Print { expr, .. } => Some(expr),
+            _ => None,
+        });
+        for (k, expr) in prints.enumerate() {
+            let mut refs = Vec::new();
+            expr.references(&mut refs);
+            let mut stack: Vec<usize> = refs
+                .iter()
+                .filter_map(|(name, _)| match self.names.get(name.as_str()) {
+                    Some(Slot::Binding(j)) => Some(*j),
+                    _ => None,
+                })
+                .collect();
+            let mut seen = vec![false; n];
+            while let Some(i) = stack.pop() {
+                let Some(slot) = seen.get_mut(i) else {
+                    continue;
+                };
+                if std::mem::replace(slot, true) {
+                    continue;
+                }
+                if let Some(o) = owner.get_mut(i) {
+                    *o = match *o {
+                        None => Some(Some(k)),
+                        Some(Some(j)) if j == k => Some(Some(k)),
+                        _ => Some(None),
+                    };
+                }
+                stack.extend(self.deps.get(i).into_iter().flatten().copied());
+            }
+        }
+        owner.into_iter().map(Option::flatten).collect()
+    }
+
     fn outputs(&mut self) {
         let program = self.program;
         let mut shown = false;
+        let owners = self.owners();
+        // Each `print` line's part (its index in `prints`), once it printed.
+        let mut parts: Vec<Option<usize>> = Vec::new();
         for output in &program.outputs {
             match output {
                 Output::Show { names, .. } => {
                     for (name, span) in names {
                         shown = true;
+                        self.drawing_owner = match self.names.get(name.as_str()) {
+                            Some(Slot::Binding(j)) => owners.get(*j).copied().flatten(),
+                            _ => None,
+                        };
                         match self.lookup(name, *span) {
                             Ok(v) => {
                                 if !self.draw(&v) {
@@ -731,6 +796,8 @@ impl<'a> Runner<'a> {
                     span,
                 } => {
                     shown = true;
+                    self.drawing_owner = Some(parts.len());
+                    parts.push(None);
                     match self.eval(expr) {
                         Ok(Value::Toolpath(p)) => {
                             self.draw(&Value::Toolpath(p.clone()));
@@ -779,6 +846,9 @@ impl<'a> Runner<'a> {
                             if self.out.print.is_none() {
                                 self.out.print = Some(info.clone());
                             }
+                            if let Some(part) = parts.last_mut() {
+                                *part = Some(self.out.prints.len());
+                            }
                             self.out.prints.push(info);
                         }
                         Ok(other) => {
@@ -794,6 +864,16 @@ impl<'a> Runner<'a> {
                 }
                 Output::Export { expr, file, span } => self.export(expr, file, *span),
             }
+        }
+        self.drawing_owner = None;
+        // From `print` lines to the parts that printed.
+        let part = |o: Option<usize>| o.and_then(|k| parts.get(k).copied().flatten());
+        let d = &mut self.out.drawing;
+        for (_, o) in d.mesh_parts.iter_mut() {
+            *o = part(*o);
+        }
+        for o in d.curve_parts.iter_mut().chain(d.path_parts.iter_mut()) {
+            *o = part(*o);
         }
         if !shown {
             // Nothing chosen: draw the last step that has something to draw.
@@ -868,6 +948,7 @@ impl<'a> Runner<'a> {
             for l in lines {
                 self.out.drawing.bounds.union(&Bounds::of(&l));
                 self.out.drawing.curves.push(l);
+                self.out.drawing.curve_parts.push(self.drawing_owner);
             }
             return true;
         }
@@ -897,6 +978,7 @@ impl<'a> Runner<'a> {
             return true;
         }
         self.drawn += cost;
+        let owner = self.drawing_owner;
         let drawing = &mut self.out.drawing;
         match v {
             Value::Curve(c) => {
@@ -908,9 +990,11 @@ impl<'a> Runner<'a> {
                 }
                 drawing.bounds.union(&Bounds::of(&points));
                 drawing.curves.push(points);
+                drawing.curve_parts.push(owner);
             }
             Value::Surface(s) => {
                 drawing.mesh.append(&s.mesh(if fine { 2 } else { 1 }));
+                drawing.mesh_parts.push((drawing.mesh.indices.len(), owner));
                 for section in &s.sections {
                     drawing.bounds.union(&Bounds::of(section));
                 }
@@ -919,6 +1003,7 @@ impl<'a> Runner<'a> {
             Value::Toolpath(p) if !drawing.paths.iter().any(|q| Rc::ptr_eq(q, p)) => {
                 drawing.bounds.union(&Bounds::of(&p.points));
                 drawing.paths.push(p.clone());
+                drawing.path_parts.push(owner);
             }
             _ => {}
         }

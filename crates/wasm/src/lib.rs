@@ -11,7 +11,7 @@ use easycad_core::geom::P3;
 use easycad_core::graph::{self, Command};
 use easycad_core::nodes;
 use easycad_lang::{Literal, set_values};
-use js_sys::{Float32Array, Object, Reflect, Uint8Array, Uint32Array};
+use js_sys::{Float32Array, Int32Array, Object, Reflect, Uint8Array, Uint32Array};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
@@ -38,6 +38,7 @@ pub fn node_catalog() -> String {
 ///
 /// Returns `{ source, project, printer, notes, params, steps, diagnostics, print, exports,
 /// bounds, mesh: { positions, indices }, curves: { points, starts }, paths: { points, starts },
+/// parts: { mesh, curves, paths } (each piece's printed part),
 /// highlight: { mesh, curves, paths } }`. A broken recipe doesn't throw: its problems are in
 /// `diagnostics`.
 #[wasm_bindgen]
@@ -179,6 +180,8 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&out, "curves", &curves)?;
     let paths = polylines(e.drawing.paths.iter().map(|p| p.points.as_slice()))?;
     set(&out, "paths", &paths)?;
+    let parts = parts(&e.drawing)?;
+    set(&out, "parts", &parts)?;
     let highlight = drawing(&e.highlight)?;
     set(&out, "highlight", &highlight)?;
     Ok(out)
@@ -203,6 +206,24 @@ fn drawing(d: &Drawing) -> Result<Object, JsError> {
     set(&out, "curves", &curves)?;
     let paths = polylines(d.paths.iter().map(|p| p.points.as_slice()))?;
     set(&out, "paths", &paths)?;
+    Ok(out)
+}
+
+/// Which printed part each piece of the drawing belongs to (-1: none), so the view can hide a
+/// part: `{ mesh: [end, part, end, part, …] (runs over mesh.indices), curves, paths }`.
+fn parts(d: &Drawing) -> Result<Object, JsError> {
+    let part = |p: Option<usize>| p.map_or(-1, |p| p.min(i32::MAX as usize) as i32);
+    let mesh: Vec<i32> = d
+        .mesh_parts
+        .iter()
+        .flat_map(|(end, p)| [(*end).min(i32::MAX as usize) as i32, part(*p)])
+        .collect();
+    let curves: Vec<i32> = d.curve_parts.iter().map(|p| part(*p)).collect();
+    let paths: Vec<i32> = d.path_parts.iter().map(|p| part(*p)).collect();
+    let out = Object::new();
+    set(&out, "mesh", &Int32Array::from(mesh.as_slice()))?;
+    set(&out, "curves", &Int32Array::from(curves.as_slice()))?;
+    set(&out, "paths", &Int32Array::from(paths.as_slice()))?;
     Ok(out)
 }
 

@@ -127,6 +127,27 @@ pub fn spiral(
     })
 }
 
+/// The spiral stretched, every radius by the same factor, so that it ends exactly `outer` from
+/// its centre: a spiral snapped to whole turns made to run straight into a wall that starts
+/// there (each turn moves out by at most about half a spacing over `outer`).
+pub fn end_exactly_at(curve: Curve, outer: f64) -> Curve {
+    let c = curve.winding.as_ref().map_or([0.0; 2], |w| w.center);
+    let end = curve
+        .points
+        .last()
+        .map_or(0.0, |p| (p[0] - c[0]).hypot(p[1] - c[1]));
+    if !(end > 0.0 && outer > 0.0) {
+        return curve;
+    }
+    let k = outer / end;
+    let points = curve
+        .points
+        .iter()
+        .map(|p| [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k, p[2]])
+        .collect();
+    Curve { points, ..curve }
+}
+
 /// A flat spiral (in the XY plane, around the origin) of exactly `turns` turns (any fraction
 /// too) from radius `start`, each turn one local `spacing` outside the one before. With a
 /// constant spacing it's the exact Archimedean spiral r = start + θ/2π · spacing, sampled as
@@ -418,6 +439,30 @@ mod tests {
         let grow = rc(Field::binary(BinOp::Mul, k(open - 1.0), near).unwrap());
         let mult = rc(Field::binary(BinOp::Add, k(1.0), grow).unwrap());
         Field::binary(BinOp::Mul, k(line), mult).unwrap()
+    }
+
+    #[test]
+    fn an_exact_spiral_ends_right_on_its_radius() {
+        let radius = |p: &P3| p[0].hypot(p[1]);
+        // 10.4 snaps to 10 whole turns; stretched, every turn moves out alike to end on 10.4.
+        let s = spiral(10.4, &Field::constant(1.0), 0.05, 0, 1_000_000).unwrap();
+        assert!((radius(s.points.last().unwrap()) - 10.0).abs() < 1e-6);
+        let e = end_exactly_at(s.clone(), 10.4);
+        let end = e.points.last().unwrap();
+        assert!(
+            (radius(end) - 10.4).abs() < 1e-9 && end[1].abs() < 1e-9,
+            "on +X: {end:?}"
+        );
+        assert_eq!(e.winding, s.winding, "still a spiral of the same turns");
+        let w = e.winding.as_ref().unwrap();
+        let (a, b) = (e.points[3 * w.per_turn], e.points[4 * w.per_turn]);
+        assert!(
+            (radius(&b) - radius(&a) - 1.04).abs() < 1e-6,
+            "turns 1.04 apart"
+        );
+        // Nothing to stretch from the centre.
+        let dot = Curve::new(vec![[0.0; 3]], false);
+        assert_eq!(end_exactly_at(dot.clone(), 5.0).points, dot.points);
     }
 
     #[test]

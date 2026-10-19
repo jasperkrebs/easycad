@@ -1,7 +1,7 @@
 easycad 0.1
 project "Salt & pepper shaker"
 printer "Ginger G1"
-note "A container and a lid that screws onto it: two prints from one set of settings (EasyGCode's container, with a lid to shake salt through). Each prints as one continuous line: a flat spiral from the centre out, a fillet up into the wall, then the wall in vase mode, its layers closer where it leans out. Both spirals turn the same way, so the lid's skirt threads down over the container's neck once it's turned over onto it."
+note "A container and a lid that screws onto it: two prints from one set of settings (EasyGCode's container, with a lid to shake salt through), each centred on the bed with its own G-code file. Each prints as one continuous line: a flat spiral from the centre out whose last turn widens onto the fillet, the fillet up into the wall, then the wall in vase mode, its layers closer where it leans out. Both spirals turn the same way, so the lid's skirt threads down over the container's neck once it's turned over onto it."
 note "The body follows radii at heights (0: where the bottom fillet ends, 1: where the neck starts) along a smooth curve that leaves the fillet and meets the neck straight up. The neck is as tall as the lid's skirt; the lid sits one line width outside it, plus the fit. The lid's top is EasyGCode's spiral disc: around a ring its turns spread apart and interlock, leaving the holes the salt comes out of."
 note "The spiral discs can have their own layer height and line width (0: the same as the walls). Through each fillet the bead then eases from the disc's into the wall's along an S-curve of height, a little at every point: the layers' spacing, the plastic each move gets and, at the set flow, its speed."
 
@@ -14,7 +14,6 @@ group "Lid"
 param skirt      = 20 mm in 3..100            "Skirt height (the neck is as tall)"
 param lid_fillet = 6 mm  in 1..40             "Lid fillet"
 param fit        = 0 mm  in -2..2 step 0.05   "Fit (+ looser, − tighter)"
-param beside     = true                       "Lid prints beside the container"
 
 group "Holes (the lid's spiral disc)"
 param ring     = 12 mm in 1..150              "Ring radius"
@@ -72,10 +71,11 @@ c_line    = disc_w + (line - disc_w) * c_blend
 # The wall in vase mode, layers closer on overhangs (each still a full layer's bead), open at the top.
 c_wall    = spiralize(contour(container, c_layer, pace: pace), width: line, flow: flow, flat_top: false, ramp: false)
   |> bead(width: c_line, layer: c_layer) |> adjust(extrude: wall_extrusion)
-# The bottom: rings one line apart, linked into a spiral from the centre out (EasyGCode's), the
-# outermost one a line inside the fillet; then out to the wall's start.
-c_rings   = rings(unit |> scale(flat_r - disc_w), disc_w)
-c_disc    = polyline(flatten([vertices(link_rings(reverse(c_rings), "spiral", disc_w)), [point(0, flat_r)]]))
+# The bottom: rings one line apart from the fillet's foot inward, linked into a spiral from the
+# centre out (EasyGCode's ring fill): its last turn widens onto the fillet's foot and ends on the
+# seam, right where the wall starts.
+c_rings   = rings(unit |> scale(flat_r), disc_w)
+c_disc    = link_rings(reverse(c_rings), "spiral", disc_w)
 c_bottom  = toolpath(c_disc, width: disc_w, layer: disc_l, flow: flow) |> adjust(extrude: disc_extrusion)
 base      = join([c_bottom, c_wall])
 
@@ -90,18 +90,16 @@ l_layer   = disc_l + (layer - disc_l) * l_blend
 l_line    = disc_w + (line - disc_w) * l_blend
 l_wall    = spiralize(contour(lid_shape, l_layer, pace: pace), width: line, flow: flow, flat_top: false, ramp: false)
   |> bead(width: l_line, layer: l_layer) |> adjust(extrude: wall_extrusion)
-# Turns one line apart, spreading to `open` around the ring and interlocking there (holes).
+# Turns one line apart, spreading to `open` around the ring and interlocking there (holes); the
+# spiral ends exactly on the fillet's foot, at the seam, where the skirt starts.
 near      = fade(distance(circle(ring)), inside: fade_in, outside: fade_out, band: band)
 spacing   = disc_w * (1 + (open - 1) * near)
 odd       = 2 * floor(bumps / 2) + 1
-holes     = interlock(spiral(outer: lid_flat - disc_w, spacing: spacing, min_samples: 16 * odd), bumps: odd, width: disc_w)
-l_disc    = polyline(flatten([vertices(holes |> rotate(90)), [point(0, lid_flat)]]))
-l_top     = toolpath(l_disc, width: disc_w, layer: disc_l, flow: flow) |> adjust(extrude: disc_extrusion)
-# Beside the container (or on the same spot, printed after it).
-gap       = pick(beside, item(bounds(body_r), 1) + lid_r + 15, 0)
-lid       = join([l_top, l_wall]) |> move(x: gap)
-lid_view  = lid_shape |> move(x: gap)
+holes     = interlock(spiral(outer: lid_flat, spacing: spacing, min_samples: 16 * odd, exact: true), bumps: odd, width: disc_w)
+l_top     = toolpath(holes |> rotate(90), width: disc_w, layer: disc_l, flow: flow) |> adjust(extrude: disc_extrusion)
+lid       = join([l_top, l_wall])
 
-show container, lid_view
+# Both on the bed's centre, each its own G-code file.
+show container, lid_shape
 print base
 print lid

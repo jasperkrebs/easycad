@@ -1,5 +1,7 @@
 /* EasyCAD: phone-first, same look as EasyGCode (dark tokens below are EasyGCode's own).
-   Layout: phone = header · viewport · tabs + card; desktop = viewport left, panels right. */
+   Layout: an app shell that fills the screen. Phone = header · viewport · tabs + card; desktop =
+   viewport left, panels right. The page never scrolls: the panels scroll on their own, so the
+   3D view stays in sight. */
 :root {
   --bg: #0f1115;
   --card: #181b22;
@@ -51,6 +53,11 @@ body {
 }
 
 body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -79,6 +86,8 @@ button {
 
 /* ---------- header ---------- */
 .top {
+  flex: none;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -121,24 +130,25 @@ button {
 }
 
 /* ---------- layout ---------- */
+/* The rest of the screen: the 3D view above the panels (phone) or beside them (desktop). Only
+   the panels scroll; the view keeps its place. */
 .layout {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(180px, 42%) minmax(0, 1fr);
   max-width: 1320px;
   margin: 0 auto;
-  padding: 0 12px 24px;
+  padding: 0 12px 12px;
 }
 
 @media (min-width: 960px) {
   .layout {
     grid-template-columns: minmax(0, 1fr) 420px;
-    align-items: start;
-  }
-  .viewport {
-    position: sticky;
-    top: 12px;
-    height: min(84vh, 860px) !important;
+    grid-template-rows: minmax(0, 1fr);
   }
 }
 
@@ -147,13 +157,16 @@ button {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 /* ---------- viewport ---------- */
 .viewport {
   position: relative;
-  height: min(56vh, 480px);
-  min-height: 280px;
+  min-height: 0;
   background: var(--view-bg);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -170,9 +183,16 @@ button {
 .view-bar {
   position: absolute;
   left: 10px;
+  right: 10px;
   top: 10px;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  pointer-events: none;
+}
+
+.view-bar > * {
+  pointer-events: auto;
 }
 
 .seg {
@@ -220,7 +240,13 @@ button {
 }
 
 /* ---------- tabs + cards (EasyGCode style) ---------- */
+/* The tabs stay at the top of the scrolling panels. */
 .tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: none;
+  background: var(--bg);
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -1317,8 +1343,8 @@ fieldset.choice input {
   gap: 0 10px;
 }
 
-/* Six tabs fit a phone without scrolling. */
-@media (max-width: 520px) {
+/* Six tabs fit a phone, and the desktop's panel column, without scrolling. */
+@media (max-width: 520px), (min-width: 960px) {
   .tabs {
     gap: 5px;
   }

@@ -228,6 +228,13 @@ async function waitForServer(url) {
         failures.push(`${name}: the lid's G-code is ${lidFile.name}: ${lidFile.data.toString('utf8').slice(0, 60)}`);
       }
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker.png`), fullPage: name === 'phone' });
+      // Its parts show and hide like layers: a toggle per part in the 3D view.
+      const toggles = page.locator('#viewParts button');
+      if ((await toggles.allTextContents()).join() !== 'base,lid') failures.push(`${name}: part toggles: ${(await toggles.allTextContents()).join()}`);
+      await toggles.nth(1).click();
+      if ((await toggles.nth(1).getAttribute('aria-pressed')) !== 'false') failures.push(`${name}: the lid's toggle didn't hide it`);
+      await toggles.nth(1).click();
+      if ((await toggles.nth(1).getAttribute('aria-pressed')) !== 'true') failures.push(`${name}: the lid's toggle didn't show it again`);
       // A row added to the list setting, given a radius, then removed: the recipe follows.
       const body = (src) => (src.match(/^param body\s+= (\[.*\])/m) || [])[1];
       const rows = () => page.locator('.setting.list .list-row').count();
@@ -244,7 +251,7 @@ async function waitForServer(url) {
         .catch(async () => failures.push(`${name}: removing the row didn't reach the recipe: ${body(await page.inputValue('#recipe'))}`));
       // The spiral discs' own bead (0: the walls'): typed in, written into the recipe, run.
       const hudDisc = await page.textContent('#hud');
-      for (const [id, v] of [['disc_layer', '0.3'], ['disc_line', '3'], ['fade_in', '9'], ['fade_out', '9']]) {
+      for (const [id, v] of [['disc_layer', '0.3'], ['disc_line', '3'], ['fade_in', '12'], ['fade_out', '12']]) {
         await page.fill(`#set-${id}`, v);
         await page.dispatchEvent(`#set-${id}`, 'change');
       }
@@ -256,6 +263,13 @@ async function waitForServer(url) {
         .catch(() => failures.push(`${name}: the disc's bead didn't change the print`));
       const discProblems = await page.locator('#problems li').count();
       if (discProblems) failures.push(`${name}: ${discProblems} problem(s) with the disc's own bead`);
+      // With the settings scrolled down that far, the page itself hasn't moved: only the panels
+      // scroll, and the 3D view is still in sight.
+      if (await page.evaluate(() => document.scrollingElement.scrollHeight > window.innerHeight + 1)) failures.push(`${name}: the page scrolls; only the panels should`);
+      const sideScrolled = await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('.side')).scrollTop);
+      const view = await page.locator('.viewport').boundingBox();
+      const tall = page.viewportSize()?.height ?? 0;
+      if (!(sideScrolled > 0) || !view || view.y < 0 || view.y + view.height > tall + 1) failures.push(`${name}: panels scrolled ${sideScrolled}, the 3D view at ${JSON.stringify(view)}`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-disc.png`), fullPage: name === 'phone' });
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();

@@ -3,6 +3,38 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-19 (evening): smooth into the fillet, a panel that scrolls, parts like layers
+
+**Why:** the owner tested the shaker. Where the flat spiral met the fillet there was a step
+outward (two screenshots), not the smooth run of EasyGCode's vessel; with many settings,
+scrolling them took the 3D view off screen; and the two parts shouldn't print side by side:
+both on the bed's centre, each shown or hidden like a layer, each its own G-code.
+
+**Landed**
+- **The step was the recipe's, not slicing's:** the rings stopped a line inside the fillet's
+  foot and a straight move went out to it. The container now rings the foot itself, so
+  `link_rings(…, "spiral")` widens its last turn onto it (EasyGCode's ring fill) and ends on the
+  seam, where the wall starts. The lid's spiral disc ends right on its foot with a new general
+  option, `spiral(…, exact: true)`: snapped to whole turns as before, then every turn stretched
+  alike (at most about half a spacing over the radius). Tested: nothing in the last turn steps
+  outward, it ends on the seam, and the wall carries straight on.
+- **The page no longer scrolls:** an app shell. The panels scroll on their own under pinned
+  tabs; the 3D view stays in sight (beside them on a desktop, above them on a phone, 42 % of
+  the height). The smoke test scrolls the settings and checks.
+- **Parts like layers:** a toggle per part in the 3D view's bar (from two parts up) shows or
+  hides the part's toolpath with the shown shapes only it is made from. The engine says which
+  part each drawn piece belongs to (`Drawing::mesh_parts`, `curve_parts`, `path_parts`): the
+  print's toolpath, and every shown step that only that print is made from. Shared ones stay.
+  The agent's `look` still sees every part.
+- **The shaker:** both parts on the bed's centre; "Lid prints beside the container" is gone.
+
+**Numbers:** 157 core tests (`every_drawn_piece_knows_its_part`, the exact spiral, the
+shaker's smooth ends and centring), 24 language tests.
+
+**Open**
+- The toggles are for the view only; the Print tab still lists every part (each file is
+  separate anyway).
+
 ## 2026-10-19 (later): the spiral discs' own bead, easing into the walls'
 
 **Why:** the owner wanted the shaker's spiral discs (the container's bottom, the lid's top) to

@@ -10,6 +10,7 @@ use crate::geom::{P3, dist3};
 use crate::toolpath::{EventKind, Toolpath};
 use crate::value::Value;
 use std::collections::HashMap;
+use std::f64::consts::TAU;
 
 fn run(body: &str) -> HashMap<String, Value> {
     let (e, values) = step_values(&format!("easycad 0.1\n{body}\n"), Quality::Final);
@@ -398,6 +399,27 @@ stacked = stack(wide, 2)",
 }
 
 #[test]
+fn spirals_that_end_exactly_where_asked() {
+    let v = run("near = spiral(outer: 10.4, spacing: 1)
+exact = spiral(outer: 10.4, spacing: 1, exact: true)");
+    let end = |name: &str| {
+        let (points, _) = curve_points(&v, name);
+        let p = points.last().copied().unwrap();
+        p[0].hypot(p[1])
+    };
+    assert!((end("near") - 10.0).abs() < 1e-6, "the nearest whole turn");
+    assert!((end("exact") - 10.4).abs() < 1e-9, "right on it");
+    let w = messages(
+        "s = spiral(spacing: 1, turns: 3, exact: true)",
+        Severity::Warning,
+    );
+    assert!(
+        w.iter().any(|m| m.contains("`exact` is for `outer`")),
+        "{w:?}"
+    );
+}
+
+#[test]
 fn layers_that_change_with_height() {
     let v = run("tube = loft([circle(20), circle(20) |> move(z: 20)])
 grow = contour(tube, 0.4 + 0.2 * smoothstep(z / 20))
@@ -726,14 +748,50 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
     };
     let rises = |t: &[(f64, f64)]| -> Vec<f64> { t.windows(2).map(|w| w[1].0 - w[0].0).collect() };
 
+    // The flat spiral (part 0) widens onto the fillet's foot over its last turn and ends on the
+    // seam where the wall starts: no step out to it (the lid's wiggles round its holes, further
+    // in, are another matter).
+    let smooth_into_the_wall = |p: &Toolpath, foot: f64| {
+        let radius = |q: P3| q[0].hypot(q[1]);
+        let flat: Vec<usize> = (0..p.points.len()).filter(|i| p.part[*i] == 0).collect();
+        let last = *flat.last().unwrap();
+        assert!(
+            (radius(p.points[last]) - foot).abs() < 1e-6,
+            "ends on the fillet's foot"
+        );
+        assert!(
+            p.points[last][0].abs() < 1e-6 && p.points[last][1] > 0.0,
+            "on the seam (+Y)"
+        );
+        let step = flat
+            .windows(2)
+            .filter(|w| radius(p.points[w[0]]) > foot - 4.0)
+            .map(|w| radius(p.points[w[1]]) - radius(p.points[w[0]]))
+            .fold(0.0, f64::max);
+        assert!(step < 0.1, "a step of {step} mm out");
+        // The wall carries straight on: its first move is one of its 160 per turn.
+        assert!(!p.travel[last + 1]);
+        assert!(dist3(p.points[last], p.points[last + 1]) < 1.2 * TAU * foot / 160.0);
+    };
+
     let (base, lid) = run_with(&[]);
     // Each part is one line: the flat spiral runs straight into the fillet, then up the wall.
     assert_eq!(base.stats().travel_length_mm, 0.0);
     assert_eq!(lid.stats().travel_length_mm, 0.0);
+    smooth_into_the_wall(&base, 33.0 - 8.0);
+    smooth_into_the_wall(&lid, 34.0 - 6.0);
+    // Both on the bed's centre.
+    for p in [&base, &lid] {
+        let b = p.stats().bounds;
+        assert!(
+            (b.min[0] + b.max[0]).abs() < 0.1 && (b.min[1] + b.max[1]).abs() < 0.1,
+            "{b:?}"
+        );
+    }
     // The wall up to the neck (60 mm), then the neck, as tall as the lid's skirt (20 mm).
     let top = base.stats().printed_height_mm;
     assert!((top - 80.0).abs() < 0.3, "{top}");
-    let (b, l) = (turns(&base, 0.0), turns(&lid, 38.0 + 34.0 + 15.0));
+    let (b, l) = (turns(&base, 0.0), turns(&lid, 0.0));
     // The neck has the body's last radius (32); the lid sits one line width outside it.
     assert!((b.last().unwrap().1 - 32.0).abs() < 0.05, "{:?}", b.last());
     assert!((l.last().unwrap().1 - 34.0).abs() < 0.05, "{:?}", l.last());
@@ -757,19 +815,15 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
         ("fit", Literal::Number(0.4)),
         ("disc_extrusion", Literal::Number(110.0)),
     ]);
-    let l = turns(&lid, 38.0 + 34.4 + 15.0);
+    let l = turns(&lid, 0.0);
     assert!((l.last().unwrap().1 - 34.4).abs() < 0.05, "{:?}", l.last());
     for p in [&base, &lid] {
         assert!((p.flow[5] - 1.1).abs() < 1e-9, "the disc: {}", p.flow[5]);
         assert!((p.flow[p.flow.len() - 1] - 1.0).abs() < 1e-9, "the wall");
     }
-    // The body follows its points: a straight body has the bottom's radius all the way up, and
-    // the lid prints where the container does.
+    // The body follows its points: a straight body has the bottom's radius all the way up.
     let row = |a: f64, b: f64| Literal::List(vec![Literal::Number(a), Literal::Number(b)]);
-    let (base, lid) = run_with(&[
-        ("body", Literal::List(vec![row(0.0, 30.0), row(1.0, 30.0)])),
-        ("beside", Literal::Bool(false)),
-    ]);
+    let (base, lid) = run_with(&[("body", Literal::List(vec![row(0.0, 30.0), row(1.0, 30.0)]))]);
     let b = turns(&base, 0.0);
     let body: Vec<f64> = b
         .iter()
@@ -785,8 +839,8 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
     let (base, lid) = run_with(&[
         ("disc_layer", Literal::Number(0.3)),
         ("disc_line", Literal::Number(3.0)),
-        ("fade_in", Literal::Number(9.0)),
-        ("fade_out", Literal::Number(9.0)),
+        ("fade_in", Literal::Number(12.0)),
+        ("fade_out", Literal::Number(12.0)),
     ]);
     let (disc, wall) = (bead_area(3.0, 0.3), bead_area(2.0, 0.6));
     for (p, fillet, skirt) in [(&base, 8.0, 32.0), (&lid, 6.0, 34.0)] {
@@ -826,14 +880,7 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
             "rises within the turn"
         );
         // The layers: thin where the fillet leaves the disc, a full wall layer at the top.
-        let t = turns(
-            p,
-            if skirt > 33.0 {
-                38.0 + 34.0 + 15.0
-            } else {
-                0.0
-            },
-        );
+        let t = turns(p, 0.0);
         let r = rises(&t);
         assert!(r[0] < 0.1, "{r:?}");
         assert!(
@@ -845,9 +892,6 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
             "the walls still fit"
         );
     }
-    let outer = (1..base.points.len() - 1)
-        .filter(|i| base.part[*i] == 0 && base.part[i + 1] == 0)
-        .map(|i| base.points[i][0].hypot(base.points[i][1]))
-        .fold(0.0, f64::max);
-    assert!((outer - (33.0 - 8.0 - 3.0)).abs() < 0.01, "{outer}");
+    smooth_into_the_wall(&base, 33.0 - 8.0);
+    smooth_into_the_wall(&lid, 34.0 - 6.0);
 }
