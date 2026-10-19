@@ -9,6 +9,7 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
+import { fingerprint, projectOf, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
@@ -52,7 +53,14 @@ const state = {
   catalog: '',
   /** The step selected in the graph, drawn in the highlight colour. */
   highlight: '',
+  /**
+   * The template the project was started from, and that template's text as it was then (values
+   * left out), to tell when the template has been improved since.
+   * @type {{ id: string, base: string } | null}
+   */
+  template: null,
 };
+const SEEN_KEY = 'easycad.templateSeen';
 
 const engine = createEngine();
 const viewport = createViewport(/** @type {HTMLCanvasElement} */ ($('view')));
@@ -425,6 +433,8 @@ const chat = createChat({
 
 /** Opens recipe text as the current project. */
 async function openSource(text) {
+  state.template = null;
+  $('templateUpdate').hidden = true;
   chat?.projectReplaced();
   clearGraphUndo();
   state.highlight = '';
@@ -438,7 +448,99 @@ async function openSource(text) {
 async function openTemplate(id) {
   const response = await fetch(`templates/${id}.easycad`);
   if (!response.ok) throw new Error(`template ${id}: ${response.status}`);
-  await openSource(await response.text());
+  const text = await response.text();
+  await openSource(text);
+  state.template = { id, base: withoutValues(text) };
+  autosave();
+}
+
+/** The templates' texts as they are now, fetched once each. */
+const templateTexts = new Map();
+async function templateText(id) {
+  if (!templateTexts.has(id)) {
+    templateTexts.set(
+      id,
+      fetch(`templates/${id}.easycad`)
+        .then((r) => (r.ok ? r.text() : null))
+        .catch(() => null),
+    );
+  }
+  return templateTexts.get(id);
+}
+
+/**
+ * A project started from a template that has been improved since (or, for an older project or
+ * a file, one that differs from its template): offers to bring it up to date, keeping its
+ * setting values. Saying no is remembered until the template changes again.
+ */
+async function checkTemplate() {
+  const project = state.last?.project;
+  if (!project) return;
+  const mine = withoutValues(state.source);
+  /** @type {{ id: string, text: string } | null} */
+  let newer = null;
+  if (state.template) {
+    const text = await templateText(state.template.id);
+    if (text && withoutValues(text) !== state.template.base) newer = { id: state.template.id, text };
+  } else {
+    for (const t of TEMPLATES) {
+      const text = await templateText(t.id);
+      if (!text || projectOf(text) !== project) continue;
+      if (withoutValues(text) !== mine) newer = { id: t.id, text };
+      break;
+    }
+  }
+  if (!newer) return;
+  let seen = {};
+  try {
+    seen = JSON.parse(localStorage.getItem(SEEN_KEY) || '{}') || {};
+  } catch {
+    // Unreadable: ask again.
+  }
+  const print = fingerprint(withoutValues(newer.text));
+  if (seen[newer.id] === print) return;
+  const edited = state.template ? mine !== state.template.base : true;
+  $('templateUpdateText').textContent =
+    (state.template
+      ? `The “${project}” template has been improved since you started this project. Update it to the new version?`
+      : `This project differs from the current “${project}” template, which may have been improved since. Update it to the current version?`) +
+    ` Your settings carry over${edited ? '; changes you made to the recipe text itself would be replaced' : ''}.`;
+  const box = $('templateUpdate');
+  box.hidden = false;
+  $('templateUpdateYes').onclick = () => updateToTemplate(newer.id, newer.text);
+  $('templateUpdateNo').onclick = () => {
+    box.hidden = true;
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify({ ...seen, [newer.id]: print }));
+    } catch {
+      // Storage unavailable: it asks again next time.
+    }
+  };
+}
+
+/** Opens the template's current version with the project's setting values carried over. */
+async function updateToTemplate(id, text) {
+  $('templateUpdate').hidden = true;
+  const keep = { ...state.values };
+  const kind = (v) => (Array.isArray(v) ? 'list' : typeof v);
+  await openSource(text);
+  state.template = { id, base: withoutValues(text) };
+  let kept = 0;
+  for (const [k, v] of Object.entries(keep)) {
+    if (k in state.values && kind(v) === kind(state.values[k])) {
+      state.values[k] = v;
+      kept++;
+    }
+  }
+  state.layout = ''; // rebuild the window so every slider shows its value
+  await run('final');
+  state.openedValues = { ...state.values };
+  state.unsaved = true;
+  autosave();
+  const done = $('templateUpdated');
+  done.textContent = `Updated to the current template; ${kept} ${kept === 1 ? 'setting' : 'settings'} carried over.`;
+  done.hidden = false;
+  setTimeout(() => (done.hidden = true), 8000);
 }
 
 let saveTimer = 0;
@@ -448,7 +550,13 @@ function autosave() {
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ source: state.source, openedValues: state.openedValues, printer: state.printer, unsaved: state.unsaved }),
+        JSON.stringify({
+          source: state.source,
+          openedValues: state.openedValues,
+          printer: state.printer,
+          unsaved: state.unsaved,
+          template: state.template,
+        }),
       );
     } catch {
       // Storage can be unavailable (private browsing); the app works without it.
@@ -585,7 +693,10 @@ function wire() {
   $('projectFile').addEventListener('change', async (e) => {
     try {
       const text = await readPicked(e.target);
-      if (text !== null) await openSource(text);
+      if (text !== null) {
+        await openSource(text);
+        checkTemplate();
+      }
     } catch (err) {
       showSettingsError(`Could not open the project: ${err.message || err}`);
     }
@@ -688,6 +799,9 @@ async function start() {
       if (!state.last?.printer && saved.printer in PRINTERS) setPrinter(saved.printer);
       if (saved.openedValues && typeof saved.openedValues === 'object') state.openedValues = saved.openedValues;
       state.unsaved = saved.unsaved === true;
+      const t = saved.template;
+      state.template = t && typeof t.id === 'string' && typeof t.base === 'string' ? { id: t.id, base: t.base } : null;
+      checkTemplate();
     } else {
       await openTemplate(TEMPLATES[0].id);
     }

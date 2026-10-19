@@ -205,6 +205,12 @@ toolpath, because they are always regenerated from the recipe.
 "Save settings" / "Load settings" (only the values, like EasyGCode's JSON files) also works:
 it loads values into the project that's open.
 
+**When a template improves:** a project remembers the template it was started from. If that
+template has been improved since (or, for an older project or a file, the project differs from
+its template), the Settings tab offers to update it: the template's current recipe with the
+project's setting values carried over. "Keep mine" is remembered until the template changes
+again.
+
 ---
 
 ## A sketch: the lampshade as a project

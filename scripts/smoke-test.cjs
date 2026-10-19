@@ -283,6 +283,42 @@ async function waitForServer(url) {
       console.log(`${name}: ${await status()} · ${await page.textContent('#hud')}`);
       await ctx.close();
     }
+
+    // A project left on the device from an older version of its template (here the shaker
+    // with its old step out to the fillet, and the line width changed): the app offers the
+    // current template and carries the setting over.
+    {
+      const current = fs.readFileSync(path.join(root, 'templates/salt-shaker.easycad'), 'utf8');
+      const older = current
+        .replace('c_disc    = link_rings(reverse(c_rings), "spiral", disc_w)', 'c_disc    = polyline(flatten([vertices(link_rings(reverse(c_rings), "spiral", disc_w)), [point(0, flat_r)]]))')
+        .replace(/^(param line\s+=) 2 mm/m, '$1 2.4 mm');
+      if (older === current || !/^param line\s+= 2\.4 mm/m.test(older)) failures.push('update test: the older recipe is the same as the current one');
+      const ctx = await browser.newContext({ viewport: { width: 1366, height: 860 } });
+      await ctx.addInitScript((source) => {
+        if (!sessionStorage.getItem('seeded')) {
+          localStorage.setItem('easycad.project', JSON.stringify({ source, printer: 'p1p' }));
+          sessionStorage.setItem('seeded', '1');
+        }
+      }, older);
+      const page = await ctx.newPage();
+      page.on('pageerror', (e) => failures.push(`update: page error: ${e.message}`));
+      await page.goto(url);
+      await page.waitForFunction(() => !document.getElementById('templateUpdate').hidden, null, { timeout: 30000 }).catch(() => failures.push('update: no offer to update the older shaker'));
+      if (!/differs from the current “Salt & pepper shaker” template/.test(await page.textContent('#templateUpdateText'))) failures.push(`update: ${await page.textContent('#templateUpdateText')}`);
+      if (shots) await page.screenshot({ path: path.join(shots, 'smoke-update-offer.png') });
+      await page.click('#templateUpdateYes');
+      await page.waitForFunction(() => /carried over/.test(document.getElementById('templateUpdated').textContent), null, { timeout: 30000 }).catch(() => failures.push('update: no word that it was updated'));
+      const recipe = await page.inputValue('#recipe');
+      if (!recipe.includes('c_disc    = link_rings(reverse(c_rings), "spiral", disc_w)')) failures.push('update: the recipe is still the older one');
+      if (!/^param line\s+= 2\.4 mm/m.test(recipe)) failures.push(`update: the line width didn't carry over: ${(recipe.match(/^param line.*$/m) || [''])[0]}`);
+      // Up to date now: after a reload there's nothing to offer.
+      await page.reload();
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+      await page.waitForTimeout(1500);
+      if (!(await page.locator('#templateUpdate').isHidden())) failures.push('update: offered again after updating');
+      console.log('update: an older shaker was brought up to date, its line width kept');
+      await ctx.close();
+    }
   } catch (err) {
     failures.push(String(err && err.stack ? err.stack : err));
   } finally {

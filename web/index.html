@@ -69,6 +69,14 @@
               <button class="btn" type="button" id="openProject">Open</button>
               <button class="btn primary" type="button" id="saveProject">Save</button>
             </div>
+            <div class="confirm" id="templateUpdate" role="alertdialog" aria-labelledby="templateUpdateText" hidden>
+              <p id="templateUpdateText"></p>
+              <div class="buttons">
+                <button class="btn primary" type="button" id="templateUpdateYes">Update</button>
+                <button class="btn" type="button" id="templateUpdateNo">Keep mine</button>
+              </div>
+            </div>
+            <p class="hint" id="templateUpdated" hidden></p>
             <div class="confirm" id="replaceConfirm" role="alertdialog" aria-labelledby="replaceText" hidden>
               <p id="replaceText"></p>
               <div class="buttons">

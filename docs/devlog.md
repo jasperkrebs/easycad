@@ -3,6 +3,32 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-20: projects catch up with their templates; the salt & pepper lid in EasyGCode
+
+**Why:** the owner still saw the step where the spiral meets the fillet, of a size that
+changed with the line width, though the layer toggles were there. The toggles are app code;
+the fix was in the template's recipe, and the project on the device was the recipe from before
+the fix (the app remembers a project's text). A sweep of line widths on the old and new
+templates: the old container stepped out by exactly one line width (0.8 to 6 mm), the old lid
+by 1.1 to 7.1 mm; the new ones widen smoothly (0.01 to 0.03 mm per point; up to 0.25 mm where
+the lid's hole wiggles reach the edge).
+
+**Landed**
+- **Projects catch up with their templates:** a project remembers the template it came from;
+  when the template has changed since (or an older project or a file differs from its
+  template), the Settings tab offers "Update" (the current template, the project's setting
+  values carried over) or "Keep mine" (remembered until the template changes again). Unit
+  tests for telling a template from a project made from it whatever its sliders say
+  (`web/js/templates.js`); the smoke test brings an older shaker up to date and checks its line
+  width carried over.
+- **EasyGCode** (a branch on the fork, for a pull request): the container lid's top can be the
+  salt & pepper top, the Spiral disc tab's disc with a ring of holes, ending exactly on the
+  fillet at the seam (stretched a hair, every turn alike, then turned onto the seam). With the
+  plain top every tab's G-code is unchanged.
+
+**Open**
+- A template's settings that were renamed don't carry over (values go by name).
+
 ## 2026-10-19 (evening): smooth into the fillet, a panel that scrolls, parts like layers
 
 **Why:** the owner tested the shaker. Where the flat spiral met the fillet there was a step

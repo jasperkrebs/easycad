@@ -1,10 +1,13 @@
 // Tests for list settings and projects with several parts, as the app and the agent see them
-// (web/js/settings.js, web/js/agent.js), run with `node --test scripts/` (CI does).
+// (web/js/settings.js, web/js/agent.js), and for telling when a project's template has been
+// improved since (web/js/templates.js); run with `node --test scripts/` (CI does).
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runStatus } from '../web/js/agent.js';
 import { listValue } from '../web/js/settings.js';
+import { fingerprint, projectOf, withoutValues } from '../web/js/templates.js';
 
 const rows = { value: [[0, 33], [1, 32]] };
 const numbers = { value: [10, 20] };
@@ -53,4 +56,28 @@ test('the agent sees list settings as lists, and every part a recipe prints', ()
   const one = runStatus({ diagnostics: [], params: [], print: { name: 'p', stats: stats(10, 0) }, exports: [] });
   assert.match(one, /^Prints: 10 layers/m);
   assert.match(runStatus({ diagnostics: [], params: [], exports: [] }), /Prints: nothing/);
+});
+
+test('a project made from a template matches it whatever its sliders say', () => {
+  const template = readFileSync(new URL('../web/templates/salt-shaker.easycad', import.meta.url), 'utf8');
+  assert.equal(projectOf(template), 'Salt & pepper shaker');
+  // Values moved, as the sliders write them: numbers, lists, toggles, text.
+  const moved = template
+    .replace(/^(param layer\s+=) 0\.6 mm/m, '$1 0.85 mm')
+    .replace(/^(param body\s+=) \[\[0, 33\], \[0\.45, 38\], \[1, 32\]\]/m, '$1 [[0, 30], [1, 28]]');
+  assert.notEqual(moved, template);
+  assert.equal(withoutValues(moved), withoutValues(template));
+  const texts = 'param name = "Ann" "Name"\nparam on = true "On"';
+  assert.equal(withoutValues(texts), withoutValues('param name  = "Bo, Cy" "Name"\nparam on = false   "On"'));
+  // Anything else is a different recipe: a changed step, a new setting, a different label.
+  for (const changed of [
+    template.replace('c_disc    = link_rings(reverse(c_rings), "spiral", disc_w)', 'c_disc    = link_rings(c_rings, "spiral", disc_w)'),
+    template.replace('group "Print"', 'group "Print"\nparam extra = 1 "Extra"'),
+    template.replace('"Layer height"', '"Layer"'),
+  ]) {
+    assert.notEqual(withoutValues(changed), withoutValues(template));
+  }
+  assert.equal(fingerprint(withoutValues(moved)), fingerprint(withoutValues(template)));
+  assert.notEqual(fingerprint('a'), fingerprint('b'));
+  assert.equal(projectOf('easycad 0.1\nx = 1'), '');
 });
