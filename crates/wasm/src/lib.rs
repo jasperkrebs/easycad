@@ -105,9 +105,15 @@ pub fn export_file(
         serde_wasm_bindgen::from_value(profile)
             .map_err(|e| JsError::new(&format!("printer settings: {e}")))?
     };
-    let which = match which {
-        "print" => Which::Print,
-        index => Which::Export(index.parse().map_err(|_| JsError::new("unknown export"))?),
+    // "print" (the first part), "print:1" (another part), or an export's index.
+    let which = match which.strip_prefix("print") {
+        Some("") => Which::Print(0),
+        Some(part) => Which::Print(
+            part.strip_prefix(':')
+                .and_then(|n| n.parse().ok())
+                .ok_or_else(|| JsError::new("unknown part"))?,
+        ),
+        None => Which::Export(which.parse().map_err(|_| JsError::new("unknown export"))?),
     };
     let e = easycad_core::evaluate(&source, Quality::Final);
     let file = files::make(&e, which, &profile).map_err(|m| JsError::new(&m))?;
@@ -144,6 +150,7 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&out, "steps", &plain(&e.steps)?)?;
     set(&out, "diagnostics", &plain(&e.diagnostics)?)?;
     set(&out, "print", &plain(&e.print)?)?;
+    set(&out, "prints", &plain(&e.prints)?)?;
     set(&out, "exports", &plain(&e.exports)?)?;
     let bounds = &e.drawing.bounds;
     set(

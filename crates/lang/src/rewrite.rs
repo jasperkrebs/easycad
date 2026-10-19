@@ -34,7 +34,7 @@ pub fn set_values(src: &str, values: &[(String, Literal)]) -> Result<String, Par
     Ok(out)
 }
 
-/// A literal as it would be typed: `160`, `0.8`, `-12.5`, `true`, `"text"`.
+/// A literal as it would be typed: `160`, `0.8`, `-12.5`, `true`, `"text"`, `[[0, 30], [1, 28]]`.
 pub fn format_literal(value: &Literal) -> String {
     match value {
         Literal::Number(n) => format_number(*n),
@@ -47,6 +47,14 @@ pub fn format_literal(value: &Literal) -> String {
                     .replace('\n', "\\n")
             )
         }
+        Literal::List(items) => format!(
+            "[{}]",
+            items
+                .iter()
+                .map(format_literal)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 

@@ -1,5 +1,5 @@
-//! The files a recipe makes: G-code for the toolpath it prints, and the file of each `export`
-//! line (STL for shapes, G-code for a toolpath). The app asks for them through the WebAssembly
+//! The files a recipe makes: G-code for each toolpath it prints (each part of the project), and
+//! the file of each `export` line (STL for shapes, G-code for a toolpath). The app asks for them through the WebAssembly
 //! facade; the command line and MCP will ask the same way.
 
 use crate::eval::{Evaluation, ExportKind};
@@ -11,13 +11,15 @@ use crate::value::Value;
 /// Which file to make.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Which {
-    /// G-code for the toolpath of the recipe's `print` line.
-    Print,
+    /// G-code for the toolpath of one of the recipe's `print` lines, by its index in
+    /// `Evaluation::prints` (0: the first).
+    Print(usize),
     /// The file of one of the recipe's `export` lines, by its index in `Evaluation::exports`.
     Export(usize),
 }
 
-/// A file to save. `name` is empty when the recipe doesn't name it (the printed G-code).
+/// A file to save. `name` is empty when the recipe doesn't name it (the printed G-code; with
+/// several parts, the part's name).
 #[derive(Debug, Clone, PartialEq)]
 pub struct File {
     pub name: String,
@@ -35,14 +37,31 @@ pub fn make(e: &Evaluation, which: Which, profile: &Profile) -> Result<File, Str
     }
     let title = e.project.as_deref().unwrap_or("project");
     match which {
-        Which::Print => {
+        Which::Print(i) => {
+            if e.prints.is_empty() {
+                return Err(
+                    "this recipe doesn't print anything: add a line like `print path`".into(),
+                );
+            }
             let print = e
-                .print
-                .as_ref()
-                .ok_or("this recipe doesn't print anything: add a line like `print path`")?;
-            let text = gcode::write(&print.path, profile, title)?.text;
+                .prints
+                .get(i)
+                .ok_or("this recipe has no such part to print")?;
+            // One part: the project's file. Several: each named after its part.
+            let (name, text) = if e.prints.len() == 1 {
+                (
+                    String::new(),
+                    gcode::write(&print.path, profile, title)?.text,
+                )
+            } else {
+                let title = format!("{title} — {}", print.name);
+                (
+                    print.name.clone(),
+                    gcode::write(&print.path, profile, &title)?.text,
+                )
+            };
             Ok(File {
-                name: String::new(),
+                name,
                 bytes: text.into_bytes(),
             })
         }
@@ -109,7 +128,7 @@ mod tests {
     #[test]
     fn the_vase_template_makes_gcode_and_a_closed_stl() {
         let e = evaluate(VASE, Quality::Final);
-        let gcode = make(&e, Which::Print, &p1p()).unwrap();
+        let gcode = make(&e, Which::Print(0), &p1p()).unwrap();
         let text = String::from_utf8(gcode.bytes).unwrap();
         assert!(gcode.name.is_empty());
         assert!(text.starts_with("; EasyCAD — Twisted star vase\n"));
@@ -150,13 +169,13 @@ mod tests {
     fn nothing_is_made_from_a_broken_or_empty_recipe() {
         let broken = evaluate("x = (1 +", Quality::Final);
         assert!(
-            make(&broken, Which::Print, &p1p())
+            make(&broken, Which::Print(0), &p1p())
                 .unwrap_err()
                 .starts_with("fix the recipe first (line 1")
         );
         let empty = evaluate("c = circle(5)\nshow c", Quality::Final);
         assert!(
-            make(&empty, Which::Print, &p1p())
+            make(&empty, Which::Print(0), &p1p())
                 .unwrap_err()
                 .contains("print path")
         );
@@ -168,10 +187,32 @@ mod tests {
         let wide = "w = loft([circle(200), circle(200) |> move(z: 2)])\np = vase_spiral(w, layer: 1, width: 2)\nprint p";
         let wide = evaluate(wide, Quality::Final);
         assert!(
-            make(&wide, Which::Print, &p1p())
+            make(&wide, Which::Print(0), &p1p())
                 .unwrap_err()
                 .contains("leaves the bed")
         );
+    }
+
+    #[test]
+    fn each_part_is_its_own_gcode_file() {
+        let src = "project \"Shaker\"\nw = loft([circle(10), circle(10) |> move(z: 3)])\nbase = vase_spiral(w, layer: 1, width: 2)\nlid = vase_spiral(w |> scale(1.2), layer: 1, width: 2)\nprint base\nprint lid";
+        let e = evaluate(src, Quality::Final);
+        let base = make(&e, Which::Print(0), &p1p()).unwrap();
+        let lid = make(&e, Which::Print(1), &p1p()).unwrap();
+        assert_eq!((base.name.as_str(), lid.name.as_str()), ("base", "lid"));
+        let text = String::from_utf8(lid.bytes).unwrap();
+        assert!(
+            text.starts_with("; EasyCAD — Shaker — lid\n"),
+            "{}",
+            &text[..40]
+        );
+        assert_eq!(
+            make(&e, Which::Print(2), &p1p()).unwrap_err(),
+            "this recipe has no such part to print"
+        );
+        // One part: the project's own file, unnamed.
+        let one = evaluate(&src.replace("\nprint lid", ""), Quality::Final);
+        assert_eq!(make(&one, Which::Print(0), &p1p()).unwrap().name, "");
     }
 
     #[test]

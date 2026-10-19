@@ -29,7 +29,8 @@ export const G1 = {
   /**
    * The interchangeable nozzles, with the layer height and line width Ginger's process profiles
    * use (layers about half the nozzle: thicker ones drag the nozzle on the layer below), and the
-   * most flow a nozzle manages where the wiki gives it (mm³/s).
+   * most flow a nozzle manages where the wiki gives it (mm³/s). For the agent's advice: the
+   * nozzle is chosen per project (the owner mostly runs the 5 mm), not a printer setting.
    */
   nozzles: [
     { d: 1, layer: 0.6, line: 1.2, maxFlow: 150 },
@@ -79,7 +80,7 @@ export const PRINTERS = {
   pellet: {
     name: 'Ginger G1',
     recipeName: 'Ginger G1',
-    nozzle: null, // interchangeable: the `nozzle` setting
+    nozzle: null, // interchangeable, chosen per project
     machine: G1,
     limits: {
       'pellet.up': [minExtrudeTemp, maxTemp],
@@ -93,7 +94,6 @@ export const PRINTERS = {
       mode: 'pellet',
       bed: [1000, 1000, 1000],
       maxFlow: 200,
-      nozzle: 1.8,
       pellet: { ...EASYGCODE.pellet, minExtrudeTemp, maxTemp, maxBed },
     },
   },
@@ -104,7 +104,6 @@ const OLD_PELLET_BED = [400, 400, 400];
 
 /** The fields of the printer settings, by path into the profile. `only`: for one mode. */
 const FIELDS = [
-  { key: 'nozzle', label: 'Nozzle in the machine', unit: 'mm', kind: 'nozzle', only: 'pellet' },
   { key: 'bed.0', label: 'Bed width', unit: 'mm', min: 10, max: 5000 },
   { key: 'bed.1', label: 'Bed depth', unit: 'mm', min: 10, max: 5000 },
   { key: 'bed.2', label: 'Build height', unit: 'mm', min: 1, max: 5000 },
@@ -147,9 +146,6 @@ function range(id, f) {
   return { min, max };
 }
 
-/** The nozzle sizes a printer takes (the G1's set), or none for a fixed nozzle. */
-const nozzleSizes = (id) => (PRINTERS[id]?.machine?.nozzles ?? []).map((n) => n.d);
-
 /** A fresh copy of a printer's defaults. */
 function defaults(id) {
   return structuredClone(PRINTERS[id].defaults);
@@ -170,9 +166,7 @@ export function loadProfile(id) {
         if (f.only && f.only !== profile.mode) continue;
         const v = getPath(saved, f.key);
         if (typeof v !== typeof getPath(profile, f.key) || (typeof v === 'number' && !Number.isFinite(v))) continue;
-        if (f.kind === 'nozzle') {
-          if (nozzleSizes(id).includes(v)) setPath(profile, f.key, v);
-        } else if (typeof v === 'number') {
+        if (typeof v === 'number') {
           const { min, max } = range(id, f);
           setPath(profile, f.key, Math.min(max ?? v, Math.max(min ?? v, v)));
         } else {
@@ -251,14 +245,6 @@ export function changeSettings(id, profile, patch) {
         continue;
       }
       setPath(profile, key, raw);
-    } else if (f.kind === 'nozzle') {
-      const sizes = nozzleSizes(id);
-      const d = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw) : NaN;
-      if (!sizes.includes(d)) {
-        notes.push(`\`${key}\` is one of the ${PRINTERS[id].name}'s nozzles: ${sizes.join(', ')} mm`);
-        continue;
-      }
-      setPath(profile, key, d);
     } else {
       const v = typeof raw === 'number' || (typeof raw === 'string' && raw.trim()) ? Number(raw) : NaN;
       if (!Number.isFinite(v)) {
@@ -295,7 +281,7 @@ export function machineGuide() {
   const nozzles = G1.nozzles.map((n) => `${n.d} mm: layer ${n.layer}, line ${n.line}${n.maxFlow ? `, up to ~${n.maxFlow} mm³/s` : ''}`);
   return `The pellet printer is a Ginger Additive G1 (Klipper, 3 heating zones, E in mm³), and every pellet template is made for it:
 - Build volume 1000 × 1000 × 1000 mm. The recipe origin sits at X125 Y125 (EasyGCode's); a big print needs it moved. The bed's sensor is at its centre (X500 Y500): a large solid bottom right over it can fool the bed into its 110 °C cutoff.
-- Nozzles (the \`nozzle\` setting, the one in the machine) with Ginger's layer height and line width: ${nozzles.join('; ')}. Layers thicker than about half the nozzle drag it on the layer below.
+- Nozzles are interchangeable and chosen per project (the user mostly runs the 5 mm; a project's notes may say which), with Ginger's layer height and line width: ${nozzles.join('; ')}. Layers thicker than about half the nozzle drag it on the layer below.
 - Flow: Ginger's profiles run 200 mm³/s (up to 500 on big nozzles with the right material). Below about ${G1.lowFlow} mm³/s (and really around 100) the barrel inlet can plug, because the passing pellets are what cool it: at low flow, run the upper (feeding) zone 10–40 °C below the other two, never hotter. Layer time, not flow, is usually what limits a good print: thick beads need time to cool.
 - Zones: upper (feeding, Klipper's \`extruder\`), middle (melting, \`extruder1\`), lower (nozzle, \`extruder2\`), each ${minExtrudeTemp}–${maxTemp} °C (Klipper won't extrude below ${minExtrudeTemp}); bed up to ${maxBed} °C. Material presets (set_printer \`material\`, from Ginger Slicer): ${G1.materials.map((m) => `${m.name} ${m.up}/${m.mid}/${m.down}, bed ${m.bed}, ${m.maxFlow} mm³/s`).join('; ')}.
 - Pressure advance 0 for vase-mode spirals (otherwise a repeating texture on the wall). Part fan at most about ${G1.maxFan} %. Travel up to ${maxSpeed} mm/s.
@@ -329,7 +315,7 @@ export function renderPrinterSettings(host, id, profile, onChange) {
   for (const f of FIELDS) {
     if (f.only && f.only !== profile.mode) continue;
     const fieldId = `printer-${f.key.replace('.', '-')}`;
-    const row = el('div', { className: `setting ${f.kind === 'nozzle' ? 'choice' : f.kind || 'number'}` }, [el('label', { htmlFor: fieldId, text: f.label })]);
+    const row = el('div', { className: `setting ${f.kind || 'number'}` }, [el('label', { htmlFor: fieldId, text: f.label })]);
     if (f.kind === 'toggle') {
       const box = /** @type {HTMLInputElement} */ (el('input', { type: 'checkbox', id: fieldId, className: 'switch', checked: getPath(profile, f.key) === true }));
       box.addEventListener('change', () => {
@@ -338,15 +324,6 @@ export function renderPrinterSettings(host, id, profile, onChange) {
         onChange();
       });
       row.append(box);
-    } else if (f.kind === 'nozzle') {
-      const select = /** @type {HTMLSelectElement} */ (el('select', { id: fieldId }));
-      for (const d of nozzleSizes(id)) select.append(el('option', { value: String(d), text: `${fmt(d, d % 1 ? 1 : 0)} mm` }));
-      select.value = String(getPath(profile, f.key));
-      select.addEventListener('change', () => {
-        changeSettings(id, profile, { [f.key]: Number(select.value) });
-        onChange();
-      });
-      row.append(select);
     } else {
       const { min, max } = range(id, f);
       const input = /** @type {HTMLInputElement} */ (
@@ -376,7 +353,7 @@ export function renderPrinterSettings(host, id, profile, onChange) {
     host.append(
       el('p', {
         className: 'hint',
-        text: 'The start G-code (EasyGCode’s) uses the G1’s saved bed mesh rather than probing for each print: run BED_LEVEL after a nozzle change, after moving the machine, and now and then. The limits, nozzles and material presets come from Ginger’s wiki (wiki.gingeradditive.com).',
+        text: 'The start G-code (EasyGCode’s) uses the G1’s saved bed mesh rather than probing for each print: run BED_LEVEL after a nozzle change, after moving the machine, and now and then. The limits and material presets come from Ginger’s wiki (wiki.gingeradditive.com).',
       }),
     );
   }
@@ -438,16 +415,12 @@ export function printChecks(st, printerId, profile) {
     const overhang = st.maxOverhangDeg;
     checks.push([overhang < 40 ? 'ok' : overhang < 55 ? 'warn' : 'bad', `Steepest overhang ${fmt(overhang, 1)}° (under ~45° prints cleanly)`]);
   }
-  const nozzle = machine ? Number(profile.nozzle) || 0 : printer.nozzle || 0;
-  const size = machine?.nozzles.find((n) => n.d === nozzle);
   const q = st.flowMm3S;
-  // The flow ceiling: the setting, or the nozzle's own where it's lower.
-  const ceiling = Math.min(profile.maxFlow > 0 ? profile.maxFlow : Infinity, size?.maxFlow ?? Infinity);
-  if (Number.isFinite(ceiling)) {
-    const byNozzle = size?.maxFlow === ceiling ? ` with the ${fmt(nozzle, 1)} mm nozzle` : '';
+  if (profile.maxFlow > 0) {
+    const ceiling = profile.maxFlow;
     checks.push([
       q <= ceiling ? 'ok' : q <= ceiling * 1.15 ? 'warn' : 'bad',
-      `Flow up to ${fmt(q, 1)} mm³/s; this printer manages about ${fmt(ceiling)} mm³/s${byNozzle}`,
+      `Flow up to ${fmt(q, 1)} mm³/s; this printer manages about ${fmt(ceiling)} mm³/s`,
     ]);
   }
   if (machine && q > 0 && q < machine.lowFlow) {
@@ -462,19 +435,10 @@ export function printChecks(st, printerId, profile) {
           ],
     );
   }
-  if (nozzle) {
-    const ratio = st.widthMm / nozzle;
-    const ginger = size ? ` (Ginger's profiles: ${fmt(size.line, 1)} mm)` : '';
-    checks.push([ratio >= 1 && ratio <= 2 ? 'ok' : 'warn', `Line width is ${fmt(ratio, 1)}× the ${fmt(nozzle, 1)} mm nozzle${ginger}`]);
-  }
-  if (size && st.layerMm > 0) {
-    const ratio = st.layerMm / nozzle;
-    checks.push([
-      ratio <= 0.6 ? 'ok' : 'warn',
-      ratio <= 0.6
-        ? `Layers ${fmt(st.layerMm, 2)} mm on the ${fmt(nozzle, 1)} mm nozzle (Ginger's profiles: ${fmt(size.layer, 1)} mm)`
-        : `Layers ${fmt(st.layerMm, 2)} mm are ${fmt(ratio, 2)}× the ${fmt(nozzle, 1)} mm nozzle: over about half, the nozzle drags on the layer below (Ginger's profiles: ${fmt(size.layer, 1)} mm)`,
-    ]);
+  // A fixed nozzle (the P1P's) is checked against the line width; the G1's is chosen per project.
+  if (printer.nozzle) {
+    const ratio = st.widthMm / printer.nozzle;
+    checks.push([ratio >= 1 && ratio <= 2 ? 'ok' : 'warn', `Line width is ${fmt(ratio, 1)}× the ${fmt(printer.nozzle, 1)} mm nozzle`]);
   }
   if (machine) {
     if (continuous && profile.pellet.pa > 0) {
@@ -488,26 +452,8 @@ export function printChecks(st, printerId, profile) {
   return checks;
 }
 
-/**
- * @param {HTMLElement} statsHost
- * @param {HTMLElement} checksHost
- * @param {{ stats: Record<string, any> } | null} print the engine's PrintInfo
- * @param {keyof typeof PRINTERS} printerId
- * @param {any} profile the printer's settings
- */
-export function renderPrint(statsHost, checksHost, print, printerId, profile) {
-  statsHost.replaceChildren();
-  checksHost.replaceChildren();
-  if (!print) {
-    statsHost.append(
-      el('p', {
-        className: 'hint',
-        text: 'Nothing to print yet. A recipe prints a toolpath with a line like: print path (where path = vase_spiral(wall, layer: 0.3 mm, width: 0.6 mm), or toolpath(curves, …) for any curves).',
-      }),
-    );
-    return;
-  }
-  const st = print.stats;
+/** A part's statistics as cards: layers, height, time, material, length and speed or flow. */
+function statCards(st) {
   const cards = [
     [fmt(st.layers), st.layers === 1 ? 'layer' : 'layers'],
     [`${fmt(st.printedHeightMm, 1)} mm`, 'printed height'],
@@ -516,8 +462,42 @@ export function renderPrint(statsHost, checksHost, print, printerId, profile) {
     [`${fmt(st.pathLengthMm / 1000, 1)} m`, 'toolpath length'],
     st.byFlow ? [`${fmt(st.speedMmS)} mm/s`, 'nozzle speed (full bead)'] : [`${fmt(st.flowMm3S, 1)} mm³/s`, 'volumetric flow'],
   ];
-  for (const [big, small] of cards) statsHost.append(el('div', { className: 'stat' }, [el('b', { text: big }), el('span', { text: small })]));
-  for (const [kind, text] of printChecks(st, printerId, profile)) {
-    checksHost.append(el('li', {}, [el('span', { className: `dot ${kind === 'ok' ? '' : kind}` }), el('span', { text })]));
+  return cards.map(([big, small]) => el('div', { className: 'stat' }, [el('b', { text: big }), el('span', { text: small })]));
+}
+
+const checkItem = ([kind, text]) => el('li', {}, [el('span', { className: `dot ${kind === 'ok' ? '' : kind}` }), el('span', { text })]);
+
+/**
+ * The print estimate and checks: for the one part a recipe prints, or for each of its parts.
+ * @param {HTMLElement} statsHost
+ * @param {HTMLElement} checksHost
+ * @param {{ name: string, stats: Record<string, any> }[]} prints the engine's PrintInfo list
+ * @param {keyof typeof PRINTERS} printerId
+ * @param {any} profile the printer's settings
+ */
+export function renderPrint(statsHost, checksHost, prints, printerId, profile) {
+  statsHost.replaceChildren();
+  checksHost.replaceChildren();
+  if (!prints.length) {
+    statsHost.append(
+      el('p', {
+        className: 'hint',
+        text: 'Nothing to print yet. A recipe prints a toolpath with a line like: print path (where path = vase_spiral(wall, layer: 0.3 mm, width: 0.6 mm), or toolpath(curves, …) for any curves).',
+      }),
+    );
+    return;
+  }
+  if (prints.length === 1) {
+    statsHost.append(...statCards(prints[0].stats));
+    checksHost.append(...printChecks(prints[0].stats, printerId, profile).map(checkItem));
+    return;
+  }
+  // Several parts (a container and its lid): each its own G-code file, estimate and checks.
+  for (const part of prints) {
+    statsHost.append(
+      el('h3', { className: 'part-title', text: part.name }),
+      ...statCards(part.stats),
+      el('ul', { className: 'checks part-checks' }, printChecks(part.stats, printerId, profile).map(checkItem)),
+    );
   }
 }

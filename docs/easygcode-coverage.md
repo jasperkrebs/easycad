@@ -17,7 +17,7 @@ under each project and in [What's still missing](#whats-still-missing).
 | Spoon | **G-code identical to EasyGCode** (3 cases) | `web/templates/spoon.easycad` |
 | Lampshade | **G-code identical to EasyGCode** (4 cases: cone, bell, dome, sphere with lip); flat sphere sampled evenly | `web/templates/lampshade.easycad` |
 | Vessel | **Template from general steps** (fillet bottom, star top with lifted corners, ring bottoms); not line-for-line | `web/templates/vessel.easycad` |
-| Container | Buildable | not written yet |
+| Container | **Template from general steps**, as the owner's salt & pepper shaker (a container and a lid with holes, two parts from one window); not line-for-line | `web/templates/salt-shaker.easycad` |
 | Coat hanger | Buildable, with three small approximations (below) | not written yet |
 | Bend stool | **G-code identical to EasyGCode** (4 cases, foaming included); legs buildable | `web/templates/bend-stool.easycad` (the seat) |
 
@@ -30,7 +30,7 @@ are compared comments included. Every command is byte-identical.
 recipe is now recipe work (an agent can do it), not engine work. Its G-code would be EasyCAD's
 own, not checked line by line against EasyGCode's.
 
-Recipes were written for six projects so far, five of them golden. They prove the new steps produce
+Recipes were written for seven projects so far, five of them golden. They prove the new steps produce
 exactly EasyGCode's numbers. The others are a matter of writing recipes when they're wanted.
 
 ## Thread connector (golden)
@@ -113,10 +113,29 @@ the lifted rim's height, every cross-section and bottom.
 | Top finish: flat or open | `vase_spiral` / `spiralize` with `flat_top: false` |
 | Randomize with a seed | `random` (in EasyGCode it only sets the UI's values) |
 
-## Container
+## Container (template since 19 Oct, as a salt & pepper shaker)
 
-As the vessel. The lid's radius follows from the base (`r + width + fit` in arithmetic), and
-"same direction" is `flip`.
+Two prints from one window (`print base`, `print lid`): each part gets its own estimate, checks
+and G-code file, and both share every setting. Built as EasyGCode builds its container, with
+the owner's changes:
+
+| Feature | How |
+|---|---|
+| Body radii at heights 0–1, any number of them | a **list setting** (`param body = [[0, 33], [0.45, 38], [1, 32]]`), edited as a table |
+| A body that leaves the fillet and meets the neck straight up | `graph(heights, radii, t, smooth: true)`: smooth through the points, never past them, level at both ends |
+| Flat bottom, fillet, wall: one continuous line | `rings` + `link_rings(…, "spiral")` from the centre out, one line inside the fillet; a quarter-circle fillet and the body as `loft` sections; `contour(pace)` + `spiralize(ramp: false, flat_top: false)` + `bead(layer)`; `join` carries straight on |
+| Closer layers on the fillet's overhang (each still a full layer's bead) | `contour(wall, layer, pace: …)` + `bead(layer: …)` (EasyGCode's squeeze) |
+| A neck as tall as the lid's skirt | arithmetic (the neck's height is the skirt's) |
+| The lid one line width outside the neck, plus a fit | arithmetic: `neck + line + fit` |
+| The lid's holes | EasyGCode's spiral disc: `spiral` with a `fade` spacing + `interlock` |
+| One extrusion for the spiral discs, another for the rest | `adjust(extrude: …)` on each part before `join` |
+| Same direction, so the skirt threads onto the neck | both built from the same counter-clockwise circle |
+| The lid beside the container, or on the same spot | `move(x: …)` with `pick` |
+
+Not the same as EasyGCode's own container: its base has no holes in the lid, a body profile
+of scale points, and EasyGCode samples the fillet point by point; this one is checked by
+`the_shaker_prints_a_container_and_a_lid_that_fits_it` (continuity, the lid's radius, the
+thread pitch, the fillet's pacing, the extrusions).
 
 ## Coat hanger
 

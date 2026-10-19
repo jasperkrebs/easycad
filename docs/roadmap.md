@@ -92,11 +92,15 @@ Split into small steps (15 Oct):
   - The **vessel** from general steps: the bottom rounding into the wall through a fillet, a
     star top with lifted corners (non-planar), closer layers on overhangs.
   - The agent can switch printers and change printer settings (`set_printer`).
-  - The pellet printer is the **Ginger Additive G1**, from its wiki: its bed, nozzles, flow
-    window, heater limits (the engine refuses G-code over them), material presets and checks
+  - The pellet printer is the **Ginger Additive G1**, from its wiki: its bed, flow window,
+    heater limits (the engine refuses G-code over them), material presets and checks
     ([printers.md](printers.md)).
-- **1f** ← *next*: the container and coat hanger as templates; formatter, presets, project
-  library on the device.
+- **1f: the container** ✓ *19 Oct 2026*, as the owner's **salt & pepper shaker**: a container and
+  a lid that threads onto it, two prints from one window. For it: projects that **print several
+  parts** (a G-code file, estimate and checks each), **list settings** (a table of rows, like
+  radii at heights) and a **smooth `graph`** (through its points, level at both ends).
+- **1g** ← *next*: the coat hanger as a template; formatter, presets, project library on the
+  device, a drawn curve editor for list settings.
 The full Phase 1 scope:
 - **Definition language v0** (parser, formatter, clear errors) and the evaluator (dependency
   graph, caching, list handling).

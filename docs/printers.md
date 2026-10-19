@@ -28,8 +28,8 @@ messages, Klipper MCU communication lost.
 |---|---|---|
 | Build volume | 1000 × 1000 × 1000 mm (X travels to 1100, Z to 1050) | the default bed, and the bed check |
 | Where prints go | the bed's temperature sensor is in the middle of the plate (around X500 Y500): a large solid bottom right over it can make it read low, and the bed overshoots into its 110 °C cutoff | the recipe origin stays at EasyGCode's X125 Y125; a print bigger than about 250 mm needs it moved (the bed check says so) |
-| Nozzles | 1, 1.8, 3, 5 and 8 mm. Ginger's profiles: layers about half the nozzle (0.6, 0.9, 1.3, 2.5, 4 mm), lines a little wider than it (1.2, 1.9, 3.2, 5.5, 9.5 mm); thicker layers drag the nozzle on the layer below | the **nozzle** setting (the one in the machine; 1.8 mm to start, matching EasyGCode's 2 mm lines), and checks of line width and layer height against it |
-| Flow | Ginger's profiles run 200 mm³/s; the 1 mm nozzle tops out around 150, 3 mm around 300, 8 mm around 500. **Below about 150 mm³/s (really around 100) the barrel inlet can plug**: the passing pellets are what cool it, so the fix is a cooler upper zone, never a hotter one | max flow 200 (a material preset sets its own); the nozzle's ceiling; a **low-flow check** that passes once the upper zone runs at least 10 °C below the other two |
+| Nozzles | 1, 1.8, 3, 5 and 8 mm. Ginger's profiles: layers about half the nozzle (0.6, 0.9, 1.3, 2.5, 4 mm), lines a little wider than it (1.2, 1.9, 3.2, 5.5, 9.5 mm); thicker layers drag the nozzle on the layer below | not a printer setting: the owner picks the nozzle per project (mostly the 5 mm) and can say so in the project's notes; the agent knows Ginger's table |
+| Flow | Ginger's profiles run 200 mm³/s; the 1 mm nozzle tops out around 150, 3 mm around 300, 8 mm around 500. **Below about 150 mm³/s (really around 100) the barrel inlet can plug**: the passing pellets are what cool it, so the fix is a cooler upper zone, never a hotter one | max flow 200 (a material preset sets its own); a **low-flow check** that passes once the upper zone runs at least 10 °C below the other two |
 | Heating zones | three: upper (feeding, Klipper's `extruder`, T0), middle (melting, `extruder1`), lower (nozzle, `extruder2`); 160–280 °C (`min_extrude_temp`, `max_temp`) | zone settings limited to 160–280 °C; the engine refuses G-code with a zone outside that, machine events included (printing on after cooling below 160 stops the print) |
 | Bed | up to 110 °C (watermark control, ±1 °C) | bed setting 0–110 °C; the engine refuses more |
 | Motion | 300 mm/s at most (prints at 120–150, travels up to 300), acceleration 1500 mm/s² | travel speed limited to 300 mm/s |
@@ -102,11 +102,12 @@ within 2 °C) or `SENSOR=extruder`, `extruder1`, `extruder2` `MAXIMUM=…` (cool
 `speed_override` and `extrusion_override` write `M220`/`M221`. These are EasyGCode's commands
 (its bend stool's foaming), golden-tested against it.
 
-**Open questions**, to settle against the machine or its configuration files:
-- **The automatic feeder.** The wiki says `START_PRINT` switches FEEDER (the vacuum pellet
-  feeding) on; EasyGCode's start block doesn't call `START_PRINT`. If EasyGCode prints refill the
-  hopper, one of the purge macros switches it on; if not, switch FEEDER on before printing (and
-  tell the next session, so the start block can say so).
+**The automatic feeder** (the wiki: `START_PRINT` switches FEEDER, the vacuum pellet feeding,
+on; EasyGCode's start block doesn't call `START_PRINT`): not in use. The owner pours the pellets
+into the hopper by hand (18 Oct). If the vacuum feeding comes back, check that a print switches
+it on.
+
+**Open question**, to settle against the machine or its configuration files:
 - Klipper's `max_extrude_cross_section` and `max_extrude_only_distance` (printer.cfg) stop a
   print whose bead or purge is over them. EasyGCode's prints run, so its sizes are fine; bigger
   beads (the 8 mm nozzle's 9.5 × 4 mm) are worth checking against the file.
@@ -123,7 +124,8 @@ these against it:
 - `[printer] max_velocity`, `max_accel` → the travel speed limit, the time estimate;
 - `[extruder] filament_diameter` (1.1284), `max_extrude_cross_section`,
   `max_extrude_only_distance`, `pressure_advance_smooth_time`;
-- `macro.cfg`: what each `_GINGER_` step of the start block does (the feeder question above).
+- `macro.cfg`: what each `_GINGER_` step of the start block does (and whether one switches the
+  feeder on, for when it's used again).
 
 ## Another Klipper printer
 

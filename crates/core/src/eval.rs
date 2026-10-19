@@ -153,6 +153,9 @@ impl Default for Drawing {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrintInfo {
+    /// The step it prints (`print lid` is "lid"), or "print 2" for an expression: the part's
+    /// name in the Print tab and its G-code file.
+    pub name: String,
     pub stats: ToolpathStats,
     /// From `print … with printer`, else the recipe's `printer` line.
     pub printer: Option<String>,
@@ -193,7 +196,11 @@ pub struct Evaluation {
     pub steps: Vec<StepInfo>,
     pub diagnostics: Vec<Diagnostic>,
     pub drawing: Drawing,
+    /// The first `print` (the same as `prints[0]`).
     pub print: Option<PrintInfo>,
+    /// Every `print`, in order: one project can print several parts (a container and its lid),
+    /// each its own G-code file, with the same settings.
+    pub prints: Vec<PrintInfo>,
     pub exports: Vec<Export>,
     /// The step asked for with [`evaluate_with`], drawn on its own (the graph view's selected
     /// component, shown in the highlight colour).
@@ -328,6 +335,22 @@ enum Fail {
     Skipped,
 }
 
+/// A setting's value as the steps see it: numbers in the engine's units, a list setting as a
+/// list (of numbers, or of rows of numbers).
+fn literal_value(literal: &Literal, unit: easycad_lang::Unit) -> Result<Value, String> {
+    Ok(match literal {
+        Literal::Number(n) => Value::Number(unit.to_base(*n)),
+        Literal::Bool(b) => Value::Bool(*b),
+        Literal::Text(t) => Value::Text(t.as_str().into()),
+        Literal::List(items) => Value::list(
+            items
+                .iter()
+                .map(|item| literal_value(item, unit))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?,
+    })
+}
+
 struct Runner<'a> {
     program: &'a Program,
     out: &'a mut Evaluation,
@@ -372,10 +395,12 @@ impl<'a> Runner<'a> {
                 continue;
             }
             defined.insert(p.name.as_str(), p.span.line);
-            let value = match &p.value {
-                Literal::Number(n) => Value::Number(p.unit.to_base(*n)),
-                Literal::Bool(b) => Value::Bool(*b),
-                Literal::Text(t) => Value::Text(t.as_str().into()),
+            let value = match literal_value(&p.value, p.unit) {
+                Ok(v) => v,
+                Err(msg) => {
+                    self.diag(p.span, Severity::Error, format!("`{}`: {msg}", p.name));
+                    Value::Number(f64::NAN)
+                }
             };
             if let (Literal::Number(n), Some((lo, hi))) = (&p.value, p.range)
                 && (*n < lo || *n > hi)
@@ -408,6 +433,7 @@ impl<'a> Runner<'a> {
                     (Literal::Bool(_), _) => "toggle",
                     (Literal::Text(_), _) => "text",
                     (Literal::Number(_), _) => "number",
+                    (Literal::List(_), _) => "list",
                 },
                 value: p.value.clone(),
                 unit: p.unit.word(),
@@ -708,12 +734,13 @@ impl<'a> Runner<'a> {
                     match self.eval(expr) {
                         Ok(Value::Toolpath(p)) => {
                             self.draw(&Value::Toolpath(p.clone()));
-                            if self.out.print.is_some() {
-                                self.diag(
-                                    *span,
-                                    Severity::Warning,
-                                    "only the first `print` is used for now",
-                                );
+                            let name = match expr {
+                                Expr::Ident { name, .. } => name.clone(),
+                                _ => format!("print {}", self.out.prints.len() + 1),
+                            };
+                            if self.out.prints.iter().any(|q| q.name == name) {
+                                let msg = format!("`{name}` is printed twice; print it once");
+                                self.diag(*span, Severity::Warning, msg);
                                 continue;
                             }
                             let printer = match printer.as_ref().map(|e| self.eval(e)) {
@@ -732,11 +759,27 @@ impl<'a> Runner<'a> {
                                 }
                                 Some(Err(Fail::Skipped)) | None => program.printer.clone(),
                             };
-                            self.out.print = Some(PrintInfo {
+                            // The parts of one project print on one printer: the first part's.
+                            if let Some(first) = self.out.prints.first()
+                                && printer != first.printer
+                            {
+                                let msg = "every part prints on the project's printer (the first `print`'s)";
+                                self.diag(*span, Severity::Warning, msg);
+                            }
+                            let info = PrintInfo {
+                                name,
                                 stats: p.stats(),
-                                printer,
+                                printer: self
+                                    .out
+                                    .prints
+                                    .first()
+                                    .map_or(printer, |first| first.printer.clone()),
                                 path: p.clone(),
-                            });
+                            };
+                            if self.out.print.is_none() {
+                                self.out.print = Some(info.clone());
+                            }
+                            self.out.prints.push(info);
                         }
                         Ok(other) => {
                             let msg = format!(

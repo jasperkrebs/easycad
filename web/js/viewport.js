@@ -34,7 +34,12 @@ export function createViewport(canvas) {
 
   const meshMaterial = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.0 });
   const mesh = new THREE.Mesh(new THREE.BufferGeometry(), meshMaterial);
-  scene.add(mesh);
+  // The other side of a surface: an open one (a lampshade, a cone seen from above) shows its
+  // inside, in a shade blended toward the background so inside and outside read apart. Same
+  // geometry, back faces only (three.js lights them with the normals turned around).
+  const insideMaterial = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.0, side: THREE.BackSide });
+  const inside = new THREE.Mesh(mesh.geometry, insideMaterial);
+  scene.add(mesh, inside);
 
   // Toolpaths: fat lines coloured by height. Curves: thin lines.
   const lineMaterial = new LineMaterial({ linewidth: 1.1, vertexColors: true, worldUnits: false });
@@ -45,7 +50,7 @@ export function createViewport(canvas) {
 
   // The graph's selected component, drawn over everything in the highlight colour (green, as
   // Grasshopper shows a selected component's geometry).
-  const hlMeshMaterial = new THREE.MeshStandardMaterial({ roughness: 0.5, transparent: true, opacity: 0.55, depthWrite: false });
+  const hlMeshMaterial = new THREE.MeshStandardMaterial({ roughness: 0.5, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
   const hlMesh = new THREE.Mesh(new THREE.BufferGeometry(), hlMeshMaterial);
   const hlLineMaterial = new LineMaterial({ linewidth: 2.4, worldUnits: false });
   const hlLines = new THREE.Group();
@@ -138,12 +143,15 @@ export function createViewport(canvas) {
 
   function applyMode() {
     mesh.visible = mode !== 'path';
+    inside.visible = mesh.visible;
     paths.visible = mode !== 'shape';
     // With both visible, the shape turns see-through so the toolpath on its surface shows.
-    meshMaterial.transparent = mode === 'both';
-    meshMaterial.opacity = mode === 'both' ? 0.28 : 1;
-    meshMaterial.depthWrite = mode !== 'both';
-    meshMaterial.needsUpdate = true;
+    for (const m of [meshMaterial, insideMaterial]) {
+      m.transparent = mode === 'both';
+      m.opacity = mode === 'both' ? 0.28 : 1;
+      m.depthWrite = mode !== 'both';
+      m.needsUpdate = true;
+    }
     requestRender();
   }
 
@@ -169,6 +177,7 @@ export function createViewport(canvas) {
   function applyTheme() {
     scene.background = new THREE.Color(token('--view-bg'));
     meshMaterial.color.set(token('--accent'));
+    insideMaterial.color.set(token('--accent')).lerp(new THREE.Color(token('--view-bg')), 0.45);
     curveMaterial.color.set(token('--warn'));
     hlMeshMaterial.color.set(token('--accent2'));
     hlLineMaterial.color.set(token('--accent2'));
@@ -221,6 +230,7 @@ export function createViewport(canvas) {
       geometry.computeVertexNormals();
       mesh.geometry.dispose();
       mesh.geometry = geometry;
+      inside.geometry = geometry;
 
       lastBounds = result.bounds;
       clear(curves);

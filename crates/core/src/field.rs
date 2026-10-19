@@ -152,17 +152,22 @@ impl Field {
     }
 }
 
-/// A piecewise-linear graph through points sorted by x, flat beyond its ends: the table
-/// lookup EasyGCode's lampshade does along its profile (`makeLampSampler` in its geometry.js),
-/// whose arithmetic this follows.
+/// A graph through points (x, y), read at any x and flat beyond its ends. Piecewise-linear by
+/// default: the table lookup EasyGCode's lampshade does along its profile (`makeLampSampler` in
+/// its geometry.js), whose arithmetic this follows. Or smooth: a monotone cubic (Fritsch and
+/// Carlson's) that never overshoots its points and leaves both ends level, so a radius profile
+/// starts and ends with a straight wall.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Graph {
     xs: Vec<f64>,
     ys: Vec<f64>,
+    /// The curve's slope at each point, for a smooth graph.
+    slopes: Option<Vec<f64>>,
 }
 
 impl Graph {
-    /// At least one point; x never decreasing.
+    /// At least one point, in any order (they're sorted by x; points with the same x keep their
+    /// order, a step).
     pub fn new(xs: Vec<f64>, ys: Vec<f64>) -> Result<Graph, String> {
         if xs.is_empty() || xs.len() != ys.len() {
             return Err(format!(
@@ -174,10 +179,43 @@ impl Graph {
         if xs.iter().chain(&ys).any(|v| !v.is_finite()) {
             return Err("the graph has a value that is not a number".into());
         }
-        if xs.windows(2).any(|w| w[1] < w[0]) {
-            return Err("the x values must not decrease".into());
+        let mut pairs: Vec<(f64, f64)> = xs.into_iter().zip(ys).collect();
+        pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let (xs, ys) = pairs.into_iter().unzip();
+        Ok(Graph {
+            xs,
+            ys,
+            slopes: None,
+        })
+    }
+
+    /// The same points, joined by a smooth curve: each point's slope is the weighted harmonic
+    /// mean of the slopes on either side (zero at a peak, a dip or a flat stretch, so the curve
+    /// never overshoots), and both ends are level.
+    pub fn smooth(xs: Vec<f64>, ys: Vec<f64>) -> Result<Graph, String> {
+        let mut g = Graph::new(xs, ys)?;
+        let n = g.xs.len();
+        let h: Vec<f64> = g.xs.windows(2).map(|w| w[1] - w[0]).collect();
+        let d: Vec<f64> = (0..n.saturating_sub(1))
+            .map(|k| {
+                if h[k] > 1e-12 {
+                    (g.ys[k + 1] - g.ys[k]) / h[k]
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let mut slopes = vec![0.0; n];
+        for k in 1..n.saturating_sub(1) {
+            let (a, b) = (d[k - 1], d[k]);
+            if h[k - 1] > 1e-12 && h[k] > 1e-12 && a * b > 0.0 {
+                let w1 = 2.0 * h[k] + h[k - 1];
+                let w2 = h[k] + 2.0 * h[k - 1];
+                slopes[k] = (w1 + w2) / (w1 / a + w2 / b);
+            }
         }
-        Ok(Graph { xs, ys })
+        g.slopes = Some(slopes);
+        Ok(g)
     }
 
     pub fn at(&self, x: f64) -> f64 {
@@ -207,7 +245,21 @@ impl Graph {
             return self.ys[hi];
         }
         let f = ((x - self.xs[lo]) / span).clamp(0.0, 1.0);
-        self.ys[lo] + (self.ys[hi] - self.ys[lo]) * f
+        match &self.slopes {
+            None => self.ys[lo] + (self.ys[hi] - self.ys[lo]) * f,
+            Some(m) => {
+                // Cubic Hermite between the two points, with their slopes.
+                let (f2, f3) = (f * f, f * f * f);
+                let (m0, m1) = (
+                    m.get(lo).copied().unwrap_or(0.0),
+                    m.get(hi).copied().unwrap_or(0.0),
+                );
+                (2.0 * f3 - 3.0 * f2 + 1.0) * self.ys[lo]
+                    + (f3 - 2.0 * f2 + f) * span * m0
+                    + (-2.0 * f3 + 3.0 * f2) * self.ys[hi]
+                    + (f3 - f2) * span * m1
+            }
+        }
     }
 }
 

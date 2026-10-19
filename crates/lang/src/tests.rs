@@ -256,7 +256,7 @@ fn errors_point_at_the_problem() {
         (
             1,
             11,
-            "a setting's value must be a number, true/false or text, found `mm`".into()
+            "a setting's value must be a number, true/false, text or a list, found `mm`".into()
         )
     );
     assert_eq!(
@@ -400,6 +400,48 @@ x = height * 2
     assert_eq!(got, values[..5].to_vec());
     assert_eq!(set_values(src, &[]).unwrap(), src);
     assert!(set_values("x = (", &values).is_err());
+}
+
+#[test]
+fn list_settings_hold_numbers_or_rows() {
+    let src = "param body = [[0, 30], [0.5, -36.5],\n  [1, 28]] \"Body radii\" @assumed\nparam steps = [1, 2, 3]\nparam none = []\nx = 1";
+    let p = parse(src).unwrap();
+    let row = |a: f64, b: f64| Literal::List(vec![Literal::Number(a), Literal::Number(b)]);
+    assert_eq!(
+        p.params[0].value,
+        Literal::List(vec![row(0.0, 30.0), row(0.5, -36.5), row(1.0, 28.0)])
+    );
+    assert_eq!(p.params[0].label.as_deref(), Some("Body radii"));
+    assert_eq!(p.params[0].attrs, ["assumed"]);
+    assert_eq!(p.params[0].unit, Unit::None);
+    assert_eq!(
+        p.params[1].value,
+        Literal::List(vec![
+            Literal::Number(1.0),
+            Literal::Number(2.0),
+            Literal::Number(3.0)
+        ])
+    );
+    assert_eq!(p.params[2].value, Literal::List(vec![]));
+    // Written back as typed, on one line; it reads back the same.
+    let value = Literal::List(vec![row(0.0, 30.0), row(0.25, 41.5)]);
+    assert_eq!(format_literal(&value), "[[0, 30], [0.25, 41.5]]");
+    let out = set_values(src, &[("body".into(), value.clone())]).unwrap();
+    assert!(out.starts_with("param body = [[0, 30], [0.25, 41.5]] \"Body radii\" @assumed\n"));
+    assert_eq!(parse(&out).unwrap().params[0].value, value);
+    // What a list setting can't be.
+    for (bad, why) in [
+        ("param a = [1, [2]]", "not both"),
+        ("param a = [[1], []]", "needs a number"),
+        ("param a = [[[1]]]", "expected a number"),
+        ("param a = [\"x\"]", "numbers or rows of numbers"),
+        ("param a = [1, 2] in 0..3", "not `in`"),
+        ("param a = [1, 2] of [1]", "not `of`"),
+        ("param a = [1, 2] mm", "unexpected `mm`"),
+    ] {
+        let err = parse(bad).unwrap_err().to_string();
+        assert!(err.contains(why), "{bad}: {err}");
+    }
 }
 
 #[test]

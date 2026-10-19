@@ -17,6 +17,7 @@
 import { CONTEXT_TAG, DEFAULT_MODEL, EFFORTS, MODELS, applyEdits, closeToolUses, numbered, projectContext, runStatus, runTurn, systemPrompt } from './agent.js';
 import { $, el } from './dom.js';
 import { PRINTERS } from './print.js';
+import { listValue } from './settings.js';
 import { createRequests, formatIssue, newId, newIssueUrl } from './requests.js';
 
 const SETTINGS_KEY = 'easycad.ai';
@@ -411,6 +412,13 @@ export function createChat(app) {
           const clamped = Math.min(p.max ?? v, Math.max(p.min ?? v, v));
           if (clamped !== v) notes.push(`\`${key}\` clamped to ${clamped} (range ${p.min}..${p.max})`);
           v = clamped;
+        } else if (p.kind === 'list') {
+          const r = listValue(p, raw);
+          if ('error' in r) {
+            notes.push(`\`${key}\` ${r.error}`);
+            continue;
+          }
+          v = r.value;
         } else if (p.kind === 'toggle') v = raw === true || raw === 'true';
         else if (p.kind === 'choice') {
           const choice = p.choices.find((c) => String(c) === String(raw));

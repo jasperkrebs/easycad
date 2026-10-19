@@ -190,12 +190,11 @@ async function waitForServer(url) {
       await page.click('#panel-print summary');
       const fields = await page.locator('#printerSettings .setting').count();
       if (fields < 10) failures.push(`${name}: expected the printer settings, got ${fields} fields`);
-      // The pellet printer is the Ginger G1: its bed, its nozzles, and checks from its wiki. The
+      // The pellet printer is the Ginger G1: its bed, and checks from its wiki. The
       // vessel's 20 mm³/s is in the G1's low-flow range, so the upper zone should run cooler;
       // colorFabb FOAM PLA's profile does that.
       const checksText = () => page.textContent('#checks');
       if (!/On the 1[.,]?000 × 1[.,]?000 mm bed/.test(await checksText())) failures.push(`${name}: the G1's bed isn't checked: ${await checksText()}`);
-      if ((await page.inputValue('#printer-nozzle')) !== '1.8') failures.push(`${name}: the G1's nozzle should start at 1.8 mm`);
       if (!/barrel inlet can plug/.test(await checksText())) failures.push(`${name}: no low-flow warning for the G1: ${await checksText()}`);
       if (!/vase-mode spiral with pressure advance 0[.,]3/.test(await checksText())) failures.push(`${name}: no pressure-advance note for the vessel's spiral`);
       await page.selectOption('#printer-material', 'colorFabb FOAM PLA');
@@ -213,6 +212,40 @@ async function waitForServer(url) {
         .waitForFunction(() => /^printer "Bambu P1P 0\.4"$/m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
         .catch(() => failures.push(`${name}: choosing the P1P didn't rewrite the recipe's printer line`));
       if (!/G-code for the Bambu P1P/.test(await page.textContent('#exportButtons'))) failures.push(`${name}: the G-code button didn't follow the printer`);
+
+      // The salt & pepper shaker: two parts (a container and its lid) from one set of settings,
+      // each its own G-code file; its body follows a list setting, edited as a table.
+      await page.click('#tab-settings');
+      await page.selectOption('#template', 'salt-shaker');
+      // Choosing the P1P edited the vessel's printer line, so the page asks first.
+      if (await page.isVisible('#replaceConfirm')) await page.click('#replaceYes');
+      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Salt & pepper shaker', null, { timeout: 15000 });
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      const parts = await page.locator('#exportButtons button.primary').allTextContents();
+      if (parts.length !== 2 || !/Ginger G1: base$/.test(parts[0]) || !/Ginger G1: lid$/.test(parts[1])) failures.push(`${name}: shaker G-code buttons: ${parts.join(' | ')}`);
+      const lidFile = await saveFrom(page, '#exportButtons button.primary >> nth=1');
+      if (lidFile.name !== 'salt-pepper-shaker-lid.gcode' || !/^; EasyCAD — Salt & pepper shaker — lid\n/.test(lidFile.data.toString('utf8'))) {
+        failures.push(`${name}: the lid's G-code is ${lidFile.name}: ${lidFile.data.toString('utf8').slice(0, 60)}`);
+      }
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker.png`), fullPage: name === 'phone' });
+      // A row added to the list setting, given a radius, then removed: the recipe follows.
+      const body = (src) => (src.match(/^param body\s+= (\[.*\])/m) || [])[1];
+      const rows = () => page.locator('.setting.list .list-row').count();
+      await page.click('.setting.list .list-add button');
+      if ((await rows()) !== 4) failures.push(`${name}: adding a row gave ${await rows()} rows`);
+      await page.fill('#set-body-3-1', '30');
+      await page.dispatchEvent('#set-body-3-1', 'change');
+      await page
+        .waitForFunction(() => /^param body\s+= \[\[0, 33\], \[0\.45, 38\], \[1, 32\], \[1, 30\]\]/m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
+        .catch(async () => failures.push(`${name}: the new row didn't reach the recipe: ${body(await page.inputValue('#recipe'))}`));
+      await page.click('.setting.list .list-row >> nth=3 >> button');
+      await page
+        .waitForFunction(() => /^param body\s+= \[\[0, 33\], \[0\.45, 38\], \[1, 32\]\] /m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
+        .catch(async () => failures.push(`${name}: removing the row didn't reach the recipe: ${body(await page.inputValue('#recipe'))}`));
+      await page.click('#tab-print');
+      const partTitles = await page.locator('#stats .part-title').allTextContents();
+      if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-print.png`), fullPage: name === 'phone' });
 
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       if (overflow) failures.push(`${name}: page scrolls sideways`);

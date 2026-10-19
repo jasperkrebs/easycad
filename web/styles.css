@@ -367,6 +367,18 @@ select {
   gap: 10px;
 }
 
+/* Several parts: each part's name, cards and checks across the whole grid. */
+.stats .part-title {
+  grid-column: 1 / -1;
+  margin: 8px 0 0;
+  font-size: 1rem;
+}
+
+.stats .part-checks {
+  grid-column: 1 / -1;
+  margin: 0 0 6px;
+}
+
 .stat {
   background: var(--card2);
   border-radius: 10px;
@@ -526,6 +538,43 @@ code {
 .setting.choice,
 .setting.text {
   padding-block: 10px;
+}
+
+/* A list setting: its label above a table of rows (a profile's points, say). */
+.setting.list {
+  grid-template-columns: minmax(0, 1fr);
+  padding-block: 10px;
+}
+
+.list-table {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.list-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.list-row input[type="number"] {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  text-align: right;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn.tiny {
+  padding: 5px 10px;
+  border-radius: 8px;
+  min-width: 36px;
 }
 
 .switch {

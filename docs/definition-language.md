@@ -300,7 +300,10 @@ printer   = "printer" STRING                    # default printer profile
 note      = "note" STRING                       # free notes, any number of lines
 group     = "group" STRING                      # following params go into this group
 param     = "param" NAME "=" literal UNIT? modifier*
+          | "param" NAME "=" list (STRING | "@" NAME)*  # a list setting: a label, @attributes
 literal   = "-"? NUMBER | STRING | "true" | "false"
+list      = "[" (item ("," item)*)? "]"         # numbers, or rows of numbers
+item      = "-"? NUMBER | "[" "-"? NUMBER ("," "-"? NUMBER)* "]"
 modifier  = "in" NUMBER ".." NUMBER             # slider range, in the setting's own unit
           | "step" NUMBER                       # slider step; typed values snap to it
           | "of" "[" choice ("," choice)* "]"   # a dropdown
@@ -309,7 +312,7 @@ modifier  = "in" NUMBER ".." NUMBER             # slider range, in the setting's
 
 binding   = NAME "=" expr                       # one node
 output    = "show" NAME ("," NAME)*             # draw these steps
-          | "print" expr ("with" expr)?         # the toolpath to print (and the printer)
+          | "print" expr ("with" expr)?         # a toolpath to print (and the printer); one per part
           | "export" expr "as" STRING           # a file to save: .stl or .gcode (§2.1)
 
 expr      = sum ( "|>" NAME args? )*            # a |> f(x) means f(a, x); a |> f means f(a)
@@ -337,6 +340,11 @@ comment   = "#" … end of line
   fields (§3). A setting or step with the same name wins.
 - **Points** are written `point(x, y, z)` or as a list of 2 or 3 numbers, `[x, y, z]`, wherever a
   point or vector is asked for. `[[0, 0], [10, 0], [10, 10]]` is a list of points.
+- **List settings** hold a list of numbers or rows of numbers:
+  `param body = [[0, 33], [0.45, 38], [1, 32]] "Body radius (mm) at heights 0–1"`. The settings
+  window shows a table (a row each, with buttons to add and remove rows); the steps get the
+  list as it is (`sample(x, body)` is the first column of rows of two). Numbers in a list are
+  in the engine's units (mm, plain ratios), so a list setting takes no unit, range or step.
 - **Limits**, so a hostile file can't hang or crash the app: 256 kB per recipe, expressions
   nested at most 128 deep, lists at most 32 levels deep, at most 4 million points and list
   items per run, and 1 million points per toolpath. Going over gives an error message.
@@ -355,7 +363,11 @@ melt rate is what you set. `speed:` (mm/s) still works when you want a fixed spe
 Print tab checks the flow against the printer's "max flow" setting.
 
 - `print path` is what the printer prints. **G-code for the chosen printer** (Print tab) is one
-  tap away. It is written the way EasyGCode writes it: the same start and end blocks, `G90` with
+  tap away. A project can print **several parts**, one `print` line each (`print base`,
+  `print lid`): each gets its own G-code file (`<project>-<part>.gcode`, the part named after
+  its step), estimate and checks, and they all share the project's settings and printer (the
+  first `print`'s). Each part prints where the recipe puts it: move one beside the other to see
+  them apart, or leave them on the same spot to print one after the other. It is written the way EasyGCode writes it: the same start and end blocks, `G90` with
   relative extrusion (`M83`), E from the bead model (mm³ on the pellet printer, mm of filament on
   the P1P), the part fan from the second layer, coordinates with 3 decimals and E with 5.
   Golden tests compare it with G-code written by EasyGCode itself (`fixtures/easygcode/`).
@@ -510,7 +522,7 @@ input (it's generated from the code, `crates/core/src/nodes.rs`, so it can't go 
 
 | Group | Steps |
 |---|---|
-| Numbers & lists | `range(start, end, count)` evenly spaced numbers, both ends included · `series(start, step, count)` · `random(count, low, high, seed)` (the same numbers for the same seed) · `count(list)` · `item(list, index)` (wraps: -1 is the last) · `reverse(list)` · `shift(list, offset)` · `flatten(list)` · `pick(test, yes, no)` (`yes` when the test is true or a number other than 0: `pick(line, line, 2.4 * pitch)` is "0 means auto") · `index_of(list, value)` (where a value is, counting from 0: `item(pitches, index_of(sizes, size))` looks a dropdown up in a table) · `sum(list)` · `accumulate(list)` (running totals: layer heights in, layer positions out) · `bounds(list)` ([smallest, largest]) · `graft(list)` (each item in a list of its own, so a whole-list step runs once per item) · `graph(xs, ys, x)` (a piecewise-linear table read at `x`; a field for `x` gives a field: Graph Mapper) · `lerp(a, b, t)` · `remap(value, from_low, from_high, to_low, to_high)` · `min(a, b)` · `max(a, b)` · `clamp(value, low, high)` · `mod(a, b)` · `abs(x)` · `sqrt(x)` · `round(x)` · `floor(x)` · `ceil(x)` · `sin(angle)` · `cos(angle)` · `tan(angle)` · `asin(x)` · `acos(x)` · `atan(x)` · `atan2(y, x)` · `exp(x)` · `ln(x)` · `sign(x)` · `smoothstep(t)` (an S-curve from 0 to 1) · `greater(a, b)` and `less(a, b)` (1 or 0: masks and tests, `greater(z, 2)`). The maths steps (from `lerp` on) also work on fields |
+| Numbers & lists | `range(start, end, count)` evenly spaced numbers, both ends included · `series(start, step, count)` · `random(count, low, high, seed)` (the same numbers for the same seed) · `count(list)` · `item(list, index)` (wraps: -1 is the last) · `reverse(list)` · `shift(list, offset)` · `flatten(list)` · `pick(test, yes, no)` (`yes` when the test is true or a number other than 0: `pick(line, line, 2.4 * pitch)` is "0 means auto") · `index_of(list, value)` (where a value is, counting from 0: `item(pitches, index_of(sizes, size))` looks a dropdown up in a table) · `sum(list)` · `accumulate(list)` (running totals: layer heights in, layer positions out) · `bounds(list)` ([smallest, largest]) · `graft(list)` (each item in a list of its own, so a whole-list step runs once per item) · `graph(xs, ys, x, smooth)` (a table through the points (x, y), in any order, read at `x`; straight between them, or with `smooth: true` a smooth curve that never overshoots them and is level at both ends; a field for `x` gives a field: Graph Mapper) · `lerp(a, b, t)` · `remap(value, from_low, from_high, to_low, to_high)` · `min(a, b)` · `max(a, b)` · `clamp(value, low, high)` · `mod(a, b)` · `abs(x)` · `sqrt(x)` · `round(x)` · `floor(x)` · `ceil(x)` · `sin(angle)` · `cos(angle)` · `tan(angle)` · `asin(x)` · `acos(x)` · `atan(x)` · `atan2(y, x)` · `exp(x)` · `ln(x)` · `sign(x)` · `smoothstep(t)` (an S-curve from 0 to 1) · `greater(a, b)` and `less(a, b)` (1 or 0: masks and tests, `greater(z, 2)`). The maths steps (from `lerp` on) also work on fields |
 | Fields | `x`, `y`, `z` (each point's coordinates) · `distance(to)` how far each point is from a curve (negative inside a closed one; exact for circles) or from a point · `fade(distance, inside, outside, band)` 1 on the curve, easing to 0 `inside`/`outside` mm away (EasyGCode's spiral-disc falloff) · `lean(wall)` how far a wall leans from vertical at each point, in degrees (positive: an overhang) |
 | Points & planes | `point(x, y, z)` · `vector(x, y, z)` · `plane(origin, normal)` · `sample(field, at)` (a field's value at a point) · `scatter(width, height, count, seed, relax)` (points spread evenly but irregularly over a rectangle: blue noise, EasyGCode's spike placement) |
 | Curves | `circle(r, tolerance)` (with a tolerance, enough points that no flat strays more than that from the true circle, EasyGCode's chord rule) · `ellipse(rx, ry)` · `superellipse(rx, ry, exponent)` (EasyGCode's squircle) · `rectangle(width, height, radius)` · `arc(r, start, end, tolerance)` (with a tolerance, EasyGCode's chord rule, at least 12 segments) · `vertices(curve)` (its points, as a list) · `line(start, end)` · `polyline(points, closed)` · `interpolate(points, closed)` (smooth, through every point) · `catmull_rom(points, closed, samples)` (EasyGCode's spline) · `polygon(sides, r)` · `star(points, outer, inner)` (sharp corners) · `smooth(curve)` (a cubic NURBS through every point) · `spiral(outer, spacing, tolerance, min_samples, start, turns)` (a flat spiral: from the centre out to near `outer`, `spacing` can be a field; or exactly `turns` turns from radius `start`) · `interlock(spiral, bumps, width)` (wiggles spread-apart turns so each bump meets the next turn's dip) · `tween(a, b, t)` · `offset(curve, distance)` (the distance can be a field) · `fillet(curve, radius)` (corners rounded with arcs) · `simplify(curve, tolerance)` · `subcurve(curve, start, end)` · `join_curves(curves, tolerance)` · `divide(curve, count)` (points) · `evaluate(curve, t)` (a point) · `tangent(curve, t)` and `normal(curve, t)` (directions; the normal is outward on a closed curve) · `closest(curve, point)` (where along it) · `centroid(curve)` · `length(curve)` · `flip(curve)` · `seam(curve, t)` · `resample(curve, count)` · `rings(curve, spacing, inset)` (rings inside an outline, EasyGCode's ring fill) · `link_rings(rings, style, width)` (rings joined into one line: `"staircase"`, `"zipper"` or `"spiral"`) |

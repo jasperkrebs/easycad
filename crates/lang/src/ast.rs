@@ -35,6 +35,8 @@ pub enum Literal {
     Number(f64),
     Bool(bool),
     Text(String),
+    /// A list setting: numbers, or rows of numbers (`[[0, 30], [0.5, 36]]`), edited as a table.
+    List(Vec<Literal>),
 }
 
 /// A unit written after a number. Values are stored in the unit as written; [`Unit::to_base`]

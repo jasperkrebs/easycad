@@ -111,7 +111,11 @@ pub(super) fn bounds(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 pub(super) fn graph(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let (xs, ys) = (numbers(a, 0)?, numbers(a, 1)?);
     ctx.spend(xs.len())?;
-    let g = crate::field::Graph::new(xs, ys)?;
+    let g = if a.flag(3)? {
+        crate::field::Graph::smooth(xs, ys)?
+    } else {
+        crate::field::Graph::new(xs, ys)?
+    };
     if a.is_field(2) {
         return Ok(Value::Field(Rc::new(Field::graph(g, a.field(2)?)?)));
     }

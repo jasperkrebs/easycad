@@ -28,15 +28,15 @@ test('recipes name the G1 in old and new words', () => {
   assert.equal(PRINTERS.pellet.recipeName, 'Ginger G1');
 });
 
-test("the G1's defaults are its bed, a nozzle from its set and its heater limits", () => {
+test("the G1's defaults are its bed and its heater limits", () => {
   const p = loadProfile('pellet');
   assert.deepEqual(p.bed, [1000, 1000, 1000]);
-  assert.equal(p.nozzle, 1.8);
   assert.equal(p.maxFlow, 200);
   assert.deepEqual([p.pellet.minExtrudeTemp, p.pellet.maxTemp, p.pellet.maxBed], [160, 280, 110]);
   // EasyGCode's machine settings, so the G-code stays EasyGCode's.
   assert.deepEqual([p.center, p.travelSpeed, p.pellet.up, p.pellet.pa], [[125, 125], 100, 210, 0.3]);
-  assert.ok(G1.nozzles.some((n) => n.d === p.nozzle));
+  // The nozzle is chosen per project, not set on the printer.
+  assert.equal(p.nozzle, undefined);
 });
 
 test("settings stay inside the G1's own ranges", () => {
@@ -46,16 +46,8 @@ test("settings stay inside the G1's own ranges", () => {
   assert.deepEqual([p.pellet.up, p.pellet.down, p.pellet.bed, p.travelSpeed], [280, 160, 110, 300]);
   assert.equal(notes.length, 4);
   assert.match(notes[0], /clamped to 280 \(range 160\.\.280\)/);
-  // Nozzles come from the set, as numbers.
-  assert.deepEqual(changeSettings('pellet', p, { nozzle: 3 }).changed, ['nozzle']);
-  assert.equal(p.nozzle, 3);
-  for (const bad of [2, true, 'big']) {
-    const r = changeSettings('pellet', p, { nozzle: bad });
-    assert.deepEqual(r.changed, [], String(bad));
-    assert.match(r.notes[0], /one of the Ginger G1's nozzles: 1, 1\.8, 3, 5, 8 mm/);
-  }
-  assert.equal(p.nozzle, 3);
-  // The P1P keeps the plain ranges and has no nozzle setting.
+  assert.match(changeSettings('pellet', p, { nozzle: 5 }).notes[0], /not a setting of the Ginger G1/);
+  // The P1P keeps the plain ranges.
   const f = loadProfile('p1p');
   changeSettings('p1p', f, { travelSpeed: 400 });
   assert.equal(f.travelSpeed, 400);
@@ -81,14 +73,13 @@ test("material presets are Ginger Slicer's profiles", () => {
   }
 });
 
-test('the G1 checks low flow, the nozzle, pressure advance in vase mode and the fan', () => {
+test('the G1 checks low flow, pressure advance in vase mode and the fan', () => {
   const p = loadProfile('pellet');
   let checks = printChecks(stats(), 'pellet', p);
   assert.equal(find(checks, /bed/)[0], 'ok');
   assert.deepEqual(find(checks, /this printer manages about 200/)[0], 'ok');
   assert.equal(find(checks, /barrel inlet can plug/)[0], 'warn');
-  assert.equal(find(checks, /Line width is 1[.,]1× the 1[.,]8 mm nozzle \(Ginger's profiles: 1[.,]9 mm\)/)[0], 'ok');
-  assert.equal(find(checks, /Layers 0[.,]60 mm on the 1[.,]8 mm nozzle/)[0], 'ok');
+  assert.equal(find(checks, /nozzle/), undefined, 'no nozzle to check a line against');
   assert.equal(find(checks, /pressure advance 0[.,]30/)[0], 'warn');
   assert.equal(find(checks, /Part fan/), undefined);
   // Vase mode is one continuous line, a regular spiral or not (the vessel's spiralize isn't);
@@ -105,11 +96,9 @@ test('the G1 checks low flow, the nozzle, pressure advance in vase mode and the 
   // Above the low-flow range there's nothing to say about it.
   assert.equal(find(printChecks(stats({ flowMm3S: 180 }), 'pellet', p), /low flow|barrel inlet/i), undefined);
 
-  // The 1 mm nozzle tops out around 150 mm³/s; thick layers drag the nozzle.
-  changeSettings('pellet', p, { nozzle: 1 });
-  assert.equal(find(printChecks(stats({ flowMm3S: 160, widthMm: 1.2 }), 'pellet', p), /manages about 150 mm³\/s with the 1[.,]0 mm nozzle/)[0], 'warn');
-  assert.equal(find(printChecks(stats({ flowMm3S: 200, widthMm: 1.2 }), 'pellet', p), /manages about 150/)[0], 'bad');
-  assert.equal(find(printChecks(stats({ layerMm: 0.8, widthMm: 1.2 }), 'pellet', p), /drags on the layer below/)[0], 'warn');
+  // Over the max flow: a warning, then a problem.
+  assert.equal(find(printChecks(stats({ flowMm3S: 220 }), 'pellet', p), /manages about 200/)[0], 'warn');
+  assert.equal(find(printChecks(stats({ flowMm3S: 260 }), 'pellet', p), /manages about 200/)[0], 'bad');
   // A fan event (or the setting) above ~70 %.
   assert.equal(find(printChecks(stats({ maxFanPct: 100 }), 'pellet', p), /Part fan up to 100 %/)[0], 'warn');
   // Off the bed when the origin's too close to its edge.
@@ -125,7 +114,7 @@ test('the P1P keeps its own checks', () => {
 
 test("the agent's guide carries the G1's facts", () => {
   const guide = machineGuide();
-  for (const fact of [/1000 × 1000 × 1000 mm/, /1[.,]8 mm: layer 0[.,]9, line 1[.,]9/, /160–280 °C/, /bed up to 110 °C/, /colorFabb FOAM PLA 185\/210\/210, bed 70, 500 mm³\/s/, /stepper too far in past/]) {
+  for (const fact of [/1000 × 1000 × 1000 mm/, /mostly runs the 5 mm/, /5 mm: layer 2[.,]5, line 5[.,]5/, /160–280 °C/, /bed up to 110 °C/, /colorFabb FOAM PLA 185\/210\/210, bed 70, 500 mm³\/s/, /stepper too far in past/]) {
     assert.match(guide, fact);
   }
 });

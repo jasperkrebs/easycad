@@ -433,7 +433,31 @@ widths = toolpath(graft([line([0, 0], [10, 0]), line([0, 5], [10, 5])]), width: 
         other => panic!("{other:?}"),
     }
     assert!(error("g = graph([0, 1], [1], 0.5)").contains("as many"));
-    assert!(error("g = graph([1, 0], [1, 2], 0.5)").contains("decrease"));
+
+    // Points in any order (sorted by x), and the smooth graph: through every point, level at
+    // both ends, never past its points.
+    let v = run(r#"unsorted = graph([10, 0], [2, 1], 5)
+points = graph([0, 1, 2, 3], [30, 40, 40, 28], [0, 1, 2, 3], smooth: true)
+half = graph([0, 1, 2, 3], [30, 40, 40, 28], 0.5, smooth: true)
+start = graph([0, 1, 2, 3], [30, 40, 40, 28], 0.01, smooth: true)
+plateau = graph([0, 1, 2, 3], [30, 40, 40, 28], 1.5, smooth: true)
+ramp = graph([0, 1, 2], [0, 1, 4], series(0, 0.1, 21), smooth: true)
+field = graph([0, 10], [0, 100], z, smooth: true)
+at = sample(field, [0, 0, 5])"#);
+    assert!((num(&v, "unsorted") - 1.5).abs() < 1e-12);
+    assert_eq!(nums(&v, "points"), vec![30.0, 40.0, 40.0, 28.0]);
+    // Level ends: between two points with level slopes it's a smoothstep, halfway at the middle.
+    assert!((num(&v, "half") - 35.0).abs() < 1e-12);
+    let start = num(&v, "start");
+    assert!(start > 30.0 && start < 30.01, "{start}");
+    // Two equal points in a row: flat between them, no bulge.
+    assert!((num(&v, "plateau") - 40.0).abs() < 1e-12);
+    let ramp = nums(&v, "ramp");
+    assert!(
+        ramp.windows(2).all(|w| w[1] >= w[0]) && ramp.iter().all(|r| (0.0..=4.0).contains(r)),
+        "{ramp:?}"
+    );
+    assert!((num(&v, "at") - 50.0).abs() < 1e-12);
 }
 
 #[test]
@@ -539,4 +563,91 @@ fn the_vessel_rounds_its_bottom_into_the_wall_and_lifts_its_rim() {
     ] {
         run_with(&[("shape", Literal::Text(shape.into()))]);
     }
+}
+
+#[test]
+fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
+    use easycad_lang::{Literal, set_values};
+    let template = include_str!("../../../web/templates/salt-shaker.easycad");
+    let run_with = |values: &[(&str, Literal)]| {
+        let values: Vec<(String, Literal)> = values
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        let recipe = set_values(template, &values).unwrap();
+        let (e, _) = step_values(&recipe, Quality::Final);
+        assert!(e.diagnostics.is_empty(), "{values:?}: {:?}", e.diagnostics);
+        let names: Vec<&str> = e.prints.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["base", "lid"]);
+        (e.prints[0].path.clone(), e.prints[1].path.clone())
+    };
+    // Each time a spiral passes the back (+Y) of its part (centred on x = cx): the height and
+    // the radius there.
+    let turns = |p: &Toolpath, cx: f64| -> Vec<(f64, f64)> {
+        let mut out = Vec::new();
+        let mut before: Option<f64> = None;
+        for q in &p.points {
+            let a = q[1].atan2(q[0] - cx).to_degrees();
+            if before.is_some_and(|b| b < 90.0 && a >= 90.0) {
+                out.push((q[2], (q[0] - cx).hypot(q[1])));
+            }
+            before = Some(a);
+        }
+        out
+    };
+    let rises = |t: &[(f64, f64)]| -> Vec<f64> { t.windows(2).map(|w| w[1].0 - w[0].0).collect() };
+
+    let (base, lid) = run_with(&[]);
+    // Each part is one line: the flat spiral runs straight into the fillet, then up the wall.
+    assert_eq!(base.stats().travel_length_mm, 0.0);
+    assert_eq!(lid.stats().travel_length_mm, 0.0);
+    // The wall up to the neck (60 mm), then the neck, as tall as the lid's skirt (20 mm).
+    let top = base.stats().printed_height_mm;
+    assert!((top - 80.0).abs() < 0.3, "{top}");
+    let (b, l) = (turns(&base, 0.0), turns(&lid, 38.0 + 34.0 + 15.0));
+    // The neck has the body's last radius (32); the lid sits one line width outside it.
+    assert!((b.last().unwrap().1 - 32.0).abs() < 0.05, "{:?}", b.last());
+    assert!((l.last().unwrap().1 - 34.0).abs() < 0.05, "{:?}", l.last());
+    // Both turn the same way and rise one layer per turn at the neck and the skirt: the thread.
+    let (rb, rl) = (rises(&b), rises(&l));
+    assert!(
+        rb.iter().rev().take(20).all(|r| (r - 0.6).abs() < 0.01),
+        "{rb:?}"
+    );
+    assert!(
+        rl.iter().rev().take(20).all(|r| (r - 0.6).abs() < 0.01),
+        "{rl:?}"
+    );
+    // The fillets: the first turns off the flat bottom rise far less than a layer.
+    assert!(rb[0] < 0.2 && rl[0] < 0.2, "{} {}", rb[0], rl[0]);
+    // Every move extruded for a full layer (the squeeze, as EasyGCode's container does).
+    assert!((1..base.points.len()).all(|i| (base.area(i) - base.area(1)).abs() < 1e-9));
+
+    // A looser fit moves the lid out; the spiral discs get their own extrusion.
+    let (base, lid) = run_with(&[
+        ("fit", Literal::Number(0.4)),
+        ("disc_extrusion", Literal::Number(110.0)),
+    ]);
+    let l = turns(&lid, 38.0 + 34.4 + 15.0);
+    assert!((l.last().unwrap().1 - 34.4).abs() < 0.05, "{:?}", l.last());
+    for p in [&base, &lid] {
+        assert!((p.flow[5] - 1.1).abs() < 1e-9, "the disc: {}", p.flow[5]);
+        assert!((p.flow[p.flow.len() - 1] - 1.0).abs() < 1e-9, "the wall");
+    }
+    // The body follows its points: a straight body has the bottom's radius all the way up, and
+    // the lid prints where the container does.
+    let row = |a: f64, b: f64| Literal::List(vec![Literal::Number(a), Literal::Number(b)]);
+    let (base, lid) = run_with(&[
+        ("body", Literal::List(vec![row(0.0, 30.0), row(1.0, 30.0)])),
+        ("beside", Literal::Bool(false)),
+    ]);
+    let b = turns(&base, 0.0);
+    let body: Vec<f64> = b
+        .iter()
+        .filter(|(z, _)| *z > 9.0)
+        .map(|(_, r)| *r)
+        .collect();
+    assert!(body.iter().all(|r| (r - 30.0).abs() < 0.05), "{body:?}");
+    let l = turns(&lid, 0.0);
+    assert!((l.last().unwrap().1 - 32.0).abs() < 0.05, "{:?}", l.last());
 }

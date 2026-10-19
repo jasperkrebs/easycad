@@ -375,12 +375,52 @@ fn outputs() {
     assert_eq!(print.printer.as_deref(), Some("Klipper pellet"));
     assert_eq!(print.stats.layers, 3);
     assert_eq!(e.drawing.paths.len(), 1, "the same toolpath is drawn once");
+    assert_eq!(e.prints.len(), 1);
     assert_eq!(
         diags(&e, Severity::Warning),
-        [(5, 1, "only the first `print` is used for now".to_string())]
+        [(5, 1, "`p` is printed twice; print it once".to_string())]
     );
     let e = run(&src.replace("print p\nprint p with \"Other\"", "print p with \"Other\""));
     assert_eq!(e.print.unwrap().printer.as_deref(), Some("Other"));
+}
+
+#[test]
+fn a_project_prints_several_parts() {
+    // A container and its lid: two toolpaths from the same settings, each its own part.
+    let src = "printer \"Ginger G1\"
+w = loft([circle(10), circle(10) |> move(z: 3)])
+base = vase_spiral(w, layer: 1, width: 2)
+lid = vase_spiral(w |> scale(1.2), layer: 1, width: 2) |> move(x: 40)
+print base
+print lid
+print lid |> move(x: 40) with \"Bambu P1P 0.4\"";
+    let e = run(src);
+    let names: Vec<&str> = e.prints.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["base", "lid", "print 3"]);
+    assert_eq!(e.print.as_ref().map(|p| p.name.as_str()), Some("base"));
+    // Every part on the project's printer: the first print's.
+    assert!(
+        e.prints
+            .iter()
+            .all(|p| p.printer.as_deref() == Some("Ginger G1"))
+    );
+    assert_eq!(
+        diags(&e, Severity::Warning),
+        [(
+            7,
+            1,
+            "every part prints on the project's printer (the first `print`'s)".to_string()
+        )]
+    );
+    assert_eq!(
+        e.drawing.paths.len(),
+        3,
+        "every part is drawn where it prints"
+    );
+    assert!(
+        e.prints[1].stats.bounds.min[0] > 25.0,
+        "the lid sits beside the base"
+    );
 }
 
 #[test]

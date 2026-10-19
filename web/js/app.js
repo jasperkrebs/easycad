@@ -24,6 +24,7 @@ const TEMPLATES = [
   { id: 'bend-stool', name: 'Bend stool, with foaming (from EasyGCode)' },
   { id: 'lampshade', name: 'Lampshade, every shade (from EasyGCode)' },
   { id: 'vessel', name: 'Vessel: fillet bottom, star top (from EasyGCode)' },
+  { id: 'salt-shaker', name: 'Salt & pepper shaker: container and lid (two prints)' },
   { id: 'cut-cylinder', name: 'Cut cylinder (tilted layers)' },
   { id: 'turned-vase', name: 'Turned vase (geometry only)' },
 ];
@@ -160,8 +161,13 @@ function renderProject(result) {
 }
 
 function renderHud(result) {
-  const st = result.print && result.print.stats;
-  const parts = st ? [`${fmt(st.layers)} ${st.layers === 1 ? 'layer' : 'layers'}`, `${fmt(st.pathPoints)} path points`] : ['no toolpath'];
+  const prints = printsOf(result);
+  const st = prints[0]?.stats;
+  const parts = !st
+    ? ['no toolpath']
+    : prints.length > 1
+      ? [`${prints.length} parts`, `${fmt(prints.reduce((n, p) => n + p.stats.pathPoints, 0))} path points`]
+      : [`${fmt(st.layers)} ${st.layers === 1 ? 'layer' : 'layers'}`, `${fmt(st.pathPoints)} path points`];
   $('hud').textContent = [...parts, `${fmt(result.ms)} ms`].join(' · ');
   const empty = !result.mesh.indices.length && result.curves.starts.length < 2 && result.paths.starts.length < 2;
   const msg = $('viewMessage');
@@ -171,8 +177,14 @@ function renderHud(result) {
     : 'Nothing to draw yet: add a line like  show name  to the recipe.';
 }
 
+/** The parts the recipe prints (`print` lines), each with its statistics. */
+function printsOf(result) {
+  if (!result) return [];
+  return result.prints?.length ? result.prints : result.print ? [result.print] : [];
+}
+
 function renderPrintTab() {
-  renderPrint($('stats'), $('checks'), state.last && state.last.print, state.printer, state.profile);
+  renderPrint($('stats'), $('checks'), printsOf(state.last), state.printer, state.profile);
 }
 
 /** Buttons for the files the recipe makes: G-code of what it prints, and its `export` lines. */
@@ -181,13 +193,18 @@ function renderExports(result) {
   host.replaceChildren();
   // A broken recipe has nothing to export (the problem is explained above).
   const broken = result.diagnostics.some((d) => d.severity === 'error');
-  $('exportEmpty').hidden = broken || Boolean(result.print || result.exports.length);
+  const prints = printsOf(result);
+  $('exportEmpty').hidden = broken || Boolean(prints.length || result.exports.length);
   if (broken) return;
-  if (result.print) {
-    const b = el('button', { className: 'btn primary', type: 'button', text: `G-code for the ${PRINTERS[state.printer].name}` });
-    b.addEventListener('click', () => saveFile('print', `${slug(projectName())}.gcode`));
+  // One G-code file per part: the project's name, and the part's when there are several.
+  prints.forEach((part, i) => {
+    const several = prints.length > 1;
+    const text = `G-code for the ${PRINTERS[state.printer].name}${several ? `: ${part.name}` : ''}`;
+    const b = el('button', { className: 'btn primary', type: 'button', text });
+    const name = `${slug(projectName())}${several ? `-${slug(part.name)}` : ''}.gcode`;
+    b.addEventListener('click', () => saveFile(i ? `print:${i}` : 'print', name, true));
     host.append(b);
-  }
+  });
   result.exports.forEach((x, i) => {
     const b = el('button', { className: 'btn', type: 'button', text: x.file });
     b.addEventListener('click', () => saveFile(String(i), x.file));
@@ -195,12 +212,17 @@ function renderExports(result) {
   });
 }
 
-/** Makes a file in the engine and offers it as a download. */
-async function saveFile(which, fallback) {
+/**
+ * Makes a file in the engine and offers it as a download.
+ * @param {string} which 'print', 'print:1' (a part) or an export's index
+ * @param {string} fallback the file name when the engine doesn't give one
+ * @param {boolean} [ours] always use `fallback` (G-code of a print, named after the project)
+ */
+async function saveFile(which, fallback, ours = false) {
   exportNote('');
   try {
     const file = await engine.exportFile(state.source, state.values, which, state.profile);
-    const name = file.name || fallback;
+    const name = (!ours && file.name) || fallback;
     download(name, file.data, 'application/octet-stream');
     exportNote(`Saved ${name} (${fmt(file.data.length / 1024, 1)} kB).`);
   } catch (err) {

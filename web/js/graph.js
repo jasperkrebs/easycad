@@ -11,7 +11,7 @@
 // on this device (view state, like the camera).
 
 import { el } from './dom.js';
-import { UNIT_LABELS, autoStep } from './settings.js';
+import { UNIT_LABELS, autoStep, listValue } from './settings.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const COLUMN_GAP = 70;
@@ -197,7 +197,7 @@ export function createGraph(deps) {
       const input = /** @type {HTMLInputElement | null} */ (n && n.el.querySelector('input'));
       if (input && document.activeElement !== input) {
         if (input.type === 'checkbox') input.checked = p.value === true;
-        else input.value = String(p.value);
+        else input.value = p.kind === 'list' ? valueText(p) : String(p.value);
       }
       const out = n && n.el.querySelector('output');
       if (out) out.textContent = valueText(p);
@@ -205,6 +205,7 @@ export function createGraph(deps) {
   }
 
   function valueText(p) {
+    if (p.kind === 'list') return JSON.stringify(p.value);
     if (p.kind !== 'number') return String(p.value);
     const unit = UNIT_LABELS[p.unit] ?? p.unit;
     return `${p.value}${unit === '°' ? '°' : unit ? ` ${unit}` : ''}`;
@@ -250,8 +251,15 @@ export function createGraph(deps) {
       select.addEventListener('change', () => deps.setValue(p.name, p.choices.find((c) => String(c) === select.value) ?? select.value, 'final'));
       body.append(select);
     } else {
-      const input = /** @type {HTMLInputElement} */ (el('input', { type: p.kind === 'number' ? 'number' : 'text', value: String(p.value), 'aria-label': p.label || p.name }));
+      const input = /** @type {HTMLInputElement} */ (el('input', { type: p.kind === 'number' ? 'number' : 'text', value: valueText(p), 'aria-label': p.label || p.name }));
       input.addEventListener('change', () => {
+        if (p.kind === 'list') {
+          // Typed as a list, [[0, 30], [1, 28]]; anything else puts the old value back.
+          const r = listValue(p, input.value);
+          if ('value' in r) deps.setValue(p.name, r.value, 'final');
+          else input.value = valueText(p);
+          return;
+        }
         const v = p.kind === 'number' ? Number(input.value) : input.value;
         if (p.kind !== 'number' || Number.isFinite(v)) deps.setValue(p.name, v, 'final');
       });

@@ -269,9 +269,10 @@ impl Parser<'_> {
                 self.pos += 1;
                 Literal::Bool(w == "true")
             }
+            Tok::LBracket => Literal::List(self.list_literal(false)?),
             other => {
                 return Err(self.error(format!(
-                    "a setting's value must be a number, true/false or text, found {}",
+                    "a setting's value must be a number, true/false, text or a list, found {}",
                     other.describe()
                 )));
             }
@@ -280,7 +281,8 @@ impl Parser<'_> {
             .tokens
             .get(self.pos.saturating_sub(1))
             .map_or(value_start, |t| t.end);
-        let unit = self.unit();
+        let is_list = matches!(value, Literal::List(_));
+        let unit = if is_list { Unit::None } else { self.unit() };
 
         let mut param = Param {
             name,
@@ -298,6 +300,11 @@ impl Parser<'_> {
         loop {
             match self.peek().clone() {
                 Tok::Newline | Tok::Eof => break,
+                Tok::Ident(w) if is_list && (w == "in" || w == "step" || w == "of") => {
+                    return Err(self.error(format!(
+                        "a list setting takes a \"Label\" and @attributes, not `{w}`"
+                    )));
+                }
                 Tok::Ident(w) if w == "in" => {
                     let span = self.span();
                     self.pos += 1;
@@ -365,6 +372,47 @@ impl Parser<'_> {
             }
             other => Err(self.error(format!("expected {what}, found {}", other.describe()))),
         }
+    }
+
+    /// A list setting's value: numbers, or rows of numbers (one level of nesting), as typed.
+    fn list_literal(&mut self, row: bool) -> R<Vec<Literal>> {
+        self.expect(&Tok::LBracket, "`[`")?;
+        let mut out = Vec::new();
+        while *self.peek() != Tok::RBracket {
+            let item = match self.peek().clone() {
+                Tok::LBracket if !row => {
+                    let items = self.list_literal(true)?;
+                    if items.is_empty() {
+                        return Err(self.error("a row of a list setting needs a number at least"));
+                    }
+                    Literal::List(items)
+                }
+                Tok::Number(_) | Tok::Minus => Literal::Number(self.signed_number("a number")?),
+                other => {
+                    let what = if row {
+                        "a number"
+                    } else {
+                        "a number or a row of numbers `[…]`"
+                    };
+                    return Err(self.error(format!(
+                        "a list setting holds numbers or rows of numbers: expected {what}, found {}",
+                        other.describe()
+                    )));
+                }
+            };
+            out.push(item);
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        self.expect(&Tok::RBracket, "`]` to end the list")?;
+        if !row
+            && out.iter().any(|v| matches!(v, Literal::List(_)))
+            && out.iter().any(|v| !matches!(v, Literal::List(_)))
+        {
+            return Err(self.error("a list setting holds numbers or rows of numbers, not both"));
+        }
+        Ok(out)
     }
 
     fn choices(&mut self) -> R<Vec<Literal>> {

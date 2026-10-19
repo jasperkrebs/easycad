@@ -15,11 +15,12 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
 **Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0, 1a
 (recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL),
 1c (the Grasshopper toolbox, `spiralize`, the Graph tab), 1d (every EasyGCode project from
-general steps; thread and spoon golden, `docs/easygcode-coverage.md`) and most of 1e (bend stool
-with foaming and lampshade golden, vessel from general steps) are done, and so is the Chat tab
-(the agent with the user's key, behind a password proxy; it can switch printers), and feature
-requests (the agent asks for missing steps; Claude Code builds them in Actions;
-`docs/feature-requests.md`). Next: the container and coat hanger as templates.** Hosting: public repo + GitHub Pages. Priorities:
+general steps; thread and spoon golden, `docs/easygcode-coverage.md`), most of 1e (bend stool
+with foaming and lampshade golden, vessel from general steps) and 1f (the container as a salt &
+pepper shaker: several parts per project, list settings, a smooth `graph`) are done, and so is
+the Chat tab (the agent with the user's key, behind a password proxy; it can switch printers),
+and feature requests (the agent asks for missing steps; Claude Code builds them in Actions;
+`docs/feature-requests.md`). Next: the coat hanger as a template.** Hosting: public repo + GitHub Pages. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.
@@ -49,7 +50,7 @@ node scripts/smoke-test.cjs [dir]  # headless Chromium, phone + desktop; screens
 node scripts/agent-test.cjs [dir]  # the Chat tab against a scripted stand-in for the AI
 node scripts/graph-test.cjs [dir]  # the Graph tab: every kind of edit, mouse and touch
 node scripts/request-test.cjs [dir]  # feature requests: filed, shipped, the chat carries on
-node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs   # the AI proxy, feature requests, printers
+node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs   # the AI proxy, feature requests, printers, list settings
 python3 scripts/hand-checked-fixtures.py --check   # hand-checked G-code fixtures up to date
 python3 scripts/third-party-notices.py   # after adding/updating a dependency (CI runs --check)
 ```

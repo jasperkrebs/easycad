@@ -5,9 +5,11 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status:** Phase 1e mostly done (17 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
+> **Status:** Phase 1f done (19 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
 > - **Projects are recipes:** small `.easycad` text files. Each one opens with its own
->   settings window, generated from the recipe. The Rust engine runs in the browser as
+>   settings window, generated from the recipe (sliders, toggles, dropdowns, and tables for
+>   list settings like radii at heights). One project can print several parts (a container
+>   and its lid), each its own G-code file. The Rust engine runs in the browser as
 >   WebAssembly, shows the shape and its toolpath, and gives a live print estimate.
 > - **Graph tab:** the recipe as Grasshopper-style components and wires. Build and edit
 >   without any AI (add components, wire inputs, sliders), or take what the AI made further by
@@ -27,13 +29,14 @@ become toolpaths, toolpaths become G-code for your printer.
 >   **STL** for plain geometry.
 > - **Templates:** EasyGCode's spiral disc, thread connector, spoon, bend stool (with foaming)
 >   and lampshade (every shade, or your own) as recipes with the same G-code as EasyGCode; its
->   vessel (the bottom rounding into the wall, a non-planar star top) from general steps; a
+>   vessel (the bottom rounding into the wall, a non-planar star top) and container (as a salt &
+>   pepper shaker: a lid with holes that threads onto it, two prints) from general steps; a
 >   cylinder cut by a tilted plane (tilted layers in one spiral), a geometry-only turned vase,
 >   and three vase-mode vessels. Every EasyGCode project can be built from the steps
 >   ([docs/easygcode-coverage.md](docs/easygcode-coverage.md)).
 > - **Machine control** as steps: temperatures and waits, speed and extrusion overrides, fan
 >   levels, pauses (EasyGCode's foaming is built from them).
-> - **Next:** the container and coat hanger as templates, skills for the agent, and 2D curve
+> - **Next:** the coat hanger as a template, skills for the agent, and 2D curve
 >   editors.
 >
 > See the [roadmap](docs/roadmap.md).

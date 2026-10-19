@@ -160,7 +160,11 @@ export const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        values: { type: 'object', description: 'Setting name → new value.', additionalProperties: { type: ['number', 'boolean', 'string'] } },
+        values: {
+          type: 'object',
+          description: 'Setting name → new value. A list setting takes its whole new list, e.g. [[0, 30], [0.5, 36], [1, 28]].',
+          additionalProperties: { type: ['number', 'boolean', 'string', 'array'] },
+        },
       },
       required: ['values'],
       additionalProperties: false,
@@ -223,7 +227,7 @@ export function runStatus(r) {
     const show = (p) => {
       const unit = p.unit ? units[p.unit] ?? ` ${p.unit}` : '';
       const range = p.min != null && p.max != null ? ` (${p.min}..${p.max}${p.step ? ` step ${p.step}` : ''})` : '';
-      return `${p.name} = ${typeof p.value === 'string' ? JSON.stringify(p.value) : p.value}${unit}${range}`;
+      return `${p.name} = ${typeof p.value === 'string' || Array.isArray(p.value) ? JSON.stringify(p.value) : p.value}${unit}${range}`;
     };
     out.push(`Settings: ${r.params.map(show).join('; ')}`);
   }
@@ -231,20 +235,21 @@ export function runStatus(r) {
     const [a, b] = [r.bounds.min, r.bounds.max];
     out.push(`Drawn size: x ${fmtNum(a[0])}..${fmtNum(b[0])}, y ${fmtNum(a[1])}..${fmtNum(b[1])}, z ${fmtNum(a[2])}..${fmtNum(b[2])} mm`);
   }
-  const st = r.print?.stats;
-  if (st) {
+  const prints = r.prints?.length ? r.prints : r.print ? [r.print] : [];
+  for (const part of prints) {
+    const st = part.stats;
     const minutes = Math.round(st.timeS / 60);
     out.push(
-      `Prints: ${st.layers} layer${st.layers === 1 ? '' : 's'}, ${fmtNum(st.printedHeightMm)} mm tall, ` +
+      `Prints${prints.length > 1 ? ` part "${part.name}"` : ''}: ${st.layers} layer${st.layers === 1 ? '' : 's'}, ${fmtNum(st.printedHeightMm)} mm tall, ` +
         `${fmtNum(st.pathLengthMm / 1000, 2)} m of extrusion, ${fmtNum(st.volumeMm3 / 1000, 2)} cm³ (${fmtNum(st.massGPla, 0)} g PLA), ` +
         `about ${minutes} min, ` +
         (st.byFlow ? `at a set flow (up to ${fmtNum(st.flowMm3S)} mm³/s; ${fmtNum(st.speedMmS)} mm/s for a full bead)` : `at ${fmtNum(st.speedMmS)} mm/s (up to ${fmtNum(st.flowMm3S)} mm³/s)`) +
         `, line ${fmtNum(st.widthMm, 2)} mm, layer ${fmtNum(st.layerMm, 2)} mm` +
-        (st.samplesPerTurn > 0 && st.layers > 1 ? `, steepest overhang ${fmtNum(st.maxOverhangDeg)}°` : ''),
+        (st.samplesPerTurn > 0 && st.layers > 1 ? `, steepest overhang ${fmtNum(st.maxOverhangDeg)}°` : '') +
+        (prints.length > 1 ? `, x ${fmtNum(st.bounds.min[0])}..${fmtNum(st.bounds.max[0])}, y ${fmtNum(st.bounds.min[1])}..${fmtNum(st.bounds.max[1])} mm` : ''),
     );
-  } else {
-    out.push('Prints: nothing (no `print` line).');
   }
+  if (!prints.length) out.push('Prints: nothing (no `print` line).');
   if (r.exports?.length) out.push(`Files: ${r.exports.map((x) => x.file).join(', ')}`);
   return out.join('\n');
 }

@@ -3,6 +3,52 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-19: the salt & pepper shaker; several parts, list settings; inside surfaces
+
+**Why:** the owner described a project as a test of the steps: a salt & pepper container and a
+lid that threads onto it (EasyGCode's container), the lid's holes from the spiral disc, a body
+shaped by radii at heights, a smooth way into the neck, a fit, and separate extrusion for the
+spiral discs. Also: open surfaces showed no inside in the 3D view; and two answers about the G1.
+
+**Assessment:** every geometric piece was already a step (the spiral disc and `interlock`, ring
+spirals, the vessel's fillet, `contour(pace)` + `spiralize` + `bead`, `adjust`, `join`). Three
+things were missing, all general:
+- **Several parts per project:** every `print` line is a part (`print base`, `print lid`),
+  named after its step, with its own G-code file (`<project>-<part>.gcode`, its title in the
+  header), estimate and checks in the Print tab, and a line in what the agent sees. They share
+  the settings and the printer (the first `print`'s; another printer on a later part is a
+  warning). Before, only the first `print` counted.
+- **List settings:** `param body = [[0, 33], [0.45, 38], [1, 32]] "…"`: numbers or rows of
+  numbers, a table in the settings window (add and remove rows), JSON in the Graph tab, a whole
+  list through the agent's `set_settings`; written back into the recipe like any value.
+- **`graph(…, smooth: true)`:** a monotone cubic through the points (never past them), level
+  at both ends; and `graph` takes its points in any order (it sorts them).
+
+**Landed**
+- **The salt & pepper shaker template** (`web/templates/salt-shaker.easycad`): the container
+  (a ring spiral from the centre out, a quarter-circle fillet, the body through the list's
+  radii, a neck as tall as the lid's skirt) and the lid (EasyGCode's spiral disc with its ring
+  of holes, a fillet, the skirt, one line width outside the neck plus the fit), each one
+  continuous line with layers closer on the fillet's overhang; both spirals turn the same way,
+  so the skirt threads onto the neck. Spiral disc and wall extrusion apart. The lid prints
+  beside the container, or on the same spot. Tested in `blocks_tests` (continuity, radii,
+  thread pitch, pacing, extrusions, a straight body) and through the app (smoke test).
+- **The 3D view shows a surface's inside**, in a shade blended toward the background.
+- **The owner's answers:** the G1's vacuum feeder isn't used (pellets go in by hand), so the
+  start block not switching it on doesn't matter now; the nozzle is chosen per project (mostly
+  the 5 mm), so the printer's nozzle setting from the day before is gone again (the agent keeps
+  Ginger's nozzle table).
+
+**Numbers:** 152 core tests, 24 language tests, Node tests for the printers (7) and for lists
+and parts (2, new); wasm 345 KB gzipped.
+
+**Open**
+- The shaker isn't golden (EasyGCode's container differs: no holes, a scale profile, a fillet
+  sampled point by point).
+- A drawn editor for list settings (drag the points of a profile), on top of the same list.
+- With the default holes, a 6 mm line on the 5 mm nozzle needs a wider fade (`interlock` says
+  so); per-nozzle defaults could come with presets.
+
 ## 2026-10-18: the pellet printer is the Ginger Additive G1
 
 **Why:** the owner's pellet printer is a Ginger Additive G1; EasyCAD treated it as a generic

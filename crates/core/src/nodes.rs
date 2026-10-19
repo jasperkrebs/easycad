@@ -288,20 +288,22 @@ pub static NODES: &[Node] = &[
         name: "graph",
         group: "Numbers & lists",
         inputs: &[
-            all(
-                "xs",
-                "List<Number>",
-                "the graph's x values, never decreasing",
-            ),
+            all("xs", "List<Number>", "the graph's x values, in any order"),
             all("ys", "List<Number>", "its y values, one for each x"),
             req(
                 "x",
                 "Number | Field",
                 "where to read it; a field gives a field",
             ),
+            opt(
+                "smooth",
+                "Bool",
+                0.0,
+                "false: straight between the points; true: a smooth curve that never overshoots them and is level at both ends",
+            ),
         ],
         output: "Number | Field",
-        doc: "A piecewise-linear graph through the points (x, y), read at `x`, and flat beyond its ends: a table that blends between its rows. `graph(heights, angles, z)` is a field of height. (Grasshopper: Graph Mapper)",
+        doc: "A graph through the points (x, y), read at `x`, and flat beyond its ends: a table that blends between its rows. `graph(heights, angles, z)` is a field of height. With `smooth: true` the curve is smooth through every point, never past them, and level at both ends: a radius profile through a few points that starts and ends with a straight wall. (Grasshopper: Graph Mapper)",
         run: Run::Op(curve_tools::graph),
     },
     Node {

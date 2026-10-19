@@ -122,7 +122,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs
+      - run: node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs
       - name: Smoke test in headless Chromium
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
