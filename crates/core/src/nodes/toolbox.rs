@@ -460,7 +460,8 @@ pub(super) fn revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 
 pub(super) fn contour(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let s = a.surface(0)?;
-    let layers = s.contour(a.num(1)?, a.num(2)?, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let layer = a.field(1)?;
+    let layers = s.contour(&layer, a.num(2)?, ctx.remaining().min(MAX_PATH_POINTS))?;
     ctx.spend(layers.iter().map(|c| c.points.len()).sum())?;
     Value::list(
         layers

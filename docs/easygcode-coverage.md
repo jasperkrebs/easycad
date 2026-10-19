@@ -125,6 +125,7 @@ the owner's changes:
 | A body that leaves the fillet and meets the neck straight up | `graph(heights, radii, t, smooth: true)`: smooth through the points, never past them, level at both ends |
 | Flat bottom, fillet, wall: one continuous line | `rings` + `link_rings(…, "spiral")` from the centre out, one line inside the fillet; a quarter-circle fillet and the body as `loft` sections; `contour(pace)` + `spiralize(ramp: false, flat_top: false)` + `bead(layer)`; `join` carries straight on |
 | Closer layers on the fillet's overhang (each still a full layer's bead) | `contour(wall, layer, pace: …)` + `bead(layer: …)` (EasyGCode's squeeze) |
+| The spiral discs with their own layer height and line width (0: the walls'), easing into the walls' through each fillet, point by point | a `smoothstep` field of `z` over the fillet: `contour(wall, layer field, pace)` for the spacing, `bead(width: field, layer: field)` for each move's extrusion and speed; the discs' `rings`, `spiral` and `interlock` take the disc's line (beyond EasyGCode, which prints the whole container with one bead) |
 | A neck as tall as the lid's skirt | arithmetic (the neck's height is the skirt's) |
 | The lid one line width outside the neck, plus a fit | arithmetic: `neck + line + fit` |
 | The lid's holes | EasyGCode's spiral disc: `spiral` with a `fade` spacing + `interlock` |
@@ -135,7 +136,8 @@ the owner's changes:
 Not the same as EasyGCode's own container: its base has no holes in the lid, a body profile
 of scale points, and EasyGCode samples the fillet point by point; this one is checked by
 `the_shaker_prints_a_container_and_a_lid_that_fits_it` (continuity, the lid's radius, the
-thread pitch, the fillet's pacing, the extrusions).
+thread pitch, the fillet's pacing, the extrusions, the discs' own bead and its blend into the
+walls').
 
 ## Coat hanger
 

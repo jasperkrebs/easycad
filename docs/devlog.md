@@ -3,6 +3,39 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-19 (later): the spiral discs' own bead, easing into the walls'
+
+**Why:** the owner wanted the shaker's spiral discs (the container's bottom, the lid's top) to
+have their own layer height and line width (0: the walls'), easing into the walls' through
+each fillet: very gradually, point by point (within a turn too), for the toolpath itself, the
+extrusion and, through the flow, the speed.
+
+**Landed**
+- **A bead per move:** a toolpath's moves can each have their own line width (as they already
+  could their own layer height); 0 is the part's. Joins, stacks, moves, waves, `accelerate`
+  and `spikes` keep it, and the G-code's extrusion and feed follow it (they go by each move's
+  bead area).
+- **`bead(path, width:, layer:)` takes fields**, read at the middle of every move: a bead that
+  blends from one size into another. Plain numbers work as before.
+- **`contour(surface, layer, pace)` takes a field for the layer** (read on the seam at each
+  height): each layer as tall as the field halfway up it, the steps fitted to end at the top,
+  paced on overhangs as before. A number gives exactly the layers it did.
+- **The shaker:** "Spiral disc layer height" and "Spiral disc line width" (0: as the walls).
+  The discs use them (the container's rings and the lid's spiral, holes and interlock follow
+  the disc's line); up each fillet a `smoothstep` of height eases the layer spacing and every
+  move's bead from the disc's to the walls'. With both at 0 the G-code is byte for byte what
+  it was. With 0.3 mm × 3 mm discs under 0.6 × 2 mm walls: the disc at 0.3 mm, rings 3 mm
+  apart, E per mm easing 0.881 → 1.123 mm³ and F 1363 → 1069 mm/min up the fillet, no move
+  more than 0.2 % off the one before.
+
+**Numbers:** 154 core tests (2 new, the shaker's extended), 24 language tests.
+
+**Open**
+- The G-code header still lists each part's own bead; a part whose moves blend has no single
+  bead to list.
+- The area of a bead blended in width and height separately can overshoot both ends a little
+  (0.4 % in the example); a blend of the area itself would be another option.
+
 ## 2026-10-19: the salt & pepper shaker; several parts, list settings; inside surfaces
 
 **Why:** the owner described a project as a test of the steps: a salt & pepper container and a

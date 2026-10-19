@@ -1,6 +1,7 @@
 //! Surfaces lofted through section curves, and their preview meshes.
 
 use crate::curve::Curve;
+use crate::field::Field;
 use crate::geom::{P3, Xform, catmull_rom, signed_area_xy};
 
 /// The most vertices one preview mesh may have; denser lofts get fewer rings.
@@ -120,8 +121,18 @@ impl Surface {
     /// Flat layers through the surface (Grasshopper's Contour), `layer` apart: the first at its
     /// bottom, then one per layer up to its top, the height snapped to whole layers with the
     /// surface stretched to fit, exactly as `vase_spiral` prints it. Sections must stack upward.
-    pub fn contour(&self, layer: f64, pace: f64, max_points: usize) -> Result<Vec<Curve>, String> {
-        if !(layer > 0.0 && layer.is_finite()) {
+    /// A `layer` that varies (a field, read on the seam at each height) steps up layer by layer
+    /// instead, each step as tall as the field halfway up it, the steps fitted to end at the top.
+    pub fn contour(
+        &self,
+        layer: &Field,
+        pace: f64,
+        max_points: usize,
+    ) -> Result<Vec<Curve>, String> {
+        let fixed = layer.as_constant();
+        if let Some(layer) = fixed
+            && !(layer > 0.0 && layer.is_finite())
+        {
             return Err(format!("`layer` must be more than 0, got {layer}"));
         }
         if !(0.0..=1.0).contains(&pace) {
@@ -157,9 +168,26 @@ impl Surface {
             let (lo, hi) = (levels[i], levels[i + 1]);
             i as f64 + ((z - lo) / (hi - lo)).clamp(0.0, 1.0)
         };
-        if pace > 0.0 {
-            return self.paced_contour(layer, pace, &v_at, z0, z1, max_points);
-        }
+        let Some(layer) = fixed.filter(|_| pace == 0.0) else {
+            // The layer height at height z: the field on the seam there.
+            let layer_at = |z: f64| -> Result<f64, String> {
+                if let Some(l) = fixed {
+                    return Ok(l);
+                }
+                let p = self.point_at(v_at(z.clamp(z0, z1)), 0);
+                let l = layer.at([p[0], p[1], z]);
+                if l > 0.0 && l.is_finite() {
+                    Ok(l)
+                } else {
+                    Err(format!(
+                        "`layer` must be more than 0 everywhere, but it's {} at height {}",
+                        easycad_lang::format_number(l),
+                        easycad_lang::format_number((z * 100.0).round() / 100.0)
+                    ))
+                }
+            };
+            return self.stepped_contour(&layer_at, pace, &v_at, z0, z1, max_points);
+        };
         let layers = (height / layer).round().max(1.0) as usize;
         if (layers + 1).saturating_mul(m) > max_points {
             return Err(format!(
@@ -182,12 +210,14 @@ impl Surface {
             .collect())
     }
 
-    /// Layers closer together where the wall leans (EasyGCode's overhang-paced Z): each step is
-    /// `layer · (1 − pace · (1 − cos a))`, `a` being the lean of the seam (point 0) half a step
-    /// up (cos a no less than 0.05), and the steps are then scaled to end exactly at the top.
-    fn paced_contour(
+    /// Layers stepped up one at a time, each step `layer(z)` tall, or with `pace` closer where
+    /// the wall leans (EasyGCode's overhang-paced Z): `layer(z) · (1 − pace · (1 − cos a))`, `a`
+    /// being the lean of the seam (point 0) at `z` (cos a no less than 0.05). Each step is
+    /// taken as tall as it is halfway up it, and the steps are then scaled to end exactly at
+    /// the top.
+    fn stepped_contour(
         &self,
-        layer: f64,
+        layer: &dyn Fn(f64) -> Result<f64, String>,
         pace: f64,
         v_at: &dyn Fn(f64) -> f64,
         z0: f64,
@@ -195,19 +225,26 @@ impl Surface {
         max_points: usize,
     ) -> Result<Vec<Curve>, String> {
         let m = self.samples();
-        let eps = (0.02 * layer).max(1e-3);
         let seam = |z: f64| self.point_at(v_at(z.clamp(z0, z1)), 0);
-        let cos_at = |z: f64| -> f64 {
+        let cos_at = |z: f64, layer: f64| -> f64 {
+            let eps = (0.02 * layer).max(1e-3);
             let (a, b) = (seam(z - eps), seam(z + eps));
             let run = (b[0] - a[0]).hypot(b[1] - a[1]);
             (2.0 * eps).atan2(run).sin().max(0.05) // cos of the angle from vertical
         };
-        let step = |z: f64| layer * (1.0 - pace * (1.0 - cos_at(z)));
+        let step = |z: f64| -> Result<f64, String> {
+            let layer = layer(z)?;
+            Ok(if pace > 0.0 {
+                layer * (1.0 - pace * (1.0 - cos_at(z, layer)))
+            } else {
+                layer
+            })
+        };
         let mut zs = vec![z0];
         let mut z = z0;
         while z < z1 - 1e-9 {
-            let g = step(z);
-            z += step(z + g / 2.0);
+            let g = step(z)?;
+            z += step(z + g / 2.0)?;
             zs.push(z);
             if zs.len().saturating_mul(m) > max_points {
                 return Err(format!(
@@ -402,12 +439,12 @@ mod tests {
         assert!(Surface::revolve(&Curve::circle(3.0, 8), 16).is_err());
 
         // 20 mm at 0.3 mm snaps to 67 layers (20.1 mm), 68 contours from the bottom up.
-        let layers = tube.contour(0.3, 0.0, 1_000_000).unwrap();
+        let layers = tube.contour(&Field::constant(0.3), 0.0, 1_000_000).unwrap();
         assert_eq!(layers.len(), 68);
         assert!((layers[67].points[0][2] - 20.1).abs() < 1e-9);
         assert!(layers.iter().all(|l| l.closed && l.points.len() == 32));
-        assert!(tube.contour(0.0, 0.0, 1000).is_err());
-        assert!(tube.contour(0.001, 0.0, 1000).is_err());
+        assert!(tube.contour(&Field::constant(0.0), 0.0, 1000).is_err());
+        assert!(tube.contour(&Field::constant(0.001), 0.0, 1000).is_err());
     }
 
     #[test]

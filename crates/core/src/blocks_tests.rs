@@ -3,7 +3,9 @@
 //! templates built from them are golden-tested in `golden_tests.rs`; the new machine commands
 //! (fan levels, dwells, speed and extrusion factors) against a hand-checked fixture there too.
 
+use crate::bead::bead_area;
 use crate::eval::{Quality, Severity, step_values};
+use crate::gcode::{self, Profile};
 use crate::geom::{P3, dist3};
 use crate::toolpath::{EventKind, Toolpath};
 use crate::value::Value;
@@ -310,6 +312,133 @@ stacked = stack(b, 3)",
     assert_eq!(b.parts[0].layer, 0.5, "the layer for stacking stays");
     let stacked = path(&v, "stacked");
     assert!((stacked.points.last().unwrap()[2] - 1.5).abs() < 1e-9);
+}
+
+#[test]
+fn beads_that_blend_move_by_move() {
+    let v = run(
+        "a = toolpath([line([0, 0], [10, 0]) |> resample(11)], width: 1, layer: 0.5, flow: 5)
+wide = bead(a, width: 1 + x / 10, layer: 0.5 + 0.03 * x)
+again = bead(wide, width: 2)
+moved = wide |> move(y: 5) |> adjust(extrude: 1.1)
+joined = join([wide, toolpath([line([10, 0], [20, 0])], width: 1, layer: 0.5, flow: 5)])
+stacked = stack(wide, 2)",
+    );
+    let (a, wide) = (path(&v, "a"), path(&v, "wide"));
+    assert_eq!(a.points, wide.points, "nothing moves");
+    // Each move gets the bead at its middle: 1.05 mm × 0.515 mm for the first, 1.95 × 0.785
+    // for the last.
+    for i in 1..=10 {
+        let x = i as f64 - 0.5;
+        let want = bead_area(1.0 + x / 10.0, 0.5 + 0.03 * x);
+        assert!((wide.area(i) - want).abs() < 1e-12, "move {i}");
+    }
+    assert_eq!(wide.parts, a.parts, "the parts keep their own bead");
+    // In the G-code each move's plastic (E, mm³ on the pellet printer: the move is 1 mm long)
+    // is its bead's area, and at the set flow its feed is 5 mm³/s ÷ that area.
+    let text = gcode::write(wide, &Profile::default(), "t").unwrap().text;
+    let moves: Vec<(f64, f64)> = text
+        .lines()
+        .filter(|l| l.starts_with("G1 X") && l.contains(" E"))
+        .map(|l| {
+            let word = |c: char| -> f64 {
+                l.split(' ')
+                    .find_map(|w| w.strip_prefix(c))
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(f64::NAN)
+            };
+            (word('E'), word('F'))
+        })
+        .collect();
+    assert_eq!(moves.len(), 10);
+    for (i, (e, f)) in moves.iter().enumerate() {
+        let area = wide.area(i + 1);
+        assert!(
+            (e - area).abs() < 1e-5,
+            "E of move {}: {e} vs {area}",
+            i + 1
+        );
+        assert!(
+            (f - (300.0 / area).round()).abs() < 1e-9,
+            "F of move {}",
+            i + 1
+        );
+    }
+    // A plain number afterwards sets the part's width again, for every move.
+    let again = path(&v, "again");
+    assert_eq!(again.parts[0].width, 2.0);
+    assert!((again.area(10) - bead_area(2.0, 0.5 + 0.03 * 9.5)).abs() < 1e-12);
+    // Moves, joins and stacks keep each move's bead.
+    let moved = path(&v, "moved");
+    let joined = path(&v, "joined");
+    let stacked = path(&v, "stacked");
+    for i in 1..=10 {
+        assert_eq!(moved.area(i), wide.area(i));
+        assert_eq!(joined.area(i), wide.area(i));
+        assert_eq!(stacked.area(i), wide.area(i));
+        let second = stacked.points.len() - 11 + i; // the second layer's moves, last
+        assert_eq!(stacked.area(second), wide.area(i), "the second layer");
+    }
+    assert_eq!(joined.area(joined.points.len() - 1), bead_area(1.0, 0.5));
+    // Bad beads say where they go wrong.
+    let e = error(
+        "a = toolpath([line([0, 0], [10, 0])], width: 1, layer: 0.5)\nb = bead(a, width: 1 - x)",
+    );
+    assert!(
+        e.contains("0 (keep) or more") && e.contains("(5.00, 0.00, 0.50)"),
+        "{e}"
+    );
+    let e = error(
+        "a = toolpath([line([0, 0], [10, 0])], width: 1, layer: 0.5, flow: 5)\nb = bead(a, width: 0.06 + 0 * x, layer: 0.03)",
+    );
+    assert!(
+        e.contains("lower the flow") && e.contains("at (5.00"),
+        "{e}"
+    );
+}
+
+#[test]
+fn layers_that_change_with_height() {
+    let v = run("tube = loft([circle(20), circle(20) |> move(z: 20)])
+grow = contour(tube, 0.4 + 0.2 * smoothstep(z / 20))
+same = contour(tube, 0.5 + 0 * z, pace: 1)
+fixed = contour(tube, 0.5, pace: 1)
+even = contour(tube, 0.5)
+even_field = contour(tube, 0.5 + 0 * z)");
+    let zs = |name: &str| -> Vec<f64> { curves(&v, name).iter().map(|c| c[0][2]).collect() };
+    let grow = zs("grow");
+    let steps: Vec<f64> = grow.windows(2).map(|w| w[1] - w[0]).collect();
+    assert_eq!(grow[0], 0.0);
+    assert!(
+        (grow.last().unwrap() - 20.0).abs() < 1e-9,
+        "ends at the top"
+    );
+    // From 0.4 mm at the bottom to 0.6 mm at the top, a little more at every layer.
+    assert!((steps[0] - 0.4).abs() < 0.004, "{}", steps[0]);
+    assert!(
+        (steps.last().unwrap() - 0.6).abs() < 0.01,
+        "{:?}",
+        steps.last()
+    );
+    assert!(
+        steps
+            .windows(2)
+            .all(|w| w[1] >= w[0] - 1e-12 && w[1] - w[0] < 0.01)
+    );
+    // A field that's the same everywhere gives the same layers as the number.
+    assert_eq!(zs("same"), zs("fixed"));
+    let (even, even_field) = (zs("even"), zs("even_field"));
+    assert_eq!(even.len(), even_field.len());
+    assert!(
+        even.iter()
+            .zip(&even_field)
+            .all(|(a, b)| (a - b).abs() < 1e-9)
+    );
+    let e = error("c = contour(loft([circle(5), circle(5) |> move(z: 3)]), 1 - z / 2)");
+    assert!(
+        e.contains("more than 0 everywhere") && e.contains("at height 2"),
+        "{e}"
+    );
 }
 
 #[test]
@@ -650,4 +779,75 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
     assert!(body.iter().all(|r| (r - 30.0).abs() < 0.05), "{body:?}");
     let l = turns(&lid, 0.0);
     assert!((l.last().unwrap().1 - 32.0).abs() < 0.05, "{:?}", l.last());
+
+    // The spiral discs with their own bead: 0.3 mm layers of a 3 mm line, easing into the
+    // walls' 0.6 × 2 mm through each fillet (the wider line needs a wider fade round the holes).
+    let (base, lid) = run_with(&[
+        ("disc_layer", Literal::Number(0.3)),
+        ("disc_line", Literal::Number(3.0)),
+        ("fade_in", Literal::Number(9.0)),
+        ("fade_out", Literal::Number(9.0)),
+    ]);
+    let (disc, wall) = (bead_area(3.0, 0.3), bead_area(2.0, 0.6));
+    for (p, fillet, skirt) in [(&base, 8.0, 32.0), (&lid, 6.0, 34.0)] {
+        let flat: Vec<usize> = (1..p.points.len()).filter(|i| p.part[*i] == 0).collect();
+        // The disc: on the bed at 0.3 mm, rings 3 mm apart, the outermost a line inside the
+        // fillet's start, each move extruded (and at the set flow, slowed) for its bead.
+        assert!(flat.iter().all(|i| (p.points[*i][2] - 0.3).abs() < 1e-9));
+        assert!(flat.iter().all(|i| (p.area(*i) - disc).abs() < 1e-12));
+        let s = p.settings(1);
+        assert!((s.speed_for(p.area(1)) - 20.0 / disc).abs() < 1e-9);
+        // The fillet: the bead eases from the disc's to the wall's, a little at every move
+        // (within each turn too), and is the wall's from the fillet's top up.
+        let rest: Vec<usize> = (flat.len() + 1..p.points.len()).collect();
+        assert!(
+            (p.area(rest[0]) - disc).abs() < 0.002 * disc,
+            "{}",
+            p.area(rest[0])
+        );
+        let above = |i: &usize| p.points[*i][2] > 0.3 + fillet + 0.5;
+        assert!(
+            rest.iter()
+                .filter(|i| above(i))
+                .all(|i| (p.area(*i) - wall).abs() < 1e-9)
+        );
+        assert!(
+            rest.windows(2)
+                .all(|w| (p.area(w[1]) - p.area(w[0])).abs() < 0.005 * p.area(w[0])),
+            "no jumps"
+        );
+        let mid: Vec<usize> = rest
+            .iter()
+            .copied()
+            .filter(|i| (2.0..2.0 + 0.1).contains(&p.points[*i][2]))
+            .collect();
+        assert!(
+            mid.windows(2).all(|w| p.area(w[1]) > p.area(w[0])),
+            "rises within the turn"
+        );
+        // The layers: thin where the fillet leaves the disc, a full wall layer at the top.
+        let t = turns(
+            p,
+            if skirt > 33.0 {
+                38.0 + 34.0 + 15.0
+            } else {
+                0.0
+            },
+        );
+        let r = rises(&t);
+        assert!(r[0] < 0.1, "{r:?}");
+        assert!(
+            r.iter().rev().take(10).all(|r| (r - 0.6).abs() < 0.01),
+            "{r:?}"
+        );
+        assert!(
+            (t.last().unwrap().1 - skirt).abs() < 0.05,
+            "the walls still fit"
+        );
+    }
+    let outer = (1..base.points.len() - 1)
+        .filter(|i| base.part[*i] == 0 && base.part[i + 1] == 0)
+        .map(|i| base.points[i][0].hypot(base.points[i][1]))
+        .fold(0.0, f64::max);
+    assert!((outer - (33.0 - 8.0 - 3.0)).abs() < 0.01, "{outer}");
 }

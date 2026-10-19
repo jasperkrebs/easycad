@@ -57,6 +57,14 @@ impl Field {
         }
     }
 
+    /// The value when it's the same everywhere (a plain number given where a field may go).
+    pub fn as_constant(&self) -> Option<f64> {
+        match self.kind {
+            Kind::Const(v) => Some(v),
+            _ => None,
+        }
+    }
+
     /// The x (`axis` 0), y (1) or z (2) coordinate of each point: `move(z: 2 * x)` lifts
     /// points by twice their x.
     pub fn coordinate(axis: usize) -> Field {

@@ -1220,7 +1220,11 @@ pub static NODES: &[Node] = &[
         group: "Surfaces",
         inputs: &[
             req("surface", "Surface", "sections stacked upward"),
-            req("layer", "Length", "layer height"),
+            req(
+                "layer",
+                "Length | Field",
+                "layer height; a field (of height, read on the seam) changes it from layer to layer",
+            ),
             opt(
                 "pace",
                 "Number",
@@ -1229,7 +1233,7 @@ pub static NODES: &[Node] = &[
             ),
         ],
         output: "List<Curve>",
-        doc: "Flat layer curves through the surface, `layer` apart from bottom to top (height snapped to whole layers), ready for `spiralize` or `toolpath`, or to bend with fields first. With `pace`, layers come closer where the wall leans out or in, so the beads stay one layer apart along the wall, and the steps are fitted to end exactly at the top. (Grasshopper: Contour)",
+        doc: "Flat layer curves through the surface, `layer` apart from bottom to top (height snapped to whole layers), ready for `spiralize` or `toolpath`, or to bend with fields first. With `pace`, layers come closer where the wall leans out or in, so the beads stay one layer apart along the wall, and the steps are fitted to end exactly at the top. A `layer` field (e.g. of `z`) makes each layer as tall as the field halfway up it: thin layers at the bottom easing into thick ones. (Grasshopper: Contour)",
         run: Run::Op(toolbox::contour),
     },
     // ------------------------------------------------------------------ toolpaths
@@ -1440,19 +1444,19 @@ pub static NODES: &[Node] = &[
             req("path", "Toolpath", ""),
             opt(
                 "width",
-                "Length",
+                "Length | Field",
                 0.0,
                 "line width to extrude for; 0 keeps it",
             ),
             opt(
                 "layer",
-                "Length",
+                "Length | Field",
                 0.0,
                 "layer height to extrude for; 0 keeps it",
             ),
         ],
         output: "Toolpath",
-        doc: "The same moves extruded for another bead (EasyGCode's bead overrides, like its spoon's stick): nothing moves, only the plastic each move gets, and at a set flow its speed. Join it to the rest to print part of a path thicker or thinner.",
+        doc: "The same moves extruded for another bead (EasyGCode's bead overrides, like its spoon's stick): nothing moves, only the plastic each move gets, and at a set flow its speed. Join it to the rest to print part of a path thicker or thinner. Fields are read at the middle of every move, so the bead can blend from one size to another a little at each move: `bead(width: 3 + (2 - 3) * smoothstep(z / 8))` eases from 3 mm wide on the bed to 2 mm 8 mm up.",
         run: Run::Op(curve_tools::bead),
     },
     Node {

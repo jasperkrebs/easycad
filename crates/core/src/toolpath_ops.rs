@@ -5,7 +5,7 @@
 
 use crate::field::Field;
 use crate::geom::{P3, dist3, lerp3, sub3, unit3};
-use crate::toolpath::{Event, EventKind, MAX_PATH_POINTS, Toolpath};
+use crate::toolpath::{Event, EventKind, MAX_PATH_POINTS, Settings, Toolpath};
 
 /// A field's value at `p`, or a message naming it.
 fn value(field: &Field, p: P3, what: &str) -> Result<f64, String> {
@@ -66,6 +66,74 @@ pub fn adjust(path: &Toolpath, speed: &Field, extrude: &Field) -> Result<Toolpat
     Ok(out)
 }
 
+/// The same moves extruded for another bead: `width` × `layer` (0 keeps each). Nothing moves;
+/// only how much plastic each move gets, and at a set flow its speed, change. The layer is a
+/// height for extrusion only: stacking and hops still go by the toolpath's own layer height.
+/// Plain numbers set every part's bead; fields are read at the middle of each move, so a bead
+/// can blend from one size into another a little at every move (a flat bottom's into a wall's).
+pub fn bead(path: &Toolpath, width: &Field, layer: &Field) -> Result<Toolpath, String> {
+    if let (Some(w), Some(l)) = (width.as_constant(), layer.as_constant()) {
+        if w < 0.0 || l < 0.0 {
+            return Err("`width` and `layer` must be 0 (keep) or more".into());
+        }
+        let parts = path
+            .parts
+            .iter()
+            .map(|s| {
+                let width = if w > 0.0 { w } else { s.width };
+                let layer = if l > 0.0 { l } else { s.layer };
+                // Checks the new bead (and its speed at a set flow), but keeps the part's layer.
+                Settings::from_inputs(width, layer, s.speed, s.flow.unwrap_or(0.0))?;
+                Settings::from_inputs(width, s.layer, s.speed, s.flow.unwrap_or(0.0))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut out = Toolpath {
+            parts,
+            ..path.clone()
+        };
+        for i in 0..out.points.len() {
+            let travel = is_travel(path, i);
+            if let Some(slot) = out.width.get_mut(i).filter(|_| w > 0.0) {
+                *slot = 0.0; // the part's new width
+            }
+            if let Some(slot) = out.height.get_mut(i).filter(|_| l > 0.0) {
+                *slot = if travel { 0.0 } else { l };
+            }
+        }
+        return Ok(out);
+    }
+    let mut out = path.clone();
+    for i in 0..out.points.len() {
+        if is_travel(path, i) {
+            continue;
+        }
+        let m = middle(path, i);
+        let (w, l) = (value(width, m, "width")?, value(layer, m, "layer")?);
+        let at = format!("({:.2}, {:.2}, {:.2})", m[0], m[1], m[2]);
+        if w < 0.0 || l < 0.0 {
+            return Err(format!(
+                "`width` and `layer` must be 0 (keep) or more, but they're {w} and {l} at {at}"
+            ));
+        }
+        let (own_w, own_l) = path.bead_of(i);
+        let (w, l) = (
+            if w > 0.0 { w } else { own_w },
+            if l > 0.0 { l } else { own_l },
+        );
+        // Checks the bead (and its speed at a set flow).
+        let s = path.settings(i);
+        Settings::from_inputs(w, l, s.speed, s.flow.unwrap_or(0.0))
+            .map_err(|e| format!("{e} at {at}"))?;
+        if let Some(slot) = out.width.get_mut(i) {
+            *slot = w;
+        }
+        if let Some(slot) = out.height.get_mut(i) {
+            *slot = l;
+        }
+    }
+    Ok(out)
+}
+
 /// The speed (mm/s) of move `i`.
 fn speed_of(path: &Toolpath, i: usize) -> f64 {
     path.settings(i).speed_for(path.area(i)) * path.speed_factor(i)
@@ -101,6 +169,7 @@ pub fn accelerate(
         out.turn.push(path.turn.get(i).copied().unwrap_or(0.0));
         out.part.push(path.part.get(i).copied().unwrap_or(0));
         out.height.push(path.height.get(i).copied().unwrap_or(0.0));
+        out.width.push(path.width.get(i).copied().unwrap_or(0.0));
         out.speed.push(factor);
     };
     for i in 0..n {
@@ -387,6 +456,11 @@ pub fn spikes(
             0.0
         } else {
             path.height.get(i).copied().unwrap_or(0.0)
+        });
+        out.width.push(if travel {
+            0.0
+        } else {
+            path.width.get(i).copied().unwrap_or(0.0)
         });
         out.speed.push(speed);
     };

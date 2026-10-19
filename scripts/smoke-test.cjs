@@ -242,6 +242,21 @@ async function waitForServer(url) {
       await page
         .waitForFunction(() => /^param body\s+= \[\[0, 33\], \[0\.45, 38\], \[1, 32\]\] /m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
         .catch(async () => failures.push(`${name}: removing the row didn't reach the recipe: ${body(await page.inputValue('#recipe'))}`));
+      // The spiral discs' own bead (0: the walls'): typed in, written into the recipe, run.
+      const hudDisc = await page.textContent('#hud');
+      for (const [id, v] of [['disc_layer', '0.3'], ['disc_line', '3'], ['fade_in', '9'], ['fade_out', '9']]) {
+        await page.fill(`#set-${id}`, v);
+        await page.dispatchEvent(`#set-${id}`, 'change');
+      }
+      await page
+        .waitForFunction(() => /^param disc_layer\s+= 0\.3 mm/m.test(document.getElementById('recipe').value) && /^param disc_line\s+= 3 mm/m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
+        .catch(async () => failures.push(`${name}: the disc's bead didn't reach the recipe`));
+      await page
+        .waitForFunction((before) => document.getElementById('hud').textContent !== before, hudDisc, { timeout: 15000 })
+        .catch(() => failures.push(`${name}: the disc's bead didn't change the print`));
+      const discProblems = await page.locator('#problems li').count();
+      if (discProblems) failures.push(`${name}: ${discProblems} problem(s) with the disc's own bead`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-disc.png`), fullPage: name === 'phone' });
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();
       if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);

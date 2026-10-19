@@ -9,7 +9,8 @@ use crate::curve_ops;
 use crate::eval::Ctx;
 use crate::field::Field;
 use crate::geom::{Bounds, Xform};
-use crate::toolpath::{MAX_PATH_POINTS, Settings, Toolpath};
+use crate::toolpath::{MAX_PATH_POINTS, Toolpath};
+use crate::toolpath_ops;
 use crate::value::Value;
 use std::rc::Rc;
 
@@ -303,35 +304,11 @@ fn extruded_bounds(p: &Toolpath) -> Bounds {
 
 // ------------------------------------------------------------------------------- toolpaths
 
-/// The same moves extruded for another bead: `width` × `layer` (0 keeps each). Nothing moves;
-/// only how much plastic each move gets changes, and at a set flow its speed. The layer is a
-/// height for extrusion only: stacking and hops still go by the toolpath's own layer height.
+/// The same moves extruded for another bead (`toolpath_ops::bead`).
 pub(super) fn bead(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let path = a.toolpath(0)?;
-    let (w, l) = (a.num(1)?, a.num(2)?);
-    if w < 0.0 || l < 0.0 {
-        return Err("`width` and `layer` must be 0 (keep) or more".into());
-    }
-    let parts = path
-        .parts
-        .iter()
-        .map(|s| {
-            let width = if w > 0.0 { w } else { s.width };
-            let layer = if l > 0.0 { l } else { s.layer };
-            // Checks the new bead (and its speed at a set flow), but keeps the part's layer.
-            Settings::from_inputs(width, layer, s.speed, s.flow.unwrap_or(0.0))?;
-            Settings::from_inputs(width, s.layer, s.speed, s.flow.unwrap_or(0.0))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     ctx.spend(path.points.len())?;
-    let mut out = Toolpath {
-        parts,
-        ..path.as_ref().clone()
-    };
-    if l > 0.0 {
-        for (h, travel) in out.height.iter_mut().zip(&path.travel) {
-            *h = if *travel { 0.0 } else { l };
-        }
-    }
+    let (width, layer) = (a.field(1)?, a.field(2)?);
+    let out = toolpath_ops::bead(path, &width, &layer)?;
     Ok(Value::Toolpath(Rc::new(out)))
 }

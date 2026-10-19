@@ -4,7 +4,8 @@
 //! and can be stacked (`stack`), joined (`join`) and patterned (`wave_path`). Every move ends at
 //! a point and is either a travel (no extrusion) or extrudes a fraction of a full bead, using
 //! EasyGCode's bead model with the width, layer height and speed of its part. A move can carry
-//! its own layer height (non-planar layers are thicker in some places than others), and a part
+//! its own layer height (non-planar layers are thicker in some places than others) and its own
+//! width (a bead that blends from one size to another), and a part
 //! can be printed at a set volumetric flow instead of a set speed: then each move's speed is the
 //! flow divided by its bead's cross-section, as in EasyGCode's flow mode.
 //!
@@ -123,6 +124,9 @@ pub struct Toolpath {
     /// The layer height of the move that ends at each point, where it differs from its part's
     /// (non-planar layers); 0 means the part's layer height.
     pub height: Vec<f64>,
+    /// The line width of the move that ends at each point, where it differs from its part's (a
+    /// bead that blends from one width to another); 0 means the part's width.
+    pub width: Vec<f64>,
     pub parts: Vec<Settings>,
     /// Speed of the move that ends at each point, as a factor of its part's (1 = as set; at a
     /// set flow, the flow scales with it): per-zone speeds and acceleration ramps.
@@ -251,6 +255,7 @@ impl Toolpath {
             turn: Vec::with_capacity(capacity),
             part: Vec::with_capacity(capacity),
             height: Vec::with_capacity(capacity),
+            width: Vec::with_capacity(capacity),
             parts,
             speed: Vec::with_capacity(capacity),
             events: Vec::new(),
@@ -280,6 +285,7 @@ impl Toolpath {
         self.turn.push(turn);
         self.part.push(part);
         self.height.push(if travel { 0.0 } else { height });
+        self.width.push(0.0);
         self.speed.push(1.0);
     }
 
@@ -318,6 +324,17 @@ impl Toolpath {
         );
         if let (Some(slot), Some(v)) = (self.speed.last_mut(), other.speed.get(i)) {
             *slot = *v;
+        }
+        self.copy_width(other, i);
+    }
+
+    /// Gives the last point the line width of `other`'s point `i` (travels keep none).
+    fn copy_width(&mut self, other: &Toolpath, i: usize) {
+        let travel = self.travel.last().copied().unwrap_or(true);
+        if let (Some(slot), Some(w)) = (self.width.last_mut(), other.width.get(i))
+            && !travel
+        {
+            *slot = *w;
         }
     }
 
@@ -362,16 +379,22 @@ impl Toolpath {
             })
     }
 
-    /// The bead cross-section (mm²) of move `i`: its part's width with its own layer height.
-    pub fn area(&self, i: usize) -> f64 {
+    /// The bead of move `i` as (width, layer height) in mm: its own where it has them, else its
+    /// part's.
+    pub fn bead_of(&self, i: usize) -> (f64, f64) {
         let s = self.settings(i);
-        let h = self
-            .height
-            .get(i)
-            .copied()
-            .filter(|h| *h > 0.0)
-            .unwrap_or(s.layer);
-        bead_area(s.width, h)
+        let own = |v: &Vec<f64>| v.get(i).copied().filter(|v| *v > 0.0);
+        (
+            own(&self.width).unwrap_or(s.width),
+            own(&self.height).unwrap_or(s.layer),
+        )
+    }
+
+    /// The bead cross-section (mm²) of move `i`: its own width and layer height where it has
+    /// them, else its part's.
+    pub fn area(&self, i: usize) -> f64 {
+        let (w, h) = self.bead_of(i);
+        bead_area(w, h)
     }
 
     /// The layer height used for lifts between layers and parts.
@@ -1445,6 +1468,7 @@ pub fn wave_path(
                 if let Some(slot) = out.speed.last_mut() {
                     *slot = path.speed_factor(i);
                 }
+                out.copy_width(path, i);
             }
         }
         out.push_from(path, i, 0.0, 0);
