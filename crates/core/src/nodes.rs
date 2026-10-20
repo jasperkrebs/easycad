@@ -843,15 +843,9 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "exactly this many turns (fractions too) instead of ending near `outer`",
             ),
-            opt(
-                "exact",
-                "Bool",
-                0.0,
-                "true: stretched a little (every turn alike) to end exactly on `outer`, to run straight into a wall that starts there",
-            ),
         ],
         output: "Curve",
-        doc: "A flat spiral around the origin, starting on +X and turning counter-clockwise, each turn one `spacing` outside the last. From the centre out to the whole turn nearest `outer` (with `exact`, stretched to end right on it); with a field as spacing, turns spread apart where the field is larger (EasyGCode's spiral disc). Or exactly `turns` turns from radius `start`, points spread evenly over the whole spiral (EasyGCode's spoon).",
+        doc: "A flat spiral around the origin, starting on +X and turning counter-clockwise, each turn one `spacing` outside the last. From the centre out to the whole turn nearest `outer`; with a field as spacing, turns spread apart where the field is larger (EasyGCode's spiral disc). Or exactly `turns` turns from radius `start`, points spread evenly over the whole spiral (EasyGCode's spoon).",
         run: Run::Op(spiral),
     },
     Node {
@@ -865,9 +859,15 @@ pub static NODES: &[Node] = &[
                 "bumps per turn, counting outward and inward ones; odd",
             ),
             req("width", "Length", "line width"),
+            opt(
+                "stretch",
+                "Length",
+                0.0,
+                "after the wiggles, stretch the whole spiral a little (every turn alike) to end exactly this far from its centre, to run straight into a wall that starts there; 0 leaves it",
+            ),
         ],
         output: "Curve",
-        doc: "Wiggles a spiral's turns so that wherever they are spread wider than `width`, each outward bump meets the next turn's inward bump with one line width between them: the turns stay joined at those points and leave holes in between. Turns that touch stay straight.",
+        doc: "Wiggles a spiral's turns so that wherever they are spread wider than `width`, each outward bump meets the next turn's inward bump with one line width between them: the turns stay joined at those points and leave holes in between. Turns that touch stay straight. A spiral snapped to whole turns ends near the radius you asked for, not on it; `stretch` fits it on exactly. It is done after the wiggles are solved, never to the spiral before: stretching first opens a sliver of gap between touching turns and the wiggles then alternate big and small from one turn to the next.",
         run: Run::Op(interlock),
     },
     Node {
@@ -2090,16 +2090,10 @@ fn spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let tolerance = a.num(2)?;
     let min_samples = a.count(3, 0, 100_000)?;
     let (start, turns) = (a.num(4)?, a.num(5)?);
-    let exact = a.flag(6)?;
     let max = ctx.remaining().min(MAX_PATH_POINTS);
     let curve = if turns != 0.0 {
         if outer != 0.0 {
             ctx.warn("`outer` is ignored when `turns` is given".into());
-        }
-        if exact {
-            ctx.warn(
-                "`exact` is for `outer`; with `turns` the spiral ends where its turns do".into(),
-            );
         }
         let constant = if a.is_field(1) { None } else { Some(a.num(1)?) };
         spiral::spiral_turns(
@@ -2118,12 +2112,7 @@ fn spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         if outer == 0.0 {
             return Err("give `outer` (the radius to end near) or `turns`".into());
         }
-        let curve = spiral::spiral(outer, &spacing, tolerance, min_samples, max)?;
-        if exact {
-            spiral::end_exactly_at(curve, outer)
-        } else {
-            curve
-        }
+        spiral::spiral(outer, &spacing, tolerance, min_samples, max)?
     };
     ctx.spend(curve.points.len())?;
     Ok(Value::Curve(Rc::new(curve)))
@@ -2133,8 +2122,17 @@ fn interlock(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let c = a.curve(0)?;
     let bumps = a.count(1, 1, 999)?;
     let width = a.positive(2)?;
+    let stretch = a.num(3)?;
+    if stretch < 0.0 {
+        return Err("`stretch` must be 0 (leave it) or a radius".into());
+    }
     ctx.spend(c.points.len())?;
     let (curve, info) = spiral::interlock(c, bumps, width)?;
+    let curve = if stretch > 0.0 {
+        spiral::end_exactly_at(curve, stretch)
+    } else {
+        curve
+    };
     if info.bumps != bumps {
         ctx.warn(format!(
             "bumps per turn must be odd so a peak always faces the next turn's dip; using {}",

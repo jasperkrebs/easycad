@@ -91,11 +91,12 @@ l_line    = disc_w + (line - disc_w) * l_blend
 l_wall    = spiralize(contour(lid_shape, l_layer, pace: pace), width: line, flow: flow, flat_top: false, ramp: false)
   |> bead(width: l_line, layer: l_layer) |> adjust(extrude: wall_extrusion)
 # Turns one line apart, spreading to `open` around the ring and interlocking there (holes); the
-# spiral ends exactly on the fillet's foot, at the seam, where the skirt starts.
+# spiral is stretched a hair, after the wiggles are solved, to end exactly on the fillet's foot, at
+# the seam, where the skirt starts.
 near      = fade(distance(circle(ring)), inside: fade_in, outside: fade_out, band: band)
 spacing   = disc_w * (1 + (open - 1) * near)
 odd       = 2 * floor(bumps / 2) + 1
-holes     = interlock(spiral(outer: lid_flat, spacing: spacing, min_samples: 16 * odd, exact: true), bumps: odd, width: disc_w)
+holes     = interlock(spiral(outer: lid_flat, spacing: spacing, min_samples: 16 * odd), bumps: odd, width: disc_w, stretch: lid_flat)
 l_top     = toolpath(holes |> rotate(90), width: disc_w, layer: disc_l, flow: flow) |> adjust(extrude: disc_extrusion)
 lid       = join([l_top, l_wall])
 

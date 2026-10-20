@@ -128,7 +128,7 @@ the owner's changes:
 | The spiral discs with their own layer height and line width (0: the walls'), easing into the walls' through each fillet, point by point | a `smoothstep` field of `z` over the fillet: `contour(wall, layer field, pace)` for the spacing, `bead(width: field, layer: field)` for each move's extrusion and speed; the discs' `rings`, `spiral` and `interlock` take the disc's line (beyond EasyGCode, which prints the whole container with one bead) |
 | A neck as tall as the lid's skirt | arithmetic (the neck's height is the skirt's) |
 | The lid one line width outside the neck, plus a fit | arithmetic: `neck + line + fit` |
-| The lid's holes | EasyGCode's spiral disc: `spiral` with a `fade` spacing + `interlock`, ending right on the fillet's foot (`exact: true`) |
+| The lid's holes | EasyGCode's spiral disc: `spiral` with a `fade` spacing + `interlock`, ending right on the fillet's foot (`interlock(…, stretch: foot)`, as EasyGCode's lid top stretches its finished disc) |
 | One extrusion for the spiral discs, another for the rest | `adjust(extrude: …)` on each part before `join` |
 | Same direction, so the skirt threads onto the neck | both built from the same counter-clockwise circle |
 | Both on the bed's centre, each its own file; shown or hidden part by part | the 3D view's part toggles (each part with the shapes only it is made from) |

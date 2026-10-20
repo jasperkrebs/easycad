@@ -3,6 +3,22 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-20 (later): even waves in the lid's holes
+
+**Why:** the owner compared the hole spiral in EasyGCode (smooth, growing waves) with EasyCAD's
+(every other turn's wave very low).
+
+**Cause:** the lid's spiral was stretched to end on the fillet *before* `interlock` solved the
+wiggles. Stretching opens a 2 % sliver of gap between turns that should touch; those turns then
+count as open, and the per-angle solve (each pair of neighbours must add up to the gap) has a
+free alternating component that nothing pins down any more: big, small, big, small (0.38, 0.01,
+0.38, 0.01 mm in the outer turns, and the centre kinked). EasyGCode's lid top stretches its
+finished disc, so its waves stay smooth.
+
+**Landed:** `spiral(…, exact:)` is gone; `interlock(…, stretch: r)` stretches after the wiggles
+are solved, so the result is the unstretched wiggles scaled point for point (tested). The shaker
+uses it; projects made before offer the update.
+
 ## 2026-10-20: projects catch up with their templates; the salt & pepper lid in EasyGCode
 
 **Why:** the owner still saw the step where the spiral meets the fillet, of a size that

@@ -401,7 +401,7 @@ stacked = stack(wide, 2)",
 #[test]
 fn spirals_that_end_exactly_where_asked() {
     let v = run("near = spiral(outer: 10.4, spacing: 1)
-exact = spiral(outer: 10.4, spacing: 1, exact: true)");
+exact = interlock(spiral(outer: 10.4, spacing: 1), bumps: 9, width: 1, stretch: 10.4)");
     let end = |name: &str| {
         let (points, _) = curve_points(&v, name);
         let p = points.last().copied().unwrap();
@@ -409,13 +409,25 @@ exact = spiral(outer: 10.4, spacing: 1, exact: true)");
     };
     assert!((end("near") - 10.0).abs() < 1e-6, "the nearest whole turn");
     assert!((end("exact") - 10.4).abs() < 1e-9, "right on it");
-    let w = messages(
-        "s = spiral(spacing: 1, turns: 3, exact: true)",
-        Severity::Warning,
-    );
     assert!(
-        w.iter().any(|m| m.contains("`exact` is for `outer`")),
-        "{w:?}"
+        error("s = interlock(spiral(outer: 5, spacing: 1), bumps: 9, width: 1, stretch: -1)")
+            .contains("stretch")
+    );
+
+    // The stretch comes after the wiggles are solved: the result is the unstretched wiggles scaled,
+    // point for point. (Stretching the spiral first opened slivers of gap between touching turns,
+    // and the wiggles then alternated big and small from one turn to the next.)
+    let v = run("near = fade(distance(circle(12)), inside: 6, outside: 6)
+spacing = 2 * (1 + 1.5 * near)
+plain = interlock(spiral(outer: 31.1, spacing: spacing, min_samples: 144), bumps: 9, width: 2)
+fitted = interlock(spiral(outer: 31.1, spacing: spacing, min_samples: 144), bumps: 9, width: 2, stretch: 31.1)");
+    let ((a, _), (b, _)) = (curve_points(&v, "plain"), curve_points(&v, "fitted"));
+    let k = 31.1 / a.last().map(|p| p[0].hypot(p[1])).unwrap();
+    assert!(k > 1.0 && k < 1.05, "a hair: {k}");
+    assert!(
+        a.iter()
+            .zip(&b)
+            .all(|(p, q)| dist3([p[0] * k, p[1] * k, 0.0], *q) < 1e-9)
     );
 }
 
