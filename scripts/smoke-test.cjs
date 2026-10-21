@@ -235,6 +235,24 @@ async function waitForServer(url) {
       if ((await toggles.nth(1).getAttribute('aria-pressed')) !== 'false') failures.push(`${name}: the lid's toggle didn't hide it`);
       await toggles.nth(1).click();
       if ((await toggles.nth(1).getAttribute('aria-pressed')) !== 'true') failures.push(`${name}: the lid's toggle didn't show it again`);
+      // A decimal comma, as an iPhone in a comma language types it, is taken; and a field that can
+      // go negative has a ± button (the phone's decimal keypad has no minus key).
+      await page.fill('#set-line', '2,5');
+      await page.dispatchEvent('#set-line', 'change');
+      await page
+        .waitForFunction(() => /^param line\s+= 2\.5 mm/m.test(document.getElementById('recipe').value) && document.getElementById('set-line').value === '2.5', null, { timeout: 15000 })
+        .catch(async () => failures.push(`${name}: "2,5" wasn't taken as 2.5: ${(await page.inputValue('#recipe')).match(/^param line.*$/m)}`));
+      await page.fill('#set-line', '2');
+      await page.dispatchEvent('#set-line', 'change');
+      if ((await page.getAttribute('#set-line', 'inputmode')) !== 'decimal') failures.push(`${name}: number fields should ask for the decimal keypad`);
+      await page.fill('#set-fit', '0,2');
+      await page.dispatchEvent('#set-fit', 'change');
+      await page.click('#set-fit >> xpath=preceding-sibling::button[contains(@class, "sign")]');
+      await page
+        .waitForFunction(() => document.getElementById('set-fit').value === '-0.2', null, { timeout: 15000 })
+        .catch(async () => failures.push(`${name}: ± didn't flip the fit: ${await page.inputValue('#set-fit')}`));
+      await page.fill('#set-fit', '0');
+      await page.dispatchEvent('#set-fit', 'change');
       // A row added to the list setting, given a radius, then removed: the recipe follows.
       const body = (src) => (src.match(/^param body\s+= (\[.*\])/m) || [])[1];
       const rows = () => page.locator('.setting.list .list-row').count();

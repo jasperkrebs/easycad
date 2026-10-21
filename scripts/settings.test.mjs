@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runStatus } from '../web/js/agent.js';
+import { parseNumber } from '../web/js/dom.js';
 import { listValue } from '../web/js/settings.js';
 import { fingerprint, projectOf, withoutValues } from '../web/js/templates.js';
 
@@ -80,4 +81,18 @@ test('a project made from a template matches it whatever its sliders say', () =>
   assert.equal(fingerprint(withoutValues(moved)), fingerprint(withoutValues(template)));
   assert.notEqual(fingerprint('a'), fingerprint('b'));
   assert.equal(projectOf('easycad 0.1\nx = 1'), '');
+});
+
+test('a number can be typed with a decimal comma, as an iPhone in some languages does', () => {
+  assert.equal(parseNumber('1.5'), 1.5);
+  assert.equal(parseNumber('1,5'), 1.5);
+  assert.equal(parseNumber(' 0,25 '), 0.25);
+  assert.equal(parseNumber('-0,3'), -0.3);
+  assert.equal(parseNumber('\u22122.5'), -2.5, 'a typographic minus');
+  assert.equal(parseNumber('1,000.5'), 1000.5, 'a thousands comma before a point');
+  assert.equal(parseNumber('.5'), 0.5);
+  assert.equal(parseNumber('2e3'), 2000);
+  for (const bad of ['', '  ', 'abc', '1,2,3', '1..2', '--1', null, undefined, '1,5mm']) {
+    assert.ok(Number.isNaN(parseNumber(bad)), String(bad));
+  }
 });

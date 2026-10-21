@@ -3,7 +3,7 @@
 // profile's points). Values are shown and edited in each setting's own unit (18 %, 90°),
 // exactly as they are written in the recipe.
 
-import { el } from './dom.js';
+import { el, numberField, parseNumber } from './dom.js';
 
 export const UNIT_LABELS = { deg: '°', inch: 'in' };
 
@@ -121,8 +121,9 @@ function settingRow(p, value, onChange) {
   const ranged = p.min != null && p.max != null;
   const step = p.step ?? (ranged ? autoStep(p.min, p.max) : null);
   let current = Number(value);
-  const num = /** @type {HTMLInputElement} */ (el('input', { type: 'number', id, inputMode: 'decimal', step: 'any', value: String(current) }));
-  row.append(el('span', { className: 'num' }, [num, el('span', { className: 'unit', text: UNIT_LABELS[p.unit] ?? p.unit })]));
+  const field = numberField({ id, value: String(current) }, !ranged || p.min < 0);
+  const num = field.input;
+  row.append(el('span', { className: 'num' }, [...field.nodes, el('span', { className: 'unit', text: UNIT_LABELS[p.unit] ?? p.unit })]));
 
   /** Keeps a typed value inside the range, and on the recipe's own step if it has one. */
   const tidy = (v) => {
@@ -156,7 +157,7 @@ function settingRow(p, value, onChange) {
     row.append(slider);
   }
   num.addEventListener('change', () => {
-    const v = Number(num.value);
+    const v = parseNumber(num.value);
     if (num.value.trim() === '' || !Number.isFinite(v)) {
       num.value = String(current);
       return;
@@ -185,18 +186,13 @@ function listTable(p, value, id, onChange) {
     table.replaceChildren();
     items.forEach((item, i) => {
       const fields = item.map((v, j) => {
-        const input = /** @type {HTMLInputElement} */ (
-          el('input', {
-            type: 'number',
-            inputMode: 'decimal',
-            step: 'any',
-            value: String(v),
-            id: i === 0 && j === 0 ? id : `${id}-${i}-${j}`,
-            'aria-label': `${p.label}: row ${i + 1}${width > 1 ? `, value ${j + 1}` : ''}`,
-          })
-        );
+        const { input } = numberField({
+          value: String(v),
+          id: i === 0 && j === 0 ? id : `${id}-${i}-${j}`,
+          'aria-label': `${p.label}: row ${i + 1}${width > 1 ? `, value ${j + 1}` : ''}`,
+        });
         input.addEventListener('change', () => {
-          const n = Number(input.value);
+          const n = parseNumber(input.value);
           if (input.value.trim() === '' || !Number.isFinite(n)) {
             input.value = String(items[i][j]);
             return;

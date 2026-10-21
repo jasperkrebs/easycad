@@ -23,6 +23,43 @@ export function el(tag, props = {}, children = []) {
   return node;
 }
 
+/**
+ * A number typed by a person: a decimal comma works as well as a point (an iPhone in a language
+ * that writes decimals with a comma shows a comma on its number keypad), and a typographic minus
+ * as a hyphen. NaN when it isn't a number.
+ * @param {unknown} text
+ */
+export function parseNumber(text) {
+  let t = String(text ?? '')
+    .trim()
+    .replace(/\u2212/g, '-')
+    .replace(/\s/g, '');
+  if (t === '') return NaN;
+  if (t.includes(',')) t = t.includes('.') ? t.replace(/,/g, '') : t.replace(',', '.');
+  return /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t) ? Number(t) : NaN;
+}
+
+/**
+ * A field for a number: text with the decimal keypad (a `type="number"` field refuses the comma
+ * on some phones), read with `parseNumber`. The phone's decimal keypad has no minus key, so a
+ * field that can go negative gets a ± button beside it.
+ * @param {Record<string, any>} props the input's properties
+ * @param {boolean} [signed] whether the value can be negative
+ * @returns {{ input: HTMLInputElement, nodes: HTMLElement[] }} the input, and what to put in the page
+ */
+export function numberField(props, signed = false) {
+  const input = /** @type {HTMLInputElement} */ (el('input', { type: 'text', inputMode: 'decimal', autocomplete: 'off', spellcheck: false, ...props }));
+  if (!signed) return { input, nodes: [input] };
+  const flip = el('button', { className: 'btn tiny sign', type: 'button', text: '±', title: 'Change the sign', 'aria-label': 'Change the sign' });
+  flip.addEventListener('click', () => {
+    const v = parseNumber(input.value);
+    if (!Number.isFinite(v)) return;
+    input.value = String(-v);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  return { input, nodes: [flip, input] };
+}
+
 /** Offers text as a file download (on iPhone: "Save to Files"). */
 export function download(name, text, type = 'text/plain') {
   const a = /** @type {HTMLAnchorElement} */ (el('a', { href: URL.createObjectURL(new Blob([text], { type })), download: name }));

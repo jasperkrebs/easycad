@@ -5,7 +5,7 @@
 // defaults are EasyGCode's, so G-code starts out exactly as EasyGCode would write it; changes are
 // remembered on this device, per printer.
 
-import { el, fmt } from './dom.js';
+import { el, fmt, numberField, parseNumber } from './dom.js';
 
 /** EasyGCode's machine settings (travel 6000 mm/min, end lift 50 mm, the bed centre at 125/125). */
 const EASYGCODE = {
@@ -326,11 +326,9 @@ export function renderPrinterSettings(host, id, profile, onChange) {
       row.append(box);
     } else {
       const { min, max } = range(id, f);
-      const input = /** @type {HTMLInputElement} */ (
-        el('input', { type: 'number', id: fieldId, inputMode: 'decimal', step: 'any', value: String(getPath(profile, f.key)) })
-      );
+      const { input } = numberField({ id: fieldId, value: String(getPath(profile, f.key)) });
       input.addEventListener('change', () => {
-        const v = Number(input.value);
+        const v = parseNumber(input.value);
         if (input.value.trim() === '' || !Number.isFinite(v)) {
           input.value = String(getPath(profile, f.key));
           return;

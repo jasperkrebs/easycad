@@ -3,6 +3,17 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-21: decimal commas on the phone
+
+**Why:** an iPhone in a comma-decimal language shows a comma on the number keypad, and a
+`type="number"` field refused what it typed ("1,5").
+
+**Landed:** number fields are text fields with the decimal keypad (`inputmode="decimal"`), read
+by `parseNumber`: a comma or a point, a typographic minus; `"1,000.5"` is 1000.5 and `"1,2,3"` is
+not a number. The decimal keypad has no minus key (neither did the old one), so a field that can
+go negative (no range, or a range below 0) has a ± button beside it. Settings, list rows, the
+printer's settings and the graph's fields. Unit test, and the smoke test types "2,5" and uses ±.
+
 ## 2026-10-20 (later): even waves in the lid's holes
 
 **Why:** the owner compared the hole spiral in EasyGCode (smooth, growing waves) with EasyCAD's

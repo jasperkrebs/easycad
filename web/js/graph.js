@@ -10,7 +10,7 @@
 // Components are laid out left to right by what feeds what. Where you drag them is remembered
 // on this device (view state, like the camera).
 
-import { el } from './dom.js';
+import { el, numberField, parseNumber } from './dom.js';
 import { UNIT_LABELS, autoStep, listValue } from './settings.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -251,7 +251,7 @@ export function createGraph(deps) {
       select.addEventListener('change', () => deps.setValue(p.name, p.choices.find((c) => String(c) === select.value) ?? select.value, 'final'));
       body.append(select);
     } else {
-      const input = /** @type {HTMLInputElement} */ (el('input', { type: p.kind === 'number' ? 'number' : 'text', value: valueText(p), 'aria-label': p.label || p.name }));
+      const input = p.kind === 'number' ? numberField({ value: valueText(p), 'aria-label': p.label || p.name }, true).input : /** @type {HTMLInputElement} */ (el('input', { type: 'text', value: valueText(p), 'aria-label': p.label || p.name }));
       input.addEventListener('change', () => {
         if (p.kind === 'list') {
           // Typed as a list, [[0, 30], [1, 28]]; anything else puts the old value back.
@@ -260,7 +260,7 @@ export function createGraph(deps) {
           else input.value = valueText(p);
           return;
         }
-        const v = p.kind === 'number' ? Number(input.value) : input.value;
+        const v = p.kind === 'number' ? parseNumber(input.value) : input.value;
         if (p.kind !== 'number' || Number.isFinite(v)) deps.setValue(p.name, v, 'final');
       });
       body.append(input);
@@ -775,9 +775,7 @@ export function createGraph(deps) {
 
   function inspectParam(p) {
     const num = (label, value, key) => {
-      const input = /** @type {HTMLInputElement} */ (
-        el('input', { type: 'number', step: 'any', value: value == null ? '' : String(value), inputMode: 'decimal', 'data-key': key, 'data-focus': `p:${key}` })
-      );
+      const { input } = numberField({ value: value == null ? '' : String(value), 'data-key': key, 'data-focus': `p:${key}` });
       return el('label', { className: 'ginput' }, [el('span', { text: label }), input]);
     };
     const labelInput = /** @type {HTMLInputElement} */ (el('input', { type: 'text', value: p.label || '', 'data-key': 'label', 'data-focus': 'p:label' }));
@@ -797,10 +795,10 @@ export function createGraph(deps) {
         'Apply',
         () => {
           const get = (key) => /** @type {HTMLInputElement} */ (fields.querySelector(`[data-key="${key}"]`)).value.trim();
-          const value = Number(get('value'));
-          const min = get('min') === '' ? Math.min(0, value) : Number(get('min'));
-          const max = get('max') === '' ? Math.max(value * 2, 1) : Number(get('max'));
-          const step = get('step') === '' ? null : Number(get('step'));
+          const value = parseNumber(get('value'));
+          const min = get('min') === '' ? Math.min(0, value) : parseNumber(get('min'));
+          const max = get('max') === '' ? Math.max(value * 2, 1) : parseNumber(get('max'));
+          const step = get('step') === '' ? null : parseNumber(get('step'));
           run({ op: 'setParam', name: p.name, value, min, max, step, label: get('label') || null });
         },
         true,

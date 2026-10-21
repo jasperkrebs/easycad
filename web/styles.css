@@ -323,7 +323,7 @@ button {
   gap: 4px;
 }
 
-.setting input[type="number"] {
+.setting input[inputmode="decimal"] {
   width: 84px;
   text-align: right;
   background: var(--card2);
@@ -550,7 +550,7 @@ code {
 
 /* ---------- settings: other kinds ---------- */
 .setting select,
-.setting input[type="text"] {
+.setting input[type="text"]:not([inputmode="decimal"]) {
   width: auto;
   max-width: 60vw;
   min-width: 120px;
@@ -585,7 +585,7 @@ code {
   min-width: 0;
 }
 
-.list-row input[type="number"] {
+.list-row input[inputmode="decimal"] {
   flex: 1 1 0;
   min-width: 0;
   width: auto;
@@ -1183,7 +1183,7 @@ fieldset.choice input {
   font-variant-numeric: tabular-nums;
 }
 
-.gslider input[type="number"],
+.gslider input[inputmode="decimal"],
 .gslider input[type="text"],
 .gslider select {
   width: 100%;
@@ -1224,7 +1224,7 @@ fieldset.choice input {
 
 .graph-palette-bar input,
 .graph-inspector input[type="text"],
-.graph-inspector input[type="number"] {
+.graph-inspector input[inputmode="decimal"] {
   flex: 1;
   min-width: 0;
   background: var(--card2);
@@ -1410,4 +1410,11 @@ label.check {
   align-items: center;
   margin: 10px 0;
   font-size: 0.92rem;
+}
+
+/* The ± button beside a number field that can go negative (the phone's decimal keypad has no minus). */
+.setting .num .sign {
+  padding: 4px 8px;
+  margin-right: 2px;
+  flex: none;
 }
