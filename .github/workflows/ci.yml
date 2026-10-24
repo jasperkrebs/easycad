@@ -30,7 +30,7 @@ concurrency:
 jobs:
   engine:
     name: Engine (fmt, clippy, tests, wasm)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -50,7 +50,7 @@ jobs:
   proxy:
     name: AI proxy (Cloudflare Worker)
     if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       url: ${{ steps.deploy.outputs.url }}
     steps:
@@ -103,7 +103,7 @@ jobs:
 
   web:
     name: Web app (build, size budget, smoke test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [engine, proxy]
     # The proxy job runs only on the default branch, and a broken proxy setup shouldn't stop the
     # website from updating: only the engine has to pass.
@@ -150,7 +150,7 @@ jobs:
       github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch &&
       (!github.event.repository.private || vars.DEPLOY_PAGES == 'true')
     needs: web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       pages: write
       id-token: write

@@ -3,6 +3,13 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-24: CI pinned to Ubuntu 24.04
+
+**Why:** GitHub moved `ubuntu-latest` to Ubuntu 26.04, and Playwright 1.56.1 can't install
+Chromium there ("Playwright does not support chromium on ubuntu26.04-x64"), so the smoke test
+and the deploy after it stopped. The workflows now run on `ubuntu-24.04`. **Open:** move to
+`ubuntu-latest` again once a Playwright release supports 26.04 (bump the pin in both workflows).
+
 ## 2026-10-21: decimal commas on the phone
 
 **Why:** an iPhone in a comma-decimal language shows a comma on the number keypad, and a

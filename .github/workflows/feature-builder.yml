@@ -58,7 +58,7 @@ jobs:
       (github.event.label.name == 'feature-request' &&
        github.event.issue.user.login == github.repository_owner &&
        github.event.sender.login == github.repository_owner)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     outputs:
       result: ${{ steps.result.outputs.result }}
@@ -225,7 +225,7 @@ jobs:
     name: Check, merge and deploy
     needs: build
     if: needs.build.outputs.result == 'built'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
