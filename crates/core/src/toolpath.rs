@@ -1038,6 +1038,21 @@ pub struct PerTurn<'a> {
     pub flow: &'a dyn Fn(P3) -> Result<f64, String>,
 }
 
+/// [`vase_revolve`]'s settings that hold for the whole spiral.
+#[derive(Debug, Clone, Copy)]
+pub struct Revolve {
+    /// Print speed in mm/s (when the flow is 0).
+    pub speed: f64,
+    /// Extrude every turn for this layer height instead of its rise (0: its rise).
+    pub bead_layer: f64,
+    /// How far a chord may stray from the true circle, in mm.
+    pub tolerance: f64,
+    /// Where each turn starts, in degrees from +X.
+    pub seam: f64,
+    /// A flat closing turn that ramps extrusion down (false: an open top).
+    pub flat_top: bool,
+}
+
 /// One turn of [`vase_revolve`]: where it starts, how far it rises and its settings.
 struct Turn {
     z: f64,
@@ -1094,19 +1109,24 @@ impl Profile {
 ///   back), counter-clockwise, with enough points that no chord strays more than `tolerance`
 ///   from the true circle (at least 24), the radius at each point read from the profile.
 /// - The first turn holds the radius the second one starts at, while extrusion ramps up
-///   0 → 100 %; a flat closing turn at the top ramps it back down.
+///   0 → 100 %; a flat closing turn at the top ramps it back down (with `flat_top`; without
+///   it, the spiral stops at full flow as it reaches the top: an open rim).
 /// - Each turn is extruded for its own line width and, with `bead_layer` 0, its rise
 ///   (EasyGCode's width compensation), or for `bead_layer` (its layer-height compensation:
 ///   a shorter rise, the full bead).
 pub fn vase_revolve(
     profile: &Curve,
     per_turn: &PerTurn,
-    speed: f64,
-    bead_layer: f64,
-    tolerance: f64,
-    seam: f64,
+    options: &Revolve,
     max_points: usize,
 ) -> Result<Toolpath, String> {
+    let Revolve {
+        speed,
+        bead_layer,
+        tolerance,
+        seam,
+        flat_top,
+    } = *options;
     let mut points: Vec<[f64; 2]> = profile.points.iter().map(|p| [p[0], p[2]]).collect();
     if profile.closed {
         return Err("needs an open profile (radius against height), not a closed curve".into());
@@ -1199,10 +1219,11 @@ pub fn vase_revolve(
             })
         })
         .collect();
+    let cap = if flat_top { steps_for(r_top) } else { 0 };
     let needed = counts
         .iter()
         .sum::<usize>()
-        .saturating_add(steps_for(r_top))
+        .saturating_add(cap)
         .saturating_add(1);
     too_many(needed, max_points, "use a larger tolerance or layer height")?;
 
@@ -1251,19 +1272,21 @@ pub fn vase_revolve(
             path.layer_starts.push(path.points.len());
         }
     }
-    let part = part_of(&mut path, settings(last.width, last.dz, z_top)?)?;
-    let cap = steps_for(r_top);
+    // The closing turn (none for an open top: the last turn ends on the rim at full flow).
     let n = cap as f64;
-    for s in 1..=cap {
-        let u = s as f64 / n;
-        let ramp = (1.0 - (u + (s as f64 - 1.0) / n) / 2.0).max(0.0);
-        path.push(
-            at(r_top, u, z_top),
-            false,
-            ramp,
-            turns.len() as f64 + u,
-            part,
-        );
+    if cap > 0 {
+        let part = part_of(&mut path, settings(last.width, last.dz, z_top)?)?;
+        for s in 1..=cap {
+            let u = s as f64 / n;
+            let ramp = (1.0 - (u + (s as f64 - 1.0) / n) / 2.0).max(0.0);
+            path.push(
+                at(r_top, u, z_top),
+                false,
+                ramp,
+                turns.len() as f64 + u,
+                part,
+            );
+        }
     }
     path.layers = turns.len();
     Ok(path)
@@ -1623,6 +1646,40 @@ mod tests {
         let (end, seam) = (*p.points.last().unwrap(), w.sections[31][0]);
         assert!((end[0] - seam[0]).hypot(end[1] - seam[1]) < 1e-9);
         assert!((p.flow.last().copied().unwrap() - 1.0 / 448.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn an_open_top_ends_the_revolved_spiral_on_the_rim_at_full_flow() {
+        // A cylinder 20 mm round and 6 mm high, 2 mm a turn: 3 turns of 24 points.
+        let profile = Curve::new(vec![[20.0, 0.0, 0.0], [20.0, 0.0, 6.0]], false);
+        let (rise, width, flow) = (|_| Ok(2.0), |_| Ok(3.0), |_| Ok(0.0));
+        let per_turn = PerTurn {
+            rise: &rise,
+            width: &width,
+            flow: &flow,
+        };
+        let options = |flat_top| Revolve {
+            speed: 40.0,
+            bead_layer: 0.0,
+            tolerance: 1.0,
+            seam: 90.0,
+            flat_top,
+        };
+        let flat = vase_revolve(&profile, &per_turn, &options(true), MAX_PATH_POINTS).unwrap();
+        let open = vase_revolve(&profile, &per_turn, &options(false), MAX_PATH_POINTS).unwrap();
+        assert_eq!((flat.layers, open.layers), (3, 3));
+        // The same spiral, without the closing turn's 24 points.
+        assert_eq!(flat.points.len(), 1 + 4 * 24);
+        assert_eq!(open.points.len(), 1 + 3 * 24);
+        assert_eq!(open.points[..], flat.points[..open.points.len()]);
+        assert_eq!(open.flow[..], flat.flow[..open.points.len()]);
+        // It ends on the seam at the top, still at full flow.
+        let end = open.points[open.points.len() - 1];
+        assert!(end[0].abs() < 1e-9 && (end[1] - 20.0).abs() < 1e-9);
+        assert!((end[2] - 6.0).abs() < 1e-9);
+        assert_eq!(open.flow.last().copied(), Some(1.0));
+        // The closing turn ramped down to nothing.
+        assert!((flat.flow[flat.flow.len() - 1] - 1.0 / 48.0).abs() < 1e-12);
     }
 
     #[test]
