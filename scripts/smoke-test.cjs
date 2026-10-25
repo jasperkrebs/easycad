@@ -306,11 +306,16 @@ async function waitForServer(url) {
       // from the front, the spiral discs' 3 mm beads stand out past the 2 mm walls.
       await page.click('#viewWidth');
       if ((await page.getAttribute('#viewWidth', 'aria-pressed')) !== 'true') failures.push(`${name}: the bead view didn't switch on`);
+      // How see-through: a slider shown with the beads, solid at 100 %.
+      if (!(await page.isVisible('#viewBeadOpacity'))) failures.push(`${name}: no bead opacity slider`);
+      await page.fill('#viewBeadOpacity', '100');
       await page.click('button[data-view="front"]');
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-beads.png`) });
       await page.click('button[data-view="iso"]');
+      await page.fill('#viewBeadOpacity', '40');
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-beads-3d.png`) });
       await page.click('#viewWidth');
+      if (await page.isVisible('#viewBeadOpacity')) failures.push(`${name}: the opacity slider stays without the beads`);
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();
       if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);

@@ -3,6 +3,14 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-25 (later still): how see-through the beads are, on a slider
+
+**Landed:** next to *Line width* (shown only with the beads), a slider from 10 % (faint) to 100 %
+(solid), 40 % by default, remembered on the device; at 100 % the beads draw solid again (depth
+written). The smoke test moves it and checks it hides with the beads.
+
+**Open:** on a phone the view bar now takes four rows over the 3D view.
+
 ## 2026-10-25 (late night): bead cross-sections in the Print tab
 
 **Why:** the owner asked how the bead's volume is worked out (a rectangle with a half circle

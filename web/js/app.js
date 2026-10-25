@@ -35,6 +35,8 @@ const STORAGE_KEY = 'easycad.project';
 const VIEW_KEY = 'easycad.view';
 /** The toolpath as lines or as solid beads. */
 const BEADS_KEY = 'easycad.beads';
+/** How solid the beads are drawn (10–100 %). */
+const OPACITY_KEY = 'easycad.beadOpacity';
 const MAX_FILE_BYTES = 256 * 1024;
 const TABS = ['settings', 'graph', 'chat', 'recipe', 'print', 'about'];
 
@@ -779,8 +781,10 @@ function wire() {
   // The toolpath as solid beads at their real line width and layer height, as slicers draw it
   // (remembered on this device).
   const widthButton = $('viewWidth');
+  const opacity = /** @type {HTMLInputElement} */ ($('viewBeadOpacity'));
   const showBeads = (on) => {
     widthButton.setAttribute('aria-pressed', String(on));
+    opacity.hidden = !on;
     viewport.setBeads(on);
     try {
       localStorage.setItem(BEADS_KEY, on ? 'on' : 'off');
@@ -794,6 +798,22 @@ function wire() {
   } catch {
     beads = '';
   }
+  // How see-through the beads are (remembered on this device).
+  try {
+    const stored = Number(localStorage.getItem(OPACITY_KEY));
+    if (stored >= 10 && stored <= 100) opacity.value = String(stored);
+  } catch {
+    // The default.
+  }
+  viewport.setBeadOpacity(Number(opacity.value) / 100);
+  opacity.addEventListener('input', () => {
+    viewport.setBeadOpacity(Number(opacity.value) / 100);
+    try {
+      localStorage.setItem(OPACITY_KEY, opacity.value);
+    } catch {
+      // Not remembered.
+    }
+  });
   showBeads(beads === 'on');
   widthButton.addEventListener('click', () => {
     const on = widthButton.getAttribute('aria-pressed') !== 'true';

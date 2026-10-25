@@ -518,6 +518,19 @@ export function createViewport(canvas) {
       applyMode();
     },
 
+    /**
+     * How solid the beads are drawn: 1 solid, less see-through.
+     * @param {number} opacity 0.1 to 1
+     */
+    setBeadOpacity(opacity) {
+      const o = Math.min(1, Math.max(0.1, opacity));
+      beadMaterial.opacity = o;
+      beadMaterial.transparent = o < 1;
+      beadMaterial.depthWrite = o >= 1;
+      beadMaterial.needsUpdate = true;
+      requestRender();
+    },
+
     get parallel() {
       return camera === ortho;
     },
