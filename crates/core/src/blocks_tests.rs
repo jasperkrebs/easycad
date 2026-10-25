@@ -629,7 +629,8 @@ fn vase_revolve_follows_the_profile_turn_by_turn() {
         r#"profile = polyline([[20, 0, 0], [20, 0, 10], [40, 0, 30]])
 path = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1)
 wide = vase_revolve(profile, layer: 2, width: 3 + greater(z, 10), tolerance: 0.1)
-squeezed = vase_revolve(profile, layer: 2 - greater(z, 10), width: 3, bead_layer: 2, tolerance: 0.1)"#,
+squeezed = vase_revolve(profile, layer: 2 - greater(z, 10), width: 3, bead_layer: 2, tolerance: 0.1)
+open = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1, flat_top: false)"#,
     );
     let p = path(&v, "path");
     // 15 turns of 2 mm to 30 mm, then the closing turn; the first holds radius 20 at the back.
@@ -637,6 +638,14 @@ squeezed = vase_revolve(profile, layer: 2 - greater(z, 10), width: 3, bead_layer
     assert_near(p.points[0], [20.0 * 90f64.to_radians().cos(), 20.0, 0.0]);
     let top = p.points[p.points.len() - 1];
     assert!((top[2] - 30.0).abs() < 1e-9 && (top[0].hypot(top[1]) - 40.0).abs() < 1e-9);
+    // An open top: the same 15 turns, ending on the rim at full flow without the closing turn.
+    let o = path(&v, "open");
+    assert_eq!(o.layers, 15);
+    assert!(o.points.len() < p.points.len());
+    assert_eq!(o.points[..], p.points[..o.points.len()]);
+    let rim = o.points[o.points.len() - 1];
+    assert!((rim[2] - 30.0).abs() < 1e-9 && (rim[0].hypot(rim[1]) - 40.0).abs() < 1e-9);
+    assert_eq!(o.flow.last().copied(), Some(1.0));
     // Every point sits on the profile: radius 20 up to 10 mm, then 20 + (z - 10).
     for q in &p.points[1..] {
         let want = if q[2] <= 10.0 {

@@ -14,6 +14,17 @@ a failed build and started again (about $1.50 of API use per attempt).
 The next *Run workflow* sees that comment and opens the pull request for the branch already
 pushed, skipping Claude; the build's summary rides along in the comment.
 
+## 2026-10-25: an open top for `vase_revolve` (#1)
+
+**Why:** feature request #1: the owner wanted the lampshade's last turn (flat, extrusion ramping
+down) to be optional. `vase_spiral` and `spiralize` had `flat_top`; `vase_revolve` didn't.
+
+**Landed:** `vase_revolve(…, flat_top: true)`. `false` leaves out the closing turn: the last
+turn ends on the rim at full flow, an open top. The lampshade template has a "Flat closing turn"
+setting (on by default, so its G-code is unchanged). The open lampshade's G-code is golden-tested
+as EasyGCode's lampshade with its closing turn's moves taken out (as shipped, and the capped bell
+with a brim). Its options moved into a `toolpath::Revolve` struct. **Open:** nothing.
+
 ## 2026-10-24: CI pinned to Ubuntu 24.04
 
 **Why:** GitHub moved `ubuntu-latest` to Ubuntu 26.04, and Playwright 1.56.1 can't install

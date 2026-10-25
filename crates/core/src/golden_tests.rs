@@ -623,6 +623,81 @@ fn lampshade_recipe_matches_easygcode() {
     );
 }
 
+/// The lampshade with an open top (`flat_top: false`) prints exactly EasyGCode's lampshade
+/// without its closing turn: the spiral stops on the rim at full flow, and the end block follows.
+/// As it ships (width compensation, volumetric flow) and the capped bell (layer-height
+/// compensation, a brim, a set feed).
+#[test]
+fn an_open_lampshade_is_easygcodes_without_the_closing_turn() {
+    use Literal::{Bool, Number, Text};
+    let bell = [
+        ("socket", Text("E14".into())),
+        ("fit", Number(-0.2)),
+        ("shape", Text("bell".into())),
+        ("throat", Number(15.0)),
+        ("opening", Number(180.0)),
+        ("transition", Number(60.0)),
+        ("max_angle", Number(55.0)),
+        ("compensation", Text("layer height".into())),
+        ("strength", Number(80.0)),
+        ("brim", Bool(true)),
+        ("brim_lines", Number(3.0)),
+        ("brim_width", Number(5.0)),
+        ("brim_layer", Number(2.0)),
+    ];
+    type Values<'a> = &'a [(&'a str, Literal)];
+    let cases: [(String, Values, &str); 2] = [
+        (
+            LAMPSHADE.to_string(),
+            &[],
+            include_str!("../../../fixtures/easygcode/lampshade-flow.gcode"),
+        ),
+        (
+            LAMPSHADE.replace("flow: flow_at", "speed: 20"),
+            &bell,
+            include_str!("../../../fixtures/easygcode/lampshade-bell.gcode"),
+        ),
+    ];
+    for (template, values, fixture) in cases {
+        let run = |flat_top: bool| {
+            let mut values: Vec<(String, Literal)> = values
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect();
+            values.push(("flat_top".into(), Bool(flat_top)));
+            let recipe = set_values(&template, &values).unwrap();
+            let e = evaluate(&recipe, Quality::Final);
+            assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+            e.print.unwrap().path
+        };
+        let (flat, open) = (run(true), run(false));
+        let cap = flat.points.len() - open.points.len();
+        assert!(cap >= 24, "the closing turn has at least 24 points");
+        // EasyGCode's G-code without the closing turn: the last `cap` moves before the end block.
+        let lines: Vec<&str> = fixture.lines().collect();
+        let end = lines
+            .iter()
+            .position(|l| l.starts_with("; --- end G-code"))
+            .unwrap();
+        let mut dropped = 0;
+        let mut kept: Vec<&str> = Vec::new();
+        for (i, l) in lines.iter().enumerate().rev() {
+            if i < end && dropped < cap && l.starts_with("G1 ") {
+                dropped += 1;
+            } else {
+                kept.push(l);
+            }
+        }
+        assert_eq!(dropped, cap);
+        kept.reverse();
+        let expected: String = kept.iter().map(|l| format!("{l}\n")).collect();
+        let ours = gcode::write(&open, &Profile::default(), "Golden")
+            .unwrap()
+            .text;
+        assert_matches(&ours, &expected);
+    }
+}
+
 /// The machine events on the filament printer (`M104`, `M109`, `M220`, `M221`, back to the
 /// printer's own temperature) have no EasyGCode counterpart (its foaming is for the pellet
 /// printer, golden-tested above), so they're compared with a hand-checked fixture. The moves

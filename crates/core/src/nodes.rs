@@ -1335,9 +1335,15 @@ pub static NODES: &[Node] = &[
                 90.0,
                 "where each turn starts, degrees from +X (90: the back)",
             ),
+            opt(
+                "flat_top",
+                "Bool",
+                1.0,
+                "true: a flat closing turn for a level rim; false: an open top",
+            ),
         ],
         output: "Toolpath",
-        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed, a flat closing turn ramps it down.",
+        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed, a flat closing turn ramps it down (or, with `flat_top: false`, the spiral stops at full flow as it reaches the top: an open rim).",
         run: Run::Op(vase_revolve),
     },
     Node {
@@ -2261,10 +2267,13 @@ fn vase_revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
             width: &width,
             flow: &flow,
         },
-        a.num(3)?,
-        a.num(5)?,
-        a.num(6)?,
-        a.num(7)?,
+        &toolpath::Revolve {
+            speed: a.num(3)?,
+            bead_layer: a.num(5)?,
+            tolerance: a.num(6)?,
+            seam: a.num(7)?,
+            flat_top: a.flag(8)?,
+        },
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
     ctx.spend(path.points.len())?;

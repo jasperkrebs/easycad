@@ -35,6 +35,7 @@ param flow       = 20      in 1..400                "Throat flow (mm³/s)"
 param shade_flow = 0       in 0..400                "Shade flow (mm³/s, 0: as the throat)"
 param flow_ramp  = 0 mm    in 0..200                "Flow ramp height (0: over the fillet)"
 param tolerance  = 0.1 mm  in 0.01..1               "Chord tolerance"
+param flat_top   = true                             "Flat closing turn (off: open spiral)"
 
 group "Overhangs"
 param compensation = "width" of ["width", "layer height", "off"] "Compensation"
@@ -209,7 +210,7 @@ ramp_h  = pick(flow_ramp, flow_ramp, fillet_top - throat)
 ramp    = pick(greater(ramp_h, 0.000000001), clamp((from_throat - throat) / max(ramp_h, 0.000000001), 0, 1), 1 - less(from_throat, throat))
 flow_at = flow + ramp * (pick(shade_flow, shade_flow, flow) - flow)
 
-shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(less(abs(comp - 1), 0.5), pitch, 0), tolerance: tolerance)
+shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(less(abs(comp - 1), 0.5), pitch, 0), tolerance: tolerance, flat_top: flat_top)
 
 # A brim around the first turn, outermost ring first, hopping between rings and into the shade.
 first_rise  = sample(rise, [0, 0, min(top_z, sample(rise, [0, 0, 0]) / 2)])

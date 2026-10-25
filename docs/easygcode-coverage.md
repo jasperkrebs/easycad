@@ -110,7 +110,7 @@ the lifted rim's height, every cross-section and bottom.
 | Bottoms: staircase, zipper, true spiral (with the centre taper) | `rings` + `reverse` + `link_rings("staircase" / "zipper" / "spiral")`; taper with `adjust(extrude: (min(distance(c), w) + w) / (2 * w))` |
 | Filleted bottom: a flat spiral rounding into the wall through a quarter circle (tilted to meet a leaning wall), squeezed turns | flat spiral (`rings` + `link_rings("spiral")`), fillet sections in the same `loft`, `contour(pace: 1)`, `spiralize(ramp: false)`, `bead(layer:)`, `join` |
 | Overhang-paced Z, fitted to the height | `contour(wall, layer, pace: 1)` + `spiralize` |
-| Top finish: flat or open | `vase_spiral` / `spiralize` with `flat_top: false` |
+| Top finish: flat or open | `vase_spiral` / `spiralize` / `vase_revolve` with `flat_top: false` |
 | Randomize with a seed | `random` (in EasyGCode it only sets the UI's values) |
 
 ## Container (template since 19 Oct, as a salt & pepper shaker)
@@ -239,8 +239,9 @@ worked out in exact arithmetic by `scripts/hand-checked-fixtures.py`).
 
 ## Steps added for the lampshade (17 Oct 2026)
 
-- `vase_revolve(profile, layer, width, speed, flow, bead_layer, tolerance, seam)`: vase mode
-  around a profile of revolution, turn by turn (rise, width and flow from fields).
+- `vase_revolve(profile, layer, width, speed, flow, bead_layer, tolerance, seam, flat_top)`:
+  vase mode around a profile of revolution, turn by turn (rise, width and flow from fields;
+  `flat_top` since 25 Oct 2026).
 - `graph(xs, ys, x)` (Graph Mapper; a field for `x` gives a field), `bounds(list)`,
   `graft(list)`.
 - The G-code writer now writes `F` whenever the exact feed changes, as EasyGCode does (a bead
