@@ -3,6 +3,21 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-25 (late night): bead cross-sections in the Print tab
+
+**Why:** the owner asked how the bead's volume is worked out (a rectangle with a half circle
+each side: (w − h)·h + π·(h/2)², EasyGCode's model, used for every move's E) and wanted to see the
+beads, side by side, to compare them.
+
+**Landed:** the Print tab draws each printed part's beads to one scale: the outline, dashed
+lines where the rectangle meets the half circles, and size and area. Up to four distinct beads
+(to 0.01 mm) are all shown; more means they blend, and then only the extremes (narrowest,
+widest, flattest, tallest). `web/js/beads.js`, unit-tested in print.test; the smoke test checks
+the shaker's two parts and its 2 × 0.6 and 3 × 0.3 mm beads. (On a lampshade, the 2 mm-high bead
+is the flat closing turn's.)
+
+**Open:** nothing.
+
 ## 2026-10-25 (night): beads at their real size; the pivot; named saves; the chat moves sliders
 
 **Why:** the owner wanted to see whether an overhang is printable from the beads' real width

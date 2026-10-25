@@ -314,6 +314,12 @@ async function waitForServer(url) {
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();
       if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);
+      // Each part's bead cross-sections, to scale: the walls' 2 × 0.6 mm and the spiral discs'
+      // 3 × 0.3 mm among them.
+      const beadTitles = await page.locator('#beads .bead-title').allTextContents();
+      const captions = (await page.locator('#beads figcaption').allTextContents()).join(' | ');
+      if (beadTitles.length !== 2 || !/^base/.test(beadTitles[0]) || !/^lid/.test(beadTitles[1])) failures.push(`${name}: the bead groups: ${beadTitles.join(' / ')}`);
+      if (!captions.includes('2 × 0.6 mm') || !captions.includes('3 × 0.3 mm')) failures.push(`${name}: the beads shown: ${captions}`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-print.png`), fullPage: name === 'phone' });
 
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

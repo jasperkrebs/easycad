@@ -14,6 +14,7 @@ import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, 
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { createGraph } from './graph.js';
+import { beadExtremes, renderBeads } from './beads.js';
 
 const TEMPLATES = [
   { id: 'twisted-vase', name: 'Twisted star vase' },
@@ -225,6 +226,29 @@ function printsOf(result) {
 
 function renderPrintTab() {
   renderPrint($('stats'), $('checks'), printsOf(state.last), state.printer, state.profile);
+  renderBeads($('beads'), beadGroups(state.last));
+}
+
+/** Each printed part's beads (or, with no parts named, all the toolpaths'), for the Print tab. */
+function beadGroups(result) {
+  const paths = result?.paths;
+  if (!paths?.widths || !paths?.heights) return [];
+  const prints = printsOf(result);
+  const owner = result.parts?.paths || new Int32Array(0);
+  /** @type {Map<number, { widths: number[], heights: number[] }>} */
+  const byPart = new Map();
+  for (let i = 0; i + 1 < paths.starts.length; i++) {
+    const part = prints.length > 1 ? (owner[i] ?? -1) : 0;
+    const into = byPart.get(part) || { widths: [], heights: [] };
+    for (let k = paths.starts[i]; k < paths.starts[i + 1]; k++) {
+      into.widths.push(paths.widths[k]);
+      into.heights.push(paths.heights[k]);
+    }
+    byPart.set(part, into);
+  }
+  return [...byPart.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([part, b]) => ({ name: prints[part]?.name || 'other', ...beadExtremes(b.widths, b.heights) }));
 }
 
 /** Buttons for the files the recipe makes: G-code of what it prints, and its `export` lines. */

@@ -118,3 +118,33 @@ test("the agent's guide carries the G1's facts", () => {
     assert.match(guide, fact);
   }
 });
+
+test("the bead is EasyGCode's: a rectangle with a half circle each side; blends show their extremes", async () => {
+  const { beadArea, beadExtremes } = await import('../web/js/beads.js');
+  // 2 × 0.6 mm: 1.4 × 0.6 plus a 0.6 mm circle.
+  assert.equal(beadArea(2, 0.6), 1.4 * 0.6 + Math.PI * 0.09);
+  // Two beads (and travel, 0): both, smallest first.
+  const two = beadExtremes([0, 2, 2, 3, 3, 0], [0, 0.6, 0.6, 0.3, 0.3, 0]);
+  assert.equal(two.blended, false);
+  assert.deepEqual(
+    two.beads.map((b) => [b.w, b.h]),
+    [
+      [3, 0.3],
+      [2, 0.6],
+    ],
+  );
+  // A smooth blend from 2 × 0.6 to 3 × 0.3: only the two ends.
+  const n = 50;
+  const ws = Array.from({ length: n }, (_, i) => 2 + i / (n - 1));
+  const hs = Array.from({ length: n }, (_, i) => 0.6 - (0.3 * i) / (n - 1));
+  const blend = beadExtremes(ws, hs);
+  assert.equal(blend.blended, true);
+  assert.deepEqual(blend.beads.map((b) => [b.w, b.h]).sort(), [
+    [2, 0.6],
+    [3, 0.3],
+  ]);
+  // Widths and heights varying apart: the narrowest, widest, flattest and tallest.
+  const apart = beadExtremes([2, 2.5, 3, 3.5, 4, 2.2], [0.5, 0.4, 0.6, 0.3, 0.5, 0.7]);
+  assert.deepEqual(new Set(apart.beads.map((b) => `${b.w}x${b.h}`)), new Set(['2x0.5', '4x0.5', '3.5x0.3', '2.2x0.7']));
+  assert.deepEqual(beadExtremes([0, 0], [0, 0]).beads, []);
+});
