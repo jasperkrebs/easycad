@@ -526,9 +526,19 @@ code {
   margin-top: 10px;
 }
 
-.project-bar select {
+.project-bar select,
+.project-bar input {
   flex: 1;
   min-width: 0;
+}
+
+.project-bar input {
+  background: var(--card2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font: inherit;
 }
 
 .confirm {

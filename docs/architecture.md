@@ -360,6 +360,7 @@ app: checks the issue (public API) ◄──────────────
 │                              │
 │         3D viewport          │  drag = orbit, pinch = zoom, two fingers = pan;
 │                              │  3D / Front / Side / Top, Parallel (default) or perspective
+│                              │  Line width: the toolpath as solid beads at their real size
 │                              │
 ├──────────────────────────────┤
 │ [Params] [Graph] [Code] [Print]

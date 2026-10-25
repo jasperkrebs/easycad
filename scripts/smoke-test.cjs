@@ -302,6 +302,15 @@ async function waitForServer(url) {
       const tall = page.viewportSize()?.height ?? 0;
       if (!(sideScrolled > 0) || !view || view.y < 0 || view.y + view.height > tall + 1) failures.push(`${name}: panels scrolled ${sideScrolled}, the 3D view at ${JSON.stringify(view)}`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-disc.png`), fullPage: name === 'phone' });
+      // The toolpath as solid beads at their real width and height, as slicers draw them; seen
+      // from the front, the spiral discs' 3 mm beads stand out past the 2 mm walls.
+      await page.click('#viewWidth');
+      if ((await page.getAttribute('#viewWidth', 'aria-pressed')) !== 'true') failures.push(`${name}: the bead view didn't switch on`);
+      await page.click('button[data-view="front"]');
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-beads.png`) });
+      await page.click('button[data-view="iso"]');
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-beads-3d.png`) });
+      await page.click('#viewWidth');
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();
       if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);
@@ -360,7 +369,17 @@ async function waitForServer(url) {
       await page.waitForTimeout(1500);
       if ((await page.inputValue('#recipe')) !== before) failures.push('save: opening the saved file changed the recipe (the note stayed in?)');
       if (!(await page.locator('#templateUpdate').isHidden())) failures.push('save: opening the saved file offers a template update');
-      const settingsFile = JSON.parse((await saveFrom(page, '#saveSettings')).data.toString('utf8'));
+      // A slider moved since: Save writes it in. A name typed by Save names both files.
+      await page.fill('#set-line', '2,2');
+      await page.dispatchEvent('#set-line', 'change');
+      await page.waitForFunction(() => /^param line\s+= 2\.2 mm/m.test(document.getElementById('recipe').value), null, { timeout: 15000 }).catch(() => failures.push('save: the slider move did not reach the recipe'));
+      await page.fill('#saveName', 'My shaker v2');
+      const named = await saveFrom(page, '#saveProject');
+      if (named.name !== 'My shaker v2.easycad') failures.push(`save: the project saved as ${named.name}`);
+      if (!/^param line\s+= 2\.2 mm/m.test(named.data.toString('utf8'))) failures.push(`save: the moved slider isn't in the saved project: ${(named.data.toString('utf8').match(/^param line.*$/m) || [''])[0]}`);
+      const settingsSaved = await saveFrom(page, '#saveSettings');
+      if (settingsSaved.name !== 'My shaker v2-settings.json') failures.push(`save: the settings saved as ${settingsSaved.name}`);
+      const settingsFile = JSON.parse(settingsSaved.data.toString('utf8'));
       if (!/project file/.test(settingsFile.about || '') || typeof settingsFile.values !== 'object') failures.push(`save: the settings file has no note: ${JSON.stringify(settingsFile).slice(0, 120)}`);
       await ctx.close();
     }

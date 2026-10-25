@@ -42,6 +42,9 @@
             <button type="button" data-mode="path" aria-pressed="false">Toolpath</button>
             <button type="button" data-mode="both" aria-pressed="true">Both</button>
           </div>
+          <div class="seg">
+            <button type="button" id="viewWidth" aria-pressed="false" title="Draw the toolpath as solid beads, at their real line width and layer height, as slicers do">Line width</button>
+          </div>
           <div class="seg" id="viewCam" role="group" aria-label="View">
             <button type="button" data-view="iso" title="3D view">3D</button>
             <button type="button" data-view="front" title="From the front">Front</button>
@@ -74,6 +77,9 @@
                 <option value="">New from template…</option>
               </select>
               <button class="btn" type="button" id="openProject">Open</button>
+            </div>
+            <div class="project-bar">
+              <input type="text" id="saveName" aria-label="Name to save it as" autocomplete="off" spellcheck="false">
               <button class="btn primary" type="button" id="saveProject">Save</button>
             </div>
             <div class="confirm" id="templateUpdate" role="alertdialog" aria-labelledby="templateUpdateText" hidden>
@@ -115,8 +121,10 @@
           <input type="file" id="projectFile" hidden />
           <input type="file" id="settingsFile" accept=".json,application/json" hidden />
           <p class="hint">
-            Your project is remembered on this device. <b>Save</b> downloads it as an <code>.easycad</code> file you can open
-            again anywhere. <b>Save settings</b> keeps just the values, to load into the same project later.
+            Your project is remembered on this device. <b>Save</b> downloads it, with the settings as they are now, as an
+            <code>.easycad</code> file you can open again anywhere, under the name typed next to it (or the project's).
+            <b>Save settings</b> keeps just the values, under the same name with <code>-settings</code>, to load into the
+            same project later.
           </p>
         </section>
 

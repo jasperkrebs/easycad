@@ -32,6 +32,8 @@ const TEMPLATES = [
 const STORAGE_KEY = 'easycad.project';
 /** Parallel or perspective 3D view. */
 const VIEW_KEY = 'easycad.view';
+/** The toolpath as lines or as solid beads. */
+const BEADS_KEY = 'easycad.beads';
 const MAX_FILE_BYTES = 256 * 1024;
 const TABS = ['settings', 'graph', 'chat', 'recipe', 'print', 'about'];
 
@@ -169,6 +171,7 @@ function renderProject(result) {
   $('projectName').textContent = name;
   document.title = `${name} · EasyCAD`;
   $('projectNotes').textContent = result.notes.join(' ');
+  /** @type {HTMLInputElement} */ ($('saveName')).placeholder = slug(name);
 }
 
 function renderHud(result) {
@@ -466,6 +469,7 @@ async function openTemplate(id) {
   if (!response.ok) throw new Error(`template ${id}: ${response.status}`);
   const text = await response.text();
   await openSource(text);
+  setSaveName('');
   state.template = { id, base: withoutValues(text) };
   autosave();
 }
@@ -601,6 +605,7 @@ function autosave() {
           openedValues: state.openedValues,
           printer: state.printer,
           unsaved: state.unsaved,
+          saveName: /** @type {HTMLInputElement} */ ($('saveName')).value,
           template: state.template,
         }),
       );
@@ -626,6 +631,25 @@ function restore() {
 async function currentSource() {
   await engine.idle();
   return state.source;
+}
+
+/**
+ * The name files are saved under: the one typed by Save, else the project's own (made safe for
+ * a file name). The settings file is this name with "-settings".
+ */
+function saveName() {
+  const typed = /** @type {HTMLInputElement} */ ($('saveName'))
+    .value.replace(/\.easycad$/i, '')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-')
+    .trim();
+  return typed || slug(projectName());
+}
+
+/** Puts a name in the Save field (empty: the project's own, shown as a hint). */
+function setSaveName(name) {
+  const input = /** @type {HTMLInputElement} */ ($('saveName'));
+  input.value = name;
+  input.placeholder = slug(projectName()) || 'Name';
 }
 
 function projectName() {
@@ -728,6 +752,33 @@ function wire() {
   }
   setParallel(stored !== 'perspective');
   parallel.addEventListener('click', () => setParallel(!viewport.parallel));
+  // The toolpath as solid beads at their real line width and layer height, as slicers draw it
+  // (remembered on this device).
+  const widthButton = $('viewWidth');
+  const showBeads = (on) => {
+    widthButton.setAttribute('aria-pressed', String(on));
+    viewport.setBeads(on);
+    try {
+      localStorage.setItem(BEADS_KEY, on ? 'on' : 'off');
+    } catch {
+      // Not remembered.
+    }
+  };
+  let beads = '';
+  try {
+    beads = localStorage.getItem(BEADS_KEY) || '';
+  } catch {
+    beads = '';
+  }
+  showBeads(beads === 'on');
+  widthButton.addEventListener('click', () => {
+    const on = widthButton.getAttribute('aria-pressed') !== 'true';
+    // Beads are the toolpath: show it if only the shape is shown.
+    if (on && document.querySelector('[data-mode="shape"]')?.getAttribute('aria-pressed') === 'true') {
+      /** @type {HTMLElement} */ (document.querySelector('[data-mode="both"]')).click();
+    }
+    showBeads(on);
+  });
 
   const templates = /** @type {HTMLSelectElement} */ ($('template'));
   for (const t of TEMPLATES) templates.append(el('option', { value: t.id, text: t.name }));
@@ -760,18 +811,22 @@ function wire() {
   $('openProject').addEventListener('click', () => $('projectFile').click());
   $('projectFile').addEventListener('change', async (e) => {
     try {
+      const picked = /** @type {HTMLInputElement} */ (e.target).files?.[0];
       const text = await readPicked(e.target);
       if (text !== null) {
         await openSource(withoutFileNote(text));
+        setSaveName((picked?.name || '').replace(/\.easycad$/i, ''));
+        autosave();
         checkTemplate();
       }
     } catch (err) {
       showSettingsError(`Could not open the project: ${err.message || err}`);
     }
   });
+  $('saveName').addEventListener('input', () => autosave());
   $('saveProject').addEventListener('click', async () => {
     const site = new URL('.', location.href).href;
-    download(`${slug(projectName())}.easycad`, `${fileNote(site)}\n\n${await currentSource()}`);
+    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${await currentSource()}`);
     state.openedValues = { ...state.values };
     state.unsaved = false;
     autosave();
@@ -806,7 +861,7 @@ function wire() {
       printer: state.printer,
       values: state.values,
     };
-    download(`${slug(projectName())}-settings.json`, JSON.stringify(data, null, 2), 'application/json');
+    download(`${saveName()}-settings.json`, JSON.stringify(data, null, 2), 'application/json');
   });
   $('loadSettings').addEventListener('click', () => $('settingsFile').click());
   $('settingsFile').addEventListener('change', async (e) => {
@@ -877,6 +932,7 @@ async function start() {
       if (!state.last?.printer && saved.printer in PRINTERS) setPrinter(saved.printer);
       if (saved.openedValues && typeof saved.openedValues === 'object') state.openedValues = saved.openedValues;
       state.unsaved = saved.unsaved === true;
+      setSaveName(typeof saved.saveName === 'string' ? saved.saveName : '');
       const t = saved.template;
       state.template = t && typeof t.id === 'string' && typeof t.base === 'string' ? { id: t.id, base: t.base } : null;
       checkTemplate();

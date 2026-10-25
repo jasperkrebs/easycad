@@ -37,8 +37,10 @@ pub fn node_catalog() -> String {
 /// to draw on its own as well: the graph view's selected component.
 ///
 /// Returns `{ source, project, printer, notes, params, steps, diagnostics, print, exports,
-/// bounds, mesh: { positions, indices }, curves: { points, starts }, paths: { points, starts },
-/// parts: { mesh, curves, paths } (each piece's printed part),
+/// bounds, mesh: { positions, indices }, curves: { points, starts },
+/// paths: { points, starts, widths, heights } (each point's line width and layer height in mm,
+/// the bead of the move that ends there; 0 for travel), parts: { mesh, curves, paths } (each
+/// piece's printed part),
 /// highlight: { mesh, curves, paths } }`. A broken recipe doesn't throw: its problems are in
 /// `diagnostics`.
 #[wasm_bindgen]
@@ -179,6 +181,9 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     let curves = polylines(e.drawing.curves.iter().map(Vec::as_slice))?;
     set(&out, "curves", &curves)?;
     let paths = polylines(e.drawing.paths.iter().map(|p| p.points.as_slice()))?;
+    let (widths, heights) = beads(&e.drawing);
+    set(&paths, "widths", &widths)?;
+    set(&paths, "heights", &heights)?;
     set(&out, "paths", &paths)?;
     let parts = parts(&e.drawing)?;
     set(&out, "parts", &parts)?;
@@ -229,6 +234,31 @@ fn parts(d: &Drawing) -> Result<Object, JsError> {
 
 /// Several polylines as one `points` array (x,y,z floats) plus `starts`: where each polyline
 /// begins, counted in points, with the total count at the end.
+/// Each toolpath point's bead, line width and layer height (mm): the bead of the move that ends
+/// there, 0 for a travel. A path's first point takes its first move's, so a bead starts full size.
+fn beads(d: &Drawing) -> (Float32Array, Float32Array) {
+    let (mut widths, mut heights): (Vec<f32>, Vec<f32>) = (Vec::new(), Vec::new());
+    for p in &d.paths {
+        let bead = |i: usize| {
+            if p.travel.get(i).copied().unwrap_or(false) {
+                (0.0, 0.0)
+            } else {
+                let (w, h) = p.bead_of(i);
+                (w as f32, h as f32)
+            }
+        };
+        for i in 0..p.points.len() {
+            let (w, h) = bead(if i == 0 && p.points.len() > 1 { 1 } else { i });
+            widths.push(w);
+            heights.push(h);
+        }
+    }
+    (
+        Float32Array::from(widths.as_slice()),
+        Float32Array::from(heights.as_slice()),
+    )
+}
+
 fn polylines<'a>(lines: impl Iterator<Item = &'a [P3]>) -> Result<Object, JsError> {
     let mut points: Vec<f32> = Vec::new();
     let mut starts: Vec<u32> = vec![0];

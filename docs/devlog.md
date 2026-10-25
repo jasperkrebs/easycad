@@ -3,6 +3,28 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-25 (night): beads at their real size; the pivot; named saves; the chat moves sliders
+
+**Why:** the owner wanted to see whether an overhang is printable from the beads' real width
+(not a colour), to move the steep curve's pivot, to name what they save, and the chat to change
+settings rather than only the recipe.
+
+**Landed:**
+- 3D view, *Line width*: the toolpath as solid beads, a box section (line width across, flat in
+  the layer; layer height down from the nozzle) swept along each path, shaded like a slicer's
+  rounded bead; travel leaves gaps. Built only while it's on (about 4 vertices per path point).
+  The engine sends each point's bead (`paths.widths`, `paths.heights`).
+- Lampshade: *Steep curve pivot* (5..85°, 45° by default): the angle where the curve gives
+  today's compensation. Tested: a higher pivot never widens a bead and narrows some.
+- Save: a name field next to it; the project saves as `<name>.easycad`, the settings as
+  `<name>-settings.json` (empty: the project's name). Opening a file fills it in. The smoke test
+  checks a moved slider is in the saved project (it always was: slider moves are written into
+  the recipe text).
+- The agent's prompt sends value changes to `set_settings` (the sliders); the agent test moves
+  one and checks the settings window.
+
+**Open:** very long toolpaths (a million points) make heavy bead meshes; decimate if it shows.
+
 ## 2026-10-25 (evening): set views and a parallel 3D view; the lampshade's steep curve
 
 **Why:** the owner wanted slicer-style views (front, side, top) and a parallel view as the

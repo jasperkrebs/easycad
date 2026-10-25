@@ -29,6 +29,7 @@ function answer(msg) {
     const r = evaluate(msg.source, msg.values, msg.quality, msg.highlight || undefined);
     const ms = performance.now() - t0;
     const arrays = [r, r.highlight].flatMap((d) => [d.mesh.positions, d.mesh.indices, d.curves.points, d.curves.starts, d.paths.points, d.paths.starts]);
+    if (r.paths.widths) arrays.push(r.paths.widths, r.paths.heights);
     return { result: { ...r, ms }, transfer: arrays.map((a) => a.buffer) };
   }
   throw new Error(`unknown request: ${msg.type}`);

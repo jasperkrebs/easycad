@@ -53,6 +53,7 @@ function reply(round) {
   if (round === 1) return { tool: { name: 'look', input: { show: 'both' } } };
   if (round === 2) return { tool: { name: 'edit_recipe', input: { edits: [{ old: 'param height = 80 mm', new: 'param height = 120 mm' }] } } };
   if (round === 3) return { tool: { name: 'set_printer', input: { printer: 'pellet', material: 'colorFabb FOAM PLA', settings: { 'pellet.bed': 55, 'filament.nozzle': 230 } } } };
+  if (round === 4) return { tool: { name: 'set_settings', input: { values: { radius: 40 } } } };
   return { text: 'Done: a 120 mm cylinder. Try **Radius** in the settings.' };
 }
 
@@ -211,8 +212,12 @@ async function waitForServer(url) {
       check(/param height = 120 mm/.test(recipe) && /project "Test cylinder"/.test(recipe), `${name}: the agent's recipe wasn't applied`);
       check((await page.textContent('#projectName')) === 'Test cylinder', `${name}: project name not updated`);
       const chips = await page.locator('#chatLog .tool').allTextContents();
-      check(chips.length === 4, `${name}: expected 4 tool steps in the chat, got ${chips.length}: ${chips.join(' | ')}`);
-      check((await page.locator('#chatLog .tool.ok').count()) === 4, `${name}: tool steps not marked as done`);
+      check(chips.length === 5, `${name}: expected 5 tool steps in the chat, got ${chips.length}: ${chips.join(' | ')}`);
+      check((await page.locator('#chatLog .tool.ok').count()) === 5, `${name}: tool steps not marked as done`);
+      // A setting moved by the agent: the slider and the recipe's param line follow.
+      check(/^param radius = 40 mm/m.test(recipe), `${name}: the agent's setting didn't reach the recipe: ${(recipe.match(/^param radius.*$/m) || [''])[0]}`);
+      check(chips[4] === 'Set radius = 40', `${name}: the setting's chip says ${chips[4]}`);
+      check((await page.inputValue('#set-radius')) === '40', `${name}: the settings window shows radius ${await page.inputValue('#set-radius')}`);
       // The printer switch: the Print tab follows, and the recipe names the new printer.
       check((await page.inputValue('#printer')) === 'pellet', `${name}: the agent's printer switch didn't reach the Print tab`);
       check((await page.inputValue('#printer-pellet-bed')) === '55', `${name}: the agent's printer setting didn't reach the Print tab`);
@@ -224,7 +229,7 @@ async function waitForServer(url) {
 
       // What the app sent.
       const reqs = mock.requests;
-      check(reqs.length === 5, `${name}: expected 5 model requests, got ${reqs.length}`);
+      check(reqs.length === 6, `${name}: expected 6 model requests, got ${reqs.length}`);
       const first = reqs[0];
       check(first.headers.authorization === `Bearer ${PASSWORD}` && !first.headers['x-api-key'], `${name}: the password must be the only credential sent`);
       check(String(first.headers['anthropic-beta']).includes('server-side-fallback-2026-07-01'), `${name}: fallback beta header missing`);

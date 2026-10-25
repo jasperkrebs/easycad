@@ -3,7 +3,8 @@
 // slicers. It renders only when something changes, which saves battery on phones.
 //
 // Parallel (orthographic, true to proportion like a technical drawing) by default, or
-// perspective; and set views (3D, front, side, top), as in slicers.
+// perspective; and set views (3D, front, side, top), as in slicers. Toolpaths are lines coloured
+// by height, or solid beads at their real line width and layer height, as slicers draw them.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -55,12 +56,15 @@ export function createViewport(canvas) {
   const shapes = new THREE.Group();
   scene.add(shapes);
 
-  // Toolpaths: fat lines coloured by height. Curves: thin lines.
+  // Toolpaths: fat lines coloured by height, or (built only while they're shown) solid beads.
+  // Curves: thin lines.
   const lineMaterial = new LineMaterial({ linewidth: 1.1, vertexColors: true, worldUnits: false });
   const paths = new THREE.Group();
+  const beadMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.0, side: THREE.DoubleSide });
+  const beads = new THREE.Group();
   const curveMaterial = new THREE.LineBasicMaterial();
   const curves = new THREE.Group();
-  scene.add(paths, curves);
+  scene.add(paths, beads, curves);
 
   // The graph's selected component, drawn over everything in the highlight colour (green, as
   // Grasshopper shows a selected component's geometry).
@@ -75,6 +79,8 @@ export function createViewport(canvas) {
   let grid = null;
 
   let mode = 'both';
+  /** Toolpaths drawn as solid beads (real width and height) instead of lines. */
+  let showBeads = false;
   /** Bed width and depth, and where the recipe's origin sits on it (all in mm). */
   let bed = { size: [256, 256], center: [125, 125] };
   let fitted = false;
@@ -158,6 +164,78 @@ export function createViewport(canvas) {
       const geometry = /** @type {LineGeometry} */ (/** @type {Line2} */ (line).geometry);
       geometry.setColors(pathColors(/** @type {any} */ (line).userData.points, zMin, zMax));
     }
+    if (showBeads) buildBeads();
+  }
+
+  /**
+   * One toolpath as a solid bead: a box section (the line width across, flat in the layer; the
+   * layer height down from the nozzle) swept along the path, its corners shared from one point to
+   * the next so it shades like a slicer's rounded bead. Travel moves leave a gap.
+   * @param {Float32Array} points
+   * @param {Float32Array} widths
+   * @param {Float32Array} heights
+   * @param {Float32Array} colors
+   */
+  function beadGeometry(points, widths, heights, colors) {
+    const n = points.length / 3;
+    const pos = new Float32Array(n * 12);
+    const col = new Float32Array(n * 12);
+    // Across the path in the layer: the last good direction when a move is straight up.
+    let ax = 1;
+    let ay = 0;
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - 1);
+      const b = Math.min(n - 1, i + 1);
+      const tx = points[3 * b] - points[3 * a];
+      const ty = points[3 * b + 1] - points[3 * a + 1];
+      const len = Math.hypot(tx, ty);
+      if (len > 1e-9) {
+        ax = -ty / len;
+        ay = tx / len;
+      }
+      // A point after a travel takes the bead of the move that leaves it.
+      const k = widths[i] > 0 || i + 1 >= n ? i : i + 1;
+      const hw = widths[k] / 2;
+      const h = heights[k];
+      const [x, y, z] = [points[3 * i], points[3 * i + 1], points[3 * i + 2]];
+      const ring = [x + ax * hw, y + ay * hw, z, x - ax * hw, y - ay * hw, z, x - ax * hw, y - ay * hw, z - h, x + ax * hw, y + ay * hw, z - h];
+      pos.set(ring, 12 * i);
+      for (let c = 0; c < 4; c++) col.set(colors.subarray(3 * i, 3 * i + 3), 12 * i + 3 * c);
+    }
+    let faces = 0;
+    for (let i = 1; i < n; i++) if (widths[i] > 0) faces++;
+    const index = new Uint32Array(faces * 24);
+    let at = 0;
+    for (let i = 0; i + 1 < n; i++) {
+      if (!(widths[i + 1] > 0)) continue;
+      const [p, q] = [4 * i, 4 * (i + 1)];
+      for (let c = 0; c < 4; c++) {
+        const d = (c + 1) % 4;
+        index.set([p + c, q + c, q + d, p + c, q + d, p + d], at);
+        at += 6;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setIndex(new THREE.BufferAttribute(index, 1));
+    g.computeVertexNormals();
+    return g;
+  }
+
+  /** The beads for every toolpath shown as lines, in the same colours and parts. */
+  function buildBeads() {
+    clear(beads);
+    const zMin = lastBounds ? lastBounds.min[2] : 0;
+    const zMax = lastBounds ? lastBounds.max[2] : 1;
+    for (const line of paths.children) {
+      const data = /** @type {any} */ (line).userData;
+      if (!data.widths || !data.heights) continue;
+      const mesh = new THREE.Mesh(beadGeometry(data.points, data.widths, data.heights, pathColors(data.points, zMin, zMax)), beadMaterial);
+      mesh.userData.part = data.part;
+      mesh.visible = !hiddenParts.has(data.part);
+      beads.add(mesh);
+    }
   }
 
   /** @param {THREE.Group} group */
@@ -173,12 +251,14 @@ export function createViewport(canvas) {
     for (const group of [shapes, paths, curves]) {
       for (const child of group.children) child.visible = !hiddenParts.has(child.userData.part);
     }
+    for (const child of beads.children) child.visible = !hiddenParts.has(child.userData.part);
     requestRender();
   }
 
   function applyMode() {
     shapes.visible = mode !== 'path';
-    paths.visible = mode !== 'shape';
+    paths.visible = mode !== 'shape' && !showBeads;
+    beads.visible = mode !== 'shape' && showBeads;
     // With both visible, the shape turns see-through so the toolpath on its surface shows.
     for (const m of [meshMaterial, insideMaterial]) {
       m.transparent = mode === 'both';
@@ -358,11 +438,16 @@ export function createViewport(canvas) {
         curves.add(line);
       });
       clear(paths);
-      eachPolyline(result.paths, (points, i) => {
+      const { widths, heights } = /** @type {any} */ (result.paths);
+      eachPolyline(result.paths, (points, i, from) => {
         const g = new LineGeometry();
         g.setPositions(points);
         const line = new Line2(g, lineMaterial);
         line.userData.points = points;
+        if (widths && heights) {
+          line.userData.widths = widths.subarray(from, from + points.length / 3);
+          line.userData.heights = heights.subarray(from, from + points.length / 3);
+        }
         line.userData.part = parts.paths[i] ?? -1;
         paths.add(line);
       });
@@ -412,6 +497,17 @@ export function createViewport(canvas) {
 
     /** Parallel (orthographic) or perspective. */
     setParallel,
+
+    /**
+     * Toolpaths as solid beads at their real line width and layer height (on), or as lines.
+     * @param {boolean} on
+     */
+    setBeads(on) {
+      showBeads = on;
+      if (on) buildBeads();
+      else clear(beads);
+      applyMode();
+    },
 
     get parallel() {
       return camera === ortho;
@@ -523,14 +619,14 @@ export function createViewport(canvas) {
 }
 
 /**
- * Calls `fn` with each polyline of a packed set (see `show`) and its place in the set, skipping
- * single points.
+ * Calls `fn` with each polyline of a packed set (see `show`), its place in the set and the index
+ * of its first point, skipping single points.
  * @param {{ points: Float32Array, starts: Uint32Array }} packed
- * @param {(points: Float32Array, i: number) => void} fn
+ * @param {(points: Float32Array, i: number, from: number) => void} fn
  */
 function eachPolyline(packed, fn) {
   for (let i = 0; i + 1 < packed.starts.length; i++) {
     const [a, b] = [packed.starts[i], packed.starts[i + 1]];
-    if (b - a >= 2) fn(packed.points.subarray(a * 3, b * 3), i);
+    if (b - a >= 2) fn(packed.points.subarray(a * 3, b * 3), i, a);
   }
 }
