@@ -60,7 +60,16 @@ export function createViewport(canvas) {
   // Curves: thin lines.
   const lineMaterial = new LineMaterial({ linewidth: 1.1, vertexColors: true, worldUnits: false });
   const paths = new THREE.Group();
-  const beadMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.0, side: THREE.DoubleSide });
+  // Slightly see-through, so the beads behind and the inside of the part show through them.
+  const beadMaterial = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.6,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.4,
+    depthWrite: false,
+  });
   const beads = new THREE.Group();
   const curveMaterial = new THREE.LineBasicMaterial();
   const curves = new THREE.Group();
