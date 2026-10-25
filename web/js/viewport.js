@@ -1,6 +1,9 @@
 // 3D view: three.js drawing on the GPU (WebGL 2 today; three's WebGPURenderer is the drop-in
 // upgrade when we need GPU compute or multi-million-segment toolpaths). Z is up, like Rhino and
 // slicers. It renders only when something changes, which saves battery on phones.
+//
+// Parallel (orthographic, true to proportion like a technical drawing) by default, or
+// perspective; and set views (3D, front, side, top), as in slicers.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -21,9 +24,19 @@ export function createViewport(canvas) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(35, 1, 1, 20000);
-  camera.up.set(0, 0, 1);
-  camera.position.set(300, -380, 260);
+  const persp = new THREE.PerspectiveCamera(35, 1, 1, 20000);
+  const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 20000);
+  for (const c of [persp, ortho]) {
+    c.up.set(0, 0, 1);
+    c.position.set(300, -380, 260);
+  }
+  /** The camera on screen: `ortho` (parallel) or `persp`. */
+  /** @type {THREE.PerspectiveCamera | THREE.OrthographicCamera} */
+  let camera = ortho;
+  /** Half the height the parallel view shows at zoom 1 (mm), and the view's width ÷ height. */
+  let orthoHalf = 100;
+  let aspect = 1;
+  const tanHalf = () => Math.tan(THREE.MathUtils.degToRad(persp.fov / 2));
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f4a, 1.5));
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -83,12 +96,23 @@ export function createViewport(canvas) {
     renderer.render(scene, camera);
   }
 
+  /** The parallel view's box, from its half height and the view's shape. */
+  function frameOrtho() {
+    ortho.left = -orthoHalf * aspect;
+    ortho.right = orthoHalf * aspect;
+    ortho.top = orthoHalf;
+    ortho.bottom = -orthoHalf;
+    ortho.updateProjectionMatrix();
+  }
+
   function resize() {
     const w = Math.max(1, canvas.clientWidth);
     const h = Math.max(1, canvas.clientHeight);
     renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+    aspect = w / h;
+    persp.aspect = aspect;
+    persp.updateProjectionMatrix();
+    frameOrtho();
     lineMaterial.resolution.set(w, h);
     hlLineMaterial.resolution.set(w, h);
     requestRender();
@@ -165,21 +189,74 @@ export function createViewport(canvas) {
     requestRender();
   }
 
-  /** Frames a box: `{ min: [x, y, z], max: [x, y, z] }` (a default box when there's nothing). */
-  function fit(bounds) {
+  /** The directions the set views look from (toward the model). Top is tipped a hair toward
+   * the front, so "up" on screen stays well defined (+Y). */
+  const VIEWS = {
+    iso: new THREE.Vector3(0.62, -0.78, 0.5).normalize(),
+    front: new THREE.Vector3(0, -1, 0),
+    side: new THREE.Vector3(1, 0, 0),
+    top: new THREE.Vector3(0, -1e-4, 1).normalize(),
+  };
+
+  /**
+   * Frames a box: `{ min: [x, y, z], max: [x, y, z] }` (a default box when there's nothing),
+   * looking from `dir`.
+   */
+  function fit(bounds, dir = VIEWS.iso) {
     const b = bounds || { min: [-50, -50, 0], max: [50, 50, 100] };
     const size = [0, 1, 2].map((k) => b.max[k] - b.min[k]);
     const r = Math.max(10, Math.hypot(size[0], size[1], size[2]) / 2) * 1.1;
     // The narrower of the two view angles, so it fits across a phone's narrow view too.
-    const vertical = THREE.MathUtils.degToRad(camera.fov / 2);
-    const half = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
+    const vertical = THREE.MathUtils.degToRad(persp.fov / 2);
+    const half = Math.min(vertical, Math.atan(Math.tan(vertical) * aspect));
     const dist = r / Math.sin(half);
     controls.target.set((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
-    const dir = new THREE.Vector3(0.62, -0.78, 0.5).normalize();
+    for (const c of [persp, ortho]) {
+      c.position.copy(controls.target).addScaledVector(dir, dist);
+      c.near = Math.max(0.5, dist / 100);
+      c.far = dist * 20;
+    }
+    // Parallel: the same box, its narrower side across the view.
+    orthoHalf = r / Math.min(1, aspect);
+    ortho.zoom = 1;
+    frameOrtho();
+    persp.updateProjectionMatrix();
+    controls.update();
+    requestRender();
+  }
+
+  /** Looks at the model from one of the set views, keeping its distance and zoom. */
+  function lookFrom(name) {
+    const dir = VIEWS[name] || VIEWS.iso;
+    const dist = camera.position.distanceTo(controls.target);
     camera.position.copy(controls.target).addScaledVector(dir, dist);
-    camera.near = Math.max(0.5, dist / 100);
-    camera.far = dist * 20;
-    camera.updateProjectionMatrix();
+    controls.update();
+    requestRender();
+  }
+
+  /** Switches between parallel and perspective, keeping what's in view the same size. */
+  function setParallel(on) {
+    if (on === (camera === ortho)) return;
+    const target = controls.target;
+    const dir = camera.position.clone().sub(target).normalize();
+    if (on) {
+      // The height perspective shows at the target becomes the parallel view's.
+      orthoHalf = persp.position.distanceTo(target) * tanHalf();
+      ortho.zoom = 1;
+      ortho.position.copy(persp.position);
+      ortho.near = persp.near;
+      ortho.far = persp.far;
+      frameOrtho();
+      camera = ortho;
+    } else {
+      const dist = Math.max(1, orthoHalf / ortho.zoom / tanHalf());
+      persp.position.copy(target).addScaledVector(dir, dist);
+      persp.near = Math.max(0.5, dist / 100);
+      persp.far = dist * 20;
+      persp.updateProjectionMatrix();
+      camera = persp;
+    }
+    controls.object = camera;
     controls.update();
     requestRender();
   }
@@ -326,6 +403,21 @@ export function createViewport(canvas) {
     },
 
     /**
+     * Frames the model from a set view.
+     * @param {'iso' | 'front' | 'side' | 'top'} name
+     */
+    view(name) {
+      fit(lastBounds, VIEWS[name] || VIEWS.iso);
+    },
+
+    /** Parallel (orthographic) or perspective. */
+    setParallel,
+
+    get parallel() {
+      return camera === ortho;
+    },
+
+    /**
      * Hides these printed parts (indices into the result's prints) with the shapes only they are
      * made from; shows the rest.
      * @param {number[]} indices
@@ -336,6 +428,7 @@ export function createViewport(canvas) {
     },
 
     fit,
+    lookFrom,
 
     /**
      * Renders four views into one picture (for the agent's `look` tool): perspective, then front
@@ -348,11 +441,11 @@ export function createViewport(canvas) {
     snapshot(show = 'both', size = 384) {
       const saved = {
         mode,
-        position: camera.position.clone(),
-        up: camera.up.clone(),
+        position: persp.position.clone(),
+        up: persp.up.clone(),
         target: controls.target.clone(),
-        near: camera.near,
-        far: camera.far,
+        near: persp.near,
+        far: persp.far,
         pixelRatio: renderer.getPixelRatio(),
         size: renderer.getSize(new THREE.Vector2()),
       };
@@ -365,19 +458,19 @@ export function createViewport(canvas) {
       hlMesh.visible = hlLines.visible = false;
       renderer.setPixelRatio(1);
       renderer.setSize(size, size, false);
-      camera.aspect = 1;
+      persp.aspect = 1;
       lineMaterial.resolution.set(size, size);
 
       const b = lastBounds || { min: [-50, -50, 0], max: [50, 50, 100] };
       const center = new THREE.Vector3((b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2);
       const radius = Math.max(10, Math.hypot(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) / 2) * 1.08;
-      const dist = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
-      const ortho = new THREE.OrthographicCamera(-radius, radius, radius, -radius, dist / 100, dist * 20);
+      const dist = radius / Math.sin(THREE.MathUtils.degToRad(persp.fov / 2));
+      const flat = new THREE.OrthographicCamera(-radius, radius, radius, -radius, dist / 100, dist * 20);
       const views = [
-        { label: 'perspective', cam: camera, dir: new THREE.Vector3(0.62, -0.78, 0.5).normalize(), up: new THREE.Vector3(0, 0, 1) },
-        { label: 'front (looking along +Y)', cam: ortho, dir: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1) },
-        { label: 'right (looking along -X)', cam: ortho, dir: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 0, 1) },
-        { label: 'top (+Y up)', cam: ortho, dir: new THREE.Vector3(0, 0, 1), up: new THREE.Vector3(0, 1, 0) },
+        { label: 'perspective', cam: persp, dir: VIEWS.iso, up: new THREE.Vector3(0, 0, 1) },
+        { label: 'front (looking along +Y)', cam: flat, dir: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1) },
+        { label: 'right (looking along -X)', cam: flat, dir: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 0, 1) },
+        { label: 'top (+Y up)', cam: flat, dir: new THREE.Vector3(0, 0, 1), up: new THREE.Vector3(0, 1, 0) },
       ];
       const out = document.createElement('canvas');
       out.width = out.height = size * 2;
@@ -415,10 +508,10 @@ export function createViewport(canvas) {
       hiddenParts = hidden;
       applyParts();
       mode = saved.mode;
-      camera.up.copy(saved.up);
-      camera.position.copy(saved.position);
-      camera.near = saved.near;
-      camera.far = saved.far;
+      persp.up.copy(saved.up);
+      persp.position.copy(saved.position);
+      persp.near = saved.near;
+      persp.far = saved.far;
       controls.target.copy(saved.target);
       renderer.setPixelRatio(saved.pixelRatio);
       resize();

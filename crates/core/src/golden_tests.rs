@@ -312,6 +312,52 @@ fn template_matches(template: &str, values: &[(&str, Literal)], profile: &Profil
     assert_matches(&ours, fixture);
 }
 
+/// The lampshade's "Steep curve" scales the overhang compensation by (angle / 45°)^steep: at 0
+/// it's the compensation EasyGCode's lampshade uses (golden above); above 0 a bell, which leans
+/// from upright to almost flat, gets narrower beads where it leans a little and wider ones where
+/// it leans a lot (reaching the max width sooner), the same width where it's upright.
+#[test]
+fn the_lampshade_compensates_steep_overhangs_more_on_a_curve() {
+    use Literal::{Number, Text};
+    let widths = |steep: f64| {
+        let values = [
+            ("shape".to_string(), Text("bell".into())),
+            ("max_width".to_string(), Number(3.0)),
+            ("steep".to_string(), Number(steep)),
+        ];
+        let e = evaluate(&set_values(LAMPSHADE, &values).unwrap(), Quality::Final);
+        assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+        let path = &e.print.as_ref().unwrap().path;
+        (0..path.points.len())
+            .filter(|&i| !path.travel[i])
+            .map(|i| path.bead_of(i).0)
+            .collect::<Vec<f64>>()
+    };
+    let (even, curved) = (widths(0.0), widths(2.0));
+    assert_eq!(even.len(), curved.len());
+    let line = 6.0;
+    let (mut less, mut more) = (0, 0);
+    for (a, b) in even.iter().zip(&curved) {
+        assert!(*b <= 3.0 * line + 1e-9);
+        if (a - line).abs() < 1e-12 {
+            assert!((b - line).abs() < 1e-12, "upright, yet {b} wide");
+        } else if b < a {
+            less += 1;
+        } else if b > a {
+            more += 1;
+        }
+    }
+    assert!(less > 0 && more > 0, "{less} narrower, {more} wider");
+    // Steep enough, both reach the max width; on the curve it gets there lower down.
+    let capped = |w: &[f64]| w.iter().filter(|w| (*w - 3.0 * line).abs() < 1e-9).count();
+    assert!(
+        capped(&curved) > capped(&even),
+        "{} capped, was {}",
+        capped(&curved),
+        capped(&even)
+    );
+}
+
 const THREAD: &str = include_str!("../../../web/templates/thread-connector.easycad");
 
 /// The thread connector template against EasyGCode's thread connector: its defaults (M8,

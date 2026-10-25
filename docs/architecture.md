@@ -358,7 +358,8 @@ app: checks the issue (public API) ◄──────────────
 │ EasyCAD   Twisted vase  ↶ ↷ ⋯│
 ├──────────────────────────────┤
 │                              │
-│         3D viewport          │  drag = orbit, pinch = zoom, two fingers = pan
+│         3D viewport          │  drag = orbit, pinch = zoom, two fingers = pan;
+│                              │  3D / Front / Side / Top, Parallel (default) or perspective
 │                              │
 ├──────────────────────────────┤
 │ [Params] [Graph] [Code] [Print]

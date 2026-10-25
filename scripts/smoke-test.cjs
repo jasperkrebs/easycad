@@ -125,6 +125,19 @@ async function waitForServer(url) {
         failures.push(`${name}: bad STL ${stl.name}: ${stl.data.length} bytes, ${triangles} triangles`);
       }
 
+      // Set views and parallel / perspective: parallel by default, the choice remembered.
+      if ((await page.getAttribute('#viewParallel', 'aria-pressed')) !== 'true') failures.push(`${name}: the view isn't parallel by default`);
+      for (const v of ['front', 'side', 'top', 'iso']) {
+        await page.click(`button[data-view="${v}"]`);
+        if (shots && v !== 'iso') await page.screenshot({ path: path.join(shots, `smoke-${name}-view-${v}.png`) });
+      }
+      await page.click('#viewParallel');
+      if ((await page.getAttribute('#viewParallel', 'aria-pressed')) !== 'false') failures.push(`${name}: the view didn't switch to perspective`);
+      await page.click('button[data-view="front"]');
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-view-front-perspective.png`) });
+      await page.click('#viewParallel');
+      await page.click('button[data-view="iso"]');
+
       await page.click('button[data-mode="path"]');
       await page.click('#tab-print');
       const stats = await page.locator('#stats .stat').count();

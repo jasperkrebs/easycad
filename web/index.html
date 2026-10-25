@@ -42,6 +42,13 @@
             <button type="button" data-mode="path" aria-pressed="false">Toolpath</button>
             <button type="button" data-mode="both" aria-pressed="true">Both</button>
           </div>
+          <div class="seg" id="viewCam" role="group" aria-label="View">
+            <button type="button" data-view="iso" title="3D view">3D</button>
+            <button type="button" data-view="front" title="From the front">Front</button>
+            <button type="button" data-view="side" title="From the right side">Side</button>
+            <button type="button" data-view="top" title="From above">Top</button>
+            <button type="button" id="viewParallel" aria-pressed="true" title="Parallel view, true to proportion (off: perspective)">Parallel</button>
+          </div>
           <div class="seg parts" id="viewParts" role="group" aria-label="Parts shown" hidden></div>
         </div>
         <div class="view-hud" id="hud"></div>

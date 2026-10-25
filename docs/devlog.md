@@ -3,6 +3,26 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-25 (evening): set views and a parallel 3D view; the lampshade's steep curve
+
+**Why:** the owner wanted slicer-style views (front, side, top) and a parallel view as the
+default, with perspective as an option; and overhang compensation that does less on shallow
+overhangs (15° needs none) and more on steep ones (80° needs more than 1/cos gives), as they
+did with a Graph Mapper in Grasshopper, but as a number.
+
+**Landed:**
+- 3D view: buttons *3D*, *Front*, *Side*, *Top* frame the model from that side; *Parallel*
+  (on by default, remembered on the device) switches between an orthographic and a perspective
+  camera, keeping what's in view the same size. The agent's `look` is unchanged.
+- Lampshade: *Steep curve* (0..4, 0 by default) in Overhangs scales the compensation's extra by
+  (angle / 45°)^steep: unchanged at 45°, less below, more above (at 2: 15° gets 1/9, 80° about
+  3×). At 0 the G-code is EasyGCode's, byte for byte (the golden tests); a test checks a bell
+  gets narrower beads where it leans a little, wider ones where it leans a lot.
+
+**Open:** the 45° pivot is fixed; a second slider could move it if the curve needs shaping.
+The max line width slider allows widths past the engine's 20 mm limit with wide lines (an
+error message, not a crash).
+
 ## 2026-10-25 (later): you sign off feature requests; the chat waits for the new version
 
 **Why:** after #1 shipped, the chat carried on at once in a page loaded before the deploy: its

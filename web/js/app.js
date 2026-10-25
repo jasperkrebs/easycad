@@ -30,6 +30,8 @@ const TEMPLATES = [
   { id: 'turned-vase', name: 'Turned vase (geometry only)' },
 ];
 const STORAGE_KEY = 'easycad.project';
+/** Parallel or perspective 3D view. */
+const VIEW_KEY = 'easycad.view';
 const MAX_FILE_BYTES = 256 * 1024;
 const TABS = ['settings', 'graph', 'chat', 'recipe', 'print', 'about'];
 
@@ -704,6 +706,28 @@ function wire() {
     }),
   );
   $('view').addEventListener('dblclick', () => viewport.refit());
+  // Set views, and parallel or perspective (remembered on this device).
+  document.querySelectorAll('[data-view]').forEach((b) =>
+    b.addEventListener('click', () => viewport.view(/** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.view))),
+  );
+  const parallel = $('viewParallel');
+  const setParallel = (on) => {
+    viewport.setParallel(on);
+    parallel.setAttribute('aria-pressed', String(on));
+    try {
+      localStorage.setItem(VIEW_KEY, on ? 'parallel' : 'perspective');
+    } catch {
+      // Not remembered; parallel next time.
+    }
+  };
+  let stored = '';
+  try {
+    stored = localStorage.getItem(VIEW_KEY) || '';
+  } catch {
+    stored = '';
+  }
+  setParallel(stored !== 'perspective');
+  parallel.addEventListener('click', () => setParallel(!viewport.parallel));
 
   const templates = /** @type {HTMLSelectElement} */ ($('template'));
   for (const t of TEMPLATES) templates.append(el('option', { value: t.id, text: t.name }));

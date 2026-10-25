@@ -81,6 +81,7 @@ on a custom thread, no compensation, a set ramp height, no start/end blocks.
 | Vase mode turn by turn: points per turn from the radius, radius from the profile, ramped first turn, flat closing turn | `vase_revolve(profile, …)` |
 | Overhang compensation, width mode: w × min(max, 1 + k(1/cos a − 1)) per turn | `width:` a field of `graph(heights, angles, z)` |
 | Overhang compensation, height mode: rise lh(1 − k(1 − cos a)), E at the full layer | `layer:` a field the same way, `bead_layer: pitch` |
+| (EasyCAD only) Steep curve: k × (a / 45°)^steep instead of k, less on shallow and more on steep overhangs; 0 is EasyGCode's | the same fields, one more factor |
 | Flow ramp from throat flow to shade flow across the fillet | `flow:` a field of z (`clamp`, `pick`) |
 | Brim around the first turn, hopping between rings | `circle(radii)`, `graft`, `toolpath`, `join(clear:)` |
 | Your own shade | any profile curve (`own_shade`); its wall angle from its neighbouring points |

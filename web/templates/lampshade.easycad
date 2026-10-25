@@ -40,6 +40,7 @@ param flat_top   = true                             "Flat closing turn (off: ope
 group "Overhangs"
 param compensation = "width" of ["width", "layer height", "off"] "Compensation"
 param strength   = 100 %   in 0..100                "Strength"
+param steep      = 0       in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"
 param max_width  = 2.5     in 1..5 step 0.1         "Max line width (× the line)"
 
 group "Brim"
@@ -200,11 +201,14 @@ wall    = revolve(profile)
 
 # ---- Turn by turn: wider beads, or a shorter rise squeezing the bead, where the wall leans;
 # the flow ramps from the throat's to the shade's over the fillet.
+# The extra (1/cos − 1 wider, or 1 − cos lower) is scaled by (angle / 45°)^steep: 1 everywhere
+# at 0; above 0, less below 45° (15° hardly any at 2) and more above it (80° about 3× at 2).
 comp    = index_of(["width", "layer height", "off"], compensation)
 lean_at = graph(print_z, print_l, z)
 c       = max(0.05, cos(abs(lean_at)))
-width   = pick(less(comp, 0.5), line * min(max_width, 1 + strength * (1 / c - 1)), line)
-rise    = pick(less(abs(comp - 1), 0.5), pitch * (1 - strength * (1 - c)), pitch)
+curve   = strength * (min(abs(lean_at), 89) / 45) ^ steep
+width   = pick(less(comp, 0.5), line * min(max_width, 1 + curve * (1 / c - 1)), line)
+rise    = pick(less(abs(comp - 1), 0.5), pitch * max(0.05, 1 - curve * (1 - c)), pitch)
 from_throat = pick(wide_down, top_z - z, z)
 ramp_h  = pick(flow_ramp, flow_ramp, fillet_top - throat)
 ramp    = pick(greater(ramp_h, 0.000000001), clamp((from_throat - throat) / max(ramp_h, 0.000000001), 0, 1), 1 - less(from_throat, throat))
