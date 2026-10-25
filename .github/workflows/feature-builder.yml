@@ -101,6 +101,13 @@ jobs:
             echo "go=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # A change built before whose pull request GitHub refused (Setup, step 2): open it now
+          # instead of building it again.
+          last=$(jq -r '[.comments[].body | select(contains("<!-- easycad-builder"))] | last // ""' <<<"$info")
+          resume=false
+          if grep -q '<!-- easycad-builder pr-blocked' <<<"$last" && git fetch -q origin "$BRANCH" 2>/dev/null; then
+            resume=true
+          fi
           # Attempts since the last start by hand: the owner's "Run workflow" gives three more.
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_ACTOR" = "$OWNER" ]; then
             gh issue comment "$ISSUE" --body "Started again by hand.
@@ -121,37 +128,47 @@ jobs:
           fi
           n=$((done + 1))
           gh issue edit "$ISSUE" --add-label building
-          gh issue comment "$ISSUE" --body "Attempt $n of $MAX_ATTEMPTS: [building it]($RUN_URL).
+          if [ "$resume" = true ]; then
+            gh issue comment "$ISSUE" --body "Attempt $n of $MAX_ATTEMPTS: [opening the pull request]($RUN_URL) for the change built before.
           <!-- easycad-builder attempt $n -->"
-          git checkout -B "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+            mkdir -p .builder
+            sed -n 's/.*<!-- easycad-builder pr-blocked summary:\([A-Za-z0-9+/=]*\) -->.*/\1/p' <<<"$last" | base64 -d > .builder/summary.md || true
+            [ -s .builder/summary.md ] || rm -f .builder/summary.md
+          else
+            gh issue comment "$ISSUE" --body "Attempt $n of $MAX_ATTEMPTS: [building it]($RUN_URL).
+          <!-- easycad-builder attempt $n -->"
+            git checkout -B "$BRANCH"
+          fi
           echo "go=true" >> "$GITHUB_OUTPUT"
+          echo "resume=$resume" >> "$GITHUB_OUTPUT"
 
       # The same tools as CI, so Claude can run every check before it commits.
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.attempt.outputs.go == 'true'
+        if: steps.attempt.outputs.go == 'true' && steps.attempt.outputs.resume != 'true'
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-        if: steps.attempt.outputs.go == 'true'
+        if: steps.attempt.outputs.go == 'true' && steps.attempt.outputs.resume != 'true'
       - name: Install wasm-bindgen-cli (same version as Cargo.lock)
-        if: steps.attempt.outputs.go == 'true'
+        if: steps.attempt.outputs.go == 'true' && steps.attempt.outputs.resume != 'true'
         run: |
           v=$(cargo metadata --format-version 1 --locked | python3 -c "import sys, json; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name'] == 'wasm-bindgen'))")
           cargo install wasm-bindgen-cli --version "$v" --locked
       - uses: actions/setup-node@v5
-        if: steps.attempt.outputs.go == 'true'
+        if: steps.attempt.outputs.go == 'true' && steps.attempt.outputs.resume != 'true'
         with:
           node-version: 22
       - name: Playwright
-        if: steps.attempt.outputs.go == 'true'
+        if: steps.attempt.outputs.go == 'true' && steps.attempt.outputs.resume != 'true'
         run: |
           npm install --no-save --no-package-lock playwright@1.56.1
           npx playwright install --with-deps chromium
 
       - name: The builder's instructions
         id: prompt
-        if: steps.attempt.outputs.go == 'true'
+        if: steps.attempt.outputs.go == 'true' && steps.attempt.outputs.resume != 'true'
         run: |
           {
             echo 'text<<END_OF_PROMPT'
@@ -167,7 +184,7 @@ jobs:
       # The subscription comes first: Claude Code would use an API key over it whenever both are
       # given, so the key is passed only when there's no subscription token.
       - name: Claude Code builds it
-        if: steps.attempt.outputs.go == 'true'
+        if: steps.attempt.outputs.go == 'true' && steps.attempt.outputs.resume != 'true'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -205,8 +222,23 @@ jobs:
             pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
             if [ -n "$pr" ]; then
               gh pr edit "$pr" --title "$title" --body "$body"
+            elif ! out=$(gh pr create --base "$DEFAULT" --head "$BRANCH" --title "$title" --body "$body" 2>&1); then
+              echo "$out"
+              if grep -q 'not permitted to create or approve pull requests' <<<"$out"; then
+                # Built and pushed; only the repository setting is missing, and building again
+                # wouldn't help. Ask for the setting; the next run opens the pull request without
+                # building again (the summary rides along in the comment).
+                saved=$(base64 -w0 < .builder/summary.md 2>/dev/null || true)
+                gh issue comment "$ISSUE" --body "Built and pushed to the branch \`$BRANCH\`, but GitHub doesn't let this workflow open the pull request. In the repository's Settings → Actions → General → Workflow permissions, choose \"Read and write permissions\", tick \"Allow GitHub Actions to create and approve pull requests\" and save. Then *Run workflow* (Actions → Feature builder) with this issue's number: it opens the pull request for this change without building it again.
+          <!-- easycad-builder pr-blocked summary:$saved -->"
+                gh issue edit "$ISSUE" --add-label needs-human --remove-label building || true
+                echo "result=stuck" >> "$GITHUB_OUTPUT"
+              else
+                echo "result=failed" >> "$GITHUB_OUTPUT"
+              fi
+              exit 0
             else
-              gh pr create --base "$DEFAULT" --head "$BRANCH" --title "$title" --body "$body"
+              echo "$out"
             fi
             echo "result=built" >> "$GITHUB_OUTPUT"
           else

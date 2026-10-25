@@ -3,6 +3,17 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-25: the feature builder doesn't rebuild what GitHub wouldn't let it hand over
+
+**Why:** the first feature request (#1, `flat_top` on `vase_revolve`) was built and pushed three
+times; each time GitHub refused to let the workflow open the pull request (the "Allow GitHub
+Actions to create and approve pull requests" setting was off), and the workflow counted that as
+a failed build and started again (about $1.50 of API use per attempt).
+
+**Landed:** that refusal now stops the request with a comment naming the setting (no retries).
+The next *Run workflow* sees that comment and opens the pull request for the branch already
+pushed, skipping Claude; the build's summary rides along in the comment.
+
 ## 2026-10-24: CI pinned to Ubuntu 24.04
 
 **Why:** GitHub moved `ubuntu-latest` to Ubuntu 26.04, and Playwright 1.56.1 can't install

@@ -99,6 +99,10 @@ request.
 
    The builder pushes its branch, opens the pull request, merges it, and labels and closes the
    issue.
+   Without the tick, a finished build stops at "Built and pushed to the branch, but GitHub
+   doesn't let this workflow open the pull request" (labelled `needs-human`, no retries). Tick
+   it, then *Run workflow* with the issue's number: that opens the pull request for the change
+   already built, without building it again.
 3. **Let the proxy file requests** (optional; without it you file each request with one tap):
    - make a fine-grained personal access token at
      https://github.com/settings/personal-access-tokens:
