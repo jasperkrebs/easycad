@@ -1400,6 +1400,14 @@ fieldset.choice input {
   margin: 4px 0 0;
 }
 
+.chat-requests .request-ask {
+  color: var(--muted);
+}
+
+.chat-requests .request-error {
+  color: var(--warn);
+}
+
 .chat-requests .buttons {
   margin-top: 8px;
 }

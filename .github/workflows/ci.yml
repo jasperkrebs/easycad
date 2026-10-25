@@ -131,12 +131,13 @@ jobs:
           node scripts/agent-test.cjs
           node scripts/graph-test.cjs
           node scripts/request-test.cjs
-      - name: App config (the AI proxy's address, when it's deployed, and where feature requests go)
+      - name: App config (the AI proxy's address, when it's deployed, where feature requests go, and this version)
         env:
           AGENT_URL: ${{ needs.proxy.outputs.url }}
           REPO: ${{ github.repository }}
+          VERSION: ${{ github.sha }}
         run: |
-          python3 -c "import json, os; json.dump({'agentUrl': os.environ.get('AGENT_URL', ''), 'repo': os.environ['REPO']}, open('web/config.json', 'w'))"
+          python3 -c "import json, os; json.dump({'agentUrl': os.environ.get('AGENT_URL', ''), 'repo': os.environ['REPO'], 'version': os.environ['VERSION']}, open('web/config.json', 'w'))"
       - uses: actions/upload-pages-artifact@v4
         if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         with:

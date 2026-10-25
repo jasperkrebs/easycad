@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { runStatus } from '../web/js/agent.js';
 import { parseNumber } from '../web/js/dom.js';
 import { listValue } from '../web/js/settings.js';
-import { fingerprint, projectOf, withoutValues } from '../web/js/templates.js';
+import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from '../web/js/templates.js';
 
 const rows = { value: [[0, 33], [1, 32]] };
 const numbers = { value: [10, 20] };
@@ -81,6 +81,20 @@ test('a project made from a template matches it whatever its sliders say', () =>
   assert.equal(fingerprint(withoutValues(moved)), fingerprint(withoutValues(template)));
   assert.notEqual(fingerprint('a'), fingerprint('b'));
   assert.equal(projectOf('easycad 0.1\nx = 1'), '');
+});
+
+test("a saved project starts with a note for whoever gets it, which opening leaves out", () => {
+  const recipe = readFileSync(new URL('../web/templates/lampshade.easycad', import.meta.url), 'utf8');
+  const note = fileNote('https://example.github.io/easycad/');
+  assert.ok(note.split('\n').every((l) => l.startsWith('#| ')), 'every line of the note is a comment');
+  assert.match(note, /Copy for AI/);
+  assert.match(note, /https:\/\/example\.github\.io\/easycad\//);
+  assert.equal(withoutFileNote(`${note}\n\n${recipe}`), recipe);
+  // An AI that edits the file may drop the blank line or the note: both open the same.
+  assert.equal(withoutFileNote(`${note}\n${recipe}`), recipe);
+  assert.equal(withoutFileNote(recipe), recipe);
+  // Only the note at the top: a `#|` further down is the recipe's own comment.
+  assert.equal(withoutFileNote('x = 1\n#| mine'), 'x = 1\n#| mine');
 });
 
 test('a number can be typed with a decimal comma, as an iPhone in some languages does', () => {

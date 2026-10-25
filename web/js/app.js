@@ -9,7 +9,7 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
-import { fingerprint, projectOf, withoutValues } from './templates.js';
+import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
@@ -425,17 +425,31 @@ const chat = createChat({
   },
   look: (show) => viewport.snapshot(/** @type {any} */ (show)),
   catalog: async () => state.catalog || (state.catalog = await engine.catalog()),
+  templateOffer: async () => {
+    // A check can start while we wait (the first one, after the project is restored).
+    let waited;
+    do {
+      waited = templateChecked;
+      await waited;
+    } while (waited !== templateChecked);
+    return templateOffer;
+  },
 });
 
 // ---------------------------------------------------------------------------------------------
 // Projects: templates, open, save, autosave
 // ---------------------------------------------------------------------------------------------
 
-/** Opens recipe text as the current project. */
-async function openSource(text) {
+/**
+ * Opens recipe text as the current project.
+ * @param {string} text
+ * @param {'opened' | 'updated'} how a new project, or this one updated to its template
+ */
+async function openSource(text, how = 'opened') {
   state.template = null;
   $('templateUpdate').hidden = true;
-  chat?.projectReplaced();
+  templateOffer = null;
+  chat?.projectReplaced(how);
   clearGraphUndo();
   state.highlight = '';
   state.source = text;
@@ -469,11 +483,29 @@ async function templateText(id) {
 }
 
 /**
+ * The update to the project's template on offer, while the user hasn't answered; the chat waits
+ * for the answer before carrying on with a finished feature request.
+ * @type {{ update: () => Promise<void>, keep: () => void } | null}
+ */
+let templateOffer = null;
+/** @type {(v?: any) => void} */
+let firstCheckDone = () => {};
+/** Settles once the first check after starting (and each later one) is done. */
+let templateChecked = new Promise((resolve) => (firstCheckDone = resolve));
+
+/**
  * A project started from a template that has been improved since (or, for an older project or
  * a file, one that differs from its template): offers to bring it up to date, keeping its
  * setting values. Saying no is remembered until the template changes again.
  */
-async function checkTemplate() {
+function checkTemplate() {
+  templateChecked = findTemplateUpdate();
+  firstCheckDone();
+  return templateChecked;
+}
+
+async function findTemplateUpdate() {
+  templateOffer = null;
   const project = state.last?.project;
   if (!project) return;
   const mine = withoutValues(state.source);
@@ -507,15 +539,27 @@ async function checkTemplate() {
     ` Your settings carry over${edited ? '; changes you made to the recipe text itself would be replaced' : ''}.`;
   const box = $('templateUpdate');
   box.hidden = false;
-  $('templateUpdateYes').onclick = () => updateToTemplate(newer.id, newer.text);
-  $('templateUpdateNo').onclick = () => {
-    box.hidden = true;
-    try {
-      localStorage.setItem(SEEN_KEY, JSON.stringify({ ...seen, [newer.id]: print }));
-    } catch {
-      // Storage unavailable: it asks again next time.
-    }
+  const offer = {
+    update: async () => {
+      if (templateOffer !== offer) return;
+      await updateToTemplate(newer.id, newer.text);
+      chat.templateAnswered(true);
+    },
+    keep: () => {
+      if (templateOffer !== offer) return;
+      box.hidden = true;
+      templateOffer = null;
+      try {
+        localStorage.setItem(SEEN_KEY, JSON.stringify({ ...seen, [newer.id]: print }));
+      } catch {
+        // Storage unavailable: it asks again next time.
+      }
+      chat.templateAnswered(false);
+    },
   };
+  templateOffer = offer;
+  $('templateUpdateYes').onclick = offer.update;
+  $('templateUpdateNo').onclick = offer.keep;
 }
 
 /** Opens the template's current version with the project's setting values carried over. */
@@ -523,7 +567,7 @@ async function updateToTemplate(id, text) {
   $('templateUpdate').hidden = true;
   const keep = { ...state.values };
   const kind = (v) => (Array.isArray(v) ? 'list' : typeof v);
-  await openSource(text);
+  await openSource(text, 'updated');
   state.template = { id, base: withoutValues(text) };
   let kept = 0;
   for (const [k, v] of Object.entries(keep)) {
@@ -694,7 +738,7 @@ function wire() {
     try {
       const text = await readPicked(e.target);
       if (text !== null) {
-        await openSource(text);
+        await openSource(withoutFileNote(text));
         checkTemplate();
       }
     } catch (err) {
@@ -702,7 +746,8 @@ function wire() {
     }
   });
   $('saveProject').addEventListener('click', async () => {
-    download(`${slug(projectName())}.easycad`, await currentSource());
+    const site = new URL('.', location.href).href;
+    download(`${slug(projectName())}.easycad`, `${fileNote(site)}\n\n${await currentSource()}`);
     state.openedValues = { ...state.values };
     state.unsaved = false;
     autosave();
@@ -727,7 +772,16 @@ function wire() {
   });
   $('saveSettings').addEventListener('click', async () => {
     await engine.idle();
-    const data = { app: 'EasyCAD', kind: 'settings', version: 2, project: projectName(), printer: state.printer, values: state.values };
+    const data = {
+      app: 'EasyCAD',
+      kind: 'settings',
+      version: 2,
+      about:
+        "Only the settings' values (Settings, Load settings puts them back into the open project). The recipe isn't in here: to change what the project does, or to have an AI change it, use the project file (Settings, Save), which holds the recipe and these values together.",
+      project: projectName(),
+      printer: state.printer,
+      values: state.values,
+    };
     download(`${slug(projectName())}-settings.json`, JSON.stringify(data, null, 2), 'application/json');
   });
   $('loadSettings').addEventListener('click', () => $('settingsFile').click());
@@ -811,6 +865,8 @@ async function start() {
     msg.hidden = false;
     msg.textContent = `The geometry engine could not start: ${err.message || err}`;
   }
+  // No project to check (a fresh start, or the engine failed): nothing for the chat to wait for.
+  firstCheckDone();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
   }

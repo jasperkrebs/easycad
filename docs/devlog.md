@@ -3,6 +3,30 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-25 (later): you sign off feature requests; the chat waits for the new version
+
+**Why:** after #1 shipped, the chat carried on at once in a page loaded before the deploy: its
+engine knew `vase_revolve` (by name) but not its new `flat_top` input, so the agent's edit
+failed twice and it filed a duplicate request (#3). The app only checked step names. And the
+owner wants to approve a request before it goes to be built.
+
+**Landed:**
+- `request_feature` now proposes: the Chat tab shows the proposal with *Send to be built* and
+  *Revise my request*; nothing is filed until the user sends it, and the agent hears either way.
+- The deploy writes its commit into `config.json`; the builder's "shipped" comment names the
+  merge commit (`shipped-in:`). The app carries on only when it runs that commit or a later one
+  (GitHub's compare API; if GitHub can't say, whether the live `config.json` moved on), and
+  reloads for it otherwise.
+- If the project's template has an update waiting, the chat waits for *Update to the template* /
+  *Keep mine* (buttons in the Chat tab too), and tells the agent which.
+- A saved project file starts with a `#|` note for whoever gets it (what the file is, how to
+  change it with an AI, "Copy for AI" for the language and steps); opening a file leaves the note
+  out. The settings file says it holds values only and points to the project file.
+- Tests: request-test (sign-off, revise, a commit newer than the page, the template wait),
+  smoke-test (the note round trip), unit tests (`hasVersion`, `shipped-in`, the note).
+
+**Open:** nothing.
+
 ## 2026-10-25: the feature builder doesn't rebuild what GitHub wouldn't let it hand over
 
 **Why:** the first feature request (#1, `flat_top` on `vase_revolve`) was built and pushed three

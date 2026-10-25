@@ -325,6 +325,7 @@ jobs:
           gh issue comment "$ISSUE" --body "Built and live, @${{ github.repository_owner }}: pull request #$pr is merged and deployed. Reload EasyCAD; a chat waiting for this carries on by itself.
 
           $summary
-          <!-- easycad-builder shipped steps: $steps -->"
+          <!-- easycad-builder shipped steps: $steps -->
+          <!-- easycad-builder shipped-in: $sha -->"
           gh issue edit "$ISSUE" --add-label shipped --remove-label building || true
           gh issue close "$ISSUE" --reason completed

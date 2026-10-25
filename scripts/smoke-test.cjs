@@ -335,6 +335,20 @@ async function waitForServer(url) {
       await page.waitForTimeout(1500);
       if (!(await page.locator('#templateUpdate').isHidden())) failures.push('update: offered again after updating');
       console.log('update: an older shaker was brought up to date, its line width kept');
+
+      // Saved, the project file starts with a note for whoever (or whichever AI) gets it; opened
+      // again, the note is left out, so it's still the same recipe and still up to date.
+      const saved = await saveFrom(page, '#saveProject');
+      const file = saved.data.toString('utf8');
+      if (!/^#\| EasyCAD project \(http/.test(file) || !file.includes('Copy for AI')) failures.push(`save: no note at the top of the project file: ${file.slice(0, 80)}`);
+      const before = await page.inputValue('#recipe');
+      if (!file.endsWith(before)) failures.push('save: the file is not the note plus the recipe');
+      await page.setInputFiles('#projectFile', { name: saved.name, mimeType: 'text/plain', buffer: saved.data });
+      await page.waitForTimeout(1500);
+      if ((await page.inputValue('#recipe')) !== before) failures.push('save: opening the saved file changed the recipe (the note stayed in?)');
+      if (!(await page.locator('#templateUpdate').isHidden())) failures.push('save: opening the saved file offers a template update');
+      const settingsFile = JSON.parse((await saveFrom(page, '#saveSettings')).data.toString('utf8'));
+      if (!/project file/.test(settingsFile.about || '') || typeof settingsFile.values !== 'object') failures.push(`save: the settings file has no note: ${JSON.stringify(settingsFile).slice(0, 120)}`);
       await ctx.close();
     }
   } catch (err) {

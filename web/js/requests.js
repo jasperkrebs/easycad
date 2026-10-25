@@ -17,9 +17,13 @@ const LIMITS = { title: 100, wanted: 3000, missing: 3000, proposal: 5000, exampl
 
 /**
  * @typedef {{ title: string, wanted: string, missing: string, proposal: string, example?: string }} RequestInput
- * @typedef {'unfiled' | 'waiting' | 'building' | 'shipped' | 'answered' | 'declined' | 'stuck'} Status
+ * @typedef {'proposed' | 'unfiled' | 'waiting' | 'building' | 'shipped' | 'answered' | 'declined' | 'stuck'} Status
  * @typedef {{ id: string, title: string, wanted: string, number?: number, url?: string, fileUrl?: string,
- *   status: Status, steps?: string[], message?: string, filedAt: number, resumed?: boolean, etag?: string }} Request
+ *   status: Status, steps?: string[], version?: string, message?: string, filedAt: number, resumed?: boolean,
+ *   etag?: string, input?: RequestInput }} Request
+ *
+ * `proposed`: the agent asked for it and the user hasn't signed it off yet (nothing is filed).
+ * `version`: the commit the shipped step went live in.
  */
 
 /** A request id, also written into the issue so it can be found without its number. */
@@ -86,12 +90,13 @@ export function statusOf(issue) {
 
 /**
  * The builder's last word on a request: its message (comments removed) and, when it shipped,
- * the new steps' names (`<!-- easycad-builder shipped steps: a, b -->`).
+ * the new steps' names (`<!-- easycad-builder shipped steps: a, b -->`) and the commit it went
+ * live in (`<!-- easycad-builder shipped-in: <sha> -->`).
  * @param {Array<{ body?: string }>} comments
  */
 export function builderNote(comments) {
   const last = [...comments].reverse().find((c) => String(c.body || '').includes(BUILDER));
-  if (!last) return { message: '', steps: [] };
+  if (!last) return { message: '', steps: [], version: '' };
   const body = String(last.body);
   const steps = /<!-- easycad-builder shipped steps:([^>]*)-->/.exec(body)?.[1] || '';
   return {
@@ -100,7 +105,31 @@ export function builderNote(comments) {
       .split(',')
       .map((s) => s.trim())
       .filter((s) => /^[a-z_][a-z0-9_]*$/.test(s)),
+    version: /<!-- easycad-builder shipped-in: ([0-9a-f]{7,40}) -->/.exec(body)?.[1] || '',
   };
+}
+
+/**
+ * Whether the app running here (`running`, its commit) already has `version` in it: the same
+ * commit, or a later one. Asks GitHub's public API; null when it can't tell.
+ * @param {{ repo: string, version: string, running: string, fetch?: typeof fetch }} o
+ * @returns {Promise<boolean | null>}
+ */
+export async function hasVersion({ repo, version, running, fetch: get = (...a) => globalThis.fetch(...a) }) {
+  if (!version) return true;
+  if (!running) return null;
+  if (running.startsWith(version) || version.startsWith(running)) return true;
+  if (!repo) return null;
+  try {
+    const res = await get(`${API}/repos/${repo}/compare/${version}...${running}`, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!res.ok) return null;
+    const status = (await res.json()).status;
+    if (status === 'identical' || status === 'ahead') return true;
+    if (status === 'behind' || status === 'diverged') return false;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /** Requests that still need checking. */

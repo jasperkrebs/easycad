@@ -5,11 +5,17 @@
 When the in-app agent can't build what you ask for (no combination of steps can do it), it
 doesn't fake it. It asks for the missing step:
 
-1. **The agent files a request.** Its `request_feature` tool writes a precise, general
-   proposal: what you wanted, what's missing and why, the step it needs (name, inputs, output),
-   and an example recipe. The app files it as an issue labelled `feature-request` in this repo,
-   through your proxy. Without a proxy, it shows a button that files it on GitHub with one tap.
-   The agent tells you what it asked for, and stops.
+1. **The agent proposes a request, you sign it off.** Its `request_feature` tool writes a
+   precise, general proposal: what you wanted, what's missing and why, the step it needs (name,
+   inputs, output), and an example recipe. The app shows it above the message box with two
+   buttons, and files nothing until you choose:
+   - **Send to be built**: the app files it as an issue labelled `feature-request` in this
+     repo, through your proxy (without a proxy, it shows a button that files it on GitHub with
+     one tap);
+   - **Revise my request**: the proposal goes, and the agent is told you'd rather change what
+     you asked for.
+
+   The agent tells you what it would ask for, and stops.
 2. **Claude Code builds it.** The issue starts the **Feature builder** workflow
    (`.github/workflows/feature-builder.yml`). Claude Code reads the request and first decides:
    - **already possible**: it answers with a recipe made of existing steps, and builds nothing;
@@ -26,10 +32,16 @@ doesn't fake it. It asks for the missing step:
 4. **You get an email.** The workflow comments on the issue when it's done (or stuck), and
    GitHub emails you about it.
 5. **The chat carries on by itself.** The app checks open requests every few minutes, and
-   whenever you come back to it. When one is done, it reloads to get the new step (only when
-   you're not using it; otherwise it shows a button). Then it sends the agent a message, so it
-   builds what you asked for in the first place. A request answered with existing steps
-   carries on without a reload.
+   whenever you come back to it. When one is done:
+   - **it makes sure this page runs the new version.** The builder's last comment names the
+     commit the step went live in, and the site's `config.json` names the commit it was built
+     from; until the page has that commit (GitHub's compare API says), it reloads (only when
+     you're not using it; otherwise it shows a button). The step's name alone isn't enough: a
+     new input on a step that already exists looks the same by name;
+   - **when the project's template was improved too** (the builder often adds a setting to it),
+     it asks first: *Update to the template* or *Keep mine*, in the Chat tab and in Settings;
+   - then it sends the agent a message, so it builds what you asked for in the first place. A
+     request answered with existing steps carries on without a reload.
 
 The requests the app is waiting for are listed above the message box in the Chat tab.
 **"Carry on by itself"** in AI settings switches the automatic continuation off; you then send
@@ -185,4 +197,6 @@ the last one:
 - `attempt N`;
 - `answered`;
 - `stuck`;
-- `shipped steps: a, b`: the app reloads until its engine has those steps, then carries on.
+- `shipped steps: a, b`: the app reloads until its engine has those steps, then carries on;
+- `shipped-in: <commit>`: the merge commit; the app reloads until it runs that commit or a later
+  one.

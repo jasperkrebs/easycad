@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MARKER, builderNote, checkInput, createRequests, formatIssue, newIssueUrl, statusOf } from '../web/js/requests.js';
+import { MARKER, builderNote, checkInput, createRequests, formatIssue, hasVersion, newIssueUrl, statusOf } from '../web/js/requests.js';
 
 const INPUT = {
   title: 'Text outlines from a font',
@@ -37,7 +37,29 @@ test("the builder's last comment is its word, with the new steps", () => {
   assert.equal(note.message, 'Built and live.\n\nA `text` step.');
   // Names that aren't step names are dropped.
   assert.deepEqual(builderNote([{ body: '<!-- easycad-builder shipped steps: ok_1, Bad Name, x(y) -->' }]).steps, ['ok_1']);
-  assert.deepEqual(builderNote([{ body: 'no builder here' }]), { message: '', steps: [] });
+  assert.deepEqual(builderNote([{ body: 'no builder here' }]), { message: '', steps: [], version: '' });
+  // The commit it went live in, when the builder says.
+  assert.equal(builderNote([{ body: 'Live.\n<!-- easycad-builder shipped steps: text -->\n<!-- easycad-builder shipped-in: 0cbc6df4648f -->' }]).version, '0cbc6df4648f');
+});
+
+test('a shipped step is only there once the app running here has its commit', async () => {
+  const asked = [];
+  const github = (status) => async (url) => {
+    asked.push(String(url));
+    return Response.json({ status });
+  };
+  const o = { repo: 'owner/easycad', version: 'aaa111', running: 'bbb222' };
+  assert.equal(await hasVersion({ ...o, fetch: github('ahead') }), true);
+  assert.equal(await hasVersion({ ...o, fetch: github('identical') }), true);
+  assert.equal(await hasVersion({ ...o, fetch: github('behind') }), false, 'an older page needs a reload');
+  assert.equal(await hasVersion({ ...o, fetch: github('diverged') }), false);
+  assert.equal(asked[0], 'https://api.github.com/repos/owner/easycad/compare/aaa111...bbb222');
+  asked.length = 0;
+  assert.equal(await hasVersion({ ...o, running: 'aaa111ccc', fetch: github('behind') }), true, 'the same commit needs no question');
+  assert.equal(await hasVersion({ ...o, version: '', fetch: github('behind') }), true, 'nothing to wait for');
+  assert.equal(asked.length, 0);
+  assert.equal(await hasVersion({ ...o, running: '', fetch: github('ahead') }), null, "a page that doesn't know its version can't tell");
+  assert.equal(await hasVersion({ ...o, fetch: async () => new Response('', { status: 403 }) }), null);
 });
 
 test('requests are written in one format, with the marker and id first', () => {
