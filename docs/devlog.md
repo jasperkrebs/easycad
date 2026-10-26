@@ -3,6 +3,37 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-26: smooth wiggles, how close they meet; the steep curve everywhere
+
+**Why:** the owner saw the shaker lid's wiggles kink on one seam for some settings (a bigger or
+smaller ring, more spacing), and start abruptly; wanted the bumps pushed into each other on a
+setting; and wanted the lampshade's steep curve wherever overhangs are compensated.
+
+**Found:** `interlock` solves each angle's chain of turns on its own (EasyGCode's way). The chain
+at angle 0 has one turn more (the spiral's start) than the chain just before 360°, so when the
+spread reaches the innermost turns the two solve differently and every turn steps at the seam
+(measured: 5–24° kinks at ring 12–18, 0.2° at the owner's settings). The extra gap also switched
+on with a corner (`max(0, …)`).
+
+**Landed:**
+- `interlock(…, smooth: true, touch:)`: each point's amplitude from the gaps one turn in and out
+  ((g_in + g_out) / 4, then four corrections where the turns spread), with the spiral's start and
+  end standing in for the missing neighbours of the first and last turn, and the gap eased in
+  (a C¹ ramp over 0.3 line widths). No kink over 1.5° in any case tried; bumps meet within ~5 % of
+  the aim (exactly in the middle of a band; a little closer next to where the spread changes fast).
+  Solving the chains exactly instead brings back the alternating big/small wiggles (a chain held
+  at both ends has one more gap than turns). `touch` (0..2, with `smooth`): how far apart the
+  bumps meet, in line widths. The default (`smooth: false`) is EasyGCode's, line for line.
+- Shaker: `smooth: true` and a *Spacing where the bumps meet* setting (100 %).
+- `contour(…, steep:, pivot:)`: the pace × (lean / pivot)^steep (layers never closer than 5 % of
+  a layer); the shaker and the vessel get *Steep curve* and *Steep curve pivot* like the lampshade.
+  At 0 nothing changes (the vessel's golden tests).
+- Bead cross-sections: extremes within 1 % of each other count once (4.49 × 2 next to 4.5 × 2).
+- Tests: the seam and the eased start (kink measure), the meeting distance at touch 1 and 0.5,
+  the steep curve on a cone.
+
+**Open:** EasyGCode's lid still has the per-angle solve (the seam kink at some settings).
+
 ## 2026-10-25 (later still): how see-through the beads are, on a slider
 
 **Landed:** next to *Line width* (shown only with the beads), a slider from 10 % (faint) to 100 %

@@ -126,7 +126,7 @@ impl Surface {
     pub fn contour(
         &self,
         layer: &Field,
-        pace: f64,
+        pace: Pace,
         max_points: usize,
     ) -> Result<Vec<Curve>, String> {
         let fixed = layer.as_constant();
@@ -135,9 +135,7 @@ impl Surface {
         {
             return Err(format!("`layer` must be more than 0, got {layer}"));
         }
-        if !(0.0..=1.0).contains(&pace) {
-            return Err(format!("`pace` must be between 0 and 1, got {pace}"));
-        }
+        pace.check()?;
         let n = self.sections.len();
         let m = self.samples();
         if n < 2 || m < 2 {
@@ -168,7 +166,7 @@ impl Surface {
             let (lo, hi) = (levels[i], levels[i + 1]);
             i as f64 + ((z - lo) / (hi - lo)).clamp(0.0, 1.0)
         };
-        let Some(layer) = fixed.filter(|_| pace == 0.0) else {
+        let Some(layer) = fixed.filter(|_| pace.amount == 0.0) else {
             // The layer height at height z: the field on the seam there.
             let layer_at = |z: f64| -> Result<f64, String> {
                 if let Some(l) = fixed {
@@ -212,13 +210,13 @@ impl Surface {
 
     /// Layers stepped up one at a time, each step `layer(z)` tall, or with `pace` closer where
     /// the wall leans (EasyGCode's overhang-paced Z): `layer(z) · (1 − pace · (1 − cos a))`, `a`
-    /// being the lean of the seam (point 0) at `z` (cos a no less than 0.05). Each step is
-    /// taken as tall as it is halfway up it, and the steps are then scaled to end exactly at
-    /// the top.
+    /// being the lean of the seam (point 0) at `z` (cos a no less than 0.05), the pace scaled by
+    /// `(a / pivot)^steep` when `steep` is set. Each step is taken as tall as it is halfway up it,
+    /// and the steps are then scaled to end exactly at the top.
     fn stepped_contour(
         &self,
         layer: &dyn Fn(f64) -> Result<f64, String>,
-        pace: f64,
+        pace: Pace,
         v_at: &dyn Fn(f64) -> f64,
         z0: f64,
         z1: f64,
@@ -234,8 +232,9 @@ impl Surface {
         };
         let step = |z: f64| -> Result<f64, String> {
             let layer = layer(z)?;
-            Ok(if pace > 0.0 {
-                layer * (1.0 - pace * (1.0 - cos_at(z, layer)))
+            Ok(if pace.amount > 0.0 {
+                let c = cos_at(z, layer);
+                (layer * (1.0 - pace.at(c) * (1.0 - c))).max(0.05 * layer)
             } else {
                 layer
             })
@@ -409,6 +408,59 @@ fn reflect(a: P3, b: P3) -> P3 {
     [2.0 * b[0] - a[0], 2.0 * b[1] - a[1], 2.0 * b[2] - a[2]]
 }
 
+/// How much closer layers come where a wall leans (`contour`'s `pace`): `amount` of EasyGCode's
+/// `1 − cos a`, scaled by `(a / pivot)^steep` so it can do less on shallow overhangs and more on
+/// steep ones (`steep` 0: the same everywhere, EasyGCode's).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pace {
+    pub amount: f64,
+    pub steep: f64,
+    /// Degrees from vertical where the curve gives `amount`.
+    pub pivot: f64,
+}
+
+impl Pace {
+    /// The same pace at every lean.
+    pub fn even(amount: f64) -> Pace {
+        Pace {
+            amount,
+            steep: 0.0,
+            pivot: 45.0,
+        }
+    }
+
+    fn check(&self) -> Result<(), String> {
+        if !(0.0..=1.0).contains(&self.amount) {
+            return Err(format!(
+                "`pace` must be between 0 and 1, got {}",
+                self.amount
+            ));
+        }
+        if !(self.steep.is_finite() && (0.0..=10.0).contains(&self.steep)) {
+            return Err(format!(
+                "`steep` must be between 0 and 10, got {}",
+                self.steep
+            ));
+        }
+        if !(self.pivot.is_finite() && self.pivot > 0.0 && self.pivot < 90.0) {
+            return Err(format!(
+                "`pivot` must be between 0 and 90 degrees, got {}",
+                self.pivot
+            ));
+        }
+        Ok(())
+    }
+
+    /// The pace where the wall leans so that cos(lean) is `c`.
+    fn at(&self, c: f64) -> f64 {
+        if self.steep == 0.0 {
+            return self.amount;
+        }
+        let lean = c.clamp(-1.0, 1.0).acos().to_degrees().min(89.0);
+        self.amount * (lean / self.pivot).powf(self.steep)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,6 +472,54 @@ mod tests {
             .map(|i| c.transformed(&Xform::translate(0.0, 0.0, 10.0 * i as f64)))
             .collect();
         Surface::loft(&curves.iter().collect::<Vec<_>>()).unwrap()
+    }
+
+    /// A cone 20 mm tall whose wall leans `lean` degrees out from vertical.
+    fn cone(lean: f64) -> Surface {
+        let mut s = Surface::extrude(&Curve::circle(10.0, 32), 20.0).unwrap();
+        let grow = (10.0 + 20.0 * lean.to_radians().tan()) / 10.0;
+        for p in &mut s.sections[1] {
+            p[0] *= grow;
+            p[1] *= grow;
+        }
+        s
+    }
+
+    #[test]
+    fn the_steep_curve_paces_steep_walls_more_and_shallow_ones_less() {
+        let count = |lean: f64, steep: f64| {
+            let pace = Pace {
+                amount: 1.0,
+                steep,
+                pivot: 45.0,
+            };
+            cone(lean)
+                .contour(&Field::constant(1.0), pace, 1_000_000)
+                .unwrap()
+                .len()
+        };
+        // EasyGCode's pace: steps of cos(lean).
+        assert_eq!(count(60.0, 0.0), 41); // 20 / cos 60° = 40 steps
+        // Steeper than the pivot: closer layers; shallower: further apart; at the pivot: as set.
+        assert!(count(60.0, 2.0) > count(60.0, 0.0));
+        assert!(count(20.0, 2.0) < count(20.0, 0.0));
+        assert_eq!(count(45.0, 2.0), count(45.0, 0.0));
+        // Never closer than 5 % of a layer, however steep the curve.
+        assert!(count(80.0, 10.0) <= 401);
+        let bad = |steep: f64, pivot: f64| {
+            cone(30.0)
+                .contour(
+                    &Field::constant(1.0),
+                    Pace {
+                        amount: 1.0,
+                        steep,
+                        pivot,
+                    },
+                    1_000_000,
+                )
+                .is_err()
+        };
+        assert!(bad(-1.0, 45.0) && bad(1.0, 0.0) && bad(1.0, 90.0));
     }
 
     #[test]
@@ -439,12 +539,20 @@ mod tests {
         assert!(Surface::revolve(&Curve::circle(3.0, 8), 16).is_err());
 
         // 20 mm at 0.3 mm snaps to 67 layers (20.1 mm), 68 contours from the bottom up.
-        let layers = tube.contour(&Field::constant(0.3), 0.0, 1_000_000).unwrap();
+        let layers = tube
+            .contour(&Field::constant(0.3), Pace::even(0.0), 1_000_000)
+            .unwrap();
         assert_eq!(layers.len(), 68);
         assert!((layers[67].points[0][2] - 20.1).abs() < 1e-9);
         assert!(layers.iter().all(|l| l.closed && l.points.len() == 32));
-        assert!(tube.contour(&Field::constant(0.0), 0.0, 1000).is_err());
-        assert!(tube.contour(&Field::constant(0.001), 0.0, 1000).is_err());
+        assert!(
+            tube.contour(&Field::constant(0.0), Pace::even(0.0), 1000)
+                .is_err()
+        );
+        assert!(
+            tube.contour(&Field::constant(0.001), Pace::even(0.0), 1000)
+                .is_err()
+        );
     }
 
     #[test]

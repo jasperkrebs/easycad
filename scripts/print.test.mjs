@@ -146,5 +146,8 @@ test("the bead is EasyGCode's: a rectangle with a half circle each side; blends 
   // Widths and heights varying apart: the narrowest, widest, flattest and tallest.
   const apart = beadExtremes([2, 2.5, 3, 3.5, 4, 2.2], [0.5, 0.4, 0.6, 0.3, 0.5, 0.7]);
   assert.deepEqual(new Set(apart.beads.map((b) => `${b.w}x${b.h}`)), new Set(['2x0.5', '4x0.5', '3.5x0.3', '2.2x0.7']));
+  // A blend whose flattest step is a hair narrower than its widest: one bead, not two.
+  const hair = beadExtremes([3, 3.3, 3.6, 3.9, 4.2, 4.49, 4.5], [1.3, 1.4, 1.5, 1.6, 1.8, 2, 2]);
+  assert.deepEqual(hair.beads.map((b) => `${b.w}x${b.h}`), ['3x1.3', '4.5x2']);
   assert.deepEqual(beadExtremes([0, 0], [0, 0]).beads, []);
 });

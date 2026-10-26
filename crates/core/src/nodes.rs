@@ -865,9 +865,21 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "after the wiggles, stretch the whole spiral a little (every turn alike) to end exactly this far from its centre, to run straight into a wall that starts there; 0 leaves it",
             ),
+            opt(
+                "smooth",
+                "Bool",
+                0.0,
+                "solve the wiggles evenly along the spiral: they ease in and out where the turns spread and close, and run through the seam without a step (off: EasyGCode's per-angle solve, line for line)",
+            ),
+            opt(
+                "touch",
+                "Number",
+                1.0,
+                "with `smooth`: how far apart the turns are where their bumps meet, as a fraction of `width` (1: one line width; 0.5: half, the beads pushed into each other for a stronger join)",
+            ),
         ],
         output: "Curve",
-        doc: "Wiggles a spiral's turns so that wherever they are spread wider than `width`, each outward bump meets the next turn's inward bump with one line width between them: the turns stay joined at those points and leave holes in between. Turns that touch stay straight. A spiral snapped to whole turns ends near the radius you asked for, not on it; `stretch` fits it on exactly. It is done after the wiggles are solved, never to the spiral before: stretching first opens a sliver of gap between touching turns and the wiggles then alternate big and small from one turn to the next.",
+        doc: "Wiggles a spiral's turns so that wherever they are spread wider than `width`, each outward bump meets the next turn's inward bump with one line width between them (`touch` less: closer): the turns stay joined at those points and leave holes in between. Turns that touch stay straight. With `smooth: true` the wiggles grow and fade gradually and continue through the seam without a kink. A spiral snapped to whole turns ends near the radius you asked for, not on it; `stretch` fits it on exactly. It is done after the wiggles are solved, never to the spiral before: stretching first opens a sliver of gap between touching turns and the wiggles then alternate big and small from one turn to the next.",
         run: Run::Op(interlock),
     },
     Node {
@@ -1236,6 +1248,18 @@ pub static NODES: &[Node] = &[
                 "Number",
                 0.0,
                 "0..1: closer layers where the wall leans (1: each step is layer × cos(lean), EasyGCode's overhang-paced vessel)",
+            ),
+            opt(
+                "steep",
+                "Number",
+                0.0,
+                "shape the pace by the lean: × (lean / pivot)^steep, less on shallow overhangs and more on steep ones (0: the same at every lean)",
+            ),
+            opt(
+                "pivot",
+                "Angle",
+                45.0,
+                "with `steep`: the lean (degrees from vertical) where the pace is as set",
             ),
         ],
         output: "List<Curve>",
@@ -2132,8 +2156,17 @@ fn interlock(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     if stretch < 0.0 {
         return Err("`stretch` must be 0 (leave it) or a radius".into());
     }
-    ctx.spend(c.points.len())?;
-    let (curve, info) = spiral::interlock(c, bumps, width)?;
+    let smooth = a.flag(4)?;
+    let touch = a.num(5)?;
+    if !smooth && (touch - 1.0).abs() > 1e-12 {
+        return Err("`touch` needs `smooth: true`".into());
+    }
+    ctx.spend(c.points.len() * if smooth { 40 } else { 1 })?;
+    let (curve, info) = if smooth {
+        spiral::interlock_smooth(c, bumps, width, touch)?
+    } else {
+        spiral::interlock(c, bumps, width)?
+    };
     let curve = if stretch > 0.0 {
         spiral::end_exactly_at(curve, stretch)
     } else {

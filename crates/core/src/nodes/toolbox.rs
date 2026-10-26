@@ -7,7 +7,7 @@ use crate::curve::Curve;
 use crate::eval::Ctx;
 use crate::field::Field;
 use crate::geom::{P3, Plane, Xform, add3, dot3, scale3, sub3, unit3};
-use crate::surface::Surface;
+use crate::surface::{Pace, Surface};
 use crate::toolpath::{self, MAX_PATH_POINTS};
 use crate::value::Value;
 use easycad_lang::format_number;
@@ -461,7 +461,12 @@ pub(super) fn revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 pub(super) fn contour(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let s = a.surface(0)?;
     let layer = a.field(1)?;
-    let layers = s.contour(&layer, a.num(2)?, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let pace = Pace {
+        amount: a.num(2)?,
+        steep: a.num(3)?,
+        pivot: a.num(4)?,
+    };
+    let layers = s.contour(&layer, pace, ctx.remaining().min(MAX_PATH_POINTS))?;
     ctx.spend(layers.iter().map(|c| c.points.len()).sum())?;
     Value::list(
         layers

@@ -18,7 +18,8 @@ export function beadArea(w, h) {
 /**
  * The beads a toolpath lays (line width and layer height per point, 0 for travel), each once
  * (to 0.01 mm). Up to four are all shown; more means they blend from one to another, and then
- * only the extremes are kept: the narrowest, widest, flattest and tallest.
+ * only the extremes are kept: the narrowest, widest, flattest and tallest (any within 1 % of
+ * another counted once).
  * @param {ArrayLike<number>} widths
  * @param {ArrayLike<number>} heights
  * @returns {{ beads: Array<{ w: number, h: number, area: number }>, blended: boolean }}
@@ -37,6 +38,9 @@ export function beadExtremes(widths, heights) {
   if (blended) {
     const by = (key, sign) => all.reduce((best, b) => (sign * (b[key] - best[key]) < 0 ? b : best));
     all = [...new Set([by('w', 1), by('w', -1), by('h', 1), by('h', -1)])];
+    // Extremes within 1 % of each other are the same bead (a blend's last step, 4.49 by 4.5 mm).
+    const same = (a, b) => Math.abs(a.w - b.w) <= 0.01 * Math.max(a.w, b.w) && Math.abs(a.h - b.h) <= 0.01 * Math.max(a.h, b.h);
+    all = all.sort((a, b) => b.w - a.w || b.h - a.h).filter((b, i, list) => !list.slice(0, i).some((k) => same(k, b)));
   }
   const beads = all.map((b) => ({ ...b, area: beadArea(b.w, b.h) })).sort((a, b) => a.area - b.area || a.w - b.w);
   return { beads, blended };

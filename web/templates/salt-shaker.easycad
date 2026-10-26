@@ -22,6 +22,7 @@ param band     = 0 mm  in 0..50               "Full-spacing band"
 param fade_in  = 6 mm  in 0..60               "Fade inside the ring"
 param fade_out = 6 mm  in 0..60               "Fade outside the ring"
 param bumps    = 9     in 1..49 step 2        "Bumps per turn"
+param touch    = 100 % in 30..100             "Spacing where the bumps meet (100 %: one line width; less: pushed into each other)"
 
 group "Print"
 param layer      = 0.6 mm in 0.1..3           "Layer height"
@@ -30,6 +31,8 @@ param disc_layer = 0 mm   in 0..3             "Spiral disc layer height (0: as t
 param disc_line  = 0 mm   in 0..8             "Spiral disc line width (0: as the walls)"
 param flow       = 20     in 1..400           "Flow (mm³/s)"
 param pace       = 100 %  in 0..100           "Closer layers on overhangs"
+param steep      = 0      in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"
+param pivot      = 45 deg in 5..85 step 1          "Steep curve pivot (as set at this lean)"
 param disc_extrusion = 100 % in 50..200       "Spiral disc extrusion"
 param wall_extrusion = 100 % in 50..200       "Fillet and wall extrusion"
 
@@ -69,7 +72,7 @@ c_blend   = smoothstep((z - disc_l) / fillet_h)
 c_layer   = disc_l + (layer - disc_l) * c_blend
 c_line    = disc_w + (line - disc_w) * c_blend
 # The wall in vase mode, layers closer on overhangs (each still a full layer's bead), open at the top.
-c_wall    = spiralize(contour(container, c_layer, pace: pace), width: line, flow: flow, flat_top: false, ramp: false)
+c_wall    = spiralize(contour(container, c_layer, pace: pace, steep: steep, pivot: pivot), width: line, flow: flow, flat_top: false, ramp: false)
   |> bead(width: c_line, layer: c_layer) |> adjust(extrude: wall_extrusion)
 # The bottom: rings one line apart from the fillet's foot inward, linked into a spiral from the
 # centre out (EasyGCode's ring fill): its last turn widens onto the fillet's foot and ends on the
@@ -88,7 +91,7 @@ lid_shape = loft(flatten([lid_fils, [skirt_top]]))
 l_blend   = smoothstep((z - disc_l) / lid_fil)
 l_layer   = disc_l + (layer - disc_l) * l_blend
 l_line    = disc_w + (line - disc_w) * l_blend
-l_wall    = spiralize(contour(lid_shape, l_layer, pace: pace), width: line, flow: flow, flat_top: false, ramp: false)
+l_wall    = spiralize(contour(lid_shape, l_layer, pace: pace, steep: steep, pivot: pivot), width: line, flow: flow, flat_top: false, ramp: false)
   |> bead(width: l_line, layer: l_layer) |> adjust(extrude: wall_extrusion)
 # Turns one line apart, spreading to `open` around the ring and interlocking there (holes); the
 # spiral is stretched a hair, after the wiggles are solved, to end exactly on the fillet's foot, at
@@ -96,7 +99,7 @@ l_wall    = spiralize(contour(lid_shape, l_layer, pace: pace), width: line, flow
 near      = fade(distance(circle(ring)), inside: fade_in, outside: fade_out, band: band)
 spacing   = disc_w * (1 + (open - 1) * near)
 odd       = 2 * floor(bumps / 2) + 1
-holes     = interlock(spiral(outer: lid_flat, spacing: spacing, min_samples: 16 * odd), bumps: odd, width: disc_w, stretch: lid_flat)
+holes     = interlock(spiral(outer: lid_flat, spacing: spacing, min_samples: 16 * odd), bumps: odd, width: disc_w, stretch: lid_flat, smooth: true, touch: touch)
 l_top     = toolpath(holes |> rotate(90), width: disc_w, layer: disc_l, flow: flow) |> adjust(extrude: disc_extrusion)
 lid       = join([l_top, l_wall])
 

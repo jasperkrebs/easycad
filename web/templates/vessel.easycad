@@ -38,6 +38,8 @@ param layer = 0.6 mm in 0.1..2 step 0.05            "Layer height"
 param line  = 2 mm   in 0.4..6 step 0.1             "Line width"
 param flow  = 20     in 1..100                      "Flow (mm³/s)"
 param pace  = 100 %  in 0..100                      "Closer layers on overhangs"
+param steep = 0      in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"
+param pivot = 45 deg in 5..85 step 1          "Steep curve pivot (as set at this lean)"
 
 # ---- The cross-section, its seam at the back (+Y), 240 points so it can blend into the top.
 k_shape  = index_of(["circle", "ellipse", "squircle", "rounded rectangle", "polygon", "star"], shape)
@@ -84,7 +86,7 @@ top_pts  = vertices(star_top)
 top_ang  = mod(atan2(sample(y, top_pts), sample(x, top_pts)) - 89.999, 360) - 0.001
 top_w    = clamp((top_outer - sqrt(sample(x, top_pts) ^ 2 + sample(y, top_pts) ^ 2)) / max(0.001, top_outer - top_inner), 0, 1)
 raise    = pick(top_star, lift * clamp(z / wall_h, 0, 1) * graph(top_ang, top_w, mod(atan2(y, x) - 89.999, 360) - 0.001), 0)
-layers   = contour(wall, layer, pace: pace) |> move(z: raise)
+layers   = contour(wall, layer, pace: pace, steep: steep, pivot: pivot) |> move(z: raise)
 spiral   = spiralize(layers, width: line, flow: flow, flat_top: flat_top, ramp: pick(filleted, false, true)) |> bead(layer: layer)
 
 # ---- Bottoms. The fillet's flat part: a spiral from the centre out to where the fillet starts.
