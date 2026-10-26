@@ -3,6 +3,20 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-26 (later): the shaker's disc bead is the lid's only
+
+**Why:** the owner set the disc's layer height and line width for the lid's holes, and found the
+container's bottom printing with them too (smaller in the G-code), easing into the wall through
+its fillet. Only the lid's spiral disc should have its own bead.
+
+**Landed:** the container is the walls' bead throughout: its ring-spiral bottom (rings a wall line
+apart, on the bed at a wall layer), its fillet and wall. The settings are now *Lid disc layer
+height* and *Lid disc line width*; *Bottom and lid disc extrusion* still covers both flat parts.
+The shaker test checks every move of the container has the walls' bead with the disc set; the
+smoke test checks the Print tab shows one bead for the base and both for the lid.
+
+**Open:** nothing.
+
 ## 2026-10-26: smooth wiggles, how close they meet; the steep curve everywhere
 
 **Why:** the owner saw the shaker lid's wiggles kink on one seam for some settings (a bigger or

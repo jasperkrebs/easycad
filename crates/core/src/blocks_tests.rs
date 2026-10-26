@@ -855,8 +855,9 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
     let l = turns(&lid, 0.0);
     assert!((l.last().unwrap().1 - 32.0).abs() < 0.05, "{:?}", l.last());
 
-    // The spiral discs with their own bead: 0.3 mm layers of a 3 mm line, easing into the
-    // walls' 0.6 × 2 mm through each fillet (the wider line needs a wider fade round the holes).
+    // The lid's disc with its own bead: 0.3 mm layers of a 3 mm line, easing into the walls'
+    // 0.6 × 2 mm through its fillet (the wider line needs a wider fade round the holes). The
+    // container is the walls' bead throughout, its bottom too.
     let (base, lid) = run_with(&[
         ("disc_layer", Literal::Number(0.3)),
         ("disc_line", Literal::Number(3.0)),
@@ -864,7 +865,22 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
         ("fade_out", Literal::Number(12.0)),
     ]);
     let (disc, wall) = (bead_area(3.0, 0.3), bead_area(2.0, 0.6));
-    for (p, fillet, skirt) in [(&base, 8.0, 32.0), (&lid, 6.0, 34.0)] {
+    let bottom: Vec<usize> = (1..base.points.len())
+        .filter(|i| base.part[*i] == 0)
+        .collect();
+    assert!(
+        bottom
+            .iter()
+            .all(|i| (base.points[*i][2] - 0.6).abs() < 1e-9)
+    );
+    assert!(
+        (1..base.points.len())
+            .filter(|i| !base.travel[*i])
+            .all(|i| (base.area(i) - wall).abs() < 1e-9),
+        "the container is the walls' bead throughout"
+    );
+    {
+        let (p, fillet, skirt) = (&lid, 6.0, 34.0);
         let flat: Vec<usize> = (1..p.points.len()).filter(|i| p.part[*i] == 0).collect();
         // The disc: on the bed at 0.3 mm, rings 3 mm apart, the outermost a line inside the
         // fillet's start, each move extruded (and at the set flow, slowed) for its bead.

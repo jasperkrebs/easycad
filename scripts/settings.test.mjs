@@ -72,7 +72,7 @@ test('a project made from a template matches it whatever its sliders say', () =>
   assert.equal(withoutValues(texts), withoutValues('param name  = "Bo, Cy" "Name"\nparam on = false   "On"'));
   // Anything else is a different recipe: a changed step, a new setting, a different label.
   for (const changed of [
-    template.replace('c_disc    = link_rings(reverse(c_rings), "spiral", disc_w)', 'c_disc    = link_rings(c_rings, "spiral", disc_w)'),
+    template.replace('c_disc    = link_rings(reverse(c_rings), "spiral", line)', 'c_disc    = link_rings(c_rings, "spiral", disc_w)'),
     template.replace('group "Print"', 'group "Print"\nparam extra = 1 "Extra"'),
     template.replace('"Layer height"', '"Layer"'),
   ]) {

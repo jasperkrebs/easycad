@@ -3,7 +3,7 @@ project "Salt & pepper shaker"
 printer "Ginger G1"
 note "A container and a lid that screws onto it: two prints from one set of settings (EasyGCode's container, with a lid to shake salt through), each centred on the bed with its own G-code file. Each prints as one continuous line: a flat spiral from the centre out whose last turn widens onto the fillet, the fillet up into the wall, then the wall in vase mode, its layers closer where it leans out. Both spirals turn the same way, so the lid's skirt threads down over the container's neck once it's turned over onto it."
 note "The body follows radii at heights (0: where the bottom fillet ends, 1: where the neck starts) along a smooth curve that leaves the fillet and meets the neck straight up. The neck is as tall as the lid's skirt; the lid sits one line width outside it, plus the fit. The lid's top is EasyGCode's spiral disc: around a ring its turns spread apart and interlock, leaving the holes the salt comes out of."
-note "The spiral discs can have their own layer height and line width (0: the same as the walls). Through each fillet the bead then eases from the disc's into the wall's along an S-curve of height, a little at every point: the layers' spacing, the plastic each move gets and, at the set flow, its speed."
+note "The lid's spiral disc can have its own layer height and line width (0: the same as the walls); the container prints with the walls' bead throughout. Through the lid's fillet the bead then eases from the disc's into the skirt's along an S-curve of height, a little at every point: the layers' spacing, the plastic each move gets and, at the set flow, its speed."
 
 group "Container"
 param body   = [[0, 33], [0.45, 38], [1, 32]] "Body radius (mm) at heights from 0 (bottom) to 1 (neck)"
@@ -27,13 +27,13 @@ param touch    = 100 % in 30..100             "Spacing where the bumps meet (100
 group "Print"
 param layer      = 0.6 mm in 0.1..3           "Layer height"
 param line       = 2 mm   in 0.4..8           "Line width"
-param disc_layer = 0 mm   in 0..3             "Spiral disc layer height (0: as the walls)"
-param disc_line  = 0 mm   in 0..8             "Spiral disc line width (0: as the walls)"
+param disc_layer = 0 mm   in 0..3             "Lid disc layer height (0: as the walls)"
+param disc_line  = 0 mm   in 0..8             "Lid disc line width (0: as the walls)"
 param flow       = 20     in 1..400           "Flow (mm³/s)"
 param pace       = 100 %  in 0..100           "Closer layers on overhangs"
 param steep      = 0      in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"
 param pivot      = 45 deg in 5..85 step 1          "Steep curve pivot (as set at this lean)"
-param disc_extrusion = 100 % in 50..200       "Spiral disc extrusion"
+param disc_extrusion = 100 % in 50..200       "Bottom and lid disc extrusion"
 param wall_extrusion = 100 % in 50..200       "Fillet and wall extrusion"
 
 # ---- The body: a smooth curve through the radii, level at both ends, so the wall leaves the
@@ -44,14 +44,14 @@ body_r    = sample(y, points)
 bottom_r  = graph(body_at, body_r, 0, smooth: true)
 neck_r    = graph(body_at, body_r, 1, smooth: true)
 lid_r     = neck_r + line + fit
-# The spiral discs' bead (0: the walls').
+# The lid disc's bead (0: the walls'); the container is all the walls' bead.
 disc_l    = pick(greater(disc_layer, 0), disc_layer, layer)
 disc_w    = pick(greater(disc_line, 0), disc_line, line)
 # Heights on whole layers: the wall up to the neck, the neck as tall as the lid's skirt.
 wall_h    = max(1, round(height / layer)) * layer
 neck_h    = max(1, round(skirt / layer)) * layer
 # Fillets that leave room for the flat spiral inside them.
-fillet_h  = max(layer, min(fillet, min((wall_h - disc_l) * 0.95, bottom_r - 2 * disc_w)))
+fillet_h  = max(layer, min(fillet, min((wall_h - layer) * 0.95, bottom_r - 2 * line)))
 lid_fil   = max(layer, min(lid_fillet, min(neck_h * 0.95, lid_r - 2 * disc_w)))
 
 # Sections: circles with their seam at the back (+Y), where each spiral ends and its wall starts.
@@ -61,25 +61,20 @@ fz        = series(0, 1, 25) / 24
 # ---- The container. The fillet: a quarter circle from the flat bottom up to straight.
 flat_r    = bottom_r - fillet_h
 fillet_r  = flat_r + sqrt(fillet_h ^ 2 - (fillet_h - fz * fillet_h) ^ 2)
-fillets   = unit |> scale(fillet_r) |> move(z: disc_l + fz * fillet_h)
+fillets   = unit |> scale(fillet_r) |> move(z: layer + fz * fillet_h)
 body_t    = series(1, 1, 40) / 40
-bodies    = unit |> scale(graph(body_at, body_r, body_t, smooth: true)) |> move(z: disc_l + fillet_h + body_t * (wall_h - disc_l - fillet_h))
+bodies    = unit |> scale(graph(body_at, body_r, body_t, smooth: true)) |> move(z: layer + fillet_h + body_t * (wall_h - layer - fillet_h))
 neck      = unit |> scale(neck_r) |> move(z: wall_h + neck_h)
 container = loft(flatten([fillets, bodies, [neck]]))
-# Up the fillet the bead eases from the disc's into the wall's (an S-curve of height, so it
-# changes at every point, within each turn too); from the fillet's top up it's the wall's.
-c_blend   = smoothstep((z - disc_l) / fillet_h)
-c_layer   = disc_l + (layer - disc_l) * c_blend
-c_line    = disc_w + (line - disc_w) * c_blend
 # The wall in vase mode, layers closer on overhangs (each still a full layer's bead), open at the top.
-c_wall    = spiralize(contour(container, c_layer, pace: pace, steep: steep, pivot: pivot), width: line, flow: flow, flat_top: false, ramp: false)
-  |> bead(width: c_line, layer: c_layer) |> adjust(extrude: wall_extrusion)
+c_wall    = spiralize(contour(container, layer, pace: pace, steep: steep, pivot: pivot), width: line, flow: flow, flat_top: false, ramp: false)
+  |> bead(layer: layer) |> adjust(extrude: wall_extrusion)
 # The bottom: rings one line apart from the fillet's foot inward, linked into a spiral from the
 # centre out (EasyGCode's ring fill): its last turn widens onto the fillet's foot and ends on the
 # seam, right where the wall starts.
-c_rings   = rings(unit |> scale(flat_r), disc_w)
-c_disc    = link_rings(reverse(c_rings), "spiral", disc_w)
-c_bottom  = toolpath(c_disc, width: disc_w, layer: disc_l, flow: flow) |> adjust(extrude: disc_extrusion)
+c_rings   = rings(unit |> scale(flat_r), line)
+c_disc    = link_rings(reverse(c_rings), "spiral", line)
+c_bottom  = toolpath(c_disc, width: line, layer: layer, flow: flow) |> adjust(extrude: disc_extrusion)
 base      = join([c_bottom, c_wall])
 
 # ---- The lid, printed top down: the spiral disc with its holes, a fillet, the skirt.

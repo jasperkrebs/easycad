@@ -319,12 +319,14 @@ async function waitForServer(url) {
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();
       if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);
-      // Each part's bead cross-sections, to scale: the walls' 2 × 0.6 mm and the spiral discs'
-      // 3 × 0.3 mm among them.
+      // Each part's bead cross-sections, to scale: the container all the walls' 2 × 0.6 mm, the
+      // lid's disc its own 3 × 0.3 mm easing into the skirt's 2 × 0.6.
       const beadTitles = await page.locator('#beads .bead-title').allTextContents();
-      const captions = (await page.locator('#beads figcaption').allTextContents()).join(' | ');
       if (beadTitles.length !== 2 || !/^base/.test(beadTitles[0]) || !/^lid/.test(beadTitles[1])) failures.push(`${name}: the bead groups: ${beadTitles.join(' / ')}`);
-      if (!captions.includes('2 × 0.6 mm') || !captions.includes('3 × 0.3 mm')) failures.push(`${name}: the beads shown: ${captions}`);
+      const groupBeads = async (k) => (await page.locator('#beads .bead-group').nth(k).locator('figcaption').allTextContents()).join(' | ');
+      const [baseBeads, lidBeads] = [await groupBeads(0), await groupBeads(1)];
+      if (!/^2 × 0\.6 mm/.test(baseBeads) || baseBeads.includes('|')) failures.push(`${name}: the container's beads: ${baseBeads}`);
+      if (!lidBeads.includes('2 × 0.6 mm') || !lidBeads.includes('3 × 0.3 mm')) failures.push(`${name}: the lid's beads: ${lidBeads}`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-print.png`), fullPage: name === 'phone' });
 
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
@@ -341,7 +343,7 @@ async function waitForServer(url) {
     {
       const current = fs.readFileSync(path.join(root, 'templates/salt-shaker.easycad'), 'utf8');
       const older = current
-        .replace('c_disc    = link_rings(reverse(c_rings), "spiral", disc_w)', 'c_disc    = polyline(flatten([vertices(link_rings(reverse(c_rings), "spiral", disc_w)), [point(0, flat_r)]]))')
+        .replace('c_disc    = link_rings(reverse(c_rings), "spiral", line)', 'c_disc    = polyline(flatten([vertices(link_rings(reverse(c_rings), "spiral", line)), [point(0, flat_r)]]))')
         .replace(/^(param line\s+=) 2 mm/m, '$1 2.4 mm');
       if (older === current || !/^param line\s+= 2\.4 mm/m.test(older)) failures.push('update test: the older recipe is the same as the current one');
       const ctx = await browser.newContext({ viewport: { width: 1366, height: 860 } });
@@ -360,7 +362,7 @@ async function waitForServer(url) {
       await page.click('#templateUpdateYes');
       await page.waitForFunction(() => /carried over/.test(document.getElementById('templateUpdated').textContent), null, { timeout: 30000 }).catch(() => failures.push('update: no word that it was updated'));
       const recipe = await page.inputValue('#recipe');
-      if (!recipe.includes('c_disc    = link_rings(reverse(c_rings), "spiral", disc_w)')) failures.push('update: the recipe is still the older one');
+      if (!recipe.includes('c_disc    = link_rings(reverse(c_rings), "spiral", line)')) failures.push('update: the recipe is still the older one');
       if (!/^param line\s+= 2\.4 mm/m.test(recipe)) failures.push(`update: the line width didn't carry over: ${(recipe.match(/^param line.*$/m) || [''])[0]}`);
       // Up to date now: after a reload there's nothing to offer.
       await page.reload();
