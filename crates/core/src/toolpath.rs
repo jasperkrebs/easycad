@@ -444,7 +444,8 @@ impl Toolpath {
                 volume +=
                     area * d * self.flow.get(i + 1).copied().unwrap_or(1.0) * extrusion_override;
                 time += d / speed;
-                flow_max = flow_max.max(speed * area * extrusion_override);
+                let share = self.flow.get(i + 1).copied().unwrap_or(1.0);
+                flow_max = flow_max.max(speed * area * share.min(1.0) * extrusion_override);
                 top = top.max(w[1][2]);
                 bounds.add(w[0]);
                 bounds.add(w[1]);
@@ -1051,6 +1052,9 @@ pub struct Revolve {
     pub seam: f64,
     /// A flat closing turn that ramps extrusion down (false: an open top).
     pub flat_top: bool,
+    /// The first turn at the set flow throughout: each move faster by 1 ÷ its share of a full
+    /// bead (the G-code caps it at the printer's travel speed).
+    pub steady_start: bool,
 }
 
 /// One turn of [`vase_revolve`]: where it starts, how far it rises and its settings.
@@ -1126,6 +1130,7 @@ pub fn vase_revolve(
         tolerance,
         seam,
         flat_top,
+        steady_start,
     } = *options;
     let mut points: Vec<[f64; 2]> = profile.points.iter().map(|p| [p[0], p[2]]).collect();
     if profile.closed {
@@ -1270,6 +1275,19 @@ pub fn vase_revolve(
         if i == 0 {
             // The fan comes on after the ramp turn.
             path.layer_starts.push(path.points.len());
+            if steady_start {
+                // A steady flow through the ramp: as each move extrudes a share of a full bead,
+                // it goes that much faster, so the extruder never slows down.
+                let end = path.points.len();
+                for k in 1..end {
+                    let share = path.flow.get(k).copied().unwrap_or(1.0);
+                    if share > 0.0 && share < 1.0 && !path.travel.get(k).copied().unwrap_or(true) {
+                        if let Some(f) = path.speed.get_mut(k) {
+                            *f = 1.0 / share;
+                        }
+                    }
+                }
+            }
         }
     }
     // The closing turn (none for an open top: the last turn ends on the rim at full flow).
@@ -1664,6 +1682,7 @@ mod tests {
             tolerance: 1.0,
             seam: 90.0,
             flat_top,
+            steady_start: false,
         };
         let flat = vase_revolve(&profile, &per_turn, &options(true), MAX_PATH_POINTS).unwrap();
         let open = vase_revolve(&profile, &per_turn, &options(false), MAX_PATH_POINTS).unwrap();
@@ -1680,6 +1699,33 @@ mod tests {
         assert_eq!(open.flow.last().copied(), Some(1.0));
         // The closing turn ramped down to nothing.
         assert!((flat.flow[flat.flow.len() - 1] - 1.0 / 48.0).abs() < 1e-12);
+        // A steady start: the same points and extrusion, but each move of the ramp turn faster
+        // by 1 ÷ its share of a full bead, so the volume per second holds; from turn 2 on, and
+        // in the closing turn, as before.
+        let steady = vase_revolve(
+            &profile,
+            &per_turn,
+            &Revolve {
+                steady_start: true,
+                ..options(true)
+            },
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
+        assert_eq!(steady.points, flat.points);
+        assert_eq!(steady.flow, flat.flow);
+        for k in 1..=24 {
+            assert!(
+                (steady.speed[k] * steady.flow[k] - 1.0).abs() < 1e-12,
+                "move {k}"
+            );
+        }
+        assert!(
+            steady.speed[1] > 40.0,
+            "the first move is fastest: {}",
+            steady.speed[1]
+        );
+        assert!(steady.speed[25..].iter().all(|f| *f == 1.0));
     }
 
     #[test]

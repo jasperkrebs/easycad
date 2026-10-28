@@ -176,6 +176,13 @@ async function waitForServer(url) {
         await page.waitForFunction((t) => document.getElementById('projectName').textContent === t, title, { timeout: 15000 });
         await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-${id}.png`), fullPage: name === 'phone' });
+        // The lampshade's steady start (for pellet extruders) is EasyCAD's own: off, it's
+        // EasyGCode's ramp.
+        if (id === 'lampshade') {
+          await page.uncheck('#set-steady');
+          await page.waitForFunction(() => /^param steady\s+= false/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+          await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+        }
         const file = await saveFrom(page, '#exportButtons button.primary');
         const expected = commands(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'easygcode', fixture), 'utf8'));
         const ours = commands(file.data.toString('utf8'));
@@ -191,6 +198,8 @@ async function waitForServer(url) {
       // the app must still make its G-code (one line from the bottom's centre to the rim).
       await page.click('#tab-settings');
       await page.selectOption('#template', 'vessel');
+      // The lampshade's setting was changed, so the app asks before replacing it.
+      if (await page.isVisible('#replaceConfirm')) await page.click('#replaceYes');
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Vessel', null, { timeout: 15000 });
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-vessel.png`), fullPage: name === 'phone' });

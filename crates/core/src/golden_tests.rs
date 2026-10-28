@@ -298,6 +298,71 @@ fn spiralize_through_tilted_layers_matches_the_hand_checked_fixture() {
     assert_matches(&ours, fixture);
 }
 
+/// The lampshade's steady start, read back from its G-code: at 100 mm³/s, in the first turn every
+/// move extrudes the set flow (E × F ÷ 60 ÷ length), going faster where the bead is thin, except
+/// the first few, which would have to go faster than the travel moves (100 mm/s) and so run at
+/// that, extruding less per second.
+#[test]
+fn the_lampshade_starts_at_a_steady_flow() {
+    let values = [("flow".to_string(), Literal::Number(100.0))];
+    let e = evaluate(
+        &set_values(LAMPSHADE_TEMPLATE, &values).unwrap(),
+        Quality::Final,
+    );
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+    let path = &e.print.as_ref().unwrap().path;
+    let text = gcode::write(path, &Profile::default(), "Steady")
+        .unwrap()
+        .text;
+    let (mut at, mut feed) = ([0.0f64; 3], 0.0f64);
+    let (mut steady, mut capped) = (0, 0);
+    let mut speeds = vec![];
+    for line in text.lines() {
+        let word = |c: char| {
+            line.split_whitespace()
+                .find_map(|w| w.strip_prefix(c).and_then(|v| v.parse::<f64>().ok()))
+        };
+        if !line.starts_with("G1") && !line.starts_with("G0") {
+            continue;
+        }
+        if let Some(f) = word('F') {
+            feed = f;
+        }
+        let to = [
+            word('X').unwrap_or(at[0]),
+            word('Y').unwrap_or(at[1]),
+            word('Z').unwrap_or(at[2]),
+        ];
+        let len = crate::geom::dist3(at, to);
+        if let (Some(ex), true) = (
+            word('E'),
+            word('X').is_some() && to[2] < 2.5 - 1e-6 && len > 1e-3,
+        ) {
+            let rate = ex * feed / 60.0 / len;
+            speeds.push(feed / 60.0);
+            if (feed - 6000.0).abs() < 1e-9 {
+                assert!(rate < 100.0 * 1.01, "capped, at {rate}");
+                capped += 1;
+            } else {
+                assert!((rate - 100.0).abs() < 0.02 * 100.0, "{line}: {rate} mm³/s");
+                steady += 1;
+            }
+        }
+        at = to;
+    }
+    assert!(
+        capped >= 1 && steady > 5 * capped,
+        "{capped} capped, {steady} steady"
+    );
+    // Fast at the start, slowing to the full bead's speed (100 mm³/s through 6 × 2.5 mm).
+    assert!(speeds.first().copied().unwrap_or(0.0) >= 99.0, "{speeds:?}");
+    let full = 100.0 / crate::bead::bead_area(6.0, 2.5);
+    assert!(
+        speeds.last().copied().unwrap_or(0.0) < 2.5 * full,
+        "{speeds:?}"
+    );
+}
+
 /// Runs a template with some settings changed and compares its G-code with a fixture.
 fn template_matches(template: &str, values: &[(&str, Literal)], profile: &Profile, fixture: &str) {
     let values: Vec<(String, Literal)> = values
@@ -326,7 +391,7 @@ fn the_lampshade_compensates_steep_overhangs_more_on_a_curve() {
             ("steep".to_string(), Number(steep)),
             ("pivot".to_string(), Number(pivot)),
         ];
-        let e = evaluate(&set_values(LAMPSHADE, &values).unwrap(), Quality::Final);
+        let e = evaluate(&set_values(&lampshade(), &values).unwrap(), Quality::Final);
         assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
         let path = &e.print.as_ref().unwrap().path;
         (0..path.points.len())
@@ -596,7 +661,15 @@ fn toolpath_tuning_matches_the_hand_checked_fixture() {
     assert_matches(&body, fixture);
 }
 
-const LAMPSHADE: &str = include_str!("../../../web/templates/lampshade.easycad");
+const LAMPSHADE_TEMPLATE: &str = include_str!("../../../web/templates/lampshade.easycad");
+const STEADY_ON: &str = "param steady     = true ";
+
+/// The lampshade as EasyGCode prints it: its first turn ramps the flow up with the extrusion
+/// (the template's steady start, for pellet extruders, is EasyCAD's own).
+fn lampshade() -> String {
+    assert!(LAMPSHADE_TEMPLATE.contains(STEADY_ON));
+    LAMPSHADE_TEMPLATE.replace(STEADY_ON, "param steady     = false")
+}
 
 /// The lampshade template against EasyGCode's lampshade (`vase_revolve` and the shades as
 /// profiles): as it ships (E27, a cone with a fillet, width compensation, volumetric flow); a
@@ -607,13 +680,13 @@ const LAMPSHADE: &str = include_str!("../../../web/templates/lampshade.easycad")
 fn lampshade_recipe_matches_easygcode() {
     use Literal::{Bool, Number, Text};
     template_matches(
-        LAMPSHADE,
+        &lampshade(),
         &[],
         &Profile::default(),
         include_str!("../../../fixtures/easygcode/lampshade-flow.gcode"),
     );
     template_matches(
-        &LAMPSHADE.replace("flow: flow_at", "speed: 20"),
+        &lampshade().replace("flow: flow_at", "speed: 20"),
         &[
             ("socket", Text("E14".into())),
             ("fit", Number(-0.2)),
@@ -633,7 +706,7 @@ fn lampshade_recipe_matches_easygcode() {
         include_str!("../../../fixtures/easygcode/lampshade-bell.gcode"),
     );
     template_matches(
-        LAMPSHADE,
+        &lampshade(),
         &[
             ("shape", Text("sphere".into())),
             ("throat", Number(12.0)),
@@ -650,7 +723,7 @@ fn lampshade_recipe_matches_easygcode() {
         include_str!("../../../fixtures/easygcode/lampshade-sphere.gcode"),
     );
     template_matches(
-        LAMPSHADE,
+        &lampshade(),
         &[
             ("socket", Text("custom".into())),
             ("thread_d", Number(35.0)),
@@ -701,12 +774,12 @@ fn an_open_lampshade_is_easygcodes_without_the_closing_turn() {
     type Values<'a> = &'a [(&'a str, Literal)];
     let cases: [(String, Values, &str); 2] = [
         (
-            LAMPSHADE.to_string(),
+            lampshade(),
             &[],
             include_str!("../../../fixtures/easygcode/lampshade-flow.gcode"),
         ),
         (
-            LAMPSHADE.replace("flow: flow_at", "speed: 20"),
+            lampshade().replace("flow: flow_at", "speed: 20"),
             &bell,
             include_str!("../../../fixtures/easygcode/lampshade-bell.gcode"),
         ),

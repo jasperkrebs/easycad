@@ -455,7 +455,10 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
                     f3(cur[2]),
                     f5(volume * e_factor)
                 );
-                let feed = s.feed_for(area) * path.speed_factor(i);
+                // Never faster than the printer's travel moves (a steady-flow ramp asks for a
+                // lot where its bead is thinnest).
+                let feed =
+                    (s.feed_for(area) * path.speed_factor(i)).min(profile.travel_speed * 60.0);
                 if last_feed != Some(feed) || first_extrude {
                     let _ = write!(line, " F{}", round(feed));
                     last_feed = Some(feed);
@@ -549,8 +552,9 @@ pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, 
 
 /// The most a move may extrude, in beads (overhang compensation goes up to about 2.5).
 const MAX_EXTRUSION: f64 = 4.0;
-/// The most a move's speed may be scaled up.
-const MAX_SPEED_FACTOR: f64 = 20.0;
+/// The most a move's speed may be scaled up (a steady-flow ramp's thinnest bead asks for a lot;
+/// every move is held to the travel speed anyway).
+const MAX_SPEED_FACTOR: f64 = 1000.0;
 /// The hottest a heater may be set, in °C (the printer settings allow the same).
 const MAX_TEMPERATURE: f64 = 350.0;
 /// The range of the printer's speed and extrusion overrides, in %.

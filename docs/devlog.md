@@ -3,6 +3,25 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-28: a steady flow through the lampshade's first turn
+
+**Why:** on the Ginger G1 the lampshade's thread prints better at a high flow (about 100 mm³/s),
+but the first turn ramps the extrusion from 0 to a full bead at the full bead's speed, so the
+flow ramps from 0 too, and a pellet screw can't follow that.
+
+**Landed:** `vase_revolve(…, steady_start: true)`: each move of the first turn goes faster by
+1 ÷ its share of a full bead (the toolpath's speed factor), so the extruder runs at the set flow
+from the start. The G-code holds every printing move to the printer's travel speed (100 mm/s
+by default; the G1's limit is 300), so the first few moves of a steady start run at that,
+extruding a little less per second; the most a speed factor may be is now 1000 (was 20; the
+travel-speed cap is what protects the machine). The print estimate's peak flow counts ramp moves
+at their actual extrusion. The lampshade has *Steady flow in the first turn*, on; its golden
+tests against EasyGCode switch it off. A test reads the G-code back: at 100 mm³/s every
+first-turn move extrudes 100 mm³/s (E × F ÷ 60 ÷ length, within 2 %) or runs at 100 mm/s.
+
+**Open:** the closing turn still ramps the flow down with the extrusion (at the top it matters
+less); `vase_spiral` and `spiralize` have the same opening ramp without the option.
+
 ## 2026-10-26 (later): the shaker's disc bead is the lid's only
 
 **Why:** the owner set the disc's layer height and line width for the lid's holes, and found the

@@ -1365,9 +1365,15 @@ pub static NODES: &[Node] = &[
                 1.0,
                 "true: a flat closing turn for a level rim; false: an open top",
             ),
+            opt(
+                "steady_start",
+                "Bool",
+                0.0,
+                "true: the extruder runs at the set flow from the start; the first turn moves faster where its bead is thin (each move's speed ÷ its share of a full bead), never faster than the printer's travel speed. For pellet extruders, which can't follow a ramp quickly",
+            ),
         ],
         output: "Toolpath",
-        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed, a flat closing turn ramps it down (or, with `flat_top: false`, the spiral stops at full flow as it reaches the top: an open rim).",
+        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed (with `steady_start`, at a steady flow: faster where the bead is thin), a flat closing turn ramps it down (or, with `flat_top: false`, the spiral stops at full flow as it reaches the top: an open rim).",
         run: Run::Op(vase_revolve),
     },
     Node {
@@ -2306,6 +2312,7 @@ fn vase_revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
             tolerance: a.num(6)?,
             seam: a.num(7)?,
             flat_top: a.flag(8)?,
+            steady_start: a.flag(9)?,
         },
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
