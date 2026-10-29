@@ -3,6 +3,15 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-29 (later): a flaky chat test
+
+**Found:** CI failed on "request 3 rewrote earlier messages" about half the time. The stand-in
+AI server in agent-test and request-test decoded each request body chunk by chunk, so a
+two-byte character split across chunks (the "·" in a tool result) came out garbled, and the
+history looked rewritten. The app sent it right.
+
+**Landed:** both stand-ins collect the bytes and decode once. Six runs in a row pass.
+
 ## 2026-10-29: the 3D beads in the bead's own shape
 
 **Landed:** the *Line width* view draws each bead with the G-code's section: a flat top and

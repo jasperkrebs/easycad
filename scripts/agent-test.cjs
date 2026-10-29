@@ -114,9 +114,12 @@ function startMock() {
       res.end();
       return;
     }
-    let body = '';
-    req.on('data', (c) => (body += c));
+    // The body's bytes, decoded once at the end: decoding chunk by chunk garbles a character
+    // split across two chunks (the "·" in a tool result), and the test then sees a rewrite.
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
     req.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf8');
       const authorized = req.headers.authorization === `Bearer ${PASSWORD}`;
       if (!authorized) {
         res.writeHead(401, { ...cors, 'content-type': 'application/json' });
