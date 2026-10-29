@@ -176,10 +176,18 @@ export function createViewport(canvas) {
     if (showBeads) buildBeads();
   }
 
+  /** Steps per half circle of a bead's section (more: rounder, heavier). */
+  const ROUND = 5;
+  /** Points round a bead's section: each half circle's, both ends included. */
+  const RING = 2 * (ROUND + 1);
+
   /**
-   * One toolpath as a solid bead: a box section (the line width across, flat in the layer; the
-   * layer height down from the nozzle) swept along the path, its corners shared from one point to
-   * the next so it shades like a slicer's rounded bead. Travel moves leave a gap.
+   * One toolpath as a solid bead, in the bead's own shape (the G-code's model): a flat top and
+   * bottom with a half circle of the layer height on each side, the line width across, flat in
+   * the layer, from the nozzle down one layer height, swept along the path. Each section is the
+   * average of the two moves it joins, so the bead widens and narrows gradually from move to
+   * move; its points are shared along the path, so it shades smoothly round the sides. Travel
+   * moves leave a gap.
    * @param {Float32Array} points
    * @param {Float32Array} widths
    * @param {Float32Array} heights
@@ -187,8 +195,23 @@ export function createViewport(canvas) {
    */
   function beadGeometry(points, widths, heights, colors) {
     const n = points.length / 3;
-    const pos = new Float32Array(n * 12);
-    const col = new Float32Array(n * 12);
+    const pos = new Float32Array(n * RING * 3);
+    const col = new Float32Array(n * RING * 3);
+    // The section's outline, as (across, up) for a bead `w` wide and `h` tall, centred.
+    const section = (w, h) => {
+      const r = Math.min(w, h) / 2;
+      const c = w / 2 - r;
+      const out = [];
+      for (let s = 0; s <= ROUND; s++) {
+        const a = -Math.PI / 2 + (Math.PI * s) / ROUND;
+        out.push([c + r * Math.cos(a), r * Math.sin(a)]);
+      }
+      for (let s = 0; s <= ROUND; s++) {
+        const a = Math.PI / 2 + (Math.PI * s) / ROUND;
+        out.push([-c + r * Math.cos(a), r * Math.sin(a)]);
+      }
+      return out;
+    };
     // Across the path in the layer: the last good direction when a move is straight up.
     let ax = 1;
     let ay = 0;
@@ -202,24 +225,26 @@ export function createViewport(canvas) {
         ax = -ty / len;
         ay = tx / len;
       }
-      // A point after a travel takes the bead of the move that leaves it.
-      const k = widths[i] > 0 || i + 1 >= n ? i : i + 1;
-      const hw = widths[k] / 2;
-      const h = heights[k];
+      // The bead here: halfway between the move that ends here and the one that leaves (either
+      // alone next to a travel).
+      const into = widths[i] > 0 ? [widths[i], heights[i]] : null;
+      const out = i + 1 < n && widths[i + 1] > 0 ? [widths[i + 1], heights[i + 1]] : null;
+      const [w, h] = into && out ? [(into[0] + out[0]) / 2, (into[1] + out[1]) / 2] : into || out || [0, 0];
       const [x, y, z] = [points[3 * i], points[3 * i + 1], points[3 * i + 2]];
-      const ring = [x + ax * hw, y + ay * hw, z, x - ax * hw, y - ay * hw, z, x - ax * hw, y - ay * hw, z - h, x + ax * hw, y + ay * hw, z - h];
-      pos.set(ring, 12 * i);
-      for (let c = 0; c < 4; c++) col.set(colors.subarray(3 * i, 3 * i + 3), 12 * i + 3 * c);
+      section(w, h).forEach(([u, v], c) => {
+        pos.set([x + ax * u, y + ay * u, z - h / 2 + v], (i * RING + c) * 3);
+        col.set(colors.subarray(3 * i, 3 * i + 3), (i * RING + c) * 3);
+      });
     }
     let faces = 0;
     for (let i = 1; i < n; i++) if (widths[i] > 0) faces++;
-    const index = new Uint32Array(faces * 24);
+    const index = new Uint32Array(faces * RING * 6);
     let at = 0;
     for (let i = 0; i + 1 < n; i++) {
       if (!(widths[i + 1] > 0)) continue;
-      const [p, q] = [4 * i, 4 * (i + 1)];
-      for (let c = 0; c < 4; c++) {
-        const d = (c + 1) % 4;
+      const [p, q] = [RING * i, RING * (i + 1)];
+      for (let c = 0; c < RING; c++) {
+        const d = (c + 1) % RING;
         index.set([p + c, q + c, q + d, p + c, q + d, p + d], at);
         at += 6;
       }

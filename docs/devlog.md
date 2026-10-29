@@ -3,6 +3,17 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-10-29: the 3D beads in the bead's own shape
+
+**Landed:** the *Line width* view draws each bead with the G-code's section: a flat top and
+bottom with a half circle of the layer height on each side (5 steps per half circle, 12 points
+round), the same shape as the Print tab's cross-sections. Each section is the average of the two
+moves it joins, so a bead widens or narrows gradually from move to move (a turn-by-turn change
+in the lampshade spreads over the move where it happens). About three times the points of the
+box it replaces; fine for the templates' toolpaths.
+
+**Open:** nothing.
+
 ## 2026-10-28: a steady flow through the lampshade's first turn
 
 **Why:** on the Ginger G1 the lampshade's thread prints better at a high flow (about 100 mm³/s),
