@@ -33,6 +33,7 @@ param tolerance = 0.02 mm in 0.01..1 "Chord tolerance"
 
 group "Brim"
 param brim = true "Brim"
+param brim_top = true "Brim around the top layer's outline (clear of the spread)"
 param brim_lines = 3 in 1..20 step 1 "Brim lines"
 param brim_width = 6 mm in 0.4..20 "Brim line width"
 param brim_layer = 2 mm in 0.1..10 "Brim layer height"
@@ -123,8 +124,13 @@ lead = 0.25 * 2 * n * line / sqrt(out_x ^ 2 + out_y ^ 2)
 lead_in = point(sample(x, seam_point) + out_x * lead, sample(y, seam_point) + out_y * lead)
 first = toolpath(polyline(pick(brim, inward, flatten([[lead_in], inward]))), width: line, layer: layer, flow: flow)
 
-# The brim: the bottom outline offset outward, the outermost line first.
-brim_rings = offset(outline |> rotate(15) |> move(x: shift_x, y: shift_y), brim_width / 2 + line / 2 + (series(brim_lines, -1, brim_lines) - 1) * brim_width, mitre: false)
+# The brim: an outline offset outward, the outermost line first. Either the bottom layer's, or
+# (with legs) the top layer's projected down: where the legs bend the top layer is spread
+# furthest out, so the brim keeps clear of what overhangs there. The loops an offset makes at
+# the spread's tight notches are cut out.
+top_outline = leg_rings(n, line, directions, leg_rings: pairs, tip: tip, fillet: leg_fillet, seam: pick(zipper, "zipper", "staircase"), spread: 1, spread_gap: gap, spread_at: spread_at, spread_r1: spread_r1, spread_r2: spread_r2, drop: drop * greater(layers, 1), tolerance: tolerance, outline: true) |> scale(z: 0)
+brim_base = pick(brim_top, pick(greater(pairs, 0), top_outline, outline), outline)
+brim_rings = offset(brim_base |> rotate(15) |> move(x: shift_x, y: shift_y), brim_width / 2 + line / 2 + (series(brim_lines, -1, brim_lines) - 1) * brim_width, mitre: false, trim: brim_top)
 brim_path = toolpath(brim_rings, width: brim_width, layer: brim_layer, speed: brim_speed)
 start = pick(brim, join([brim_path, first], clear: 2 * brim_layer), first)
 

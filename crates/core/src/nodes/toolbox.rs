@@ -267,10 +267,10 @@ pub(super) fn offset(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let c = a.curve(0)?;
     ctx.spend(c.points.len())?;
     let d = a.num(1)?;
-    let out = if a.flag(2)? {
-        c.offset(d)
-    } else {
-        c.offset_bisector(d)
+    let out = match (a.flag(2)?, a.flag(3)?) {
+        (true, _) => c.offset(d),
+        (false, false) => c.offset_bisector(d),
+        (false, true) => c.offset_bisector_trimmed(d),
     };
     Ok(Value::Curve(Rc::new(out)))
 }

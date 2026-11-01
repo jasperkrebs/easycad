@@ -19,7 +19,7 @@ under each project and in [What's still missing](#whats-still-missing).
 | Vessel | **Template from general steps** (fillet bottom, star top with lifted corners, ring bottoms); not line-for-line | `web/templates/vessel.easycad` |
 | Container | **Template from general steps**, as the owner's salt & pepper shaker (a container and a lid with holes, two parts from one window); not line-for-line | `web/templates/salt-shaker.easycad` |
 | Coat hanger | Buildable, with three small approximations (below) | not written yet |
-| Bend stool | **G-code identical to EasyGCode** (7 cases: legs, bend-zone spread with overhang drop, dome, brim, both seams, foaming) | `web/templates/bend-stool.easycad` |
+| Bend stool | **G-code identical to EasyGCode** (8 cases: legs, bend-zone spread with overhang drop, dome, brims from the bottom or the top layer, both seams, foaming) | `web/templates/bend-stool.easycad` |
 
 **"G-code identical"** means a golden test (`crates/core/src/golden_tests.rs`) runs the
 template with the same settings as an EasyGCode configuration and compares the G-code command
@@ -187,6 +187,7 @@ without start/end blocks).
 | Two-move wipe between layers (diagonal to two layers above, then down) | `join(wipe: 2 * layer)` |
 | 15° rotation and bed recentre by the bottom layer's outline | `leg_rings(outline: true)`, `rotate`, `bounds` of `sample(x, …)`, `move` |
 | Brim around the outline, outermost line first, then a hop to the seat | `offset(outline, …, mitre: false)` (EasyGCode's per-point offset), `join(clear: 2 * brim_layer)` |
+| Brim around the *top* layer's outline projected down, clear of the spread bend zones | `leg_rings(spread: 1, outline: true)`, `offset(…, mitre: false, trim: true)` (EasyGCode's `offsetClosedTrim`: the loops at tight notches cut out) |
 | Foaming: hotter zones from the second layer to the one before last | `temperature(up:, mid:, down:, at_end: true)` after the first layer |
 | Tolerant waits (`TEMPERATURE_WAIT`, within 2 °C) on primer lines at the bed's corner | `wait_temperature(…)` and `wait_temperature(…, cool: true)` on `toolpath(line(…))` |
 | Less extrusion, more speed, the same flow (`M221`, `M220`) | `extrusion_override(39)`, `speed_override(10000 / 39)` |
@@ -194,8 +195,10 @@ without start/end blocks).
 | Hops at twice the tallest print so far | `join([...], clear: 2 * layer)`, then `clear: 2 *` the rim's height before the top layer |
 | Zigzag exit primer | `polyline` of points from `series`, `mod`, `greater`, `less`, `floor` |
 
-Not built: EasyGCode's brim from the *top* layer's outline (an option there; the template brims
-the bottom outline, EasyGCode's default).
+The brim from the top layer (the owner's settings of 1 Nov) matches EasyGCode's G-code too, but
+with four lines its outermost line runs about 1 mm past the G1's 1000 mm bed on every side:
+EasyGCode writes it anyway, EasyCAD refuses to (the golden test compares it unchecked). The
+template ships with three lines.
 
 ## What's still missing
 

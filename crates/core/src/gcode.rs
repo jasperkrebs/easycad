@@ -323,8 +323,24 @@ pub struct Output {
 }
 
 /// Writes the toolpath as G-code for `profile`. `title` names the project in the header.
+/// Refuses a toolpath or profile that isn't safe to print (see [`check`]).
 pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, String> {
     check(path, profile)?;
+    emit(path, profile, title)
+}
+
+/// [`write`] without the safety checks, for golden tests against G-code that EasyGCode writes
+/// although it leaves the bed (EasyGCode doesn't check). Never used to make a file to print.
+#[cfg(test)]
+pub(crate) fn write_unchecked(
+    path: &Toolpath,
+    profile: &Profile,
+    title: &str,
+) -> Result<Output, String> {
+    emit(path, profile, title)
+}
+
+fn emit(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, String> {
     let mode = profile.mode;
     let mult = if profile.multiplier > 0.0 {
         profile.multiplier
