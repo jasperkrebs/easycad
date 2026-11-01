@@ -1,77 +1,143 @@
 easycad 0.1
 project "Bend stool"
 printer "Ginger G1"
-note "EasyGCode's bend stool seat, rebuilt from general steps: concentric rings one line apart, linked by a staircase seam (each ring stops a line short of a full turn and steps out to the next). The first layer runs outside-in from a short lead-in line; each layer after it wipes across to the centre. Its G-code matches EasyGCode's command for command."
-note "Foaming (pellet printer, foaming PLA): every layer between the first and the last prints hotter, at less extrusion and more speed (the same material flow). Primer lines at the bed's corner take what oozes while the zones heat up and cool back down."
+note "EasyGCode's bend stool: a flat seat of concentric rings, one line apart, whose outer rings run out along three legs and back (hairpins, filleted where they leave the seat, a round cap at the tip). The legs are bent down after printing. Its G-code matches EasyGCode's command for command."
+note "Bend zone: where each leg bends, the lines spread apart a little more every layer up (none on the bed, all of it on the top layer), and with the overhang drop those spread parts sink back along the slope. Dome: the seat's centre gets thinner layers than its rim, eased from one to the other; the top layer is full height everywhere."
+note "Foaming (pellet printer, foaming PLA): every layer between the first and the last prints hotter, at less extrusion and more speed (the same material flow). Primer lines at the bed's corner take what oozes while the zones heat up and cool back down. With a brim, the first layer starts at the seam (no lead-in line)."
 
-group "Shape"
-param diameter = 100 mm in 10..400 "Diameter (snaps to whole rings)"
-param layers = 1 in 1..100 step 1 "Layers"
+group "Seat"
+param diameter = 300 mm in 50..600 "Diameter (snaps to whole rings)"
+param layers = 11 in 1..60 step 1 "Layers"
+param dome = 0.55 in 0.05..1 step 0.05 "Dome (centre layer height ÷ rim's; 1: flat)"
+param zipper = false "Zipper seam (off: staircase)"
+
+group "Legs"
+param legs = true "Legs"
+param seat_height = 420 mm in 50..1000 "Seat height (rim to leg tip)"
+param leg_width = 68 mm in 10..300 "Leg width (snaps to whole hairpins)"
+param leg_fillet = 120 mm in 0..400 "Leg fillet"
+
+group "Bend zone"
+param spread = true "Spread the lines where the legs bend"
+param spread_at = 0 mm in -100..300 "Where they bend (from the seat's rim)"
+param spread_r1 = 25 mm in 0..300 "Full spread within"
+param spread_r2 = 125 mm in 0..600 "No spread beyond"
+param spread_gap = 1.55 in 0..5 step 0.05 "Extra gap between lines (× line width)"
+param drop = 0.2 in 0..1 step 0.05 "Overhang drop"
 
 group "Print"
-param layer = 0.6 mm in 0.1..2 "Layer height"
-param line = 2 mm in 0.4..6 "Line width"
-param flow = 20 in 1..100 "Flow (mm³/s)"
-param tolerance = 0.05 mm in 0.01..1 "Chord tolerance"
+param layer = 3 mm in 0.1..10 "Layer height"
+param line = 7 mm in 0.4..20 "Line width"
+param flow = 225 in 1..400 "Flow (mm³/s)"
+param tolerance = 0.02 mm in 0.01..1 "Chord tolerance"
+
+group "Brim"
+param brim = true "Brim"
+param brim_lines = 3 in 1..20 step 1 "Brim lines"
+param brim_width = 6 mm in 0.4..20 "Brim line width"
+param brim_layer = 2 mm in 0.1..10 "Brim layer height"
+param brim_speed = 20 in 1..200 "Brim speed (mm/s)"
 
 group "Foaming"
-param foam = false "Foaming (pellet printer, 3 layers or more)"
-param foam_up = 230 in 150..300 "Foam upper zone (°C)"
-param foam_mid = 230 in 150..300 "Foam middle zone (°C)"
+param foam = true "Foaming (pellet printer, 3 layers or more)"
+param foam_up = 195 in 150..300 "Foam upper zone (°C)"
+param foam_mid = 215 in 150..300 "Foam middle zone (°C)"
 param foam_down = 230 in 150..300 "Foam lower zone (°C)"
-param foam_extrusion = 38 % in 1..100 "Foam extrusion"
+param foam_extrusion = 39 % in 1..100 "Foam extrusion"
 param exit_cool = 0 in 0..300 "Cool down to this before the last layer (°C, 0: straight to the printer's)"
 
 group "Foam primers"
-param primer_x = -125 mm in -1000..1000 "Primers start at X (from the print's centre)"
-param primer_y = -125 mm in -1000..1000 "Primers start at Y (from the print's centre)"
-param enter_length = 40 mm in 1..300 "Heat-up primer length"
-param enter_width = 2 mm in 0.4..6 "Heat-up primer line width"
-param enter_layer = 0.3 mm in 0.1..2 "Heat-up primer layer height"
-param enter_speed = 10 in 1..100 "Heat-up primer speed (mm/s)"
-param enter_flow = 0 in 0..100 "Heat-up primer flow (mm³/s, 0: by speed)"
-param exit_length = 60 mm in 1..300 "Cool-down primer length"
+param primer_x = -500 mm in -1000..1000 "Primers start at X (from the print's centre)"
+param primer_y = -500 mm in -1000..1000 "Primers start at Y (from the print's centre)"
+param enter_length = 250 mm in 1..1000 "Heat-up primer length"
+param enter_width = 10 mm in 0.4..30 "Heat-up primer line width"
+param enter_layer = 2 mm in 0.1..10 "Heat-up primer layer height"
+param enter_speed = 5.8333 in 0.5..100 "Heat-up primer speed (mm/s)"
+param enter_flow = 0 in 0..400 "Heat-up primer flow (mm³/s, 0: by speed)"
+param exit_length = 600 mm in 1..1000 "Cool-down primer length"
 param exit_lines = 1 in 1..20 step 1 "Cool-down primer lines (a zigzag)"
-param exit_width = 2 mm in 0.4..6 "Cool-down primer line width"
-param exit_layer = 0.3 mm in 0.1..2 "Cool-down primer layer height"
-param exit_speed = 10 in 1..100 "Cool-down primer speed (mm/s)"
-param exit_flow = 0 in 0..100 "Cool-down primer flow (mm³/s, 0: by speed)"
+param exit_width = 16 mm in 0.4..30 "Cool-down primer line width"
+param exit_layer = 6 mm in 0.1..10 "Cool-down primer layer height"
+param exit_speed = 3 in 0.5..100 "Cool-down primer speed (mm/s)"
+param exit_flow = 0 in 0..400 "Cool-down primer flow (mm³/s, 0: by speed)"
 
-# Rings one line apart from the centre out: the diameter snaps to whole rings.
-ring_count = max(1, round(diameter / (2 * line)))
-radii = series(line / 2, line, ring_count)
-# Each ring stops one line width short of a full turn, and the next starts where it stops.
-sweeps = 360 - line / radii * 180 / pi
-starts = mod(90 + accumulate(sweeps) - sweeps, 360)
-rings = arc(radii, start: starts, end: starts + sweeps, tolerance: tolerance)
+# Rings one line apart from the centre out (the diameter snaps to whole rings); the outer
+# `pairs` rings run out into each leg as hairpins (the leg width snaps to whole pairs).
+n = max(1, round(diameter / (2 * line)))
+pairs = pick(legs, min(max(1, round(leg_width / (2 * line))), n - 1), 0)
+tip = n * line + seat_height - pairs * line
+directions = [180, 60, -60]
 
-# Turned 15° and centred by the outer ring's outline, as EasyGCode fits the seat on the bed.
-outline = circle(item(radii, ring_count - 1), tolerance: tolerance) |> rotate(15)
-shift_x = sample(x, item(vertices(center(outline)), 0)) - sample(x, item(vertices(outline), 0))
-shift_y = sample(y, item(vertices(center(outline)), 0)) - sample(y, item(vertices(outline), 0))
-seat = polyline(flatten(vertices(rings))) |> rotate(15) |> move(x: shift_x, y: shift_y)
+# The bend zone's spread grows layer by layer: none on the bed, all of it on the top layer.
+spreading = pick(legs, pick(spread, greater(spread_r1, 0) * greater(spread_r2, spread_r1) * greater(spread_gap, 0), 0), 0)
+grow = spreading * greater(layers, 1)
+k = series(0, 1, layers)
+amount = pick(grow, k / max(layers - 1, 1), 0 * k + 1)
+gap = pick(spread, spread_gap, 0)
+rings = leg_rings(n, line, directions, leg_rings: pairs, tip: tip, fillet: leg_fillet, seam: pick(zipper, "zipper", "staircase"), spread: amount, spread_gap: gap, spread_at: spread_at, spread_r1: spread_r1, spread_r2: spread_r2, drop: drop * greater(layers, 1), tolerance: tolerance)
 
-# The first layer runs outside-in: the seat backwards (without the centre point it starts on),
-# led in along the radius to the outer seam by a line a quarter of the diameter long.
-backwards = reverse(vertices(seat))
-seam = item(backwards, 0)
-out_x = sample(x, seam) - shift_x
-out_y = sample(y, seam) - shift_y
-lead = 0.25 * 2 * ring_count * line / sqrt(out_x ^ 2 + out_y ^ 2)
-lead_in = point(sample(x, seam) + out_x * lead, sample(y, seam) + out_y * lead)
-inward = polyline(flatten([[lead_in], item(backwards, series(0, 1, count(backwards) - 1))]))
+# Turned 15° and centred by the bottom layer's outline, as EasyGCode fits the stool on the bed.
+outline = leg_rings(n, line, directions, leg_rings: pairs, tip: tip, fillet: leg_fillet, seam: pick(zipper, "zipper", "staircase"), spread: 1 - grow, spread_gap: gap, spread_at: spread_at, spread_r1: spread_r1, spread_r2: spread_r2, drop: drop * greater(layers, 1), tolerance: tolerance, outline: true) |> scale(z: 0)
+turned = vertices(rotate(outline, 15))
+xs = bounds(sample(x, turned))
+ys = bounds(sample(y, turned))
+shift_x = -(item(xs, 0) + item(xs, 1)) / 2
+shift_y = -(item(ys, 0) + item(ys, 1)) / 2
 
-first = toolpath(inward, width: line, layer: layer, flow: flow)
-second = toolpath(seat |> move(z: layer), width: line, layer: layer, flow: flow)
-top = toolpath(seat |> move(z: (layers - 1) * layer), width: line, layer: layer, flow: flow)
+# Dome: each ring's layer height, eased from dome × the layer height in the centre to the full
+# layer height at the rim. The first and the top layer are full height everywhere.
+dm = clamp(dome, 0.05, 1)
+domed = greater(n, 1) * less(dm, 1 - 1e-9)
+t = series(0, 1, n) / max(n - 1, 1)
+ease = 2.7 * (1 - t) * t * t + t * t * t
+ring_layer = pick(domed, layer * (dm + (1 - dm) * ease), layer + 0 * t)
 
-# Without foaming: every layer after the first wipes across to the centre and down.
-plain = join([first, stack(second, layers - 1, wipe: 2 * layer)], wipe: 2 * layer)
+# Every ring of every layer: its layer (K), its bead's height (H) and its height (Z).
+K = series(k, 0, n)
+RL = item(ring_layer, series(0 * k, 1, n))
+# (Masks of 0 and 1 choose per ring: `pick` would take the lists whole.)
+inner = domed * greater(K, 0) * less(K, layers - 1.5)
+H = inner * RL + (1 - inner) * layer
+above = domed * greater(K, 0)
+base_z = above * (layer + K * RL) + (1 - above) * ((K + 1) * layer)
+last = domed * greater(K, layers - 1.5) * greater(K, 0)
+Z = last * (layer + (K - 1) * RL + layer) + (1 - last) * base_z
+# Overhang drop: a spread point sinks in proportion to how far it was spread (its z).
+widest = (2 * (pairs - 1) + 1) * spread_gap * line / 2
+sinking = grow * greater(drop, 0) * greater(widest, 0)
+sink = clamp(drop, 0, 1) * RL * (layers - 1) / max(widest, 1e-9)
+placed = move(rings, z: pick(sinking, max(layer, Z - sink * z), Z) - H - z) |> rotate(15) |> move(x: shift_x, y: shift_y)
+# Each ring its own toolpath; the step out to the next ring is printed, with that ring's bead.
+layer_paths = join(toolpath(graft(placed), width: line, layer: H, flow: flow), link: true)
+
+# The first layer runs outside-in, from the outer ring's seam to the centre: with a brim it
+# starts right there; without one, a lead-in line a quarter of the diameter long runs to it.
+bottom = leg_rings(n, line, directions, leg_rings: pairs, tip: tip, fillet: leg_fillet, seam: pick(zipper, "zipper", "staircase"), spread: item(amount, 0), spread_gap: gap, spread_at: spread_at, spread_r1: spread_r1, spread_r2: spread_r2, drop: drop * greater(layers, 1), tolerance: tolerance) |> scale(z: 0)
+walked = flatten(reverse(vertices(item(bottom, series(n - 1, -1, n)) |> rotate(15) |> move(x: shift_x, y: shift_y))))
+# (Plain staircase rings, no legs: without the centre point the innermost ring starts on.)
+inward = item(walked, series(0, 1, count(walked) - pick(zipper, 0, 1) * (1 - greater(pairs, 0))))
+seam_point = item(inward, 0)
+out_x = sample(x, seam_point) - shift_x
+out_y = sample(y, seam_point) - shift_y
+lead = 0.25 * 2 * n * line / sqrt(out_x ^ 2 + out_y ^ 2)
+lead_in = point(sample(x, seam_point) + out_x * lead, sample(y, seam_point) + out_y * lead)
+first = toolpath(polyline(pick(brim, inward, flatten([[lead_in], inward]))), width: line, layer: layer, flow: flow)
+
+# The brim: the bottom outline offset outward, the outermost line first.
+brim_rings = offset(outline |> rotate(15) |> move(x: shift_x, y: shift_y), brim_width / 2 + line / 2 + (series(brim_lines, -1, brim_lines) - 1) * brim_width, mitre: false)
+brim_path = toolpath(brim_rings, width: brim_width, layer: brim_layer, speed: brim_speed)
+start = pick(brim, join([brim_path, first], clear: 2 * brim_layer), first)
+
+# Without foaming: every layer after the first wipes across to its start and down.
+plain = join(flatten([[start], item(layer_paths, series(1, 1, layers - 1))]), wipe: 2 * layer)
 
 # Foaming: heat up after the first layer, wait on a primer line, then less extrusion and more
 # speed for the same flow. Before the last layer: back to 100 %, cool down (to the printer's
 # own temperatures, or first below them), wait on a second primer, reheat if it cooled further.
-middle = stack(second, max(layers - 2, 0), wipe: 2 * layer)
+# The hops clear twice the tallest print so far.
+middle = join(item(layer_paths, series(1, 1, max(layers - 2, 1))), wipe: 2 * layer)
+top = item(layer_paths, layers - 1)
+tallest = pick(domed, layer + (layers - 2) * item(ring_layer, n - 1), (layers - 1) * layer)
 heat_up = toolpath(line(point(primer_x, primer_y), point(primer_x + enter_length, primer_y)), width: enter_width, layer: enter_layer, speed: enter_speed, flow: enter_flow)
   |> wait_temperature(up: foam_up, mid: foam_mid, down: foam_down)
   |> extrusion_override(foam_extrusion * 100, at_end: true)
@@ -82,7 +148,7 @@ cool_down = toolpath(zigzag, width: exit_width, layer: exit_layer, speed: exit_s
   |> wait_temperature(up: exit_cool, mid: exit_cool, down: exit_cool, cool: true)
 foamed = join([
   join([
-    first |> temperature(up: foam_up, mid: foam_mid, down: foam_down, at_end: true),
+    start |> temperature(up: foam_up, mid: foam_mid, down: foam_down, at_end: true),
     heat_up,
     middle
       |> speed_override(100, at_end: true)
@@ -91,7 +157,7 @@ foamed = join([
   ], clear: 2 * layer),
   pick(exit_cool, cool_down |> temperature() |> wait_temperature(), cool_down),
   top
-], clear: 2 * (layers - 1) * layer)
+], clear: 2 * tallest)
 
 path = pick(foam, pick(greater(layers, 2.5), foamed, plain), plain)
 

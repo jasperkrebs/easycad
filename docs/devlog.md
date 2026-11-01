@@ -3,6 +3,31 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-01 (evening): the bend stool with legs, matching EasyGCode
+
+**Why:** the template only built the round seat; the owner's stool (their EasyGCode settings of
+21 Jul) has three legs, a bend zone that spreads layer by layer with an overhang drop, a domed
+seat, a brim and foaming.
+
+**Landed:**
+- `leg_rings`: concentric rings whose outer rings run out along legs as filleted hairpins with
+  round tip caps, staircase or zipper seam, and the bend-zone spread (each point's spread kept
+  in z, so a recipe sinks it with a field). A port of EasyGCode's `stoolLoop`/`discLoops`: its
+  rings agree with EasyGCode's to 1e-13 mm at every spread. Reusable for anything round with arms.
+- `join(…, link: true)`: each step out to the next ring printed with that ring's bead, all one
+  layer (each ring of a domed layer is its own toolpath at its own height).
+- `offset(…, mitre: false)`: EasyGCode's per-point brim offset.
+- The template is the whole stool and ships as the owner's. Golden: their stool (88,221 lines,
+  every command identical), legs with a zipper seam, a domed seat with a brim, and the four
+  seat-only cases from before. The smoke test downloads it from the app with their G1 settings.
+- The owner's file run through EasyGCode as of 21 Jul and as of today: the same G-code apart
+  from the brim (their file's `bs_brimLines` key was renamed since, so today's EasyGCode ignores
+  it and brims 4 lines instead of 3) and the final lift (now 50 mm above the print).
+
+**Open:** the printer's own settings (zones 195 °C, bed 65 °C, the stool centred at 500/500,
+travel 50 mm/s) are the Print tab's, not the recipe's: set once on the device. EasyGCode's brim
+from the top layer's outline isn't built. The HUD counts the primer lines as layers.
+
 ## 2026-11-01 (later): lighter CI, and why the deploy failed
 
 **Found:** the first deploy from `main` failed in a second, before any step ran: the

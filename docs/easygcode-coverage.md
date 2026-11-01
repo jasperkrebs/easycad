@@ -19,7 +19,7 @@ under each project and in [What's still missing](#whats-still-missing).
 | Vessel | **Template from general steps** (fillet bottom, star top with lifted corners, ring bottoms); not line-for-line | `web/templates/vessel.easycad` |
 | Container | **Template from general steps**, as the owner's salt & pepper shaker (a container and a lid with holes, two parts from one window); not line-for-line | `web/templates/salt-shaker.easycad` |
 | Coat hanger | Buildable, with three small approximations (below) | not written yet |
-| Bend stool | **G-code identical to EasyGCode** (4 cases, foaming included); legs buildable | `web/templates/bend-stool.easycad` (the seat) |
+| Bend stool | **G-code identical to EasyGCode** (7 cases: legs, bend-zone spread with overhang drop, dome, brim, both seams, foaming) | `web/templates/bend-stool.easycad` |
 
 **"G-code identical"** means a golden test (`crates/core/src/golden_tests.rs`) runs the
 template with the same settings as an EasyGCode configuration and compares the G-code command
@@ -165,35 +165,37 @@ Approximations (not missing features):
 
 The wall hanger's SVG export is a file format, not a step (other formats come later).
 
-## Bend stool (golden since 17 Oct)
+## Bend stool (golden since 17 Oct, with legs since 1 Nov)
 
-The template is the seat without legs (EasyGCode's default), with foaming. Four cases match
-EasyGCode command for command: as it ships (one layer, volumetric flow); foaming over four
-layers at a set feed; foaming with a cool-down below the printer's temperatures, a zigzag exit
-primer, primers at a set flow and another size and centre; three plain layers without start/end
-blocks.
+The template is the whole stool, and ships as the owner's own (their EasyGCode settings of
+21 Jul 2026): three legs, the bend zone spread with an overhang drop, a domed seat, a brim,
+foaming, 11 layers at 225 mm³/s. Seven cases match EasyGCode command for command: that stool
+(88,000 commands); legs with a zipper seam and a lead-in line; a domed seat with a brim and no
+legs; and the four seat-only cases from before (one layer in flow mode; foaming at a set feed;
+foaming with a cool-down, a zigzag exit primer and primers at a set flow; three plain layers
+without start/end blocks).
 
 | EasyGCode feature | EasyCAD steps |
 |---|---|
-| Concentric rings, diameter snapped to whole rings | `series` of radii; `round` |
-| Staircase seam: each ring stops a line short and steps out to the next | `arc(radii, start:, end:, tolerance:)` with the starts accumulated (`accumulate`, `mod`), strung together with `polyline(flatten(vertices(rings)))` |
-| Zipper seams | `link_rings("zipper")` |
-| Three legs as nested hairpins with fillets and tip caps | `line`, `arc`, `join_curves`, `fillet` (or `polyline` + `fillet`), nested with `offset` |
-| Bend-zone spread around attractor points | `offset` or `move` by a field (`fade` of `distance`) |
-| Overhang drop, dome | `move(z: …field…)` per layer; `spiralize` or `toolpath` extrude for the local layer height |
-| First layer outside-in with an entrance primer line | `reverse` of the seat's `vertices`, a lead-in point along the radius, `polyline` |
-| Two-move wipe between layers (diagonal to two layers above, then down) | `stack(wipe: 2 * layer)`, `join(wipe:)` |
-| 15° rotation and bed recentre by the outer ring's outline | `rotate`, `center`; the offset read back with `sample(x, …)` and applied with `move` |
-| Brim following the bottom or the top outline | `offset` or `rings` of either outline |
+| Concentric rings, diameter snapped to whole rings; legs snapped to whole hairpins | `round` |
+| Rings with three legs as nested hairpins: filleted junctions, round tip caps, staircase or zipper seam | `leg_rings(count, width, legs, leg_rings:, tip:, fillet:, seam:)`, EasyGCode's `stoolLoop`/`discLoops` point for point (it can't be built from general steps exactly: the spread treats each piece of the loop differently) |
+| Bend-zone spread around points where the legs bend, growing from none on the bed to all of it on the top layer | `leg_rings(spread:, spread_gap:, spread_at:, spread_r1:, spread_r2:, drop:)` with `spread` a list, one per layer (`series(…) / (layers - 1)`): a list of layers of rings |
+| Overhang drop: spread points sink along the slope | each point's spread is its z; `move(rings, z: max(layer, Z - sink * z) - …)` |
+| Dome: thinner layers toward the centre (eased), a full top layer | per-ring heights from `series`; a grid of layer × ring (`series(k, 0, n)`) with 0/1 masks; each ring its own `toolpath(graft(…), layer: H)` |
+| Each ring stepping out to the next, printed with the next ring's bead | `join(…, link: true)` |
+| First layer outside-in, with an entrance primer line when there's no brim | `reverse` of each ring's `vertices`, in reverse order (`item(…, series(n - 1, -1, n))`), a lead-in point along the radius |
+| Two-move wipe between layers (diagonal to two layers above, then down) | `join(wipe: 2 * layer)` |
+| 15° rotation and bed recentre by the bottom layer's outline | `leg_rings(outline: true)`, `rotate`, `bounds` of `sample(x, …)`, `move` |
+| Brim around the outline, outermost line first, then a hop to the seat | `offset(outline, …, mitre: false)` (EasyGCode's per-point offset), `join(clear: 2 * brim_layer)` |
 | Foaming: hotter zones from the second layer to the one before last | `temperature(up:, mid:, down:, at_end: true)` after the first layer |
 | Tolerant waits (`TEMPERATURE_WAIT`, within 2 °C) on primer lines at the bed's corner | `wait_temperature(…)` and `wait_temperature(…, cool: true)` on `toolpath(line(…))` |
-| Less extrusion, more speed, the same flow (`M221`, `M220`) | `extrusion_override(38)`, `speed_override(10000 / 38)` |
+| Less extrusion, more speed, the same flow (`M221`, `M220`) | `extrusion_override(39)`, `speed_override(10000 / 39)` |
 | Back to the printer's own temperatures, optionally cooling below them first | `temperature()` (nothing given: the printer's own), then `wait_temperature()` |
-| Hops at twice the tallest print so far | `join([...], clear: 2 * layer)`, then `clear: 2 * (layers - 1) * layer` |
+| Hops at twice the tallest print so far | `join([...], clear: 2 * layer)`, then `clear: 2 *` the rim's height before the top layer |
 | Zigzag exit primer | `polyline` of points from `series`, `mod`, `greater`, `less`, `floor` |
 
-Not exact: the spread's fillets collapsing into true corners, as EasyGCode builds them per piece.
-A general offset by a field gets the same idea, not the same numbers.
+Not built: EasyGCode's brim from the *top* layer's outline (an option there; the template brims
+the bottom outline, EasyGCode's default).
 
 ## What's still missing
 

@@ -17,6 +17,7 @@ pub mod field;
 pub mod files;
 pub mod gcode;
 pub mod geom;
+pub mod legs;
 pub mod nodes;
 pub mod rings;
 pub mod scatter;

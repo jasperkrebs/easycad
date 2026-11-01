@@ -489,6 +489,57 @@ impl Curve {
         self.offset_by(&|_| distance)
     }
 
+    /// The closed curve with each point moved `distance` along the average of its two sides'
+    /// normals, without mitring (EasyGCode's `offsetClosed`, which its brims use): corners come
+    /// out a little closer than `distance`.
+    pub fn offset_bisector(&self, distance: f64) -> Curve {
+        let n = self.points.len();
+        if n < 2 || distance == 0.0 {
+            return self.clone();
+        }
+        let sign = if self.closed && self.signed_area() < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        let normal = |a: P3, b: P3| {
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let len = dx.hypot(dy);
+            let len = if len == 0.0 { 1e-9 } else { len };
+            [dy / len, -dx / len]
+        };
+        let points = (0..n)
+            .map(|i| {
+                let cur = self.points[i];
+                let prev = if i > 0 {
+                    self.points[i - 1]
+                } else {
+                    self.points[n - 1]
+                };
+                let next = if i + 1 < n {
+                    self.points[i + 1]
+                } else if self.closed {
+                    self.points[0]
+                } else {
+                    cur
+                };
+                let prev = if i == 0 && !self.closed { cur } else { prev };
+                let (n1, n2) = (normal(prev, cur), normal(cur, next));
+                let (mut nx, mut ny) = (n1[0] + n2[0], n1[1] + n2[1]);
+                let len = nx.hypot(ny);
+                let len = if len == 0.0 { 1e-9 } else { len };
+                nx /= len;
+                ny /= len;
+                [
+                    cur[0] + sign * distance * nx,
+                    cur[1] + sign * distance * ny,
+                    cur[2],
+                ]
+            })
+            .collect();
+        Curve::new(points, self.closed)
+    }
+
     /// [`Curve::offset`] by a different distance at each point (`distance(point)`, read where
     /// the point is before it moves).
     pub fn offset_by(&self, distance: &dyn Fn(P3) -> f64) -> Curve {

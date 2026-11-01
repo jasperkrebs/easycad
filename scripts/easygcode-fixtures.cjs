@@ -329,6 +329,51 @@ cases['stool-bare'] = stool(
   { diameter: 30, layers: 3 }
 );
 
+// The owner's bend stool with legs (their EasyGCode settings file of 21 Jul 2026; its brim's three
+// lines, a key EasyGCode has since renamed, written as `linesOuter`): 21 rings, three legs of five
+// hairpins with 120 mm fillets, the bend zone spread with an overhang drop over 11 layers, a
+// domed seat, foaming with primers at the bed's corner, a brim, 225 mm³/s. Reference for
+// EasyCAD's bend stool template with legs (`leg_rings`, `offset(mitre: false)`).
+cases['stool-legs'] = stool(
+  {
+    printer: pellet({ pellet: { up: 195, mid: 195, down: 195, bed: 65, pa: 0.3, purge: 5000, fan: 0 } }),
+    layerHeight: 3,
+    lineWidth: 7,
+    printFeed: 500,
+    travelFeed: 3000,
+    tolerance: 0.02,
+    centerX: 500,
+    centerY: 500,
+  },
+  {
+    diameter: 300,
+    layers: 11,
+    dome: 0.55,
+    legs: { enabled: true, seatHeight: 420, width: 68, fillet: 120 },
+    attractor: { enabled: true, pos: 0, r1: 25, r2: 125, gap: 1.55, drop: 0.2 },
+    foam: {
+      enabled: true,
+      tempUp: 195,
+      tempMid: 215,
+      tempDown: 230,
+      extrusionPct: 39,
+      exitCool: 0,
+      primer1: { length: 250, lineWidth: 10, layerHeight: 2, feed: 350, flow: 0 },
+      primer2: { length: 600, lines: 1, lineWidth: 16, layerHeight: 6, feed: 180, flow: 0 },
+    },
+    flowFeed: { enabled: true, rate: 225 },
+  }
+);
+cases['stool-legs'].brim = { enabled: true, outerStyle: 'normal', base: 'bottom', linesOuter: 3, linesInner: 0, lineWidth: 6, layerHeight: 2, feed: 1200, multiplier: 0 };
+// Legs with a zipper seam, no spread, no brim (so a lead-in line), four layers at a set feed;
+// and a domed seat without legs, with a brim, five layers in flow mode.
+cases['stool-zipper'] = stool(
+  { layerHeight: 1, lineWidth: 3, tolerance: 0.04, centerX: 200, centerY: 180 },
+  { diameter: 90, layers: 4, seamStyle: 'alternating', legs: { enabled: true, seatHeight: 120, width: 18, fillet: 30 } }
+);
+cases['stool-dome'] = stool({ layerHeight: 0.8, lineWidth: 2.4 }, { diameter: 80, layers: 5, dome: 0.4, flowFeed: { enabled: true, rate: 12 } });
+cases['stool-dome'].brim = { enabled: true, outerStyle: 'normal', base: 'bottom', linesOuter: 2, linesInner: 0, lineWidth: 2, layerHeight: 0.5, feed: 900, multiplier: 0 };
+
 // The lampshade: its defaults (E27, a cone with a fillet, width compensation) in volumetric
 // flow mode as EasyCAD's template ships; a capped bell on an E14 with layer-height compensation
 // and a brim at a set feed; a sphere with a lip, wide edge down, its flow ramping from the

@@ -186,11 +186,20 @@ async function waitForServer(url) {
           `${name}: spiral disc G-code ${gcode.name} differs from EasyGCode's: ${got.length} vs ${want.length} commands, first difference at ${differ}: "${got[differ]}" vs "${want[differ]}"`,
         );
       }
-      // So do the thread connector, the bend stool and the lampshade (EasyGCode's defaults, its
-      // pellet printer).
+      // So do the thread connector and the lampshade (EasyGCode's defaults, its pellet printer),
+      // and the bend stool: the owner's own, with their G1's settings (the stool centred at
+      // 500/500, zones at 195 °C, the bed at 65 °C, travel at 50 mm/s).
+      const printerFields = async (values) => {
+        await page.click('#tab-print');
+        if (!(await page.isVisible('#printerSettings input'))) await page.click('#panel-print summary');
+        for (const [key, v] of Object.entries(values)) {
+          await page.fill(`#printer-${key}`, String(v));
+          await page.dispatchEvent(`#printer-${key}`, 'change');
+        }
+      };
       for (const [id, title, fixture] of [
         ['thread-connector', 'Thread connector', 'thread-default.gcode'],
-        ['bend-stool', 'Bend stool', 'stool-flow.gcode'],
+        ['bend-stool', 'Bend stool', 'stool-legs.gcode'],
         ['lampshade', 'Lampshade', 'lampshade-flow.gcode'],
       ]) {
         await page.click('#tab-settings');
@@ -206,7 +215,16 @@ async function waitForServer(url) {
           await page.waitForFunction(() => /^param steady\s+= false/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
           await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         }
+        if (id === 'bend-stool') {
+          await printerFields({ 'center-0': 500, 'center-1': 500, travelSpeed: 50, 'pellet-up': 195, 'pellet-mid': 195, 'pellet-down': 195, 'pellet-bed': 65 });
+          await page.click('#tab-settings');
+        }
         const file = await saveFrom(page, '#exportButtons button.primary');
+        if (id === 'bend-stool') {
+          await page.click('#tab-print');
+          await page.click('#printerSettings button:text("Back to the defaults")');
+          await page.click('#tab-settings');
+        }
         const expected = commands(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'easygcode', fixture), 'utf8'));
         const ours = commands(file.data.toString('utf8'));
         const at = ours.findIndex((c, i) => !sameCommand(c, expected[i] ?? ''));
@@ -232,7 +250,7 @@ async function waitForServer(url) {
 
       await page.click('#tab-print');
       if ((await page.inputValue('#printer')) !== 'pellet') failures.push(`${name}: the disc should pick the pellet printer`);
-      await page.click('#panel-print summary');
+      if (!(await page.isVisible('#printerSettings input'))) await page.click('#panel-print summary');
       const fields = await page.locator('#printerSettings .setting').count();
       if (fields < 10) failures.push(`${name}: expected the printer settings, got ${fields} fields`);
       // The pellet printer is the Ginger G1: its bed, and checks from its wiki. The

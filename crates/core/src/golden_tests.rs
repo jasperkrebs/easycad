@@ -374,6 +374,9 @@ fn template_matches(template: &str, values: &[(&str, Literal)], profile: &Profil
     assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
     let path = &e.print.as_ref().unwrap().path;
     let ours = gcode::write(path, profile, "Golden").unwrap().text;
+    if std::env::var("GOLDEN_DUMP").is_ok() {
+        std::fs::write(std::env::temp_dir().join("ours.gcode"), &ours).unwrap();
+    }
     assert_matches(&ours, fixture);
 }
 
@@ -570,21 +573,56 @@ const STOOL: &str = include_str!("../../../web/templates/bend-stool.easycad");
 #[test]
 fn bend_stool_recipe_matches_easygcode() {
     use Literal::{Bool, Number};
+    // EasyGCode's own defaults for its bend stool (the template ships with the owner's stool).
+    let seat = |extra: &[(&'static str, Literal)]| -> Vec<(&'static str, Literal)> {
+        let mut v = vec![
+            ("diameter", Number(100.0)),
+            ("layers", Number(1.0)),
+            ("dome", Number(1.0)),
+            ("legs", Bool(false)),
+            ("spread", Bool(false)),
+            ("layer", Number(0.6)),
+            ("line", Number(2.0)),
+            ("flow", Number(20.0)),
+            ("tolerance", Number(0.05)),
+            ("brim", Bool(false)),
+            ("foam", Bool(false)),
+            ("foam_up", Number(230.0)),
+            ("foam_mid", Number(230.0)),
+            ("foam_down", Number(230.0)),
+            ("foam_extrusion", Number(38.0)),
+            ("primer_x", Number(-125.0)),
+            ("primer_y", Number(-125.0)),
+            ("enter_length", Number(40.0)),
+            ("enter_width", Number(2.0)),
+            ("enter_layer", Number(0.3)),
+            ("enter_speed", Number(10.0)),
+            ("exit_length", Number(60.0)),
+            ("exit_width", Number(2.0)),
+            ("exit_layer", Number(0.3)),
+            ("exit_speed", Number(10.0)),
+        ];
+        for (k, x) in extra {
+            v.retain(|(name, _)| name != k);
+            v.push((k, x.clone()));
+        }
+        v
+    };
     template_matches(
         STOOL,
-        &[],
+        &seat(&[]),
         &Profile::default(),
         include_str!("../../../fixtures/easygcode/stool-flow.gcode"),
     );
     template_matches(
         &STOOL.replace("flow: flow", "speed: 30"),
-        &[("layers", Number(4.0)), ("foam", Bool(true))],
+        &seat(&[("layers", Number(4.0)), ("foam", Bool(true))]),
         &Profile::default(),
         include_str!("../../../fixtures/easygcode/stool-foam.gcode"),
     );
     template_matches(
         STOOL,
-        &[
+        &seat(&[
             ("diameter", Number(61.0)),
             ("layers", Number(5.0)),
             ("layer", Number(0.5)),
@@ -608,7 +646,7 @@ fn bend_stool_recipe_matches_easygcode() {
             ("exit_width", Number(1.6)),
             ("exit_layer", Number(0.35)),
             ("exit_flow", Number(4.0)),
-        ],
+        ]),
         &Profile {
             center: [150.0, 140.0],
             ..Profile::default()
@@ -617,18 +655,85 @@ fn bend_stool_recipe_matches_easygcode() {
     );
     template_matches(
         &STOOL.replace("flow: flow", "speed: 25"),
-        &[
+        &seat(&[
             ("diameter", Number(30.0)),
             ("layers", Number(3.0)),
             ("layer", Number(0.4)),
             ("line", Number(1.2)),
-        ],
+        ]),
         &Profile {
             include_start_end: false,
             center: [100.0, 110.0],
             ..Profile::default()
         },
         include_str!("../../../fixtures/easygcode/stool-bare.gcode"),
+    );
+    // Legs with a zipper seam (every other ring reversed), no brim so a lead-in line, four
+    // plain layers at a set feed.
+    template_matches(
+        &STOOL.replace("flow: flow", "speed: 30"),
+        &seat(&[
+            ("diameter", Number(90.0)),
+            ("layers", Number(4.0)),
+            ("layer", Number(1.0)),
+            ("line", Number(3.0)),
+            ("tolerance", Number(0.04)),
+            ("legs", Bool(true)),
+            ("zipper", Bool(true)),
+            ("seat_height", Number(120.0)),
+            ("leg_width", Number(18.0)),
+            ("leg_fillet", Number(30.0)),
+        ]),
+        &Profile {
+            center: [200.0, 180.0],
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/stool-zipper.gcode"),
+    );
+    // A domed seat without legs: thinner layers in the middle, eased out to the rim, a full
+    // top layer; a brim; five layers in flow mode.
+    template_matches(
+        STOOL,
+        &seat(&[
+            ("diameter", Number(80.0)),
+            ("layers", Number(5.0)),
+            ("dome", Number(0.4)),
+            ("layer", Number(0.8)),
+            ("line", Number(2.4)),
+            ("flow", Number(12.0)),
+            ("brim", Bool(true)),
+            ("brim_lines", Number(2.0)),
+            ("brim_width", Number(2.0)),
+            ("brim_layer", Number(0.5)),
+            ("brim_speed", Number(15.0)),
+        ]),
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/stool-dome.gcode"),
+    );
+}
+
+/// The bend stool template as it ships, against EasyGCode's G-code for the owner's own stool
+/// (their EasyGCode settings of 21 Jul 2026): three legs of five hairpins with fillets, the
+/// bend zone spread layer by layer with an overhang drop, a domed seat, a brim around the legs,
+/// foaming with primers, 11 layers at 225 mm³/s. 88,000 commands, every one the same.
+#[test]
+fn bend_stool_with_legs_matches_easygcode() {
+    template_matches(
+        STOOL,
+        &[],
+        &Profile {
+            travel_speed: 50.0,
+            center: [500.0, 500.0],
+            pellet: Pellet {
+                up: 195.0,
+                mid: 195.0,
+                down: 195.0,
+                bed: 65.0,
+                ..Pellet::default()
+            },
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/stool-legs.gcode"),
     );
 }
 

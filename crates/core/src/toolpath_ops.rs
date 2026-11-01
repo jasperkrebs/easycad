@@ -673,7 +673,7 @@ mod tests {
             from_curves(&[], Settings::new(1.0, 0.5, 20.0).unwrap(), MAX_PATH_POINTS).unwrap();
         let marked = machine_event(&none, EventKind::SpeedOverride(100.0), true).unwrap();
         let q = line_path(vec![[30.0, 0.0, 0.0], [40.0, 0.0, 0.0]], 20.0);
-        let j = join(&[&p, &marked, &q], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&p, &marked, &q], 0.0, 0.0, false, MAX_PATH_POINTS).unwrap();
         assert_eq!(j.events.len(), 1);
         assert_eq!(j.events[0].after, 2);
     }

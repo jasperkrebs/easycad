@@ -904,9 +904,15 @@ pub static NODES: &[Node] = &[
                 "Length",
                 "outward for a closed curve, to the right of travel for an open one; negative goes the other way",
             ),
+            opt(
+                "mitre",
+                "Bool",
+                1.0,
+                "true: corners mitred (both sides stay at the distance); false: each point along its corner's bisector, as EasyGCode's brims",
+            ),
         ],
         output: "Curve",
-        doc: "The curve moved sideways in plan, corners mitred; good for smooth curves and distances smaller than their tightest bend. (Grasshopper: Offset Curve)",
+        doc: "The curve moved sideways in plan, corners mitred; good for smooth curves and distances smaller than their tightest bend. `mitre: false` moves each point straight along its corner's bisector instead, as EasyGCode offsets its brims. (Grasshopper: Offset Curve)",
         run: Run::Op(toolbox::offset),
     },
     Node {
@@ -1097,6 +1103,88 @@ pub static NODES: &[Node] = &[
         output: "Curve",
         doc: "The rings joined into one continuous line, as EasyGCode joins them: a staircase (each ring stops a line width short and steps across), a zipper (each ring cut open at a slot and run the other way) or a spiral (each ring blending into the next, opening out of the middle). The seam is on the ray from the centre through the largest ring's first point.",
         run: Run::Op(printing::link_rings),
+    },
+    Node {
+        name: "leg_rings",
+        group: "Curves",
+        inputs: &[
+            req("count", "Count", "how many rings, from the centre out"),
+            req(
+                "width",
+                "Length",
+                "line width: ring i's radius is width / 2 + i × width",
+            ),
+            all(
+                "legs",
+                "List<Angle>",
+                "the legs' directions, e.g. [180, 60, -60]",
+            ),
+            opt(
+                "leg_rings",
+                "Count",
+                0.0,
+                "how many outer rings run out into each leg (0: a plain disc)",
+            ),
+            opt(
+                "tip",
+                "Length",
+                0.0,
+                "how far the tips' round caps are centred from the middle",
+            ),
+            opt(
+                "fillet",
+                "Length",
+                0.0,
+                "fillet where the outermost ring leaves the circle (each ring inward adds a width)",
+            ),
+            opt("seam", "Text", 0.0, "\"staircase\" (default) or \"zipper\""),
+            opt(
+                "spread",
+                "Number",
+                0.0,
+                "how much of the spread to apply, 0..1 (0: none)",
+            ),
+            opt(
+                "spread_gap",
+                "Number",
+                0.0,
+                "extra gap between a leg's hairpins where it bends, in line widths",
+            ),
+            opt(
+                "spread_at",
+                "Length",
+                0.0,
+                "where it bends: this far outside the seat's rim, on each leg",
+            ),
+            opt(
+                "spread_r1",
+                "Length",
+                0.0,
+                "full spread within this distance of where it bends",
+            ),
+            opt("spread_r2", "Length", 0.0, "none beyond this distance"),
+            opt(
+                "drop",
+                "Number",
+                0.0,
+                "overhang drop 0..1: pulls the spread back along the slope",
+            ),
+            opt(
+                "tolerance",
+                "Length",
+                0.05,
+                "largest gap between a chord and the true curve",
+            ),
+            opt(
+                "outline",
+                "Bool",
+                0.0,
+                "true: the outermost ring as one closed outline (for a brim)",
+            ),
+        ],
+        output: "List<Curve>",
+        doc: "Rings one line apart from the centre out, the outer ones running out along straight legs and back (hairpins, filleted where they leave the circle, a round cap at the tip), linked by a staircase or zipper seam: EasyGCode's bend stool seat, point for point. Each ring starts where the one before it stopped. `spread` widens the gaps between a leg's hairpins near where it bends down; each point's z is how far it was spread (0 elsewhere), to sink it with a field: `move(rings, z: -0.5 * z)`. Use `outline: true` for the closed outline to brim or fit the bed by.",
+        run: Run::Op(printing::leg_rings),
     },
     // ------------------------------------------------------------------ transforms
     Node {
@@ -1474,9 +1562,15 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "instead: one straight move to this far above the next part's start, then down onto it",
             ),
+            opt(
+                "link",
+                "Bool",
+                0.0,
+                "true: print the step to each next part (with its bead) instead of travelling, all one layer: rings stepping out",
+            ),
         ],
         output: "Toolpath",
-        doc: "Toolpaths printed one after another (a brim, then a wall), each with its own width, layer and speed. Between parts the nozzle goes up, over and down (or wipes across, with `wipe`); a part that starts where the last one ended carries straight on (no travel), and empty parts are skipped (their machine events still happen). One-layer parts at the start belong to the first layer, so the fan comes on after the brim *and* the first layer printed inside it.",
+        doc: "Toolpaths printed one after another (a brim, then a wall), each with its own width, layer and speed. Between parts the nozzle goes up, over and down (or wipes across, with `wipe`); a part that starts where the last one ended carries straight on (no travel), and empty parts are skipped (their machine events still happen). One-layer parts at the start belong to the first layer, so the fan comes on after the brim *and* the first layer printed inside it. With `link: true` each step to the next part is printed with that part's bead and all count as one layer: a seat's rings stepping out, each at its own layer height.",
         run: Run::Op(join),
     },
     Node {
@@ -2379,6 +2473,7 @@ fn join(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         &paths,
         a.num(1)?,
         a.num(2)?,
+        a.flag(3)?,
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
     ctx.spend(out.points.len())?;
