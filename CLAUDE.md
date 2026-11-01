@@ -57,8 +57,10 @@ python3 scripts/hand-checked-fixtures.py --check   # hand-checked G-code fixture
 python3 scripts/third-party-notices.py   # after adding/updating a dependency (CI runs --check)
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above. Look at the smoke-test screenshots for
-any UI change.
+CI (`.github/workflows/ci.yml`) is kept light: on pull requests and `main` it runs the Rust
+checks and tests (golden G-code included), the notices and fixture checks, the node tests and
+the web build. The three browser tests are not in CI: run them yourself before a UI change, and
+look at the smoke-test screenshots.
 
 - `web/pkg/` is generated; never edit it or commit it.
 - `wasm-bindgen-cli` must match the `wasm-bindgen` version in `Cargo.lock` exactly.

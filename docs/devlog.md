@@ -3,6 +3,21 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-01 (later): lighter CI, and why the deploy failed
+
+**Found:** the first deploy from `main` failed in a second, before any step ran: the
+`github-pages` environment only allowed the old default branch to deploy. That's a repo setting
+(Settings → Environments → github-pages → Deployment branches), not something in the code.
+The pull request's run also failed once on the flaky request test.
+
+**Landed:** CI runs on pull requests and `main` only (other branch pushes run nothing; the
+feature builder still starts it by hand on its branches). It runs the Rust checks and tests
+(the G-code golden tests included), the notices and fixture checks, the node tests and the web
+build, with the build in parallel with the tests and wasm-bindgen-cli cached. The browser tests
+are out of CI and run by hand; the separate wasm `cargo check` is gone (the web build is one).
+
+**Open:** nothing.
+
 ## 2026-11-01: streamlined for a presentation
 
 **Landed:**

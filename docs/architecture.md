@@ -527,7 +527,7 @@ stops at the build height. A failing toolpath gets a message instead of a file.
   - unit tests;
   - golden tests (definition → mesh volume/bounds/hash; settings → G-code text);
   - parser round-trip and fuzz tests;
-  - a Playwright smoke test of the UI (Chromium is available in CI).
+  - a Playwright smoke test of the UI, run by hand before UI changes (not in CI since 1 Nov 2026).
 - **Agent-ready repo** (from ArtCraft): `CLAUDE.md` first, then docs, then a short dev log so
   every new session can pick up where the last one stopped.
 - **Small, boring dependencies.** Pinned, permissive licenses only (MIT/Apache/BSD/0BSD;
