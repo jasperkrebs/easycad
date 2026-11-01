@@ -8,7 +8,6 @@ use easycad_core::eval::{Drawing, Evaluation, MAX_SOURCE_BYTES, Quality};
 use easycad_core::files::{self, Which};
 use easycad_core::gcode::Profile;
 use easycad_core::geom::P3;
-use easycad_core::graph::{self, Command};
 use easycad_core::nodes;
 use easycad_lang::{Literal, set_values};
 use js_sys::{Float32Array, Int32Array, Object, Reflect, Uint8Array, Uint32Array};
@@ -33,59 +32,31 @@ pub fn node_catalog() -> String {
 /// `values` (optional) holds setting values to write into the recipe first, each in its own
 /// unit as shown in the settings window: `{ height: 200, depth: 18 }`. Slider moves become edits
 /// to the recipe text, so the text stays the single source of truth; the edited text comes
-/// back as `source`. `quality` is `"preview"` or `"final"`. `highlight` (optional) names a step
-/// to draw on its own as well: the graph view's selected component.
+/// back as `source`. `quality` is `"preview"` or `"final"`.
 ///
 /// Returns `{ source, project, printer, notes, params, steps, diagnostics, print, exports,
 /// bounds, mesh: { positions, indices }, curves: { points, starts },
 /// paths: { points, starts, widths, heights } (each point's line width and layer height in mm,
 /// the bead of the move that ends there; 0 for travel), parts: { mesh, curves, paths } (each
-/// piece's printed part),
-/// highlight: { mesh, curves, paths } }`. A broken recipe doesn't throw: its problems are in
+/// piece's printed part) }`. A broken recipe doesn't throw: its problems are in
 /// `diagnostics`.
 #[wasm_bindgen]
-pub fn evaluate(
-    source: &str,
-    values: JsValue,
-    quality: &str,
-    highlight: Option<String>,
-) -> Result<Object, JsError> {
+pub fn evaluate(source: &str, values: JsValue, quality: &str) -> Result<Object, JsError> {
     let quality = if quality == "final" {
         Quality::Final
     } else {
         Quality::Preview
     };
     let source = with_values(source, values)?;
-    let e = easycad_core::evaluate_with(&source, quality, highlight.as_deref());
+    let e = easycad_core::evaluate(&source, quality);
     to_js(&source, &e)
 }
 
-/// The recipe as the graph view draws it: settings, components with their inputs (what's
-/// written for each, and the names it reads: the wires), outputs and previews. Throws the
-/// syntax error if the recipe doesn't parse.
-#[wasm_bindgen]
-pub fn graph(source: &str) -> Result<JsValue, JsError> {
-    graph::describe(source)
-        .map_err(|m| JsError::new(&m))
-        .and_then(|g| plain(&g))
-}
-
-/// Every step a recipe can use, with its inputs, for the graph view's palette.
-#[wasm_bindgen]
-pub fn palette() -> Result<JsValue, JsError> {
-    plain(&graph::palette())
-}
-
-/// Runs a graph command (see `easycad_core::graph::Command`, e.g. `{ op: "setInput", step,
-/// stage, input, text }`) and returns `{ source, name }`: the edited recipe, and the name of
-/// anything it added. Throws a readable message if the command can't be done.
-#[wasm_bindgen(js_name = editGraph)]
-pub fn edit_graph(source: &str, command: JsValue) -> Result<JsValue, JsError> {
-    let command: Command = serde_wasm_bindgen::from_value(command)
-        .map_err(|e| JsError::new(&format!("graph command: {e}")))?;
-    graph::apply(source, &command)
-        .map_err(|m| JsError::new(&m))
-        .and_then(|a| plain(&a))
+/// Names the project's printer in the recipe (its `printer "…"` line, added if missing) and
+/// returns the new recipe text. Throws a readable message if it can't.
+#[wasm_bindgen(js_name = setPrinter)]
+pub fn set_printer(source: &str, name: &str) -> Result<String, JsError> {
+    easycad_lang::set_printer(source, name).map_err(|m| JsError::new(&m))
 }
 
 /// Makes a file to save: `which` is `"print"` for the printed toolpath as G-code, or the index
@@ -187,30 +158,6 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&out, "paths", &paths)?;
     let parts = parts(&e.drawing)?;
     set(&out, "parts", &parts)?;
-    let highlight = drawing(&e.highlight)?;
-    set(&out, "highlight", &highlight)?;
-    Ok(out)
-}
-
-/// A drawing as `{ mesh: { positions, indices }, curves, paths }` (packed polylines).
-fn drawing(d: &Drawing) -> Result<Object, JsError> {
-    let out = Object::new();
-    let mesh = Object::new();
-    set(
-        &mesh,
-        "positions",
-        &Float32Array::from(d.mesh.positions.as_slice()),
-    )?;
-    set(
-        &mesh,
-        "indices",
-        &Uint32Array::from(d.mesh.indices.as_slice()),
-    )?;
-    set(&out, "mesh", &mesh)?;
-    let curves = polylines(d.curves.iter().map(Vec::as_slice))?;
-    set(&out, "curves", &curves)?;
-    let paths = polylines(d.paths.iter().map(|p| p.points.as_slice()))?;
-    set(&out, "paths", &paths)?;
     Ok(out)
 }
 

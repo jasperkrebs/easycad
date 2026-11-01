@@ -6,15 +6,15 @@ use easycad_lang::{Literal, set_values};
 const TEMPLATES: [(&str, &str); 8] = [
     (
         "twisted-vase",
-        include_str!("../../../web/templates/twisted-vase.easycad"),
+        include_str!("../../../fixtures/recipes/twisted-vase.easycad"),
     ),
     (
         "ribbed-cylinder",
-        include_str!("../../../web/templates/ribbed-cylinder.easycad"),
+        include_str!("../../../fixtures/recipes/ribbed-cylinder.easycad"),
     ),
     (
         "star-bowl",
-        include_str!("../../../web/templates/star-bowl.easycad"),
+        include_str!("../../../fixtures/recipes/star-bowl.easycad"),
     ),
     (
         "spiral-disc",
@@ -22,11 +22,11 @@ const TEMPLATES: [(&str, &str); 8] = [
     ),
     (
         "cut-cylinder",
-        include_str!("../../../web/templates/cut-cylinder.easycad"),
+        include_str!("../../../fixtures/recipes/cut-cylinder.easycad"),
     ),
     (
         "turned-vase",
-        include_str!("../../../web/templates/turned-vase.easycad"),
+        include_str!("../../../fixtures/recipes/turned-vase.easycad"),
     ),
     (
         "thread-connector",
@@ -34,7 +34,7 @@ const TEMPLATES: [(&str, &str); 8] = [
     ),
     (
         "spoon",
-        include_str!("../../../web/templates/spoon.easycad"),
+        include_str!("../../../fixtures/recipes/spoon.easycad"),
     ),
 ];
 

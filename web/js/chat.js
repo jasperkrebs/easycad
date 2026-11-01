@@ -314,7 +314,7 @@ export function createChat(app) {
       log.append(
         el('p', {
           className: 'hint empty',
-          text: 'Describe a new project or a change to this one, e.g. “a cylinder whose top is cut at an angle, with the layers tilting gradually, printed as one spiral”.',
+          text: 'Describe a new project or a change.',
         }),
       );
     }

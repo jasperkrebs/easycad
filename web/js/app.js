@@ -13,22 +13,15 @@ import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
-import { createGraph } from './graph.js';
 import { beadExtremes, renderBeads } from './beads.js';
 
 const TEMPLATES = [
-  { id: 'twisted-vase', name: 'Twisted star vase' },
-  { id: 'ribbed-cylinder', name: 'Ribbed cylinder' },
-  { id: 'star-bowl', name: 'Star bowl' },
-  { id: 'spiral-disc', name: 'Spiral disc (from EasyGCode)' },
-  { id: 'thread-connector', name: 'Thread connector (from EasyGCode)' },
-  { id: 'spoon', name: 'Spoon (from EasyGCode)' },
-  { id: 'bend-stool', name: 'Bend stool, with foaming (from EasyGCode)' },
-  { id: 'lampshade', name: 'Lampshade, every shade (from EasyGCode)' },
-  { id: 'vessel', name: 'Vessel: fillet bottom, star top (from EasyGCode)' },
-  { id: 'salt-shaker', name: 'Salt & pepper shaker: container and lid (two prints)' },
-  { id: 'cut-cylinder', name: 'Cut cylinder (tilted layers)' },
-  { id: 'turned-vase', name: 'Turned vase (geometry only)' },
+  { id: 'lampshade', name: 'Lampshade' },
+  { id: 'vessel', name: 'Vessel' },
+  { id: 'salt-shaker', name: 'Salt & pepper shaker' },
+  { id: 'bend-stool', name: 'Bend stool' },
+  { id: 'thread-connector', name: 'Thread connector' },
+  { id: 'spiral-disc', name: 'Spiral disc' },
 ];
 const STORAGE_KEY = 'easycad.project';
 /** Parallel or perspective 3D view. */
@@ -38,7 +31,7 @@ const BEADS_KEY = 'easycad.beads';
 /** How solid the beads are drawn (10–100 %). */
 const OPACITY_KEY = 'easycad.beadOpacity';
 const MAX_FILE_BYTES = 256 * 1024;
-const TABS = ['settings', 'graph', 'chat', 'recipe', 'print', 'about'];
+const TABS = ['settings', 'chat', 'recipe', 'print', 'about'];
 
 const state = {
   /** The recipe text: the project. */
@@ -58,8 +51,6 @@ const state = {
   last: null,
   engineInfo: { version: '?', loadMs: 0 },
   catalog: '',
-  /** The step selected in the graph, drawn in the highlight colour. */
-  highlight: '',
   /**
    * The template the project was started from, and that template's text as it was then (values
    * left out), to tell when the template has been improved since.
@@ -73,35 +64,6 @@ const engine = createEngine();
 const viewport = createViewport(/** @type {HTMLCanvasElement} */ ($('view')));
 const editor = /** @type {HTMLTextAreaElement} */ ($('recipe'));
 let refitNext = true;
-/** Recipe texts before each graph edit, newest last, for the graph's Undo. */
-const graphUndo = /** @type {string[]} */ ([]);
-
-const graphView = createGraph({
-  canvas: $('graphCanvas'),
-  world: $('graphWorld'),
-  wires: /** @type {any} */ ($('graphWires')),
-  inspector: $('graphInspector'),
-  note: $('graphNote'),
-  empty: $('graphEmpty'),
-  palette: $('graphPalette'),
-  search: /** @type {HTMLInputElement} */ ($('graphSearch')),
-  paletteList: $('graphPaletteList'),
-  paletteFor: $('graphPaletteFor'),
-  undoButton: /** @type {HTMLButtonElement} */ ($('graphUndo')),
-  engine,
-  command: graphCommand,
-  undo: undoGraph,
-  select: (name) => {
-    if (name === state.highlight) return;
-    state.highlight = name;
-    run('final');
-  },
-  setValue: (name, value, quality) => {
-    state.layout = ''; // the Settings tab shows the new value too
-    onSettingChange(name, value, quality);
-  },
-});
-
 // ---------------------------------------------------------------------------------------------
 // Running the recipe
 // ---------------------------------------------------------------------------------------------
@@ -117,7 +79,7 @@ async function run(quality, how = {}) {
   if (how.opened) refitNext = true;
   let result;
   try {
-    result = await engine.evaluate(state.source, state.values, quality, state.highlight);
+    result = await engine.evaluate(state.source, state.values, quality);
   } catch (err) {
     setStatus('Engine error', 'bad');
     showSettingsError(String(err.message || err));
@@ -149,7 +111,6 @@ async function run(quality, how = {}) {
   showSource(result.source);
   renderHud(result);
   renderAbout();
-  graphView.update(result);
 
   showSettingsError(errors ? `The recipe has ${errors === 1 ? 'a problem' : `${errors} problems`}: see the Recipe tab.` : '');
   if (errors) setStatus(`${errors} recipe ${errors === 1 ? 'problem' : 'problems'}`, 'bad');
@@ -173,7 +134,6 @@ function renderProject(result) {
   $('projectSub').textContent = name;
   $('projectName').textContent = name;
   document.title = `${name} · EasyCAD`;
-  $('projectNotes').textContent = result.notes.join(' ');
   /** @type {HTMLInputElement} */ ($('saveName')).placeholder = slug(name);
 }
 
@@ -318,7 +278,7 @@ function renderAbout() {
   const about = $('about');
   about.replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })]));
   const link = el('a', {
-    href: 'https://github.com/jasperkrebs/easycad/blob/claude/quirky-gates-1ykve2/docs/roadmap.md',
+    href: 'https://github.com/jasperkrebs/easycad/blob/main/docs/roadmap.md',
     target: '_blank',
     rel: 'noopener',
     text: 'Roadmap',
@@ -355,7 +315,6 @@ function setDirty(dirty) {
 }
 
 function runEditor() {
-  clearGraphUndo();
   state.source = editor.value;
   state.unsaved = true;
   setDirty(false);
@@ -384,41 +343,6 @@ async function applyRecipe(text) {
   return state.last;
 }
 
-/**
- * Runs a graph command (an edit of the recipe text, see crates/core/src/graph.rs), undoable from
- * the graph. Resolves to the name of anything it added; a refusal is thrown as a readable error.
- * @param {Record<string, any>} command
- */
-async function graphCommand(command) {
-  if (editorDirty) throw new Error('The Recipe tab has edits that haven’t run yet: press Run or Revert there first.');
-  await engine.idle();
-  const before = state.source;
-  const r = await engine.editGraph(before, command);
-  if (r.source !== before) {
-    graphUndo.push(before);
-    if (graphUndo.length > 100) graphUndo.shift();
-    /** @type {HTMLButtonElement} */ ($('graphUndo')).disabled = false;
-    await applyRecipe(r.source);
-  }
-  return r.name;
-}
-
-/** The graph's Undo covers graph edits only: a change made elsewhere (the AI, the Recipe tab, a
- * project opened) starts a fresh history, so Undo never reverts it by surprise. */
-function clearGraphUndo() {
-  graphUndo.length = 0;
-  /** @type {HTMLButtonElement} */ ($('graphUndo')).disabled = true;
-}
-
-/** Puts the recipe back as it was before the last graph edit. */
-async function undoGraph() {
-  const previous = graphUndo.pop();
-  /** @type {HTMLButtonElement} */ ($('graphUndo')).disabled = !graphUndo.length;
-  if (previous === undefined) return false;
-  await applyRecipe(previous);
-  return true;
-}
-
 /** Moves settings (an agent edit), runs and returns the result. */
 async function applyValues(values) {
   Object.assign(state.values, values);
@@ -437,10 +361,7 @@ const chat = createChat({
     values: state.values,
     editorDirty,
   }),
-  applyRecipe: (text) => {
-    clearGraphUndo();
-    return applyRecipe(text);
-  },
+  applyRecipe,
   applyValues,
   setPrinter: async (id, settings, material) => {
     if (id) await choosePrinter(id);
@@ -481,8 +402,6 @@ async function openSource(text, how = 'opened') {
   $('templateUpdate').hidden = true;
   templateOffer = null;
   chat?.projectReplaced(how);
-  clearGraphUndo();
-  state.highlight = '';
   state.source = text;
   setDirty(false);
   editor.value = text;
@@ -692,7 +611,7 @@ function setPrinter(id) {
 
 /**
  * Chooses the printer (from the Print tab or the agent), and names it in the recipe's `printer`
- * line (a command, like a graph edit), so the project opens with it next time.
+ * line (an engine command), so the project opens with it next time.
  * @param {keyof typeof PRINTERS} id
  */
 async function choosePrinter(id) {
@@ -702,11 +621,8 @@ async function choosePrinter(id) {
   const named = state.last?.printer;
   if (editorDirty || (named && printerFor(named) === id)) return;
   try {
-    const r = await engine.editGraph(state.source, { op: 'setPrinter', name: PRINTERS[id].recipeName });
-    if (r.source !== state.source) {
-      clearGraphUndo();
-      await applyRecipe(r.source);
-    }
+    const source = await engine.setPrinter(state.source, PRINTERS[id].recipeName);
+    if (source !== state.source) await applyRecipe(source);
   } catch {
     // A recipe with a problem keeps its line; the printer is still chosen for now.
   }
@@ -729,12 +645,6 @@ function selectTab(name) {
     $(`panel-${t}`).hidden = t !== name;
   }
   document.body.dataset.tab = name;
-  graphView.show(name === 'graph');
-  // The highlight belongs to the graph: away from it, the model is drawn as it is.
-  if (name !== 'graph' && state.highlight) {
-    state.highlight = '';
-    run('final');
-  }
 }
 
 /** Reads a picked file as text, refusing anything too big to be a recipe or settings file. */
@@ -879,14 +789,6 @@ function wire() {
   $('printer').addEventListener('change', (e) => {
     choosePrinter(/** @type {any} */ (/** @type {HTMLSelectElement} */ (e.target).value));
   });
-  $('toPrinter').addEventListener('click', () => selectTab('print'));
-
-  $('graphAdd').addEventListener('click', () => graphView.openPalette({}));
-  $('graphSlider').addEventListener('click', () => graphView.addSlider());
-  $('graphUndo').addEventListener('click', () => undoGraph());
-  $('graphFit').addEventListener('click', () => graphView.fit());
-  $('graphTidy').addEventListener('click', () => graphView.tidy());
-  $('graphPaletteClose').addEventListener('click', () => graphView.closePalette());
 
   $('resetSettings').addEventListener('click', () => {
     Object.assign(state.values, state.openedValues);

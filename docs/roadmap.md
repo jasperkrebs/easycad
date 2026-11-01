@@ -21,12 +21,12 @@ Sizes are relative (S ≈ one focused session, M ≈ a few, L ≈ many).
 | 3 | License | **All rights reserved** (no open-source license). Everything we build on is permissively licensed (MIT/Apache/BSD; MPL is fine), so this limits nothing; we keep their license notices. The repo is *public* since 15 Oct (see hosting), which makes the code visible but doesn't grant anyone a license to reuse it. |
 | 4 | Printers | **Bambu P1P (filament) and Klipper pellet**, with EasyGCode's proven start/end G-code. The pellet printer is the **Ginger Additive G1** (18 Oct): made for it, its specifics kept as data so another Klipper printer can follow ([printers.md](printers.md)). |
 | 5 | AI | **Built into the app with your own Claude API key** (standalone; see [api-key.md](api-key.md)). Claude Desktop/MCP control is optional, much later. |
-| 6 | Hosting (15 Oct) | **Public repo + GitHub Pages** (free), live at https://jasperkrebs.github.io/easycad/. CI deploys on every push to the default branch. Can go private + GitHub Pro later. |
+| 6 | Hosting (15 Oct) | **Public repo + GitHub Pages** (free), live at https://jasperkrebs.github.io/easycad/. CI deploys on every push to `main` (the default branch; work happens on branches merged into it, 1 Nov). Can go private + GitHub Pro later. |
 | 7 | Making shapes (15 Oct) | Recipes, not "AI every time": the agent (or you) writes a recipe once; it then runs locally, free and instantly. Five ways to make one: templates, describe, steps, draw curves, import. See [creating-shapes.md](creating-shapes.md). |
 | 8 | Custom projects (15 Oct) | **General steps, not one generator per project.** "I want to create custom things right out of the app", both G-code projects like EasyGCode's and plain geometry to export. So EasyGCode's projects become recipes made of general steps (fields, spirals, toolpaths, …), and the app only changes when a genuinely new *kind* of step is needed. Shown first with the spiral disc (Phase 1b). |
 | 9 | The AI in the app (15 Oct) | **Your own key, never on the site:** either a password for your own small proxy (a Cloudflare Worker that holds the key, deployed by CI from GitHub secrets), or the key stored on one device. **Sonnet 5.5 at medium effort** by default (Opus 5.5 for hard inventions, Haiku 5.5 for quick edits), with the prompt cached. Memory: `note` lines in the project, the chat on the device, and "Your rules". See [api-key.md](api-key.md). |
 | 10 | Speeds (15 Oct) | **Always as volumetric flow** (mm³/s): each move's speed follows from its bead, as in EasyGCode's flow mode. |
-| 11 | The toolbox (15 Oct) | **A Grasshopper vocabulary, not per-project tools**, and a **Graph tab** to build and edit recipes as components and wires without AI. The AI wires; you keep control of the design. |
+| 11 | The toolbox (15 Oct) | **A Grasshopper vocabulary, not per-project tools**, and a **Graph tab** to build and edit recipes as components and wires without AI (removed 1 Nov 2026 to streamline the app). The AI wires; you keep control of the design. |
 
 ---
 
@@ -124,8 +124,7 @@ it prints like EasyGCode's. (The spiral disc already does: same G-code as EasyGC
 *The Chat tab landed early (15 Oct): Claude writes and edits recipes in the app, with your own
 key (see [devlog.md](devlog.md)). Still to do from this phase: skills, the command line in the
 chat box, and a test set of real requests. 2b adds the 2D curve editors from
-[creating-shapes.md](creating-shapes.md); the steps as components already exist (the Graph
-tab).*
+[creating-shapes.md](creating-shapes.md); the steps already exist.*
 
 - **The chat panel:**
   - your API key, Claude Opus 5.5 by default, model as a setting;

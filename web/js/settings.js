@@ -1,4 +1,4 @@
-// The settings window, generated from the recipe's `param` lines: groups, sliders with number
+// The settings window, generated from the recipe's `param` lines: groups (each a fold-out), sliders with number
 // fields, toggles, dropdowns, text fields, and tables for list settings (rows of numbers, like a
 // profile's points). Values are shown and edited in each setting's own unit (18 %, 90°),
 // exactly as they are written in the recipe.
@@ -64,20 +64,58 @@ export function renderSettings(host, params, values, onChange, opts = {}) {
     if (p.attrs.includes('hidden')) continue;
     const name = p.group || '';
     if (!groups.has(name)) {
-      const g = el('div', { className: 'group' }, [name ? el('h2', { text: name }) : null]);
-      groups.set(name, g);
-      host.append(g);
+      groups.set(name, name ? foldout(name, ![...groups.keys()].some(Boolean)) : el('div', { className: 'group' }));
+      host.append(groups.get(name));
     }
-    groups.get(name).append(settingRow(p, values[p.name] ?? p.value, onChange));
+    const g = groups.get(name);
+    (g.querySelector('.group-body') || g).append(settingRow(p, values[p.name] ?? p.value, onChange));
+  }
+  for (const g of groups.values()) {
+    const count = g.querySelector('.group-count');
+    if (count) count.textContent = String(g.querySelectorAll('.group-body > .setting').length);
   }
   if (!params.length && !opts.broken) {
-    host.append(
-      el('p', {
-        className: 'hint',
-        text: 'This recipe has no settings yet. Add one in the Recipe tab, for example: param height = 100 mm in 20..300 "Height"',
-      }),
-    );
+    host.append(el('p', { className: 'hint', text: 'No settings.' }));
   }
+}
+
+/** Which settings groups are open, by name (remembered on this device). */
+const OPEN_KEY = 'easycad.openGroups';
+
+/** @returns {Record<string, boolean>} */
+function openGroups() {
+  try {
+    const v = JSON.parse(localStorage.getItem(OPEN_KEY) || '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * One settings group as a fold-out: its name (and how many settings it holds) as the header,
+ * the settings underneath. The first group starts open, the others closed, until you open or
+ * close them; that's remembered by name, so every project with a "Print" group opens it alike.
+ * @param {string} name
+ * @param {boolean} first
+ */
+function foldout(name, first) {
+  const remembered = openGroups()[name];
+  const details = /** @type {HTMLDetailsElement} */ (
+    el('details', { className: 'group' }, [
+      el('summary', {}, [el('span', { className: 'group-name', text: name }), el('span', { className: 'group-count' })]),
+      el('div', { className: 'group-body' }),
+    ])
+  );
+  details.open = remembered ?? first;
+  details.addEventListener('toggle', () => {
+    try {
+      localStorage.setItem(OPEN_KEY, JSON.stringify({ ...openGroups(), [name]: details.open }));
+    } catch {
+      // Not remembered.
+    }
+  });
+  return details;
 }
 
 function settingRow(p, value, onChange) {

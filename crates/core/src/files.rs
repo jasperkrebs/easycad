@@ -102,7 +102,7 @@ mod tests {
     use crate::gcode::Mode;
     use std::collections::HashMap;
 
-    const VASE: &str = include_str!("../../../web/templates/twisted-vase.easycad");
+    const VASE: &str = include_str!("../../../fixtures/recipes/twisted-vase.easycad");
 
     fn p1p() -> Profile {
         Profile {

@@ -14,13 +14,16 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
 
 **Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0, 1a
 (recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL),
-1c (the Grasshopper toolbox, `spiralize`, the Graph tab), 1d (every EasyGCode project from
+1c (the Grasshopper toolbox, `spiralize`), 1d (every EasyGCode project from
 general steps; thread and spoon golden, `docs/easygcode-coverage.md`), most of 1e (bend stool
 with foaming and lampshade golden, vessel from general steps) and 1f (the container as a salt &
 pepper shaker: several parts per project, list settings, a smooth `graph`) are done, and so is
 the Chat tab (the agent with the user's key, behind a password proxy; it can switch printers),
 and feature requests (the agent asks for missing steps; Claude Code builds them in Actions;
-`docs/feature-requests.md`). Next: the coat hanger as a template.** Hosting: public repo + GitHub Pages. Priorities:
+`docs/feature-requests.md`). 1 Nov 2026, streamlined for a presentation: the Graph tab is gone
+(and its engine commands), the templates are EasyGCode's projects plus the shaker, settings
+groups fold out, and the app carries no explanatory text. Next: the coat hanger as a
+template.** Hosting: public repo + GitHub Pages, deployed from `main`. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.
@@ -48,7 +51,6 @@ scripts/build-web.sh               # wasm32 build + wasm-bindgen → web/pkg/ (f
 scripts/serve.sh                   # serves web/ at http://localhost:8080 (WASM can't load from file://)
 node scripts/smoke-test.cjs [dir]  # headless Chromium, phone + desktop; screenshots into [dir]
 node scripts/agent-test.cjs [dir]  # the Chat tab against a scripted stand-in for the AI
-node scripts/graph-test.cjs [dir]  # the Graph tab: every kind of edit, mouse and touch
 node scripts/request-test.cjs [dir]  # feature requests: filed, shipped, the chat carries on
 node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs   # the AI proxy, feature requests, printers, list settings
 python3 scripts/hand-checked-fixtures.py --check   # hand-checked G-code fixtures up to date
@@ -64,9 +66,9 @@ any UI change.
 ## Non-negotiables
 
 - **The definition is the single source of truth.** Geometry is always regenerated from the
-  `.easycad` text plus parameter values. Graph edits, slider moves and agent edits all become
-  edits to that text (graph edits through `easycad_core::graph` commands, which touch only
-  their own piece of the text and are parsed again before use).
+  `.easycad` text plus parameter values. Slider moves, printer choices and agent edits all
+  become edits to that text (through `easycad_lang`'s rewrites, which touch only their own
+  piece of the text and are parsed again before use).
 - **Everything is a command.** UI, in-app agent, CLI and MCP go through one command registry.
   No feature exists only in the UI.
 - **Layering.** Engine crates never depend on UI, browser, Tauri, file system or network code
@@ -77,6 +79,8 @@ any UI change.
   and stay inside the size budget.
 - **Tuning never needs the AI.** Parameter changes, exports and printing are local,
   deterministic and instant. The AI is optional.
+- **No explanations inside the app.** The UI shows settings, results, warnings and errors;
+  how things work goes in the README and `docs/`, not in paragraphs on screen.
 - **Phone-first UI in the EasyGCode style** (see `docs/architecture.md` §9.4 for the tokens).
   Plain HTML/CSS/ES modules, no framework, no bundler. Third-party UI code is vendored and
   pinned in `web/vendor/`.
@@ -119,6 +123,8 @@ can do what the user asked. The Feature builder workflow runs Claude Code on it,
 ## Collaboration workflow
 
 As in EasyGCode:
+- `main` is the live app: every push to it deploys to GitHub Pages. Work on a branch, open a
+  PR, and the owner merges it into `main`.
 - Sync `main` before starting and before opening a PR.
 - Keep branches short-lived and PRs small.
 - Resolve conflicts by keeping the non-overlapping changes from both sides.

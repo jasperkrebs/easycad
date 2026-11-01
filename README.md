@@ -11,9 +11,8 @@ become toolpaths, toolpaths become G-code for your printer.
 >   list settings like radii at heights). One project can print several parts (a container
 >   and its lid), each its own G-code file. The Rust engine runs in the browser as
 >   WebAssembly, shows the shape and its toolpath, and gives a live print estimate.
-> - **Graph tab:** the recipe as Grasshopper-style components and wires. Build and edit
->   without any AI (add components, wire inputs, sliders), or take what the AI made further by
->   hand. About 100 steps, named after Grasshopper's components where one exists: points,
+> - **Settings** fold out by group (Shape, Print, Overhangs…), so a big project stays tidy.
+> - **About 100 steps**, named after Grasshopper's components where one exists: points,
 >   planes, tweens, transforms by fields (per point), surfaces, vase mode through tilted
 >   layers. Plus EasyGCode's techniques as general steps: ring fills, helices, zone speeds,
 >   fan levels, dwells, spikes and overhang pacing.
@@ -27,12 +26,11 @@ become toolpaths, toolpaths become G-code for your printer.
 >   EasyGCode's own output. The app knows the G1 from Ginger's wiki: its bed, nozzles, flow
 >   window, heater limits and material profiles ([docs/printers.md](docs/printers.md)).
 >   **STL** for plain geometry.
-> - **Templates:** EasyGCode's spiral disc, thread connector, spoon, bend stool (with foaming)
->   and lampshade (every shade, or your own) as recipes with the same G-code as EasyGCode; its
->   vessel (the bottom rounding into the wall, a non-planar star top) and container (as a salt &
->   pepper shaker: a lid with holes that threads onto it, two prints) from general steps; a
->   cylinder cut by a tilted plane (tilted layers in one spiral), a geometry-only turned vase,
->   and three vase-mode vessels. Every EasyGCode project can be built from the steps
+> - **Templates** (all from EasyGCode): the lampshade (every shade, or your own), the bend
+>   stool (with foaming), the thread connector and the spiral disc as recipes with the same
+>   G-code as EasyGCode; its vessel (the bottom rounding into the wall, a non-planar star top)
+>   and container (as a salt & pepper shaker: a lid with holes that threads onto it, two
+>   prints) from general steps. Every EasyGCode project can be built from the steps
 >   ([docs/easygcode-coverage.md](docs/easygcode-coverage.md)).
 > - **Machine control** as steps: temperatures and waits, speed and extrusion overrides, fan
 >   levels, pauses (EasyGCode's foaming is built from them).
@@ -63,7 +61,7 @@ become toolpaths, toolpaths become G-code for your printer.
   in the browser, installable like an app. No account, no cloud kernel. AI uses your own Claude
   API key ([how to get one](docs/api-key.md)).
 
-A project, exactly as the app saves it (the first template; every `param` is a slider):
+A small project, exactly as the app saves it (every `param` is a slider, every `group` a fold-out):
 
 ```
 easycad 0.1
@@ -128,7 +126,8 @@ scripts/serve.sh         # http://localhost:8080
 cargo test --workspace   # language and engine tests
 ```
 
-Templates live in `web/templates/*.easycad`; the engine's tests run every one of them.
+Templates live in `web/templates/*.easycad`; the engine's tests run every one of them, and the
+test-only recipes in `fixtures/recipes/` (the example above, EasyGCode's spoon).
 `fixtures/easygcode/` holds G-code written by EasyGCode itself, for the golden tests.
 
 ## Relationship to EasyGCode

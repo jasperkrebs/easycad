@@ -190,6 +190,11 @@ async function waitForServer(url) {
       });
       await page.goto(url);
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+      // Start from a project for the P1P (a test recipe), so switching printers is a change.
+      const vase = require('node:fs').readFileSync(path.join(__dirname, '..', 'fixtures', 'recipes', 'twisted-vase.easycad'));
+      await page.setInputFiles('#projectFile', { name: 'twisted-vase.easycad', mimeType: 'text/plain', buffer: vase });
+      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Twisted star vase', null, { timeout: 15000 });
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
       const original = await page.inputValue('#recipe');
 
       // Connect: proxy address and password, checked without spending anything.

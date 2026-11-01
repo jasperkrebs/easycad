@@ -174,9 +174,6 @@ Rules that always apply live in two places:
 - **The settings window:** sliders, number fields, toggles, dropdowns, and point editors like
   EasyGCode's drag-editable profile and curve canvases.
 - **Edit points and handles directly in the 3D view.**
-- **The Graph tab** (since 15 Oct): the recipe as Grasshopper-style components and wires.
-  You can add components, wire inputs and add sliders without any AI, and take a recipe the AI
-  wrote further by hand. Every edit is an edit of the recipe text.
 - **Recipe tab** for exact edits of the text itself.
 - The chat box doubles as a command line: `height 200`, `layer 0.4`, `export gcode` happen
   instantly, without AI.

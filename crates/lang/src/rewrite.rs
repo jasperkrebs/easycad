@@ -70,3 +70,68 @@ pub fn format_number(n: f64) -> String {
     let s = s.trim_end_matches('0').trim_end_matches('.');
     if s == "-0" { "0".into() } else { s.to_string() }
 }
+
+/// Returns `src` naming `name` as the project's printer: the name in the `printer "…"` line
+/// changes, or, with no such line, one is added after the `easycad` and `project` lines.
+/// Everything else stays exactly as it was. Choosing a printer in the app does this, so the
+/// project opens with that printer next time.
+pub fn set_printer(src: &str, name: &str) -> Result<String, String> {
+    use crate::lexer::{Tok, lex};
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 80 || name.contains(['\n', '\r']) {
+        return Err("a printer's name is one line of text (80 characters at most)".into());
+    }
+    parse(src).map_err(|e| e.message)?;
+    let tokens = lex(src).map_err(|e| e.message)?;
+    let text = format_literal(&Literal::Text(name.to_string()));
+    // Statements start at the first token of a line; header lines are one line each.
+    let mut title_end = 0;
+    let mut line_start = true;
+    let mut existing = None;
+    for (i, t) in tokens.iter().enumerate() {
+        match &t.tok {
+            Tok::Newline => {
+                line_start = true;
+                continue;
+            }
+            Tok::Ident(word) if line_start => {
+                let line_end = src
+                    .get(t.start..)
+                    .and_then(|s| s.find('\n'))
+                    .map_or(src.len(), |p| t.start + p + 1);
+                match word.as_str() {
+                    "easycad" | "project" => title_end = title_end.max(line_end),
+                    "printer" => {
+                        if let Some(n) = tokens.get(i + 1).filter(|n| matches!(n.tok, Tok::Str(_)))
+                        {
+                            existing = Some((n.start, n.end));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        line_start = false;
+    }
+    let out = match existing {
+        Some((a, b)) => match (src.get(..a), src.get(b..)) {
+            (Some(before), Some(after)) => format!("{before}{text}{after}"),
+            _ => return Err("internal: the printer line is outside the recipe".into()),
+        },
+        None => {
+            let (before, after) = (
+                src.get(..title_end).unwrap_or_default(),
+                src.get(title_end..).unwrap_or_default(),
+            );
+            let gap = if !before.is_empty() && !before.ends_with('\n') {
+                "\n"
+            } else {
+                ""
+            };
+            format!("{before}{gap}printer {text}\n{after}")
+        }
+    };
+    parse(&out).map_err(|e| format!("that would break the recipe ({})", e.message))?;
+    Ok(out)
+}

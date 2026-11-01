@@ -3,6 +3,29 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-01: streamlined for a presentation
+
+**Landed:**
+- **Settings fold out:** each `group` is a fold-out with its name and how many settings it
+  holds. The first starts open, the others closed; what you open or close is remembered by
+  group name on the device.
+- **The Graph tab is gone,** and with it everything only it used: `web/js/graph.js`, its CSS
+  and browser test, the engine's graph commands (`easycad_core::graph`), the language crate's
+  outline and text edits, and the highlight drawing. Choosing a printer still writes the
+  recipe's `printer` line, now through `easycad_lang::set_printer` (tested). The wasm is
+  smaller and every run does a little less.
+- **Templates:** only EasyGCode's projects and the shaker (lampshade first, then vessel,
+  shaker, bend stool, thread connector, spiral disc). The early demo shapes and the spoon moved
+  to `fixtures/recipes/`, test-only, so the engine tests and golden tests that run them stay.
+- **No explanations in the app:** the paragraphs on how things work are gone from every tab
+  (and the recipe's `note` lines are no longer shown in Settings; they stay in the recipe for
+  the AI). Empty states are one short line. Warnings, checks and errors stay.
+- **`main` deploys:** a `main` branch now holds the live app; work happens on branches merged
+  into it.
+
+**Open:** switch the repo's default branch to `main` (Settings → Branches). The docs' deeper
+history still describes the Graph tab where it was built.
+
 ## 2026-10-29 (later): a flaky chat test
 
 **Found:** CI failed on "request 3 rewrote earlier messages" about half the time. The stand-in

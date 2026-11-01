@@ -467,3 +467,40 @@ fn numbers_are_written_readably() {
         Literal::Text("two\nlines".into())
     );
 }
+
+#[test]
+fn set_printer_writes_the_printer_line() {
+    let src = "easycad 0.1\nproject \"Vase\"\nprinter \"Bambu P1P 0.4\"\nnote \"A note\"\n\nparam h = 10 mm\nshow h\n";
+    // An existing line: only its name changes.
+    let out = set_printer(src, "Klipper pellet").unwrap();
+    assert_eq!(out, src.replace("Bambu P1P 0.4", "Klipper pellet"));
+    assert_eq!(
+        parse(&out).unwrap().printer.as_deref(),
+        Some("Klipper pellet")
+    );
+    // No line yet: one is added after the title, before the notes.
+    let bare = src.replace("printer \"Bambu P1P 0.4\"\n", "");
+    let out = set_printer(&bare, "Klipper pellet").unwrap();
+    let lines: Vec<&str> = out.lines().take(4).collect();
+    assert_eq!(
+        lines,
+        [
+            "easycad 0.1",
+            "project \"Vase\"",
+            "printer \"Klipper pellet\"",
+            "note \"A note\""
+        ]
+    );
+    // No title at all: it goes first.
+    let out = set_printer("param h = 10 mm\n", "P").unwrap();
+    assert_eq!(out, "printer \"P\"\nparam h = 10 mm\n");
+    // Quotes are written so they read back; a name is one line; a broken recipe is refused.
+    let out = set_printer(src, "My \"big\" one").unwrap();
+    assert_eq!(
+        parse(&out).unwrap().printer.as_deref(),
+        Some("My \"big\" one")
+    );
+    assert!(set_printer(src, "two\nlines").is_err());
+    assert!(set_printer(src, "  ").is_err());
+    assert!(set_printer("x = (", "P").is_err());
+}

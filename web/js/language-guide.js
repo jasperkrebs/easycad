@@ -54,7 +54,7 @@ Printing
 - Vase mode through any layers, tilted ones too: \`spiralize(layers, width: …, flow: …)\` takes closed layer curves from the bottom (on the bed) up, with matching points (make them with \`tween(bottom, top, range(0, 1, count: n + 1))\`, \`contour(wall, layer)\` or \`base |> move(z: …)\`). Each move is extruded for its own local layer height. Example, a cylinder cut by a tilted plane: \`top = base |> project_along(plane([0, 0, h]) |> rotate(angle, axis: [0, 1, 0], center: [0, 0, h]))\`, then \`layers = tween(base, top, range(0, 1, count: round(h / layer) + 1))\`.
 - Line width about 1–2× the nozzle (0.4 mm on the P1P); layer height up to about 75 % of the line width; overhangs under about 45°; flow within what the printer melts (the P1P about 20 mm³/s with PLA).
 
-EasyGCode techniques (every EasyGCode project is built from these; the thread connector and spoon templates show them at work)
+EasyGCode techniques (every EasyGCode project is built from these; the thread connector template shows them at work)
 - "0 means auto": \`pick(line, line, 2.4 * pitch)\`. A dropdown looked up in a table: \`item([2, 3, 4], index_of(["M2", "M3", "M4"], size))\`. Masks for zones: \`greater(z, 50)\`, \`less(…)\` (1 or 0).
 - Threads and coils: \`helix(circle(r, tolerance: 0.01) |> rotate(90), pitch: …, height: …, width: …, flow: …)\` rises exactly one pitch per turn.
 - Bottoms and seats: \`rings(outline, line)\` (or \`inset: true\` for outlines that aren't round), \`reverse\`, then \`link_rings(…, "staircase" | "zipper" | "spiral", line)\` makes one line for \`toolpath\`.
