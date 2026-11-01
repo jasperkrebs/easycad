@@ -7,6 +7,7 @@ use super::{Args, curves_of};
 use crate::eval::Ctx;
 use crate::field::Field;
 use crate::geom::P3;
+use crate::legs;
 use crate::rings::{self, Link};
 use crate::scatter;
 use crate::toolpath::{EventKind, MAX_PATH_POINTS, Temperatures};
@@ -29,6 +30,58 @@ pub(super) fn rings(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     )?;
     ctx.spend(out.iter().map(|r| r.points.len()).sum())?;
     Value::list(out.into_iter().map(|r| Value::Curve(Rc::new(r))).collect())
+}
+
+pub(super) fn leg_rings(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let count = a.count(0, 1, 10_000)?;
+    let width = a.positive(1)?;
+    let angles = a
+        .items(2)?
+        .iter()
+        .map(|v| match v {
+            Value::Number(d) if d.is_finite() => Ok(d.to_radians()),
+            other => Err(format!("`legs` must be angles, got {}", other.kind())),
+        })
+        .collect::<Result<Vec<f64>, String>>()?;
+    let pairs = a.count(3, 0, 10_000)?;
+    let seam = match a.text(6) {
+        Ok("zipper") => true,
+        Ok("staircase") | Err(_) => false,
+        Ok(other) => {
+            return Err(format!(
+                "`seam` is \"staircase\" or \"zipper\", got \"{other}\""
+            ));
+        }
+    };
+    let spec = legs::LegSpec {
+        count,
+        spacing: width,
+        angles,
+        pairs,
+        tip: a.num(4)?,
+        fillet: a.num(5)?,
+        zipper: seam,
+        amount: a.num(7)?,
+        gap: a.num(8)?,
+        spread_at: a.num(9)?,
+        r1: a.num(10)?,
+        r2: a.num(11)?,
+        drop: a.num(12)?,
+        tolerance: a.num(13)?,
+        max_points: ctx.remaining().min(MAX_PATH_POINTS),
+    };
+    let out = legs::leg_rings(&spec)?;
+    if a.flag(14)? {
+        ctx.spend(out.outline.points.len())?;
+        return Ok(Value::Curve(Rc::new(out.outline)));
+    }
+    ctx.spend(out.rings.iter().map(|r| r.points.len()).sum())?;
+    Value::list(
+        out.rings
+            .into_iter()
+            .map(|r| Value::Curve(Rc::new(r)))
+            .collect(),
+    )
 }
 
 pub(super) fn link_rings(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {

@@ -23,7 +23,8 @@ doesn't fake it. It asks for the missing step:
    - **otherwise** it builds the step the EasyCAD way: general, tested, documented, all checks
      passing.
 3. **The workflow checks and ships it.** The workflow does this itself, not the AI:
-   - it runs CI on the branch: every test, the golden G-code, the browser tests;
+   - it runs CI on the branch: every Rust test, the golden G-code, the web build (the builder
+     runs the browser tests itself, as its brief asks);
    - it checks the merge rules: no protected files, no fewer tests, not too big;
    - then it merges, deploys, and runs CI again on the live branch.
 
@@ -61,8 +62,8 @@ reasonable:
   - all Rust tests;
   - the golden tests, which must match EasyGCode's G-code byte for byte;
   - the hand-checked fixtures;
-  - the wasm size budget;
-  - the browser tests on desktop and phone.
+  - the wasm size budget.
+  (The browser tests on desktop and phone run in the builder's own session, not in CI.)
 - **Some files only a person changes.** The merge is refused, and the request waits for you,
   if the change touches:
   - the workflows and these rules (`.github/`);

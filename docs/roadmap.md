@@ -159,6 +159,21 @@ project with good settings, and "a bit taller" is just a slider.
 - **Optional:** sync the project library between devices.
 
 ## Later / when needed
+- **Robot-arm printing** (the owner's idea, 1 Nov 2026; to revisit). A third kind of printer,
+  "robot arm", next to the P1P and the G1. When a project is printed on it, it's sliced for
+  the arm rather than for a Cartesian printer: the lines follow the surface instead of running
+  at constant Z heights, the nozzle tilted to stay square to the wall. First for the lampshade
+  (a shell of revolution, so the lines can follow its profile turn by turn). The 3D view's
+  bead preview shows each bead at the nozzle's angle, not flat. What it needs:
+  - the toolpath carries a nozzle direction at every point (today it's always straight down);
+  - a way to lay lines along a surface (geodesics or isocurves of the lampshade's profile),
+    spaced by the bead's height measured along the surface;
+  - the robot's own output (its controller's language instead of G-code, e.g. KUKA KRL or ABB
+    RAPID, or G-code with tool-angle axes), its reach and joint limits as printer settings,
+    and checks that every point is reachable;
+  - bead cross-sections and the line-width view drawn turned to the nozzle's angle;
+  - G-code safety as for every printer: golden-tested output (a hand-checked fixture) before
+    anything is printed.
 - Graph positions saved in the project file (a `layout` block); clusters (your own steps made
   from a group of components); full data trees.
 - Rhino `.3dm` import/export, SVG/DXF.

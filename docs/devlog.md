@@ -3,6 +3,66 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-01 (night): toolpath colours, print progress, round beads
+
+**Landed:**
+- **Colour by** (in the view bar, remembered on the device): height, speed (mm/s, as the G-code
+  writes it), volumetric flow (mm³/s), line width or layer height, with a legend of the range
+  over the printing moves (travels grey, and left out of the range). Lines and beads alike. The
+  engine now sends each move's speed and flow with its width and height.
+- **Print progress:** a slider under the 3D view scrubs through the toolpath in print order, a
+  step per move (drag it, or scroll over it; Shift for bigger steps), with a generic nozzle where
+  it's got to and that move's height, speed, flow and bead. Lines and beads alike; the AI's
+  snapshot always sees the whole print.
+- **Round beads:** the line-width view sweeps a round bead along the path, like a nozzle laying
+  plastic: each move keeps its own bead; at a sharp corner (over 25°) the section pivots round
+  the corner point on the outside while the inside stays at the corner's mitre, so a staircase
+  seam reads as rounded steps instead of sawtooth notches; each run ends in a round cap.
+- The robot-arm printing idea is written down in the roadmap (Later).
+
+**Open:** the HUD still counts primer lines as layers; the progress slider steps by points, not
+by layers.
+
+## 2026-11-01 (evening): the bend stool with legs, matching EasyGCode
+
+**Why:** the template only built the round seat; the owner's stool (their EasyGCode settings of
+21 Jul) has three legs, a bend zone that spreads layer by layer with an overhang drop, a domed
+seat, a brim and foaming.
+
+**Landed:**
+- `leg_rings`: concentric rings whose outer rings run out along legs as filleted hairpins with
+  round tip caps, staircase or zipper seam, and the bend-zone spread (each point's spread kept
+  in z, so a recipe sinks it with a field). A port of EasyGCode's `stoolLoop`/`discLoops`: its
+  rings agree with EasyGCode's to 1e-13 mm at every spread. Reusable for anything round with arms.
+- `join(…, link: true)`: each step out to the next ring printed with that ring's bead, all one
+  layer (each ring of a domed layer is its own toolpath at its own height).
+- `offset(…, mitre: false)`: EasyGCode's per-point brim offset.
+- The template is the whole stool and ships as the owner's. Golden: their stool (88,221 lines,
+  every command identical), legs with a zipper seam, a domed seat with a brim, and the four
+  seat-only cases from before. The smoke test downloads it from the app with their G1 settings.
+- The owner's file run through EasyGCode as of 21 Jul and as of today: the same G-code apart
+  from the brim (their file's `bs_brimLines` key was renamed since, so today's EasyGCode ignores
+  it and brims 4 lines instead of 3) and the final lift (now 50 mm above the print).
+
+**Open:** the printer's own settings (zones 195 °C, bed 65 °C, the stool centred at 500/500,
+travel 50 mm/s) are the Print tab's, not the recipe's: set once on the device. EasyGCode's brim
+from the top layer's outline isn't built. The HUD counts the primer lines as layers.
+
+## 2026-11-01 (later): lighter CI, and why the deploy failed
+
+**Found:** the first deploy from `main` failed in a second, before any step ran: the
+`github-pages` environment only allowed the old default branch to deploy. That's a repo setting
+(Settings → Environments → github-pages → Deployment branches), not something in the code.
+The pull request's run also failed once on the flaky request test.
+
+**Landed:** CI runs on pull requests and `main` only (other branch pushes run nothing; the
+feature builder still starts it by hand on its branches). It runs the Rust checks and tests
+(the G-code golden tests included), the notices and fixture checks, the node tests and the web
+build, with the build in parallel with the tests and wasm-bindgen-cli cached. The browser tests
+are out of CI and run by hand; the separate wasm `cargo check` is gone (the web build is one).
+
+**Open:** nothing.
+
 ## 2026-11-01: streamlined for a presentation
 
 **Landed:**

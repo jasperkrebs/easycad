@@ -266,7 +266,13 @@ pub(super) fn tween(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 pub(super) fn offset(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let c = a.curve(0)?;
     ctx.spend(c.points.len())?;
-    Ok(Value::Curve(Rc::new(c.offset(a.num(1)?))))
+    let d = a.num(1)?;
+    let out = if a.flag(2)? {
+        c.offset(d)
+    } else {
+        c.offset_bisector(d)
+    };
+    Ok(Value::Curve(Rc::new(out)))
 }
 
 pub(super) fn resample(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {

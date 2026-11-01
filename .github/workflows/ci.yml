@@ -1,4 +1,9 @@
-# Checks every push, builds the web app, and deploys it to GitHub Pages from the default branch.
+# Checks pull requests and `main`, builds the web app, and deploys it to GitHub Pages from `main`
+# (the default branch). Kept light on purpose (1 Nov 2026: a sandbox, not a product): the Rust
+# tests, which include the G-code golden tests, and a build. The browser tests
+# (scripts/smoke-test.cjs, agent-test.cjs, request-test.cjs) are run by hand before a bigger UI
+# change. Pushes to other branches run nothing; a pull request runs the checks once. The feature
+# builder starts this workflow on its own branches itself ("Run workflow").
 #
 # Hosting (decided 15 Oct 2026): the repo is public, so GitHub Pages is free. It needs one
 # setting, once: Settings → Pages → Source: "GitHub Actions". Until then the deploy job only
@@ -17,6 +22,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -41,8 +47,6 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      # "Never break wasm": the engine must always build for the browser.
-      - run: cargo check -p easycad-lang -p easycad-core -p easycad-wasm --target wasm32-unknown-unknown --locked
       # Licenses: permissive only, and the notices file must list every dependency.
       - run: python3 scripts/third-party-notices.py --check
       - run: python3 scripts/hand-checked-fixtures.py --check
@@ -102,34 +106,37 @@ jobs:
           echo "::notice::The AI proxy is live at $url"
 
   web:
-    name: Web app (build, size budget, smoke test)
+    name: Web app (build, size budget)
     runs-on: ubuntu-24.04
-    needs: [engine, proxy]
-    # The proxy job runs only on the default branch, and a broken proxy setup shouldn't stop the
-    # website from updating: only the engine has to pass.
-    if: ${{ !cancelled() && needs.engine.result == 'success' }}
+    # Builds while the engine job tests. The proxy job runs only on the default branch, and a
+    # broken proxy setup shouldn't stop the website from updating.
+    needs: proxy
+    if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Install wasm-bindgen-cli (same version as Cargo.lock)
+      - name: wasm-bindgen version (same as Cargo.lock)
+        id: bindgen
         run: |
           v=$(cargo metadata --format-version 1 --locked | python3 -c "import sys, json; print(next(p['version'] for p in json.load(sys.stdin)['packages'] if p['name'] == 'wasm-bindgen'))")
-          cargo install wasm-bindgen-cli --version "$v" --locked
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      # Building wasm-bindgen-cli takes over a minute; keep it between runs.
+      - uses: actions/cache@v4
+        id: bindgen-cache
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-${{ steps.bindgen.outputs.version }}-${{ runner.os }}
+      - name: Install wasm-bindgen-cli
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "${{ steps.bindgen.outputs.version }}" --locked
       - run: scripts/build-web.sh
       - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs
-      - name: Smoke test in headless Chromium
-        run: |
-          npm install --no-save --no-package-lock playwright@1.56.1
-          npx playwright install --with-deps chromium
-          node scripts/smoke-test.cjs
-          node scripts/agent-test.cjs
-          node scripts/request-test.cjs
       - name: App config (the AI proxy's address, when it's deployed, where feature requests go, and this version)
         env:
           AGENT_URL: ${{ needs.proxy.outputs.url }}
@@ -146,10 +153,10 @@ jobs:
     name: Deploy to GitHub Pages
     # Pushes deploy; so does "Run workflow" in the Actions tab (handy right after switching Pages on).
     if: >-
-      needs.web.result == 'success' && !cancelled() &&
+      needs.web.result == 'success' && needs.engine.result == 'success' && !cancelled() &&
       github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch &&
       (!github.event.repository.private || vars.DEPLOY_PAGES == 'true')
-    needs: web
+    needs: [engine, web]
     runs-on: ubuntu-24.04
     permissions:
       pages: write

@@ -946,10 +946,15 @@ pub fn stack(
 /// fan comes on where EasyGCode turns it on: after a brim *and* the first turn of the helix
 /// printed inside it (not after the first of several bottom layers), and after a first layer
 /// and the primer line printed after it, before the next layer up.
+///
+/// With `link`, each part after the first is reached by a printed move instead (with that
+/// part's bead and speed), and they all count as one layer: concentric rings stepping out from
+/// one to the next, as EasyGCode prints a seat.
 pub fn join(
     paths: &[&Toolpath],
     clear: f64,
     wipe: f64,
+    link: bool,
     max_points: usize,
 ) -> Result<Toolpath, String> {
     check("clear", clear, 0.0, 1000.0, " mm")?;
@@ -973,9 +978,13 @@ pub fn join(
         // Points of `path` before `first` aren't copied: its opening travel, when the nozzle is
         // already there.
         let mut first = 0;
+        let mut linked = false;
         if let Some(prev) = out.points.last().copied() {
             if dist3(prev, start) <= 1e-6 {
                 first = 1;
+                linked = link;
+            } else if link {
+                linked = true;
             } else if wipe > 0.0 {
                 out.wipe(start, wipe, offset);
             } else {
@@ -999,7 +1008,7 @@ pub fn join(
         };
         let first_top = printed(&out).into_iter().fold(f64::NEG_INFINITY, f64::max);
         let starts_at = printed(path).first().copied().unwrap_or(start[2]);
-        let merge = out.layer_starts.len() == 1 && starts_at <= first_top + 1e-6;
+        let merge = linked || (out.layer_starts.len() == 1 && starts_at <= first_top + 1e-6);
         let base = out.points.len();
         for (k, s) in path.layer_starts.iter().enumerate() {
             if k == 0 && merge {
@@ -1009,6 +1018,15 @@ pub fn join(
         }
         for i in first..path.points.len() {
             out.push_from(path, i, 0.0, offset);
+            if linked && i == 0 {
+                // The step out to this part is printed, with this part's bead.
+                if let Some(t) = out.travel.last_mut() {
+                    *t = false;
+                }
+                if let Some(f) = out.flow.last_mut() {
+                    *f = 1.0;
+                }
+            }
         }
         out.copy_events(path, &|i| {
             if i >= first {
@@ -1873,24 +1891,24 @@ mod tests {
         let a = flat(vec![[0.0; 3], [10.0, 0.0, 0.0]], 0.8);
         let b = flat(vec![[20.0, 0.0, -0.8], [30.0, 0.0, -0.8]], 1.25); // printed at z = 0.45
         // An absolute travel height: up to 1.6, over, down (EasyGCode's 2 × brim layer).
-        let j = join(&[&a, &b], 1.6, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &b], 1.6, 0.0, false, MAX_PATH_POINTS).unwrap();
         assert!(near(j.points[2], [10.0, 0.0, 1.6]) && near(j.points[3], [20.0, 0.0, 1.6]));
         assert!(near(j.points[4], [20.0, 0.0, 0.45]) && j.travel[4] && !j.travel[5]);
         // Automatic: one layer of the next part above the higher end.
-        let j = join(&[&a, &b], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &b], 0.0, 0.0, false, MAX_PATH_POINTS).unwrap();
         assert!(near(j.points[2], [10.0, 0.0, 0.8 + 1.25]));
         // A part that starts where the last one ended carries straight on, no travel.
         let c = flat(vec![[10.0, 0.0, 0.0], [10.0, 10.0, 0.0]], 0.8);
-        let j = join(&[&a, &c], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &c], 0.0, 0.0, false, MAX_PATH_POINTS).unwrap();
         assert_eq!(j.points.len(), 3);
         assert_eq!(j.travel, vec![true, false, false]);
         assert_eq!(j.part, vec![0, 0, 1]);
         // Empty parts are skipped.
         let none = from_curves(&[], settings(1.0, 0.8, 20.0), MAX_PATH_POINTS).unwrap();
         assert!(none.points.is_empty());
-        let j = join(&[&none, &a, &none], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&none, &a, &none], 0.0, 0.0, false, MAX_PATH_POINTS).unwrap();
         assert_eq!((j.points.len(), j.parts.len()), (2, 1));
-        assert!(join(&[&a], -1.0, 0.0, MAX_PATH_POINTS).is_err());
+        assert!(join(&[&a], -1.0, 0.0, false, MAX_PATH_POINTS).is_err());
     }
 
     #[test]
@@ -1907,12 +1925,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(h.layer_starts, vec![0, 25]);
-        let j = join(&[&brim, &h], 2.5, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&brim, &h], 2.5, 0.0, false, MAX_PATH_POINTS).unwrap();
         // The brim (25 points), the hop (up, over), then the helix from its first point.
         assert_eq!(j.layer_starts, vec![0, 25 + 2 + 25]);
         // Several bottom layers keep their own first layer.
         let two = stack(&brim, 2, 1.0, 0.0, MAX_PATH_POINTS).unwrap();
-        let j = join(&[&two, &h], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&two, &h], 0.0, 0.0, false, MAX_PATH_POINTS).unwrap();
         assert_eq!(j.layer_starts[..2], [0, 25]);
     }
 
@@ -1941,6 +1959,7 @@ mod tests {
             &[&layer(0.0), &primer, &layer(0.5)],
             1.0,
             0.0,
+            false,
             MAX_PATH_POINTS,
         )
         .unwrap();
@@ -1949,7 +1968,14 @@ mod tests {
         assert_eq!(j.layer_starts, vec![0, 13 + 3 + 1 + 2]);
         assert_eq!(j.layers, 2);
         // A wipe: one straight move to the wipe height above the next start, then down.
-        let w = join(&[&layer(0.0), &layer(0.5)], 0.0, 1.0, MAX_PATH_POINTS).unwrap();
+        let w = join(
+            &[&layer(0.0), &layer(0.5)],
+            0.0,
+            1.0,
+            false,
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
         assert_eq!(w.points[13], [10.0, 0.0, 2.0]);
         assert_eq!(w.points[14], [10.0, 0.0, 1.0]);
         assert!(w.travel[13] && w.travel[14] && !w.travel[15]);
@@ -2033,7 +2059,7 @@ mod tests {
             MAX_PATH_POINTS,
         )
         .unwrap();
-        let j = join(&[&a, &b], 0.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let j = join(&[&a, &b], 0.0, 0.0, false, MAX_PATH_POINTS).unwrap();
         assert_eq!(j.parts.len(), 2);
         assert_eq!(j.settings(j.points.len() - 1).width, 1.0);
         assert_eq!(j.settings(3).width, 2.0);

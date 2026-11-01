@@ -13,7 +13,7 @@
  *   bounds: { min: number[], max: number[] } | null,
  *   mesh: { positions: Float32Array, indices: Uint32Array },
  *   curves: { points: Float32Array, starts: Uint32Array },
- *   paths: { points: Float32Array, starts: Uint32Array },
+ *   paths: { points: Float32Array, starts: Uint32Array, widths?: Float32Array, heights?: Float32Array, speeds?: Float32Array, flows?: Float32Array },
  *   ms: number }} RunResult
  */
 

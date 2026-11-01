@@ -30,6 +30,8 @@ const VIEW_KEY = 'easycad.view';
 const BEADS_KEY = 'easycad.beads';
 /** How solid the beads are drawn (10–100 %). */
 const OPACITY_KEY = 'easycad.beadOpacity';
+/** What the toolpath is coloured by. */
+const COLOR_KEY = 'easycad.colorMode';
 const MAX_FILE_BYTES = 256 * 1024;
 const TABS = ['settings', 'chat', 'recipe', 'print', 'about'];
 
@@ -101,6 +103,8 @@ async function run(quality, how = {}) {
   }
   viewport.show(result, { refit: refitNext });
   refitNext = false;
+  syncScrub();
+  renderLegend();
   renderPartToggles(result);
 
   renderProject(result);
@@ -284,6 +288,43 @@ function renderAbout() {
     text: 'Roadmap',
   });
   about.append(el('dt', { text: 'Docs' }), el('dd', {}, [link]));
+}
+
+/** The colour legend under the 3D view: what the toolpath is coloured by, low to high. */
+function renderLegend() {
+  const legend = viewport.legend();
+  const box = $('viewLegend');
+  box.hidden = !state.last?.paths?.starts || state.last.paths.starts.length < 2;
+  $('legendLabel').textContent = `${legend.label} (${legend.unit})`;
+  $('legendBar').style.background = `linear-gradient(to right, ${legend.colors.join(', ')})`;
+  $('legendMin').textContent = fmt(legend.min, legend.digits);
+  $('legendMax').textContent = fmt(legend.max, legend.digits);
+}
+
+/** Print progress, as a fraction of the moves (1: the whole print). */
+let scrubAt = 1;
+
+/** The progress slider: one step per move of the toolpaths, kept at the same fraction. */
+function syncScrub() {
+  const slider = /** @type {HTMLInputElement} */ ($('scrub'));
+  const total = viewport.pathPoints;
+  slider.max = String(Math.max(1, total));
+  slider.value = String(Math.round(scrubAt * Math.max(1, total)));
+  slider.disabled = total < 2;
+  showProgress();
+}
+
+/** Shows the print up to the slider, and where the nozzle is. */
+function showProgress() {
+  const slider = /** @type {HTMLInputElement} */ ($('scrub'));
+  const max = Number(slider.max) || 1;
+  scrubAt = Number(slider.value) / max;
+  const at = viewport.setProgress(scrubAt);
+  $('scrubInfo').textContent = !at
+    ? ''
+    : at.travel
+      ? `Z ${fmt(at.z, 2)} mm · travel`
+      : `Z ${fmt(at.z, 2)} mm · ${fmt(at.speed, 1)} mm/s · ${fmt(at.flow, 1)} mm³/s · ${fmt(at.width, 2)} × ${fmt(at.layer, 2)} mm`;
 }
 
 function setStatus(text, kind) {
@@ -733,6 +774,40 @@ function wire() {
     }
     showBeads(on);
   });
+
+  // What the toolpath is coloured by (remembered on this device), with its legend.
+  const colorSelect = /** @type {HTMLSelectElement} */ ($('viewColor'));
+  for (const [id, m] of Object.entries(viewport.colorModes)) colorSelect.append(el('option', { value: id, text: m.label }));
+  try {
+    const stored = localStorage.getItem(COLOR_KEY);
+    if (stored && stored in viewport.colorModes) colorSelect.value = stored;
+  } catch {
+    // The default.
+  }
+  viewport.setColorMode(/** @type {any} */ (colorSelect.value));
+  colorSelect.addEventListener('change', () => {
+    viewport.setColorMode(/** @type {any} */ (colorSelect.value));
+    renderLegend();
+    try {
+      localStorage.setItem(COLOR_KEY, colorSelect.value);
+    } catch {
+      // Not remembered.
+    }
+  });
+  // Print progress: drag the slider, or scroll over it (a step per move; faster with Shift).
+  const scrub = /** @type {HTMLInputElement} */ ($('scrub'));
+  scrub.addEventListener('input', showProgress);
+  scrub.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const max = Number(scrub.max) || 1;
+      const step = Math.max(1, Math.round(max / (e.shiftKey ? 50 : 500)));
+      scrub.value = String(Math.min(max, Math.max(0, Number(scrub.value) + (e.deltaY > 0 ? -step : step))));
+      showProgress();
+    },
+    { passive: false },
+  );
 
   const templates = /** @type {HTMLSelectElement} */ ($('template'));
   for (const t of TEMPLATES) templates.append(el('option', { value: t.id, text: t.name }));
