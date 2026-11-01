@@ -361,9 +361,12 @@ app: checks the issue (public API) ◄──────────────
 │         3D viewport          │  drag = orbit, pinch = zoom, two fingers = pan;
 │                              │  3D / Front / Side / Top, Parallel (default) or perspective
 │                              │  Line width: the toolpath as solid beads at their real size
-│                              │
+│                              │  (a round bead swept along the path, round at corners and ends)
+│                              │  Colour by: height, speed, flow, line width or layer height,
+│                              │  with a legend; a progress slider scrubs through the print,
+│                              │  a nozzle where it's got to (drag, or scroll over it)
 ├──────────────────────────────┤
-│ [Params] [Graph] [Code] [Print]
+│ [Settings] [Chat] [Recipe] [Print]
 │  Shape                       │
 │  Height      ━━━━●━━━ 160 mm 🔒│
 │  Twist       ━━●━━━━━  90°   │

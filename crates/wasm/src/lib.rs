@@ -36,8 +36,8 @@ pub fn node_catalog() -> String {
 ///
 /// Returns `{ source, project, printer, notes, params, steps, diagnostics, print, exports,
 /// bounds, mesh: { positions, indices }, curves: { points, starts },
-/// paths: { points, starts, widths, heights } (each point's line width and layer height in mm,
-/// the bead of the move that ends there; 0 for travel), parts: { mesh, curves, paths } (each
+/// paths: { points, starts, widths, heights, speeds, flows } (each point's line width and
+/// layer height in mm, speed in mm/s and flow in mm³/s: the move that ends there; 0 for travel), parts: { mesh, curves, paths } (each
 /// piece's printed part) }`. A broken recipe doesn't throw: its problems are in
 /// `diagnostics`.
 #[wasm_bindgen]
@@ -152,9 +152,11 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     let curves = polylines(e.drawing.curves.iter().map(Vec::as_slice))?;
     set(&out, "curves", &curves)?;
     let paths = polylines(e.drawing.paths.iter().map(|p| p.points.as_slice()))?;
-    let (widths, heights) = beads(&e.drawing);
+    let [widths, heights, speeds, flows] = beads(&e.drawing);
     set(&paths, "widths", &widths)?;
     set(&paths, "heights", &heights)?;
+    set(&paths, "speeds", &speeds)?;
+    set(&paths, "flows", &flows)?;
     set(&out, "paths", &paths)?;
     let parts = parts(&e.drawing)?;
     set(&out, "parts", &parts)?;
@@ -183,27 +185,30 @@ fn parts(d: &Drawing) -> Result<Object, JsError> {
 /// begins, counted in points, with the total count at the end.
 /// Each toolpath point's bead, line width and layer height (mm): the bead of the move that ends
 /// there, 0 for a travel. A path's first point takes its first move's, so a bead starts full size.
-fn beads(d: &Drawing) -> (Float32Array, Float32Array) {
-    let (mut widths, mut heights): (Vec<f32>, Vec<f32>) = (Vec::new(), Vec::new());
+fn beads(d: &Drawing) -> [Float32Array; 4] {
+    let mut out: [Vec<f32>; 4] = Default::default();
     for p in &d.paths {
+        // Each move's line width and layer height, its speed in mm/s as the G-code writes it
+        // (before the printer's travel-speed cap) and its volumetric flow in mm³/s; 0 for travel.
         let bead = |i: usize| {
             if p.travel.get(i).copied().unwrap_or(false) {
-                (0.0, 0.0)
+                [0.0; 4]
             } else {
                 let (w, h) = p.bead_of(i);
-                (w as f32, h as f32)
+                let area = p.area(i);
+                let speed = p.settings(i).feed_for(area) / 60.0 * p.speed_factor(i);
+                let flow = area * speed * p.flow.get(i).copied().unwrap_or(1.0);
+                [w as f32, h as f32, speed as f32, flow as f32]
             }
         };
         for i in 0..p.points.len() {
-            let (w, h) = bead(if i == 0 && p.points.len() > 1 { 1 } else { i });
-            widths.push(w);
-            heights.push(h);
+            let b = bead(if i == 0 && p.points.len() > 1 { 1 } else { i });
+            for (list, v) in out.iter_mut().zip(b) {
+                list.push(v);
+            }
         }
     }
-    (
-        Float32Array::from(widths.as_slice()),
-        Float32Array::from(heights.as_slice()),
-    )
+    out.map(|v| Float32Array::from(v.as_slice()))
 }
 
 fn polylines<'a>(lines: impl Iterator<Item = &'a [P3]>) -> Result<Object, JsError> {

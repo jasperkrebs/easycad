@@ -367,6 +367,22 @@ async function waitForServer(url) {
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-beads-3d.png`) });
       await page.click('#viewWidth');
       if (await page.isVisible('#viewBeadOpacity')) failures.push(`${name}: the opacity slider stays without the beads`);
+      // The toolpath coloured by speed, with its legend; then by layer height (the lid's thinner
+      // disc beads make a range).
+      await page.selectOption('#viewColor', 'speed');
+      if ((await page.textContent('#legendLabel')) !== 'Speed (mm/s)') failures.push(`${name}: legend: ${await page.textContent('#legendLabel')}`);
+      await page.selectOption('#viewColor', 'layer');
+      const [lo, hi] = [await page.textContent('#legendMin'), await page.textContent('#legendMax')];
+      if (!(Number(lo.replace(',', '.')) < Number(hi.replace(',', '.')))) failures.push(`${name}: layer-height legend ${lo}..${hi}`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-layers.png`) });
+      await page.selectOption('#viewColor', 'height');
+      // Print progress: half way, the nozzle's place and its move; at the end, nothing.
+      const scrubTo = (f) => page.evaluate((f) => { const s = document.getElementById('scrub'); s.value = String(Math.round(Number(s.max) * f)); s.dispatchEvent(new Event('input')); }, f);
+      await scrubTo(0.5);
+      if (!/^Z [\d.,]+ mm/.test(await page.textContent('#scrubInfo'))) failures.push(`${name}: half way: "${await page.textContent('#scrubInfo')}"`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-progress.png`) });
+      await scrubTo(1);
+      if ((await page.textContent('#scrubInfo')) !== '') failures.push(`${name}: the progress info stays at the end`);
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();
       if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);

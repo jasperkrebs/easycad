@@ -141,43 +141,112 @@ export function createViewport(canvas) {
     scene.add(grid);
   }
 
-  function pathColors(path, zMin, zMax) {
-    const low = new THREE.Color(token('--accent'));
-    const high = new THREE.Color(token('--accent2'));
-    const out = new Float32Array(path.length);
+  /**
+   * What the toolpath can be coloured by: each move's height, speed (mm/s, as the G-code
+   * writes it), volumetric flow (mm³/s), line width or layer height (mm).
+   */
+  const COLOR_MODES = {
+    height: { label: 'Height', unit: 'mm', digits: 1 },
+    speed: { label: 'Speed', unit: 'mm/s', digits: 1 },
+    flow: { label: 'Flow', unit: 'mm³/s', digits: 1 },
+    width: { label: 'Line width', unit: 'mm', digits: 2 },
+    layer: { label: 'Layer height', unit: 'mm', digits: 2 },
+  };
+  /** Low to high, as slicers show speeds and widths: blue, cyan, green, yellow, red. */
+  const SCALE = ['#3b4cc0', '#2fa4d9', '#5cc46a', '#f2c84b', '#d7372b'].map((c) => new THREE.Color(c));
+  /** @type {keyof typeof COLOR_MODES} */
+  let colorMode = 'height';
+  /** The colour range of what's shown: [lowest, highest] of the colour mode's value. */
+  let range = [0, 1];
+
+  /** The value move `i` of a toolpath is coloured by (null: a travel, drawn grey). */
+  function valueAt(data, i) {
+    const travel = data.widths && !(data.widths[i] > 0);
+    if (colorMode === 'height') return data.points[3 * i + 2];
+    if (travel) return null;
+    const list = { speed: data.speeds, flow: data.flows, width: data.widths, layer: data.heights }[colorMode];
+    return list ? list[i] : null;
+  }
+
+  /** The range of the colour mode's value over every printing move shown. */
+  function colorRange() {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const line of paths.children) {
+      const data = line.userData;
+      const n = data.points.length / 3;
+      for (let i = 0; i < n; i++) {
+        // Printing moves only: travels (hops high over the print) don't stretch the range.
+        if (data.widths && !(data.widths[i] > 0)) continue;
+        const v = valueAt(data, i);
+        if (v == null || !Number.isFinite(v)) continue;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    return Number.isFinite(lo) ? [lo, hi] : [0, 1];
+  }
+
+  /** A colour for value `v` in the range: the accent colours for height, else the scale. */
+  function colorFor(v, out) {
+    const [lo, hi] = range;
+    const t = hi > lo ? Math.min(1, Math.max(0, (v - lo) / (hi - lo))) : 0.5;
+    if (colorMode === 'height') return out.copy(heightLow).lerp(heightHigh, t);
+    const x = t * (SCALE.length - 1);
+    const k = Math.min(SCALE.length - 2, Math.floor(x));
+    return out.copy(SCALE[k]).lerp(SCALE[k + 1], x - k);
+  }
+  const heightLow = new THREE.Color();
+  const heightHigh = new THREE.Color();
+  const travelColor = new THREE.Color();
+
+  function pathColors(data) {
+    const n = data.points.length / 3;
+    const out = new Float32Array(n * 3);
     const c = new THREE.Color();
-    const span = zMax - zMin;
-    for (let i = 0; i < path.length; i += 3) {
-      c.copy(low).lerp(high, span > 0 ? (path[i + 2] - zMin) / span : 0);
-      out[i] = c.r;
-      out[i + 1] = c.g;
-      out[i + 2] = c.b;
+    for (let i = 0; i < n; i++) {
+      const v = valueAt(data, i);
+      if (v == null) c.copy(travelColor);
+      else colorFor(v, c);
+      out[3 * i] = c.r;
+      out[3 * i + 1] = c.g;
+      out[3 * i + 2] = c.b;
     }
     return out;
   }
 
   function recolorPaths() {
-    const zMin = lastBounds ? lastBounds.min[2] : 0;
-    const zMax = lastBounds ? lastBounds.max[2] : 1;
+    heightLow.set(token('--accent'));
+    heightHigh.set(token('--accent2'));
+    travelColor.set(token('--view-grid'));
+    range = colorRange();
     for (const line of paths.children) {
       const geometry = /** @type {LineGeometry} */ (/** @type {Line2} */ (line).geometry);
-      geometry.setColors(pathColors(/** @type {any} */ (line).userData.points, zMin, zMax));
+      geometry.setColors(pathColors(line.userData));
     }
     if (showBeads) buildBeads();
+    applyProgress();
   }
 
   /** Steps per half circle of a bead's section (more: rounder, heavier). */
   const ROUND = 5;
   /** Points round a bead's section: each half circle's, both ends included. */
   const RING = 2 * (ROUND + 1);
+  /** Turns sharper than this get a round joint, the section pivoting round the corner. */
+  const SHARP = THREE.MathUtils.degToRad(25);
+  /** Pivot steps: one per this much turn. */
+  const PIVOT_STEP = THREE.MathUtils.degToRad(15);
+  /** Rings in a round end cap. */
+  const CAP = 4;
 
   /**
-   * One toolpath as a solid bead, in the bead's own shape (the G-code's model): a flat top and
-   * bottom with a half circle of the layer height on each side, the line width across, flat in
-   * the layer, from the nozzle down one layer height, swept along the path. Each section is the
-   * average of the two moves it joins, so the bead widens and narrows gradually from move to
-   * move; its points are shared along the path, so it shades smoothly round the sides. Travel
-   * moves leave a gap.
+   * One toolpath as solid beads, like a round nozzle laying plastic along it: each move swept
+   * with its own bead (the G-code's model: a flat top and bottom with a half circle of the
+   * layer height on each side, the line width across, from the nozzle down one layer height).
+   * Where the path bends gently the section follows the bend; at a sharp corner it pivots round
+   * the corner point, so the bead rounds the corner instead of notching it; each run of moves
+   * ends in a round cap. Travel moves leave a gap. Also returns, for each point, how many
+   * indices draw the bead up to that point (to show the print part way).
    * @param {Float32Array} points
    * @param {Float32Array} widths
    * @param {Float32Array} heights
@@ -185,12 +254,17 @@ export function createViewport(canvas) {
    */
   function beadGeometry(points, widths, heights, colors) {
     const n = points.length / 3;
-    const pos = new Float32Array(n * RING * 3);
-    const col = new Float32Array(n * RING * 3);
+    /** @type {number[]} */
+    const pos = [];
+    /** @type {number[]} */
+    const col = [];
+    /** @type {number[]} */
+    const index = [];
+    const upTo = new Uint32Array(n);
     // The section's outline, as (across, up) for a bead `w` wide and `h` tall, centred.
     const section = (w, h) => {
-      const r = Math.min(w, h) / 2;
-      const c = w / 2 - r;
+      const r = Math.max(1e-6, Math.min(w, h) / 2);
+      const c = Math.max(0, w / 2 - r);
       const out = [];
       for (let s = 0; s <= ROUND; s++) {
         const a = -Math.PI / 2 + (Math.PI * s) / ROUND;
@@ -202,64 +276,197 @@ export function createViewport(canvas) {
       }
       return out;
     };
-    // Across the path in the layer: the last good direction when a move is straight up.
-    let ax = 1;
-    let ay = 0;
-    for (let i = 0; i < n; i++) {
-      const a = Math.max(0, i - 1);
-      const b = Math.min(n - 1, i + 1);
-      const tx = points[3 * b] - points[3 * a];
-      const ty = points[3 * b + 1] - points[3 * a + 1];
+    let rings = 0;
+    let joined = false;
+    /**
+     * A ring at (x, y, z) across (ax, ay), w wide and h tall, in point i's colour. `inner`
+     * (at a sharp corner): the side of the section inside the turn stays at the corner's inner
+     * mitre point instead of swinging round, so the joint doesn't fold over itself.
+     * @param {{ bx: number, by: number, k: number, side: number } | null} [inner]
+     */
+    const ring = (x, y, z, ax, ay, w, h, i, inner = null) => {
+      for (const [u, v] of section(w, h)) {
+        if (inner && u * inner.side > 0) {
+          const d = Math.abs(u) * inner.k;
+          pos.push(x + inner.bx * d, y + inner.by * d, z - h / 2 + v);
+        } else {
+          pos.push(x + ax * u, y + ay * u, z - h / 2 + v);
+        }
+        col.push(colors[3 * i], colors[3 * i + 1], colors[3 * i + 2]);
+      }
+      if (joined) {
+        const [p, q] = [RING * (rings - 1), RING * rings];
+        for (let c = 0; c < RING; c++) {
+          const d = (c + 1) % RING;
+          index.push(p + c, q + c, q + d, p + c, q + d, p + d);
+        }
+      }
+      rings++;
+      joined = true;
+    };
+    // The direction of move i (into point i) in the layer; the last good one when it's vertical.
+    const dirs = new Float32Array(2 * n);
+    let [dx, dy] = [1, 0];
+    for (let i = 1; i < n; i++) {
+      const tx = points[3 * i] - points[3 * i - 3];
+      const ty = points[3 * i + 1] - points[3 * i - 2];
       const len = Math.hypot(tx, ty);
-      if (len > 1e-9) {
-        ax = -ty / len;
-        ay = tx / len;
-      }
-      // The bead here: halfway between the move that ends here and the one that leaves (either
-      // alone next to a travel).
-      const into = widths[i] > 0 ? [widths[i], heights[i]] : null;
-      const out = i + 1 < n && widths[i + 1] > 0 ? [widths[i + 1], heights[i + 1]] : null;
-      const [w, h] = into && out ? [(into[0] + out[0]) / 2, (into[1] + out[1]) / 2] : into || out || [0, 0];
-      const [x, y, z] = [points[3 * i], points[3 * i + 1], points[3 * i + 2]];
-      section(w, h).forEach(([u, v], c) => {
-        pos.set([x + ax * u, y + ay * u, z - h / 2 + v], (i * RING + c) * 3);
-        col.set(colors.subarray(3 * i, 3 * i + 3), (i * RING + c) * 3);
-      });
+      if (len > 1e-9) [dx, dy] = [tx / len, ty / len];
+      dirs[2 * i] = dx;
+      dirs[2 * i + 1] = dy;
     }
-    let faces = 0;
-    for (let i = 1; i < n; i++) if (widths[i] > 0) faces++;
-    const index = new Uint32Array(faces * RING * 6);
-    let at = 0;
-    for (let i = 0; i + 1 < n; i++) {
-      if (!(widths[i + 1] > 0)) continue;
-      const [p, q] = [RING * i, RING * (i + 1)];
-      for (let c = 0; c < RING; c++) {
-        const d = (c + 1) % RING;
-        index.set([p + c, q + c, q + d, p + c, q + d, p + d], at);
-        at += 6;
+    const printing = (i) => i > 0 && i < n && widths[i] > 0;
+    const at = (i) => [points[3 * i], points[3 * i + 1], points[3 * i + 2]];
+    for (let i = 0; i < n; i++) {
+      const into = printing(i);
+      const out = printing(i + 1);
+      if (!into && !out) {
+        joined = false;
+        upTo[i] = index.length;
+        continue;
       }
+      const [x, y, z] = at(i);
+      if (!into) {
+        // A run starts: a round cap behind the point, the first move's bead.
+        const [ux, uy] = [dirs[2 * i + 2], dirs[2 * i + 3]];
+        const [w, h] = [widths[i + 1], heights[i + 1]];
+        joined = false;
+        for (let c = 0; c <= CAP; c++) {
+          const a = (Math.PI / 2) * (1 - c / CAP);
+          const back = (w / 2) * Math.sin(a);
+          ring(x - ux * back, y - uy * back, z, -uy, ux, w * Math.cos(a), h, i);
+        }
+      } else if (!out) {
+        // A run ends: the last move's bead up to the point, then a round cap ahead of it.
+        const [ux, uy] = [dirs[2 * i], dirs[2 * i + 1]];
+        const [w, h] = [widths[i], heights[i]];
+        for (let c = 0; c <= CAP; c++) {
+          const a = (Math.PI / 2) * (c / CAP);
+          const ahead = (w / 2) * Math.sin(a);
+          ring(x + ux * ahead, y + uy * ahead, z, -uy, ux, w * Math.cos(a), h, i);
+        }
+      } else {
+        // Between two moves: follow a gentle bend, pivot round a sharp one.
+        const [ix, iy] = [dirs[2 * i], dirs[2 * i + 1]];
+        const [ox, oy] = [dirs[2 * i + 2], dirs[2 * i + 3]];
+        const turn = Math.atan2(ix * oy - iy * ox, ix * ox + iy * oy);
+        const [w0, h0, w1, h1] = [widths[i], heights[i], widths[i + 1], heights[i + 1]];
+        if (Math.abs(turn) < SHARP) {
+          const bx = -(iy + oy);
+          const by = ix + ox;
+          const len = Math.hypot(bx, by) || 1;
+          // Mitred, so the bead keeps its width through the bend.
+          const mitre = 1 / Math.max(0.5, Math.cos(turn / 2));
+          ring(x, y, z, bx / len, by / len, ((w0 + w1) / 2) * mitre, (h0 + h1) / 2, i);
+        } else {
+          const steps = Math.ceil(Math.abs(turn) / PIVOT_STEP);
+          const a0 = Math.atan2(iy, ix);
+          // Inside the turn: the bisector of the two moves' sides, out to where they meet.
+          const side = Math.sign(turn);
+          let bx = (-iy - oy) * side;
+          let by = (ix + ox) * side;
+          const blen = Math.hypot(bx, by);
+          if (blen > 1e-9) {
+            bx /= blen;
+            by /= blen;
+          } else {
+            [bx, by] = [-ix, -iy]; // straight back on itself
+          }
+          const inner = { bx, by, k: 1 / Math.max(0.5, Math.cos(turn / 2)), side };
+          for (let s = 0; s <= steps; s++) {
+            const f = s / steps;
+            const a = a0 + turn * f;
+            ring(x, y, z, -Math.sin(a), Math.cos(a), w0 + (w1 - w0) * f, h0 + (h1 - h0) * f, i, inner);
+          }
+        }
+      }
+      upTo[i] = index.length;
+      if (!out) joined = false;
     }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    g.setIndex(new THREE.BufferAttribute(index, 1));
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+    g.setIndex(new THREE.BufferAttribute(rings * RING > 65535 ? new Uint32Array(index) : new Uint16Array(index), 1));
     g.computeVertexNormals();
-    return g;
+    return { geometry: g, upTo };
   }
 
   /** The beads for every toolpath shown as lines, in the same colours and parts. */
   function buildBeads() {
     clear(beads);
-    const zMin = lastBounds ? lastBounds.min[2] : 0;
-    const zMax = lastBounds ? lastBounds.max[2] : 1;
     for (const line of paths.children) {
-      const data = /** @type {any} */ (line).userData;
+      const data = line.userData;
       if (!data.widths || !data.heights) continue;
-      const mesh = new THREE.Mesh(beadGeometry(data.points, data.widths, data.heights, pathColors(data.points, zMin, zMax)), beadMaterial);
+      const { geometry, upTo } = beadGeometry(data.points, data.widths, data.heights, pathColors(data));
+      const mesh = new THREE.Mesh(geometry, beadMaterial);
       mesh.userData.part = data.part;
+      mesh.userData.from = data.from;
+      mesh.userData.upTo = upTo;
       mesh.visible = !hiddenParts.has(data.part);
       beads.add(mesh);
     }
+  }
+
+  // ---- Print progress: the toolpath up to one move, and a nozzle there ----
+
+  /** How much of the print is shown, 0..1 (1: all of it, no nozzle). */
+  let progress = 1;
+  /** Points in all the toolpaths shown, in print order. */
+  let totalPoints = 0;
+  const nozzle = makeNozzle();
+  nozzle.visible = false;
+  scene.add(nozzle);
+
+  /** A generic nozzle: a cone with its tip at the origin, a hex block and a heater above. */
+  function makeNozzle() {
+    const metal = new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.35, metalness: 0.7 });
+    const block = new THREE.MeshStandardMaterial({ color: 0x9aa3b2, roughness: 0.5, metalness: 0.5 });
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1, 24), metal);
+    tip.rotation.x = -Math.PI / 2;
+    tip.position.z = 0.5;
+    const hex = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.6, 6), metal);
+    hex.rotation.x = Math.PI / 2;
+    hex.position.z = 1.3;
+    const heater = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 1.2), block);
+    heater.position.z = 2.2;
+    const g = new THREE.Group();
+    g.add(tip, hex, heater);
+    return g;
+  }
+
+  /** Shows the toolpaths (lines and beads) up to the current progress, the nozzle at its end. */
+  function applyProgress() {
+    const shown = progress >= 1 ? Infinity : Math.round(progress * totalPoints);
+    let last = null;
+    for (const line of paths.children) {
+      const data = line.userData;
+      const n = data.points.length / 3;
+      const k = Math.max(0, Math.min(n, shown - data.from));
+      const geometry = /** @type {any} */ (/** @type {Line2} */ (line).geometry);
+      geometry.instanceCount = shown === Infinity ? Infinity : Math.max(0, k - 1);
+      if (k > 0 && shown !== Infinity && !hiddenParts.has(data.part)) last = { data, i: k - 1 };
+    }
+    for (const mesh of beads.children) {
+      const { from, upTo } = mesh.userData;
+      const n = upTo.length;
+      const k = Math.max(0, Math.min(n, shown - from));
+      /** @type {THREE.Mesh} */ (mesh).geometry.setDrawRange(0, shown === Infinity || k >= n ? Infinity : k > 0 ? upTo[k - 1] : 0);
+    }
+    nozzle.visible = Boolean(last) && mode !== 'shape';
+    if (last) {
+      const { data, i } = last;
+      const w = data.widths ? (data.widths[i] > 0 ? data.widths[i] : data.widths.find((v) => v > 0) || 1) : 1;
+      const size = Math.max(4 * w, 0.03 * modelSize());
+      nozzle.scale.setScalar(size);
+      nozzle.position.set(data.points[3 * i], data.points[3 * i + 1], data.points[3 * i + 2]);
+    }
+    requestRender();
+    return last;
+  }
+
+  function modelSize() {
+    const b = lastBounds;
+    return b ? Math.hypot(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]) : 100;
   }
 
   /** @param {THREE.Group} group */
@@ -276,13 +483,14 @@ export function createViewport(canvas) {
       for (const child of group.children) child.visible = !hiddenParts.has(child.userData.part);
     }
     for (const child of beads.children) child.visible = !hiddenParts.has(child.userData.part);
-    requestRender();
+    applyProgress();
   }
 
   function applyMode() {
     shapes.visible = mode !== 'path';
     paths.visible = mode !== 'shape' && !showBeads;
     beads.visible = mode !== 'shape' && showBeads;
+
     // With both visible, the shape turns see-through so the toolpath on its surface shows.
     for (const m of [meshMaterial, insideMaterial]) {
       m.transparent = mode === 'both';
@@ -290,7 +498,7 @@ export function createViewport(canvas) {
       m.depthWrite = mode !== 'both';
       m.needsUpdate = true;
     }
-    requestRender();
+    applyProgress();
   }
 
   /** The directions the set views look from (toward the model). Top is tipped a hair toward
@@ -460,17 +668,24 @@ export function createViewport(canvas) {
         curves.add(line);
       });
       clear(paths);
-      const { widths, heights } = /** @type {any} */ (result.paths);
+      const { widths, heights, speeds, flows } = /** @type {any} */ (result.paths);
+      totalPoints = 0;
       eachPolyline(result.paths, (points, i, from) => {
         const g = new LineGeometry();
         g.setPositions(points);
         const line = new Line2(g, lineMaterial);
-        line.userData.points = points;
-        if (widths && heights) {
-          line.userData.widths = widths.subarray(from, from + points.length / 3);
-          line.userData.heights = heights.subarray(from, from + points.length / 3);
-        }
-        line.userData.part = parts.paths[i] ?? -1;
+        const n = points.length / 3;
+        const slice = (list) => (list ? list.subarray(from, from + n) : undefined);
+        line.userData = {
+          points,
+          widths: slice(widths),
+          heights: slice(heights),
+          speeds: slice(speeds),
+          flows: slice(flows),
+          part: parts.paths[i] ?? -1,
+          from: totalPoints,
+        };
+        totalPoints += n;
         paths.add(line);
       });
       recolorPaths();
@@ -528,6 +743,54 @@ export function createViewport(canvas) {
       return camera === ortho;
     },
 
+    /** What the toolpath can be coloured by, with labels and units. */
+    colorModes: COLOR_MODES,
+
+    /**
+     * Colours the toolpath (lines and beads) by its height, speed, flow, line width or layer
+     * height.
+     * @param {keyof typeof COLOR_MODES} next
+     */
+    setColorMode(next) {
+      colorMode = next in COLOR_MODES ? next : 'height';
+      recolorPaths();
+    },
+
+    /** The legend: the colour mode, its range and unit, and the colours from low to high. */
+    legend() {
+      const m = COLOR_MODES[colorMode];
+      const stops = colorMode === 'height' ? [heightLow, heightHigh] : SCALE;
+      return { mode: colorMode, label: m.label, unit: m.unit, digits: m.digits, min: range[0], max: range[1], colors: stops.map((c) => `#${c.getHexString()}`) };
+    },
+
+    /**
+     * Shows the print up to a fraction of its moves (1: all of it), with a nozzle where it's
+     * got to. Returns where that is: the point and its move's values, or null.
+     * @param {number} f 0 to 1
+     */
+    setProgress(f) {
+      progress = Math.min(1, Math.max(0, f));
+      const last = applyProgress();
+      if (!last) return null;
+      const { data, i } = last;
+      const pick = (list) => (list ? list[i] : 0);
+      return {
+        x: data.points[3 * i],
+        y: data.points[3 * i + 1],
+        z: data.points[3 * i + 2],
+        travel: Boolean(data.widths) && !(data.widths[i] > 0),
+        speed: pick(data.speeds),
+        flow: pick(data.flows),
+        width: pick(data.widths),
+        layer: pick(data.heights),
+      };
+    },
+
+    /** How many points the toolpaths have, in print order (for the progress slider's steps). */
+    get pathPoints() {
+      return totalPoints;
+    },
+
     /**
      * Hides these printed parts (indices into the result's prints) with the shapes only they are
      * made from; shows the rest.
@@ -562,9 +825,11 @@ export function createViewport(canvas) {
       };
       mode = show === 'toolpath' ? 'path' : show === 'shape' ? 'shape' : 'both';
       applyMode();
-      // The AI sees the whole model: every part.
+      // The AI sees the whole model: every part, the whole print, no nozzle.
       const hidden = hiddenParts;
+      const shownProgress = progress;
       hiddenParts = new Set();
+      progress = 1;
       applyParts();
       renderer.setPixelRatio(1);
       renderer.setSize(size, size, false);
@@ -615,6 +880,7 @@ export function createViewport(canvas) {
 
       // Back to the view on screen.
       hiddenParts = hidden;
+      progress = shownProgress;
       applyParts();
       mode = saved.mode;
       persp.up.copy(saved.up);

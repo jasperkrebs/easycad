@@ -3,6 +3,26 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-01 (night): toolpath colours, print progress, round beads
+
+**Landed:**
+- **Colour by** (in the view bar, remembered on the device): height, speed (mm/s, as the G-code
+  writes it), volumetric flow (mm³/s), line width or layer height, with a legend of the range
+  over the printing moves (travels grey, and left out of the range). Lines and beads alike. The
+  engine now sends each move's speed and flow with its width and height.
+- **Print progress:** a slider under the 3D view scrubs through the toolpath in print order, a
+  step per move (drag it, or scroll over it; Shift for bigger steps), with a generic nozzle where
+  it's got to and that move's height, speed, flow and bead. Lines and beads alike; the AI's
+  snapshot always sees the whole print.
+- **Round beads:** the line-width view sweeps a round bead along the path, like a nozzle laying
+  plastic: each move keeps its own bead; at a sharp corner (over 25°) the section pivots round
+  the corner point on the outside while the inside stays at the corner's mitre, so a staircase
+  seam reads as rounded steps instead of sawtooth notches; each run ends in a round cap.
+- The robot-arm printing idea is written down in the roadmap (Later).
+
+**Open:** the HUD still counts primer lines as layers; the progress slider steps by points, not
+by layers.
+
 ## 2026-11-01 (evening): the bend stool with legs, matching EasyGCode
 
 **Why:** the template only built the round seat; the owner's stool (their EasyGCode settings of

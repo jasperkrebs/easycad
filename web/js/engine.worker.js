@@ -27,7 +27,7 @@ function answer(msg) {
     const r = evaluate(msg.source, msg.values, msg.quality);
     const ms = performance.now() - t0;
     const arrays = [r.mesh.positions, r.mesh.indices, r.curves.points, r.curves.starts, r.paths.points, r.paths.starts];
-    if (r.paths.widths) arrays.push(r.paths.widths, r.paths.heights);
+    if (r.paths.widths) arrays.push(r.paths.widths, r.paths.heights, r.paths.speeds, r.paths.flows);
     return { result: { ...r, ms }, transfer: arrays.map((a) => a.buffer) };
   }
   throw new Error(`unknown request: ${msg.type}`);
