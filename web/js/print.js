@@ -347,14 +347,6 @@ export function renderPrinterSettings(host, id, profile, onChange) {
     }
     host.append(row);
   }
-  if (PRINTERS[id].machine) {
-    host.append(
-      el('p', {
-        className: 'hint',
-        text: 'The start G-code (EasyGCode’s) uses the G1’s saved bed mesh rather than probing for each print: run BED_LEVEL after a nozzle change, after moving the machine, and now and then. The limits and material presets come from Ginger’s wiki (wiki.gingeradditive.com).',
-      }),
-    );
-  }
   const reset = el('button', { className: 'btn', type: 'button', text: 'Back to the defaults' });
   reset.addEventListener('click', () => {
     Object.assign(profile, defaults(id));
@@ -480,7 +472,7 @@ export function renderPrint(statsHost, checksHost, prints, printerId, profile) {
     statsHost.append(
       el('p', {
         className: 'hint',
-        text: 'Nothing to print yet. A recipe prints a toolpath with a line like: print path (where path = vase_spiral(wall, layer: 0.3 mm, width: 0.6 mm), or toolpath(curves, …) for any curves).',
+        text: 'Nothing to print.',
       }),
     );
     return;

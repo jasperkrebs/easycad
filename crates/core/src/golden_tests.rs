@@ -495,7 +495,7 @@ fn thread_connector_recipe_matches_easygcode() {
     );
 }
 
-const SPOON: &str = include_str!("../../../web/templates/spoon.easycad");
+const SPOON: &str = include_str!("../../../fixtures/recipes/spoon.easycad");
 
 /// The spoon template against EasyGCode's spoon: its defaults in volumetric flow mode; one
 /// printed from the stick's tip with a thicker stick bead on the filament printer; and one with

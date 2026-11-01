@@ -129,7 +129,6 @@ jobs:
           npx playwright install --with-deps chromium
           node scripts/smoke-test.cjs
           node scripts/agent-test.cjs
-          node scripts/graph-test.cjs
           node scripts/request-test.cjs
       - name: App config (the AI proxy's address, when it's deployed, where feature requests go, and this version)
         env:

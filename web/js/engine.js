@@ -14,8 +14,6 @@
  *   mesh: { positions: Float32Array, indices: Uint32Array },
  *   curves: { points: Float32Array, starts: Uint32Array },
  *   paths: { points: Float32Array, starts: Uint32Array },
- *   highlight: { mesh: { positions: Float32Array, indices: Uint32Array },
- *     curves: { points: Float32Array, starts: Uint32Array }, paths: { points: Float32Array, starts: Uint32Array } },
  *   ms: number }} RunResult
  */
 
@@ -37,7 +35,7 @@ export function createEngine() {
   /** Requests the worker hasn't answered yet, by id. @type {Map<number, { msg: object, resolve: (r: any) => void, reject: (e: Error) => void }>} */
   const pending = new Map();
 
-  /** @typedef {{ source: string, values: object, quality: string, highlight: string, resolve: (r: RunResult | null) => void, reject: (e: Error) => void }} Job */
+  /** @typedef {{ source: string, values: object, quality: string, resolve: (r: RunResult | null) => void, reject: (e: Error) => void }} Job */
   /** @type {Job | null} */
   let queued = null;
   let running = false;
@@ -102,7 +100,7 @@ export function createEngine() {
     }
     queued = null;
     running = true;
-    send({ type: 'evaluate', source: job.source, values: job.values, quality: job.quality, highlight: job.highlight })
+    send({ type: 'evaluate', source: job.source, values: job.values, quality: job.quality })
       .then(job.resolve, job.reject)
       .finally(() => {
         running = false;
@@ -120,13 +118,12 @@ export function createEngine() {
      * @param {string} source recipe text
      * @param {Record<string, number | boolean | string>} values setting values, each in its own unit
      * @param {'preview' | 'final'} quality
-     * @param {string} [highlight] a step to draw on its own too (the graph's selected component)
      * @returns {Promise<RunResult | null>} null when a newer run replaced this one
      */
-    evaluate(source, values, quality, highlight = '') {
+    evaluate(source, values, quality) {
       return new Promise((resolve, reject) => {
         if (queued) queued.resolve(null);
-        queued = { source, values, quality, highlight, resolve, reject };
+        queued = { source, values, quality, resolve, reject };
         pump();
       });
     },
@@ -158,30 +155,15 @@ export function createEngine() {
       return send({ type: 'catalog' });
     },
 
-    /** Every step with its inputs, for the graph's palette. @returns {Promise<any[]>} */
-    palette() {
-      return send({ type: 'palette' });
-    },
-
     /**
-     * The recipe as components and wires (see easycad_core::graph). Fails with the syntax
-     * error when the recipe doesn't parse.
+     * Names the project's printer in the recipe (its `printer "…"` line) and returns the new
+     * recipe text. Fails with a readable message.
      * @param {string} source
-     * @returns {Promise<any>}
+     * @param {string} name
+     * @returns {Promise<string>}
      */
-    graph(source) {
-      return send({ type: 'graph', source });
-    },
-
-    /**
-     * Runs a graph command on the recipe text and returns `{ source, name }`: the edited
-     * recipe, and the name of anything added. Fails with a readable message.
-     * @param {string} source
-     * @param {Record<string, any>} command e.g. `{ op: 'setInput', step, stage, input, text }`
-     * @returns {Promise<{ source: string, name: string | null }>}
-     */
-    editGraph(source, command) {
-      return send({ type: 'edit', source, command });
+    setPrinter(source, name) {
+      return send({ type: 'setPrinter', source, name });
     },
   };
 }

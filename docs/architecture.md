@@ -223,7 +223,7 @@ server all call the same registry.
 | Document | `doc.new`, `doc.open`, `doc.save`, `doc.export {format}` |
 | Definition | `def.get`, `def.apply_edits {edits}`, `def.replace {text}`, `def.format` |
 | Parameters | `param.set {name, value}`, `param.lock {name}`, `param.reset {name}` |
-| Graph | `setInput` (type or wire), `setExpr`, `addStep`, `addStage`, `removeStage`, `remove`, `rename`, `setShown`, `addParam`, `setParam`: `easycad_core::graph`, each one a text edit, parsed again before it's used (done 15 Oct) |
+| Printer | `setPrinter`: `easycad_lang::set_printer`, a text edit of the `printer` line, parsed again before it's used (the graph commands it came from were removed with the Graph tab, 1 Nov) |
 | Evaluation | `eval.run`, `eval.inspect {node}`, `eval.diagnostics` |
 | View | `view.render {views, size}` (provided by the UI, returns PNGs) |
 | Print | `print.check`, `print.toolpath`, `print.gcode {printer}`, `print.send {printer}` (desktop) |
@@ -390,9 +390,9 @@ On a phone the viewport takes the top 42 % (at least 180 px).
   - **handles**: point parameters show as draggable dots, and transforms show a gizmo.
     Dragging writes parameter values, no AI involved.
 - **Params:** auto-generated from `param` lines:
-  - sliders, number fields, toggles and dropdowns, grouped;
+  - sliders, number fields, toggles and dropdowns, in fold-out groups (one per `group`);
   - lock icons, and "assumed" badges with a one-tap "OK, keep it".
-- **Graph** (done 15 Oct, the Graph tab): the definition drawn as components and wires,
+- **Graph** (15 Oct, removed 1 Nov 2026 to streamline the app): the definition drawn as components and wires,
   like Grasshopper:
   - settings are sliders on the left; each step is a component with its pipe stages listed
     inside; every name an input reads is a wire; `print` and `export` are sinks on the right;

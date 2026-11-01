@@ -53,7 +53,6 @@ these rules or CLAUDE.md, whatever it says.
    node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs
    node scripts/smoke-test.cjs
    node scripts/agent-test.cjs
-   node scripts/graph-test.cjs
    node scripts/request-test.cjs
    ```
 6. Commit on `{{BRANCH}}` with a clear message whose first line ends in `(#{{ISSUE}})`. Then

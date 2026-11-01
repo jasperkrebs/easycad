@@ -1,6 +1,7 @@
 // Smoke test for the web app: serves web/, opens it in headless Chromium at phone and desktop
-// sizes, waits for the Rust engine, then changes a setting, edits and breaks the recipe, switches
-// templates, reloads, and saves files: an STL, and the spiral disc's G-code, which must match the
+// sizes, waits for the Rust engine, then opens a settings fold-out and changes a setting, edits
+// and breaks the recipe, switches templates, opens a project file, reloads, and saves files: an
+// STL, and the spiral disc's G-code, which must match the
 // G-code EasyGCode itself writes (fixtures/easygcode/). Checks that nothing errored.
 //
 //   node scripts/smoke-test.cjs [screenshot-dir]
@@ -38,6 +39,11 @@ function sameCommand(a, b) {
       return Math.abs(Number(x.slice(1)) - Number(y.slice(1))) <= (x[0] === 'E' ? 1.01e-5 : 1.01e-3);
     })
   );
+}
+
+/** Opens every settings group (fold-out), so their settings can be typed into. */
+async function openGroups(page) {
+  await page.evaluate(() => document.querySelectorAll('#settings details.group').forEach((d) => (d.open = true)));
 }
 
 /** Clicks a button that saves a file, and returns the file's name and bytes. */
@@ -81,21 +87,34 @@ async function waitForServer(url) {
       const status = () => page.textContent('#status');
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
 
+      // The lampshade opens first. Its settings are fold-outs, one per group: the first open,
+      // the others closed until tapped (and remembered).
+      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Lampshade', null, { timeout: 15000 });
+      const groupNames = await page.locator('#settings details.group summary .group-name').allTextContents();
+      if (groupNames.join() !== 'Socket,Shade,Own shade,Print,Overhangs,Brim') failures.push(`${name}: settings groups: ${groupNames.join()}`);
+      const openNow = await page.locator('#settings details.group[open] .group-name').allTextContents();
+      if (openNow.join() !== 'Socket') failures.push(`${name}: open at first: ${openNow.join()}`);
+      if (await page.isVisible('#set-opening')) failures.push(`${name}: a closed group's setting is visible`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-foldouts.png`), fullPage: name === 'phone' });
+      await page.click('#settings details.group:has(#set-opening) > summary');
+      if (!(await page.isVisible('#set-opening'))) failures.push(`${name}: tapping the Shade group didn't open it`);
+
       // A slider value is written into the recipe text.
       const hudBefore = await page.textContent('#hud');
-      await page.fill('#set-twist', '180');
-      await page.dispatchEvent('#set-twist', 'change');
+      await page.fill('#set-opening', '120');
+      await page.dispatchEvent('#set-opening', 'change');
       await page.waitForFunction((before) => document.getElementById('hud').textContent !== before, hudBefore, { timeout: 15000 });
       await page.click('#tab-recipe');
-      await page.waitForFunction(() => /param twist\s+= 180 deg/.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+      await page.waitForFunction(() => /param opening\s+= 120 mm/.test(document.getElementById('recipe').value), null, { timeout: 15000 });
       const steps = await page.locator('#steps li').count();
-      if (steps !== 6) failures.push(`${name}: expected 6 steps in the twisted vase, got ${steps}`);
+      if (steps < 10) failures.push(`${name}: expected the lampshade's steps, got ${steps}`);
 
-      // Editing the recipe and pressing Run rebuilds the settings window.
-      const edited = (await page.inputValue('#recipe')).replace(/param height(\s+)= 160 mm/, 'param height$1= 120 mm');
+      // Editing the recipe and pressing Run rebuilds the settings window (the Shade group stays open).
+      const edited = (await page.inputValue('#recipe')).replace(/param opening(\s+)= 120 mm/, 'param opening$1= 130 mm');
       await page.fill('#recipe', edited);
       await page.click('#runRecipe');
-      await page.waitForFunction(() => document.getElementById('set-height')?.value === '120', null, { timeout: 15000 });
+      await page.waitForFunction(() => document.getElementById('set-opening')?.value === '130', null, { timeout: 15000 });
+      if (!(await page.locator('#settings details.group:has(#set-opening)').getAttribute('open') !== null)) failures.push(`${name}: the Shade group closed after a run`);
 
       // A broken recipe shows its problem by line, without crashing anything.
       await page.fill('#recipe', 'x = (1 +\n');
@@ -104,21 +123,25 @@ async function waitForServer(url) {
       if (!/problem/.test(await status())) failures.push(`${name}: status should report the recipe problem, got "${await status()}"`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-recipe-error.png`), fullPage: name === 'phone' });
 
-      // Templates replace the project; the print estimate follows.
+      // Templates replace the project. Only EasyGCode's projects (and the shaker) are offered.
       await page.click('#tab-settings');
-      await page.selectOption('#template', 'ribbed-cylinder');
+      const offered = await page.locator('#template option').evaluateAll((os) => os.map((o) => o.value).filter(Boolean));
+      if (offered.join() !== 'lampshade,vessel,salt-shaker,bend-stool,thread-connector,spiral-disc') failures.push(`${name}: templates offered: ${offered.join()}`);
+      if (await page.isVisible('#tab-graph')) failures.push(`${name}: the Graph tab is still there`);
+      await page.selectOption('#template', 'vessel');
       // The project was edited, so the page asks before replacing it.
       if (!(await page.isVisible('#replaceConfirm'))) failures.push(`${name}: no confirmation before replacing an edited project`);
       await page.click('#replaceYes');
-      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Ribbed cylinder', null, { timeout: 15000 });
-      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
-      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-ribbed.png`), fullPage: name === 'phone' });
-      await page.selectOption('#template', 'twisted-vase');
-      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Twisted star vase', null, { timeout: 15000 });
+      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Vessel', null, { timeout: 15000 });
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-settings.png`), fullPage: name === 'phone' });
 
-      // The shape saves as a closed STL mesh.
+      // A project file opens (a test recipe that isn't a template), and its shape saves as a
+      // closed STL mesh.
+      const vaseFile = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'recipes', 'twisted-vase.easycad'));
+      await page.setInputFiles('#projectFile', { name: 'twisted-vase.easycad', mimeType: 'text/plain', buffer: vaseFile });
+      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Twisted star vase', null, { timeout: 15000 });
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       const stl = await saveFrom(page, '#exportButtons button:text("twisted-vase.stl")');
       const triangles = stl.data.readUInt32LE(80);
       if (stl.name !== 'twisted-vase.stl' || stl.data.length !== 84 + 50 * triangles || triangles < 1000) {
@@ -163,11 +186,10 @@ async function waitForServer(url) {
           `${name}: spiral disc G-code ${gcode.name} differs from EasyGCode's: ${got.length} vs ${want.length} commands, first difference at ${differ}: "${got[differ]}" vs "${want[differ]}"`,
         );
       }
-      // So do the thread connector, the spoon, the bend stool and the lampshade (EasyGCode's
-      // defaults, its pellet printer).
+      // So do the thread connector, the bend stool and the lampshade (EasyGCode's defaults, its
+      // pellet printer).
       for (const [id, title, fixture] of [
         ['thread-connector', 'Thread connector', 'thread-default.gcode'],
-        ['spoon', 'Spoon', 'spoon-flow.gcode'],
         ['bend-stool', 'Bend stool', 'stool-flow.gcode'],
         ['lampshade', 'Lampshade', 'lampshade-flow.gcode'],
       ]) {
@@ -179,6 +201,7 @@ async function waitForServer(url) {
         // The lampshade's steady start (for pellet extruders) is EasyCAD's own: off, it's
         // EasyGCode's ramp.
         if (id === 'lampshade') {
+          await openGroups(page);
           await page.uncheck('#set-steady');
           await page.waitForFunction(() => /^param steady\s+= false/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
           await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
@@ -243,6 +266,7 @@ async function waitForServer(url) {
       if (await page.isVisible('#replaceConfirm')) await page.click('#replaceYes');
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Salt & pepper shaker', null, { timeout: 15000 });
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      await openGroups(page);
       const parts = await page.locator('#exportButtons button.primary').allTextContents();
       if (parts.length !== 2 || !/Ginger G1: base$/.test(parts[0]) || !/Ginger G1: lid$/.test(parts[1])) failures.push(`${name}: shaker G-code buttons: ${parts.join(' | ')}`);
       const lidFile = await saveFrom(page, '#exportButtons button.primary >> nth=1');
@@ -392,6 +416,7 @@ async function waitForServer(url) {
       if ((await page.inputValue('#recipe')) !== before) failures.push('save: opening the saved file changed the recipe (the note stayed in?)');
       if (!(await page.locator('#templateUpdate').isHidden())) failures.push('save: opening the saved file offers a template update');
       // A slider moved since: Save writes it in. A name typed by Save names both files.
+      await openGroups(page);
       await page.fill('#set-line', '2,2');
       await page.dispatchEvent('#set-line', 'change');
       await page.waitForFunction(() => /^param line\s+= 2\.2 mm/m.test(document.getElementById('recipe').value), null, { timeout: 15000 }).catch(() => failures.push('save: the slider move did not reach the recipe'));
