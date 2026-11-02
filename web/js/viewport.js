@@ -59,6 +59,13 @@ export function createViewport(canvas) {
   // Toolpaths: fat lines coloured by height, or (built only while they're shown) solid beads.
   // Curves: thin lines.
   const lineMaterial = new LineMaterial({ linewidth: 1.1, vertexColors: true, worldUnits: false });
+  // To show the print from a chosen move on, segments before `clipFrom` (each toolpath's own,
+  // set just before it's drawn) are moved off screen.
+  lineMaterial.uniforms.clipFrom = { value: 0 };
+  lineMaterial.vertexShader = lineMaterial.vertexShader.replace(
+    'void main() {',
+    'uniform float clipFrom;\nvoid main() {\n\tif ( float( gl_InstanceID ) < clipFrom ) { gl_Position = vec4( 0.0, 0.0, 2.0, 1.0 ); return; }',
+  );
   const paths = new THREE.Group();
   // Slightly see-through, so the beads behind and the inside of the part show through them.
   const beadMaterial = new THREE.MeshStandardMaterial({
@@ -158,6 +165,10 @@ export function createViewport(canvas) {
   let colorMode = 'height';
   /** The colour range of what's shown: [lowest, highest] of the colour mode's value. */
   let range = [0, 1];
+  /** The range of every printing move, before any set by hand. */
+  let autoRange = [0, 1];
+  /** Ranges set by hand, per colour mode: [low, high], either one null for automatic. */
+  const ranges = /** @type {Record<string, [number | null, number | null]>} */ ({});
 
   /** The value move `i` of a toolpath is coloured by (null: a travel, drawn grey). */
   function valueAt(data, i) {
@@ -219,7 +230,9 @@ export function createViewport(canvas) {
     heightLow.set(token('--accent'));
     heightHigh.set(token('--accent2'));
     travelColor.set(token('--view-grid'));
-    range = colorRange();
+    autoRange = colorRange();
+    const set = ranges[colorMode] || [null, null];
+    range = [set[0] ?? autoRange[0], set[1] ?? autoRange[1]];
     for (const line of paths.children) {
       const geometry = /** @type {LineGeometry} */ (/** @type {Line2} */ (line).geometry);
       geometry.setColors(pathColors(line.userData));
@@ -409,13 +422,16 @@ export function createViewport(canvas) {
 
   // ---- Print progress: the toolpath up to one move, and a nozzle there ----
 
-  /** How much of the print is shown, 0..1 (1: all of it, no nozzle). */
+  /** Which part of the print is shown, as fractions of its moves: from, to (0, 1: all of it). */
+  let windowFrom = 0;
   let progress = 1;
   /** Points in all the toolpaths shown, in print order. */
   let totalPoints = 0;
   const nozzle = makeNozzle();
-  nozzle.visible = false;
   scene.add(nozzle);
+  // Compiled now, so the first scroll of the progress slider doesn't stall while it compiles.
+  renderer.compile(scene, camera);
+  nozzle.visible = false;
 
   /** A generic nozzle: a cone with its tip at the origin, a hex block and a heater above. */
   function makeNozzle() {
@@ -434,9 +450,13 @@ export function createViewport(canvas) {
     return g;
   }
 
-  /** Shows the toolpaths (lines and beads) up to the current progress, the nozzle at its end. */
+  /**
+   * Shows the toolpaths (lines and beads) from the window's start to its end; when the end is
+   * short of the whole print, the nozzle is there.
+   */
   function applyProgress() {
     const shown = progress >= 1 ? Infinity : Math.round(progress * totalPoints);
+    const start = windowFrom <= 0 ? 0 : Math.round(windowFrom * totalPoints);
     let last = null;
     for (const line of paths.children) {
       const data = line.userData;
@@ -444,13 +464,18 @@ export function createViewport(canvas) {
       const k = Math.max(0, Math.min(n, shown - data.from));
       const geometry = /** @type {any} */ (/** @type {Line2} */ (line).geometry);
       geometry.instanceCount = shown === Infinity ? Infinity : Math.max(0, k - 1);
+      // Segment j runs from point j to j + 1: hidden while it starts before the window.
+      data.clipFrom = Math.max(0, Math.min(n, start - data.from));
       if (k > 0 && shown !== Infinity && !hiddenParts.has(data.part)) last = { data, i: k - 1 };
     }
     for (const mesh of beads.children) {
       const { from, upTo } = mesh.userData;
       const n = upTo.length;
       const k = Math.max(0, Math.min(n, shown - from));
-      /** @type {THREE.Mesh} */ (mesh).geometry.setDrawRange(0, shown === Infinity || k >= n ? Infinity : k > 0 ? upTo[k - 1] : 0);
+      const end = shown === Infinity || k >= n ? (upTo[n - 1] ?? 0) : k > 0 ? upTo[k - 1] : 0;
+      const j = Math.max(0, Math.min(n, start - from));
+      const begin = j > 0 ? Math.min(end, upTo[j - 1]) : 0;
+      /** @type {THREE.Mesh} */ (mesh).geometry.setDrawRange(begin, end - begin);
     }
     nozzle.visible = Boolean(last) && mode !== 'shape';
     if (last) {
@@ -686,6 +711,10 @@ export function createViewport(canvas) {
           from: totalPoints,
         };
         totalPoints += n;
+        line.onBeforeRender = () => {
+          lineMaterial.uniforms.clipFrom.value = line.userData.clipFrom || 0;
+          lineMaterial.uniformsNeedUpdate = true;
+        };
         paths.add(line);
       });
       recolorPaths();
@@ -760,16 +789,45 @@ export function createViewport(canvas) {
     legend() {
       const m = COLOR_MODES[colorMode];
       const stops = colorMode === 'height' ? [heightLow, heightHigh] : SCALE;
-      return { mode: colorMode, label: m.label, unit: m.unit, digits: m.digits, min: range[0], max: range[1], colors: stops.map((c) => `#${c.getHexString()}`) };
+      const set = ranges[colorMode] || [null, null];
+      return {
+        mode: colorMode,
+        label: m.label,
+        unit: m.unit,
+        digits: m.digits,
+        min: range[0],
+        max: range[1],
+        auto: autoRange,
+        set: set[0] != null || set[1] != null,
+        colors: stops.map((c) => `#${c.getHexString()}`),
+      };
     },
 
     /**
-     * Shows the print up to a fraction of its moves (1: all of it), with a nozzle where it's
-     * got to. Returns where that is: the point and its move's values, or null.
-     * @param {number} f 0 to 1
+     * Sets the colour range of a colour mode by hand: the full colour scale runs from `low` to
+     * `high`, and anything beyond is the colour at that end. null: automatic (the range of every
+     * printing move).
+     * @param {string} which a colour mode
+     * @param {number | null} low
+     * @param {number | null} high
      */
-    setProgress(f) {
+    setColorRange(which, low, high) {
+      const ok = (v) => (v != null && Number.isFinite(v) ? v : null);
+      if (ok(low) == null && ok(high) == null) delete ranges[which];
+      else ranges[which] = [ok(low), ok(high)];
+      if (which === colorMode) recolorPaths();
+    },
+
+    /**
+     * Shows the print from one fraction of its moves to another (0 to 1: all of it), with a
+     * nozzle at the end when it's short of the whole print. Returns where the nozzle is: the
+     * point and its move's values, or null.
+     * @param {number} f the end, 0 to 1
+     * @param {number} [from] the start, 0 to 1
+     */
+    setProgress(f, from = 0) {
       progress = Math.min(1, Math.max(0, f));
+      windowFrom = Math.min(progress, Math.max(0, from));
       const last = applyProgress();
       if (!last) return null;
       const { data, i } = last;
@@ -828,6 +886,8 @@ export function createViewport(canvas) {
       // The AI sees the whole model: every part, the whole print, no nozzle.
       const hidden = hiddenParts;
       const shownProgress = progress;
+      const shownFrom = windowFrom;
+      windowFrom = 0;
       hiddenParts = new Set();
       progress = 1;
       applyParts();
@@ -881,6 +941,7 @@ export function createViewport(canvas) {
       // Back to the view on screen.
       hiddenParts = hidden;
       progress = shownProgress;
+      windowFrom = shownFrom;
       applyParts();
       mode = saved.mode;
       persp.up.copy(saved.up);

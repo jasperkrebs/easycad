@@ -309,6 +309,10 @@ modifier  = "in" NUMBER ".." NUMBER             # slider range, in the setting's
           | "of" "[" choice ("," choice)* "]"   # a dropdown
           | STRING                              # the label
           | "@" NAME                            # @assumed, @locked, @hidden
+          | "when" "not"? NAME ("=" literal | "=" "[" choice ("," choice)* "]")?
+                                                # shown only while it applies: `when brim`
+                                                # (on, not 0), `when shape = "own"`,
+                                                # `when shape = ["sphere", "flat sphere"]`
 
 binding   = NAME "=" expr                       # one node
 output    = "show" NAME ("," NAME)*             # draw these steps

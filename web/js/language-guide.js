@@ -15,7 +15,7 @@ Settings (each \`param\` is one control in the settings window)
 - \`param height = 160 mm in 40..300 "Height"\`: a slider with a range, in the setting's own unit. Add \`step 1\` for whole numbers or fixed steps.
 - \`param solid = true "Solid bottom"\`: a toggle. \`param style = "round" of ["round", "square"] "Style"\`: a dropdown. \`param label = "A" "Text"\`: a text field.
 - \`param body = [[0, 33], [0.45, 38], [1, 32]] "Body radius (mm) at heights 0–1"\`: a list setting, a table the user adds rows to and removes them from (numbers, or rows of numbers, in mm and plain ratios: no unit or range). Use it when the user wants "as many as I like": profile points, radii at heights. \`sample(x, body)\` and \`sample(y, body)\` are its columns; \`count(sample(x, body))\` is how many rows it has (\`count(body)\` counts inside each row).
-- \`group "Shape"\` puts the params below it into a group. \`@assumed\` after a param marks a guessed value; \`@hidden\` hides it from the window.
+- \`group "Shape"\` puts the params below it into a group. \`@assumed\` after a param marks a guessed value; \`@hidden\` hides it from the window. \`when\` at the end of a param line shows it only while it applies: \`when brim\` (a toggle that's on, or a number not 0), \`when shape = "own"\`, \`when shape = ["sphere", "flat sphere"]\`, \`when not compensation = "off"\`. Give every setting that only matters for one choice of a dropdown or toggle its \`when\`.
 - Units: mm, cm, m, inch (lengths); deg, rad (angles); % (18 % means 0.18). Values without a unit are plain numbers (mm for lengths, degrees for angles).
 
 Steps

@@ -113,6 +113,8 @@ pub struct ParamInfo {
     pub step: Option<f64>,
     pub choices: Vec<Literal>,
     pub attrs: Vec<String>,
+    /// `when …`: the setting shows only while another setting has one of these values.
+    pub when: Option<easycad_lang::Condition>,
     pub line: u32,
 }
 
@@ -447,8 +449,23 @@ impl<'a> Runner<'a> {
                 step: p.step,
                 choices: p.choices.clone().unwrap_or_default(),
                 attrs: p.attrs.clone(),
+                when: p.when.clone(),
                 line: p.span.line,
             });
+        }
+        for p in &program.params {
+            if let Some(w) = &p.when
+                && !program.params.iter().any(|q| q.name == w.name)
+            {
+                self.diag(
+                    p.span,
+                    Severity::Warning,
+                    format!(
+                        "`{}` shows `when {}`, but there's no setting `{}`",
+                        p.name, w.name, w.name
+                    ),
+                );
+            }
         }
 
         // Steps.

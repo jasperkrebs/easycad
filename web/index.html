@@ -64,14 +64,21 @@
             <div class="seg parts" id="viewParts" role="group" aria-label="Parts shown" hidden></div>
           </div>
           <div class="view-scrub">
-            <input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Print progress" title="Print progress: drag or scroll" />
-            <span class="scrub-info" id="scrubInfo"></span>
+            <!-- Two handles on one track: show the print from one move to another. -->
+            <div class="scrub-range" id="scrubRange" title="Print progress: drag either end, or scroll">
+              <input type="range" id="scrubFrom" min="0" max="1000" step="1" value="0" aria-label="Show the print from" />
+              <input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Show the print up to" />
+            </div>
           </div>
           <div class="view-foot">
             <div class="view-legend" id="viewLegend" hidden>
               <span class="legend-label" id="legendLabel"></span>
               <span class="legend-bar" id="legendBar"></span>
-              <span class="legend-ends"><span id="legendMin"></span><span id="legendMax"></span></span>
+              <span class="legend-ends">
+                <input type="text" inputmode="decimal" id="legendMin" aria-label="Colour range: lowest" title="Lowest colour: type a value (empty: automatic)" />
+                <input type="text" inputmode="decimal" id="legendMax" aria-label="Colour range: highest" title="Highest colour: type a value (empty: automatic)" />
+              </span>
+              <button type="button" class="legend-auto" id="legendAuto" title="Automatic colour range" aria-label="Automatic colour range" hidden>↺</button>
             </div>
             <div class="view-hud" id="hud"></div>
           </div>

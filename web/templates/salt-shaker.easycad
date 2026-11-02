@@ -31,8 +31,8 @@ param disc_layer = 0 mm   in 0..3             "Lid disc layer height (0: as the 
 param disc_line  = 0 mm   in 0..8             "Lid disc line width (0: as the walls)"
 param flow       = 20     in 1..400           "Flow (mm³/s)"
 param pace       = 100 %  in 0..100           "Closer layers on overhangs"
-param steep      = 0      in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"
-param pivot      = 45 deg in 5..85 step 1          "Steep curve pivot (as set at this lean)"
+param steep      = 0      in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"  when pace
+param pivot      = 45 deg in 5..85 step 1          "Steep curve pivot (as set at this lean)"  when steep
 param disc_extrusion = 100 % in 50..200       "Bottom and lid disc extrusion"
 param wall_extrusion = 100 % in 50..200       "Fillet and wall extrusion"
 

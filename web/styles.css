@@ -280,7 +280,7 @@ button {
 .view-legend {
   flex: 0 1 auto;
   display: grid;
-  grid-template-columns: auto auto minmax(40px, 110px) auto;
+  grid-template-columns: auto auto minmax(40px, 110px) auto auto;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -300,6 +300,36 @@ button {
 
 #legendMin {
   order: 1;
+  text-align: right;
+}
+
+.legend-ends input {
+  width: 4.2em;
+  min-width: 0;
+  padding: 1px 4px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.legend-ends input:hover,
+.legend-ends input:focus {
+  border-color: var(--border);
+  background: var(--card2);
+}
+
+.legend-auto {
+  order: 4;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 4px;
 }
 
 .legend-bar {
@@ -321,32 +351,94 @@ button {
 }
 
 
-/* Print progress: scrub through the toolpath like a slicer's preview. */
+/* Print progress: scrub through the toolpath like a slicer's preview, from either end. Two
+   range inputs share one track; only their handles take the pointer. The track between the
+   handles is filled (--lo and --hi, set from app.js). Its length never changes. */
 .view-scrub {
   display: flex;
   align-items: center;
-  gap: 10px;
 }
 
-.view-scrub input[type="range"] {
+.scrub-range {
+  --lo: 0%;
+  --hi: 100%;
+  --thumb: 18px;
+  position: relative;
   flex: 1;
   min-width: 0;
-  accent-color: var(--accent);
+  height: 28px;
 }
 
-.scrub-info {
-  flex: 0 1 auto;
-  font-size: 0.75rem;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 55%;
+.scrub-range::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--thumb) / 2);
+  right: calc(var(--thumb) / 2);
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--border) var(--lo),
+    var(--accent) var(--lo),
+    var(--accent) var(--hi),
+    var(--border) var(--hi)
+  );
 }
 
-.scrub-info:empty {
-  display: none;
+.scrub-range input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.scrub-range input[type="range"]::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+
+.scrub-range input[type="range"]::-moz-range-track {
+  background: transparent;
+}
+
+.scrub-range input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: calc((28px - var(--thumb)) / 2);
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--card);
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: grab;
+}
+
+.scrub-range input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+  width: var(--thumb);
+  height: var(--thumb);
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--card);
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: grab;
+}
+
+.scrub-range input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.scrub-range input[type="range"]:disabled {
+  opacity: 0.4;
 }
 
 .view-message {
