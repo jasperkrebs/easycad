@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runStatus } from '../web/js/agent.js';
 import { parseNumber } from '../web/js/dom.js';
-import { listValue } from '../web/js/settings.js';
+import { applies, listValue } from '../web/js/settings.js';
 import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from '../web/js/templates.js';
 
 const rows = { value: [[0, 33], [1, 32]] };
@@ -109,4 +109,28 @@ test('a number can be typed with a decimal comma, as an iPhone in some languages
   for (const bad of ['', '  ', 'abc', '1,2,3', '1..2', '--1', null, undefined, '1,5mm']) {
     assert.ok(Number.isNaN(parseNumber(bad)), String(bad));
   }
+});
+
+test('a setting with `when` applies only while the setting it names has one of its values', () => {
+  const params = [
+    { name: 'shape', value: 'cone' },
+    { name: 'own_r', value: 50, when: { name: 'shape', values: ['own'], not: false } },
+    { name: 'lip', value: false, when: { name: 'shape', values: ['sphere', 'flat sphere'], not: false } },
+    { name: 'lip_length', value: 10, when: { name: 'lip', values: [], not: false } },
+    { name: 'strength', value: 100, when: { name: 'comp', values: ['off'], not: true } },
+    { name: 'comp', value: 'width' },
+    { name: 'gap', value: 1, when: { name: 'missing', values: [], not: false } },
+  ];
+  const at = (values) => Object.fromEntries(params.map((p) => [p.name, applies(p, params, values)]));
+  let v = at({ shape: 'cone', lip: true, comp: 'width' });
+  assert.equal(v.own_r, false);
+  assert.equal(v.lip, false);
+  assert.equal(v.lip_length, false, 'the lip is on, but the lip itself doesn\'t apply to a cone');
+  assert.equal(v.strength, true);
+  assert.equal(v.gap, true, 'a condition on a setting that isn\'t there never hides anything');
+  v = at({ shape: 'flat sphere', lip: true, comp: 'off' });
+  assert.equal(v.lip, true);
+  assert.equal(v.lip_length, true);
+  assert.equal(v.strength, false);
+  assert.equal(at({ shape: 'own', lip: false, comp: 'width' }).own_r, true);
 });

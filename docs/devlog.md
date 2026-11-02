@@ -3,6 +3,24 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-02: print progress from both ends, colour ranges by hand, settings that apply
+
+**Landed:**
+- **Print progress from both ends:** the slider under the 3D view has a start and an end
+  handle. Moving the start on hides what's printed before (the top layers alone, no nozzle);
+  moving the end back shows the nozzle there. Scrolling moves the handle nearer the pointer.
+  The nozzle's height, speed, flow and bead show in the stats line, so the slider keeps its
+  length. The first scroll no longer stalls (the nozzle is compiled with the scene).
+- **Colour ranges by hand:** the legend's ends can be typed in; the full colour scale runs
+  between them and anything beyond is the end colour (say, speeds inside the print, with the
+  brim and primers at the extremes); ↺ goes back to automatic.
+- **Settings that apply:** a `param` line can end in `when …` (`when brim`, `when shape =
+  "own"`, `when shape = ["sphere", "flat sphere"]`, `when not compensation = "off"`); the
+  settings window shows it only while that holds (and while the setting it names shows), and a
+  group with nothing to show disappears. Every template uses it; the AI's guide asks for it.
+
+**Open:** nothing new.
+
 ## 2026-11-01 (late): the stool's brim from the top layer
 
 **Landed:** the bend stool can brim the top layer's outline projected down (on by default):

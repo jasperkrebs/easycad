@@ -7,7 +7,7 @@ pub mod lexer;
 pub mod parser;
 pub mod rewrite;
 
-pub use ast::{Arg, BinOp, Binding, Expr, Literal, Output, Param, Program, Span, Unit};
+pub use ast::{Arg, BinOp, Binding, Condition, Expr, Literal, Output, Param, Program, Span, Unit};
 pub use error::ParseError;
 pub use parser::{RESERVED, parse};
 pub use rewrite::{format_literal, format_number, set_printer, set_values};

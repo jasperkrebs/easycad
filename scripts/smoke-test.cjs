@@ -96,7 +96,18 @@ async function waitForServer(url) {
       if (openNow.join() !== 'Socket') failures.push(`${name}: open at first: ${openNow.join()}`);
       if (await page.isVisible('#set-opening')) failures.push(`${name}: a closed group's setting is visible`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-foldouts.png`), fullPage: name === 'phone' });
+      // Settings that don't apply to the chosen shape are hidden: the own shade's points, the
+      // sphere's size, the brim's lines while the brim is off.
+      if (await page.locator('#settings details.group:has(#set-own_r)').isVisible()) failures.push(`${name}: the own shade's group shows for a cone`);
+      if (await page.isVisible('#set-brim_lines')) failures.push(`${name}: the brim's lines show with the brim off`);
       await page.click('#settings details.group:has(#set-opening) > summary');
+      await page.selectOption('#set-shape', 'own');
+      await page.waitForFunction(() => /^param shape\s+= "own"/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+      await page.click('#settings details.group:has(#set-own_r) > summary');
+      if (!(await page.isVisible('#set-own_r'))) failures.push(`${name}: the own shade's points don't show for "own"`);
+      if (await page.isVisible('#set-sphere')) failures.push(`${name}: the sphere's size shows for "own"`);
+      await page.selectOption('#set-shape', 'cone');
+      await page.waitForFunction(() => /^param shape\s+= "cone"/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
       if (!(await page.isVisible('#set-opening'))) failures.push(`${name}: tapping the Shade group didn't open it`);
 
       // A slider value is written into the recipe text.

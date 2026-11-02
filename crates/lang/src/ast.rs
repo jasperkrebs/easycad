@@ -114,10 +114,24 @@ pub struct Param {
     pub group: Option<String>,
     /// `@assumed`, `@locked`, … without the `@`.
     pub attrs: Vec<String>,
+    /// `when …`: the setting only applies (and shows) while another setting has a value.
+    pub when: Option<Condition>,
     pub span: Span,
     /// Byte range of the value literal in the source, so a new value can be written back
     /// without touching anything else on the line.
     pub value_range: (usize, usize),
+}
+
+/// When a setting applies: `when legs` (while `legs` is on, or not 0 or empty), `when shape =
+/// "own"`, `when shape = ["sphere", "flat sphere"]` (one of these), each with `not` to turn it
+/// round (`when not zipper`, `when not compensation = "off"`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Condition {
+    /// The setting it depends on.
+    pub name: String,
+    /// The values that make it apply; empty: any value that's on (true, not 0, not empty).
+    pub values: Vec<Literal>,
+    pub not: bool,
 }
 
 /// A named step: `name = expression`.

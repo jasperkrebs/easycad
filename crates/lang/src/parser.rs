@@ -1,7 +1,9 @@
 //! Recursive-descent parser for `.easycad` recipes. One statement per line; a line that starts
 //! with `|>` continues the previous step, and newlines inside brackets are ignored.
 
-use crate::ast::{Arg, BinOp, Binding, Expr, Literal, Output, Param, Program, Span, Unit};
+use crate::ast::{
+    Arg, BinOp, Binding, Condition, Expr, Literal, Output, Param, Program, Span, Unit,
+};
 use crate::error::ParseError;
 use crate::lexer::{Tok, Token, lex};
 
@@ -294,6 +296,7 @@ impl Parser<'_> {
             label: None,
             group: self.group.clone(),
             attrs: Vec::new(),
+            when: None,
             span,
             value_range: (value_start, value_end),
         };
@@ -327,6 +330,13 @@ impl Parser<'_> {
                     self.pos += 1;
                     param.choices = Some(self.choices()?);
                 }
+                Tok::Ident(w) if w == "when" => {
+                    if param.when.is_some() {
+                        return Err(self.error("a setting takes one `when`"));
+                    }
+                    self.pos += 1;
+                    param.when = Some(self.condition()?);
+                }
                 Tok::Str(label) => {
                     self.pos += 1;
                     param.label = Some(label);
@@ -337,7 +347,7 @@ impl Parser<'_> {
                 }
                 other => {
                     return Err(self.error(format!(
-                        "unexpected {} in this setting (expected `in a..b`, `step s`, `of [...]`, a \"Label\" or @attribute)",
+                        "unexpected {} in this setting (expected `in a..b`, `step s`, `of [...]`, `when …`, a \"Label\" or @attribute)",
                         other.describe()
                     )));
                 }
@@ -413,6 +423,49 @@ impl Parser<'_> {
             return Err(self.error("a list setting holds numbers or rows of numbers, not both"));
         }
         Ok(out)
+    }
+
+    /// `[not] NAME [= value | = [values]]` after `when`.
+    fn condition(&mut self) -> R<Condition> {
+        let not = matches!(self.peek(), Tok::Ident(w) if w == "not");
+        if not {
+            self.pos += 1;
+        }
+        let name = match self.peek().clone() {
+            Tok::Ident(n) => {
+                self.pos += 1;
+                n
+            }
+            other => {
+                return Err(self.error(format!(
+                    "expected the name of a setting after `when`, found {}",
+                    other.describe()
+                )));
+            }
+        };
+        let mut values = Vec::new();
+        if self.eat(&Tok::Eq) {
+            if *self.peek() == Tok::LBracket {
+                values = self.choices()?;
+            } else {
+                let negative = self.eat(&Tok::Minus);
+                values.push(match self.peek().clone() {
+                    Tok::Str(s) => Literal::Text(s),
+                    Tok::Number(n) => Literal::Number(if negative { -n } else { n }),
+                    Tok::Ident(w) if w == "true" => Literal::Bool(true),
+                    Tok::Ident(w) if w == "false" => Literal::Bool(false),
+                    Tok::Ident(w) => Literal::Text(w),
+                    other => {
+                        return Err(self.error(format!(
+                            "expected a value after `when {name} =`, found {}",
+                            other.describe()
+                        )));
+                    }
+                });
+                self.pos += 1;
+            }
+        }
+        Ok(Condition { name, values, not })
     }
 
     fn choices(&mut self) -> R<Vec<Literal>> {

@@ -307,7 +307,7 @@ fn errors_point_at_the_problem() {
             "expected `as \"file name\"`, found the text \"f\"".into()
         )
     );
-    assert_eq!(err("param x = 1 2"), (1, 13, "unexpected the number 2 in this setting (expected `in a..b`, `step s`, `of [...]`, a \"Label\" or @attribute)".into()));
+    assert_eq!(err("param x = 1 2"), (1, 13, "unexpected the number 2 in this setting (expected `in a..b`, `step s`, `of [...]`, `when …`, a \"Label\" or @attribute)".into()));
     assert_eq!(
         err("show"),
         (
@@ -503,4 +503,37 @@ fn set_printer_writes_the_printer_line() {
     assert!(set_printer(src, "two\nlines").is_err());
     assert!(set_printer(src, "  ").is_err());
     assert!(set_printer("x = (", "P").is_err());
+}
+
+#[test]
+fn settings_can_apply_only_when_another_has_a_value() {
+    let src = "param shape = \"cone\" of [\"cone\", \"own\"] \"Shape\"\n\
+               param own_r = 50 mm in 5..250 \"Own radius\" when shape = \"own\"\n\
+               param sphere = 200 mm when shape = [\"sphere\", \"flat sphere\"]\n\
+               param lip = false when not shape = \"cone\"\n\
+               param lip_length = 10 mm when lip\n\
+               param n = 3 when count = -2\n";
+    let p = parse(src).unwrap();
+    let w = |i: usize| p.params[i].when.clone();
+    assert_eq!(w(0), None);
+    let own = w(1).unwrap();
+    assert_eq!((own.name.as_str(), own.not), ("shape", false));
+    assert_eq!(own.values, [Literal::Text("own".into())]);
+    assert_eq!(p.params[1].label.as_deref(), Some("Own radius"));
+    assert_eq!(w(2).unwrap().values.len(), 2);
+    assert!(w(3).unwrap().not);
+    let lip = w(4).unwrap();
+    assert!(lip.values.is_empty() && !lip.not);
+    assert_eq!(w(5).unwrap().values, [Literal::Number(-2.0)]);
+    // Writing a value back leaves the condition as it was.
+    let out = set_values(src, &[("own_r".into(), Literal::Number(60.0))]).unwrap();
+    assert!(out.contains("param own_r = 60 mm in 5..250 \"Own radius\" when shape = \"own\""));
+    for bad in [
+        "param a = 1 when",
+        "param a = 1 when b =",
+        "param a = 1 when b when c",
+        "param a = 1 when 3",
+    ] {
+        assert!(parse(bad).is_err(), "{bad}");
+    }
 }

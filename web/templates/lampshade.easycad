@@ -8,8 +8,8 @@ note "Overhangs get wider beads (or squeezed layers), turn by turn, from the wal
 group "Socket"
 param socket       = "E27" of ["E27", "E14", "custom"] "Socket"
 param fit          = 0 mm    in -2..2 step 0.1      "Fit tolerance (− is tighter)"
-param thread_d     = 40 mm   in 5..100 step 0.1     "Custom thread diameter"
-param thread_pitch = 2.5 mm  in 0.5..5 step 0.1     "Custom thread pitch"
+param thread_d     = 40 mm   in 5..100 step 0.1     "Custom thread diameter"  when socket = "custom"
+param thread_pitch = 2.5 mm  in 0.5..5 step 0.1     "Custom thread pitch"  when socket = "custom"
 
 group "Shade"
 param shape      = "cone" of ["cone", "bell", "dome", "sphere", "flat sphere", "own"] "Shape"
@@ -17,17 +17,17 @@ param throat     = 20 mm   in 0..100 step 1         "Throat length (straight)"
 param fillet     = 10 mm   in 0..100 step 1         "Fillet radius"
 param opening    = 150 mm  in 10..400 step 1        "Bottom opening diameter"
 param transition = 52 mm   in 1..400 step 1         "Transition height"
-param max_angle  = 0 deg   in 0..89 step 1          "Max angle (bell; 0: uncapped)"
-param sphere     = 200 mm  in 20..500 step 1        "Sphere diameter (at its widest)"
-param flatness   = 0.5     in 0.05..1 step 0.05     "Flatness (flat sphere: height ÷ width)"
-param lip        = false                            "Straight lip at the opening (spheres)"
-param lip_length = 10 mm   in 0..100 step 1         "Lip length"
-param lip_fillet = 0 mm    in 0..100 step 1         "Lip fillet (0: the throat's)"
+param max_angle  = 0 deg   in 0..89 step 1          "Max angle (bell; 0: uncapped)"  when shape = "bell"
+param sphere     = 200 mm  in 20..500 step 1        "Sphere diameter (at its widest)"  when shape = ["sphere", "flat sphere"]
+param flatness   = 0.5     in 0.05..1 step 0.05     "Flatness (flat sphere: height ÷ width)"  when shape = "flat sphere"
+param lip        = false                            "Straight lip at the opening (spheres)"  when shape = ["sphere", "flat sphere"]
+param lip_length = 10 mm   in 0..100 step 1         "Lip length"  when lip
+param lip_fillet = 0 mm    in 0..100 step 1         "Lip fillet (0: the throat's)"  when lip
 param wide_down  = false                            "Wide edge down"
 
 group "Own shade"
-param own_at     = 50 %    in 5..95                 "Own shade: middle point's height"
-param own_r      = 50 mm   in 5..250                "Own shade: middle point's radius"
+param own_at     = 50 %    in 5..95                 "Own shade: middle point's height"  when shape = "own"
+param own_r      = 50 mm   in 5..250                "Own shade: middle point's radius"  when shape = "own"
 
 group "Print"
 param line       = 6 mm    in 1..12 step 0.1        "Line width"
@@ -40,17 +40,17 @@ param steady     = true                             "Steady flow in the first tu
 
 group "Overhangs"
 param compensation = "width" of ["width", "layer height", "off"] "Compensation"
-param strength   = 100 %   in 0..100                "Strength"
-param steep      = 0       in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"
-param pivot      = 45 deg  in 5..85 step 1          "Steep curve pivot (as now at this angle)"
-param max_width  = 2.5     in 1..5 step 0.1         "Max line width (× the line)"
+param strength   = 100 %   in 0..100                "Strength"  when not compensation = "off"
+param steep      = 0       in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"  when not compensation = "off"
+param pivot      = 45 deg  in 5..85 step 1          "Steep curve pivot (as now at this angle)"  when steep
+param max_width  = 2.5     in 1..5 step 0.1         "Max line width (× the line)"  when compensation = "width"
 
 group "Brim"
 param brim       = false                            "Brim"
-param brim_lines = 4       in 1..20 step 1          "Brim lines"
-param brim_width = 6 mm    in 0.5..12 step 0.1      "Brim line width"
-param brim_layer = 2.5 mm  in 0.1..5 step 0.05      "Brim layer height"
-param brim_speed = 15      in 1..100                "Brim speed (mm/s)"
+param brim_lines = 4       in 1..20 step 1          "Brim lines"  when brim
+param brim_width = 6 mm    in 0.5..12 step 0.1      "Brim line width"  when brim
+param brim_layer = 2.5 mm  in 0.1..5 step 0.05      "Brim layer height"  when brim
+param brim_speed = 15      in 1..100                "Brim speed (mm/s)"  when brim
 
 # The socket's thread: its pitch is the layer height, so each turn of the helix lays down one
 # turn of thread. The wall's inner face sits on the thread; the nozzle runs half a line outside.

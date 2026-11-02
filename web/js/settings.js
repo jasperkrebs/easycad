@@ -46,7 +46,7 @@ export function listValue(p, raw) {
 
 /** Everything about the settings window except the values, to know when it must be rebuilt. */
 export function layoutKey(params) {
-  return JSON.stringify(params.map((p) => [p.name, p.label, p.group, p.kind, p.unit, p.min, p.max, p.step, p.choices, p.attrs]));
+  return JSON.stringify(params.map((p) => [p.name, p.label, p.group, p.kind, p.unit, p.min, p.max, p.step, p.choices, p.attrs, p.when]));
 }
 
 /**
@@ -60,6 +60,26 @@ export function layoutKey(params) {
 export function renderSettings(host, params, values, onChange, opts = {}) {
   host.replaceChildren();
   const groups = new Map();
+  /** @type {Map<string, HTMLElement>} */
+  const rows = new Map();
+  // Settings that apply only while another has a value (`when`): shown or hidden after every
+  // change, and their groups' counts with them.
+  const refresh = () => {
+    for (const p of params) {
+      const row = rows.get(p.name);
+      if (row) row.hidden = !applies(p, params, values);
+    }
+    for (const g of groups.values()) {
+      const shown = g.querySelectorAll(':scope .setting:not([hidden])').length;
+      const count = g.querySelector('.group-count');
+      if (count) count.textContent = String(shown);
+      g.hidden = shown === 0;
+    }
+  };
+  const change = (name, value, quality) => {
+    onChange(name, value, quality);
+    refresh();
+  };
   for (const p of params) {
     if (p.attrs.includes('hidden')) continue;
     const name = p.group || '';
@@ -68,15 +88,35 @@ export function renderSettings(host, params, values, onChange, opts = {}) {
       host.append(groups.get(name));
     }
     const g = groups.get(name);
-    (g.querySelector('.group-body') || g).append(settingRow(p, values[p.name] ?? p.value, onChange));
+    const row = settingRow(p, values[p.name] ?? p.value, change);
+    rows.set(p.name, row);
+    (g.querySelector('.group-body') || g).append(row);
   }
-  for (const g of groups.values()) {
-    const count = g.querySelector('.group-count');
-    if (count) count.textContent = String(g.querySelectorAll('.group-body > .setting').length);
-  }
+  refresh();
   if (!params.length && !opts.broken) {
     host.append(el('p', { className: 'hint', text: 'No settings.' }));
   }
+}
+
+/** Whether a value counts as on: true, a number other than 0, or anything not empty. */
+const on = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'number' ? v !== 0 : Boolean(v));
+
+/**
+ * Whether a setting applies now: its `when` holds (the setting it names has one of its values,
+ * or is on), and that setting applies itself.
+ * @param {any} p the engine's ParamInfo
+ * @param {any[]} params
+ * @param {Record<string, any>} values
+ * @param {number} [depth]
+ */
+export function applies(p, params, values, depth = 0) {
+  const w = p.when;
+  if (!w || depth > 20) return true;
+  const other = params.find((q) => q.name === w.name);
+  if (!other) return true;
+  const v = values[w.name] ?? other.value;
+  const holds = w.values.length ? w.values.some((x) => String(x) === String(v)) : on(v);
+  return (w.not ? !holds : holds) && applies(other, params, values, depth + 1);
 }
 
 /** Which settings groups are open, by name (remembered on this device). */
