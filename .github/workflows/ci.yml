@@ -144,6 +144,8 @@ jobs:
           VERSION: ${{ github.sha }}
         run: |
           python3 -c "import json, os; json.dump({'agentUrl': os.environ.get('AGENT_URL', ''), 'repo': os.environ['REPO'], 'version': os.environ['VERSION']}, open('web/config.json', 'w'))"
+      - name: Stamp the deploy's version on every code URL (no mix of two deploys)
+        run: python3 scripts/stamp-version.py web "${GITHUB_SHA::12}"
       - uses: actions/upload-pages-artifact@v4
         if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
         with:

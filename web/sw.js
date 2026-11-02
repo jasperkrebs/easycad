@@ -81,7 +81,8 @@ self.addEventListener('fetch', (e) => {
         return resp;
       })
       .catch(() =>
-        caches.match(e.request).then((hit) => hit || (isNav ? caches.match('./index.html') : undefined)),
+        // Deployed URLs carry ?v=<version> (scripts/stamp-version.py): offline, any version will do.
+        caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || (isNav ? caches.match('./index.html') : undefined)),
       ),
   );
 });

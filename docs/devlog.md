@@ -3,6 +3,18 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-02 (later): no mix of two deploys
+
+**Found:** right after a deploy the app failed to start ("null is not an object … scrubInfo"):
+the page had the new index.html but an old app.js. GitHub Pages serves every file under the
+same URL from one deploy to the next, and its CDN can hand out old and new files together for
+a few minutes.
+
+**Landed:** CI stamps the commit on every URL that loads code (`scripts/stamp-version.py`: the
+stylesheet, app.js, every module import, the worker, the wasm), so each deploy's files are new
+URLs and a page only ever gets one deploy's. Offline, the service worker serves any version it
+has. The sources stay unstamped.
+
 ## 2026-11-02: print progress from both ends, colour ranges by hand, settings that apply
 
 **Landed:**
