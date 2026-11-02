@@ -32,6 +32,8 @@ const BEADS_KEY = 'easycad.beads';
 const OPACITY_KEY = 'easycad.beadOpacity';
 /** What the toolpath is coloured by. */
 const COLOR_KEY = 'easycad.colorMode';
+/** How fast the print plays back. */
+const SPEED_KEY = 'easycad.playSpeed';
 const MAX_FILE_BYTES = 256 * 1024;
 const TABS = ['settings', 'chat', 'recipe', 'print', 'about'];
 
@@ -326,8 +328,68 @@ let hudText = '';
 let scrubFrom = 0;
 let scrubAt = 1;
 
+/** When each move of the toolpaths is reached, in seconds (made when first needed). */
+let moveTimes = /** @type {Float64Array | null} */ (null);
+const timesOf = () => (moveTimes ||= viewport.moveTimes(state.profile.travelSpeed || 100));
+
+/** "1 h 05 min", "12 min 30 s", "40 s". */
+function duration(s) {
+  const t = Math.round(s);
+  if (t >= 3600) return `${Math.floor(t / 3600)} h ${String(Math.floor((t % 3600) / 60)).padStart(2, '0')} min`;
+  if (t >= 60) return `${Math.floor(t / 60)} min ${String(t % 60).padStart(2, '0')} s`;
+  return `${t} s`;
+}
+
+/** Playing the print back: the animation frame, or 0 while it isn't playing. */
+let playing = 0;
+
+function stopPlaying() {
+  if (playing) cancelAnimationFrame(playing);
+  playing = 0;
+  $('scrubPlay').textContent = '▶';
+  $('scrubPlay').setAttribute('aria-label', 'Play the print');
+}
+
+/**
+ * Plays the print back like a video: the end handle moves at the chosen multiple of the real
+ * print time (each move at its own speed), from the start handle, or on from where it is.
+ */
+function play() {
+  if (playing) return stopPlaying();
+  const lo = /** @type {HTMLInputElement} */ ($('scrubFrom'));
+  const hi = /** @type {HTMLInputElement} */ ($('scrub'));
+  const max = Number(hi.max) || 1;
+  if (max < 2) return;
+  const times = timesOf();
+  if (Number(hi.value) >= max) hi.value = lo.value;
+  let t = times[Math.min(times.length - 1, Number(hi.value))] || 0;
+  let before = performance.now();
+  $('scrubPlay').textContent = '❚❚';
+  $('scrubPlay').setAttribute('aria-label', 'Pause');
+  const frame = (now) => {
+    t += ((now - before) / 1000) * Number(/** @type {HTMLSelectElement} */ ($('scrubSpeed')).value);
+    before = now;
+    // The last move reached by now (binary search over the times).
+    let [a, b] = [0, times.length - 1];
+    while (a < b) {
+      const m = (a + b + 1) >> 1;
+      if (times[m] <= t) a = m;
+      else b = m - 1;
+    }
+    hi.value = String(Math.min(max, a + 1));
+    showProgress();
+    if (a + 1 >= max) {
+      stopPlaying();
+      return;
+    }
+    playing = requestAnimationFrame(frame);
+  };
+  playing = requestAnimationFrame(frame);
+}
+
 /** The progress slider: one step per move of the toolpaths, kept at the same fractions. */
 function syncScrub() {
+  moveTimes = null;
   const total = Math.max(1, viewport.pathPoints);
   for (const [id, f] of [
     ['scrubFrom', scrubFrom],
@@ -361,7 +423,12 @@ function showProgress(e) {
   range.style.setProperty('--lo', `${scrubFrom * 100}%`);
   range.style.setProperty('--hi', `${scrubAt * 100}%`);
   const at = viewport.setProgress(scrubAt, scrubFrom);
-  const part = scrubFrom > 0 || scrubAt < 1 ? `${fmt(scrubFrom * 100)}–${fmt(scrubAt * 100)} %` : '';
+  let part = scrubFrom > 0 || scrubAt < 1 ? `${fmt(scrubFrom * 100)}–${fmt(scrubAt * 100)} %` : '';
+  if (at) {
+    const times = timesOf();
+    const i = Math.max(0, Math.min(times.length - 1, Number(hi.value) - 1));
+    part += ` · ${duration(times[i])} of ${duration(times[times.length - 1] || 0)}`;
+  }
   $('hud').textContent = at
     ? at.travel
       ? `${part} · Z ${fmt(at.z, 2)} mm · travel`
@@ -713,6 +780,7 @@ async function choosePrinter(id) {
 
 /** The printer or its settings changed: the bed, the checks and the export buttons follow. */
 function onProfileChange() {
+  moveTimes = null; // the travel speed counts in the playback's times
   viewport.setBed(state.profile.bed, state.profile.center);
   renderPrintTab();
   if (state.last) renderExports(state.last);
@@ -748,7 +816,32 @@ function wire() {
       viewport.setMode(/** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.mode));
     }),
   );
-  $('view').addEventListener('dblclick', () => viewport.refit());
+  // Fit what's shown of the toolpath and orbit round its centre: the Fit button, a double-click,
+  // or on a phone a double-tap (touch doesn't make a dblclick everywhere).
+  $('viewFit').addEventListener('click', () => viewport.focus());
+  $('view').addEventListener('dblclick', () => viewport.focus());
+  let lastTap = { t: 0, x: 0, y: 0 };
+  let touches = 0;
+  $('view').addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') touches++;
+  });
+  $('view').addEventListener('pointerup', (e) => {
+    if (e.pointerType !== 'touch') return;
+    const several = touches > 1;
+    touches = Math.max(0, touches - 1);
+    if (several) {
+      lastTap = { t: 0, x: 0, y: 0 };
+      return;
+    }
+    const now = performance.now();
+    if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+      viewport.focus();
+      lastTap = { t: 0, x: 0, y: 0 };
+    } else {
+      lastTap = { t: now, x: e.clientX, y: e.clientY };
+    }
+  });
+  $('view').addEventListener('pointercancel', () => (touches = 0));
   // Set views, and parallel or perspective (remembered on this device).
   document.querySelectorAll('[data-view]').forEach((b) =>
     b.addEventListener('click', () => viewport.view(/** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.view))),
@@ -838,12 +931,32 @@ function wire() {
   });
   // Print progress: drag either handle, or scroll over the track (the handle nearer the
   // pointer moves; a step per 1/500 of the print, faster with Shift).
-  for (const id of ['scrubFrom', 'scrub']) $(id).addEventListener('input', showProgress);
+  for (const id of ['scrubFrom', 'scrub'])
+    $(id).addEventListener('input', (e) => {
+      stopPlaying();
+      showProgress(e);
+    });
+  $('scrubPlay').addEventListener('click', play);
+  const speed = /** @type {HTMLSelectElement} */ ($('scrubSpeed'));
+  try {
+    const stored = localStorage.getItem(SPEED_KEY);
+    if (stored && [...speed.options].some((o) => o.value === stored)) speed.value = stored;
+  } catch {
+    // The default.
+  }
+  speed.addEventListener('change', () => {
+    try {
+      localStorage.setItem(SPEED_KEY, speed.value);
+    } catch {
+      // Not remembered.
+    }
+  });
   const range = $('scrubRange');
   range.addEventListener(
     'wheel',
     (e) => {
       e.preventDefault();
+      stopPlaying();
       const lo = /** @type {HTMLInputElement} */ ($('scrubFrom'));
       const hi = /** @type {HTMLInputElement} */ ($('scrub'));
       const max = Number(hi.max) || 1;

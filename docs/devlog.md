@@ -3,6 +3,22 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-02 (evening): play the print, fit the view, the bead under the nozzle
+
+**Landed:**
+- **Play:** ▶ next to the progress slider plays the print back like a video, the end handle
+  moving at a chosen multiple of the real print time (10× to 5000×, remembered): each move at
+  its own speed, travels at the printer's travel speed. The stats line shows the print time
+  reached of the total. Dragging or scrolling the slider stops it.
+- **Fit** (with the view buttons, a double-click, or a double-tap on a phone): frames what's
+  shown of the toolpath (between the progress handles, the parts not hidden) and orbits round
+  its centre, keeping the angle: Rhino's zoom extents.
+- **The bead under the nozzle** is outlined in magenta: the cross-section of the move it's
+  laying (width × layer height), drawn over everything.
+- **One colour scale:** height uses the same blue-to-red scale as speed, flow and the bead sizes
+  (it was the accent's blue to green). The colour mode is remembered per device, which is why
+  a phone left on height looked different from a computer on speed.
+
 ## 2026-11-02 (later): no mix of two deploys
 
 **Found:** right after a deploy the app failed to start ("null is not an object … scrubInfo"):

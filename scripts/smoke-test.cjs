@@ -416,6 +416,20 @@ async function waitForServer(url) {
       if (/Z [\d.,]+ mm/.test(await page.textContent('#hud'))) failures.push(`${name}: a nozzle with only the start moved: "${await page.textContent('#hud')}"`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-from.png`) });
       await scrubTo(0, 'scrubFrom');
+      // Played back like a video: the end handle moves on by itself, the print time shows, and
+      // the bead under the nozzle is outlined; pause stops it.
+      await scrubTo(0.3);
+      await page.selectOption('#scrubSpeed', '50');
+      await page.click('#scrubPlay');
+      await page.waitForTimeout(700);
+      await page.click('#scrubPlay');
+      const played = await page.evaluate(() => Number(document.getElementById('scrub').value) / Number(document.getElementById('scrub').max));
+      if (!(played > 0.31)) failures.push(`${name}: playing didn't move the print on (${played})`);
+      if (!/ of \d/.test(await page.textContent('#hud'))) failures.push(`${name}: no print time while playing: "${await page.textContent('#hud')}"`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-playing.png`) });
+      // Fit: what's shown of the toolpath fills the view.
+      await page.click('#viewFit');
+      await scrubTo(1);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-progress.png`) });
       await scrubTo(1);
       if ((await page.textContent('#hud')) !== hud) failures.push(`${name}: the stats line didn't come back: "${await page.textContent('#hud')}"`);
