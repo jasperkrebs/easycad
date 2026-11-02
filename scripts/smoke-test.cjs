@@ -378,17 +378,36 @@ async function waitForServer(url) {
       await page.selectOption('#viewColor', 'speed');
       if ((await page.textContent('#legendLabel')) !== 'Speed (mm/s)') failures.push(`${name}: legend: ${await page.textContent('#legendLabel')}`);
       await page.selectOption('#viewColor', 'layer');
-      const [lo, hi] = [await page.textContent('#legendMin'), await page.textContent('#legendMax')];
+      const [lo, hi] = [await page.inputValue('#legendMin'), await page.inputValue('#legendMax')];
       if (!(Number(lo.replace(',', '.')) < Number(hi.replace(',', '.')))) failures.push(`${name}: layer-height legend ${lo}..${hi}`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-layers.png`) });
       await page.selectOption('#viewColor', 'height');
       // Print progress: half way, the nozzle's place and its move; at the end, nothing.
-      const scrubTo = (f) => page.evaluate((f) => { const s = document.getElementById('scrub'); s.value = String(Math.round(Number(s.max) * f)); s.dispatchEvent(new Event('input')); }, f);
+      // The colour range set by hand: typed ends, then back to automatic.
+      const autoMax = await page.inputValue('#legendMax');
+      await page.fill('#legendMax', '50');
+      await page.press('#legendMax', 'Enter');
+      if (!(await page.isVisible('#legendAuto'))) failures.push(`${name}: no way back to the automatic colour range`);
+      if (!/^50[.,]0$/.test(await page.inputValue('#legendMax'))) failures.push(`${name}: legend max: ${await page.inputValue('#legendMax')}`);
+      await page.click('#legendAuto');
+      if ((await page.inputValue('#legendMax')) !== autoMax) failures.push(`${name}: the automatic range didn't come back: ${await page.inputValue('#legendMax')}`);
+      // Print progress, from both ends: the slider keeps its length whatever is shown.
+      const hud = await page.textContent('#hud');
+      const barWidth = async () => (await page.locator('#scrubRange').boundingBox())?.width;
+      const fullWidth = await barWidth();
+      const scrubTo = (f, id = 'scrub') =>
+        page.evaluate(([f, id]) => { const s = document.getElementById(id); s.value = String(Math.round(Number(s.max) * f)); s.dispatchEvent(new Event('input')); }, [f, id]);
       await scrubTo(0.5);
-      if (!/^Z [\d.,]+ mm/.test(await page.textContent('#scrubInfo'))) failures.push(`${name}: half way: "${await page.textContent('#scrubInfo')}"`);
+      if (!/Z [\d.,]+ mm/.test(await page.textContent('#hud'))) failures.push(`${name}: half way: "${await page.textContent('#hud')}"`);
+      if ((await barWidth()) !== fullWidth) failures.push(`${name}: the progress bar changed length`);
+      await scrubTo(1);
+      await scrubTo(0.8, 'scrubFrom');
+      if (/Z [\d.,]+ mm/.test(await page.textContent('#hud'))) failures.push(`${name}: a nozzle with only the start moved: "${await page.textContent('#hud')}"`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-from.png`) });
+      await scrubTo(0, 'scrubFrom');
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-progress.png`) });
       await scrubTo(1);
-      if ((await page.textContent('#scrubInfo')) !== '') failures.push(`${name}: the progress info stays at the end`);
+      if ((await page.textContent('#hud')) !== hud) failures.push(`${name}: the stats line didn't come back: "${await page.textContent('#hud')}"`);
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();
       if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);

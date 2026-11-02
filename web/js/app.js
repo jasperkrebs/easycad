@@ -7,7 +7,7 @@
 
 import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
-import { $, copyText, download, el, fmt, slug } from './dom.js';
+import { $, copyText, download, el, fmt, parseNumber, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
 import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
@@ -149,7 +149,8 @@ function renderHud(result) {
     : prints.length > 1
       ? [`${prints.length} parts`, `${fmt(prints.reduce((n, p) => n + p.stats.pathPoints, 0))} path points`]
       : [`${fmt(st.layers)} ${st.layers === 1 ? 'layer' : 'layers'}`, `${fmt(st.pathPoints)} path points`];
-  $('hud').textContent = [...parts, `${fmt(result.ms)} ms`].join(' · ');
+  hudText = [...parts, `${fmt(result.ms)} ms`].join(' · ');
+  $('hud').textContent = hudText;
   const empty = !result.mesh.indices.length && result.curves.starts.length < 2 && result.paths.starts.length < 2;
   const msg = $('viewMessage');
   msg.hidden = !empty;
@@ -290,41 +291,82 @@ function renderAbout() {
   about.append(el('dt', { text: 'Docs' }), el('dd', {}, [link]));
 }
 
-/** The colour legend under the 3D view: what the toolpath is coloured by, low to high. */
+/** The colour legend under the 3D view: what the toolpath is coloured by, low to high. Its
+ * ends can be typed in (the full colour scale then runs between them); empty is automatic. */
 function renderLegend() {
   const legend = viewport.legend();
   const box = $('viewLegend');
   box.hidden = !state.last?.paths?.starts || state.last.paths.starts.length < 2;
   $('legendLabel').textContent = `${legend.label} (${legend.unit})`;
   $('legendBar').style.background = `linear-gradient(to right, ${legend.colors.join(', ')})`;
-  $('legendMin').textContent = fmt(legend.min, legend.digits);
-  $('legendMax').textContent = fmt(legend.max, legend.digits);
+  for (const [id, v] of [
+    ['legendMin', legend.min],
+    ['legendMax', legend.max],
+  ]) {
+    const input = /** @type {HTMLInputElement} */ ($(id));
+    if (document.activeElement !== input) input.value = fmt(v, legend.digits);
+  }
+  $('legendAuto').hidden = !legend.set;
 }
 
-/** Print progress, as a fraction of the moves (1: the whole print). */
+/** Applies colour range ends typed into the legend (empty or unreadable: automatic). */
+function setLegendRange() {
+  const legend = viewport.legend();
+  const read = (id, auto) => {
+    const v = parseNumber(/** @type {HTMLInputElement} */ ($(id)).value);
+    return Number.isFinite(v) && Math.abs(v - auto) > 1e-9 ? v : null;
+  };
+  viewport.setColorRange(legend.mode, read('legendMin', legend.auto[0]), read('legendMax', legend.auto[1]));
+  renderLegend();
+}
+
+/** The stats line under the 3D view, while the whole print is shown. */
+let hudText = '';
+/** The part of the print shown, as fractions of its moves: from, to (0 and 1: all of it). */
+let scrubFrom = 0;
 let scrubAt = 1;
 
-/** The progress slider: one step per move of the toolpaths, kept at the same fraction. */
+/** The progress slider: one step per move of the toolpaths, kept at the same fractions. */
 function syncScrub() {
-  const slider = /** @type {HTMLInputElement} */ ($('scrub'));
-  const total = viewport.pathPoints;
-  slider.max = String(Math.max(1, total));
-  slider.value = String(Math.round(scrubAt * Math.max(1, total)));
-  slider.disabled = total < 2;
+  const total = Math.max(1, viewport.pathPoints);
+  for (const [id, f] of [
+    ['scrubFrom', scrubFrom],
+    ['scrub', scrubAt],
+  ]) {
+    const slider = /** @type {HTMLInputElement} */ ($(id));
+    slider.max = String(total);
+    slider.value = String(Math.round(f * total));
+    slider.disabled = viewport.pathPoints < 2;
+  }
   showProgress();
 }
 
-/** Shows the print up to the slider, and where the nozzle is. */
-function showProgress() {
-  const slider = /** @type {HTMLInputElement} */ ($('scrub'));
-  const max = Number(slider.max) || 1;
-  scrubAt = Number(slider.value) / max;
-  const at = viewport.setProgress(scrubAt);
-  $('scrubInfo').textContent = !at
-    ? ''
-    : at.travel
-      ? `Z ${fmt(at.z, 2)} mm · travel`
-      : `Z ${fmt(at.z, 2)} mm · ${fmt(at.speed, 1)} mm/s · ${fmt(at.flow, 1)} mm³/s · ${fmt(at.width, 2)} × ${fmt(at.layer, 2)} mm`;
+/**
+ * Shows the print between the slider's two handles. Moving the end handle back shows a nozzle
+ * where it's got to, and that move's height, speed, flow and bead in the stats line; moving the
+ * start handle on hides what's printed before (to look at the top layers on their own).
+ * @param {Event} [e] the input that moved: it pushes the other handle along rather than cross it
+ */
+function showProgress(e) {
+  const lo = /** @type {HTMLInputElement} */ ($('scrubFrom'));
+  const hi = /** @type {HTMLInputElement} */ ($('scrub'));
+  const max = Number(hi.max) || 1;
+  if (Number(lo.value) > Number(hi.value)) {
+    if (e?.target === lo) hi.value = lo.value;
+    else lo.value = hi.value;
+  }
+  scrubFrom = Number(lo.value) / max;
+  scrubAt = Number(hi.value) / max;
+  const range = /** @type {HTMLElement} */ ($('scrubRange'));
+  range.style.setProperty('--lo', `${scrubFrom * 100}%`);
+  range.style.setProperty('--hi', `${scrubAt * 100}%`);
+  const at = viewport.setProgress(scrubAt, scrubFrom);
+  const part = scrubFrom > 0 || scrubAt < 1 ? `${fmt(scrubFrom * 100)}–${fmt(scrubAt * 100)} %` : '';
+  $('hud').textContent = at
+    ? at.travel
+      ? `${part} · Z ${fmt(at.z, 2)} mm · travel`
+      : `${part} · Z ${fmt(at.z, 2)} mm · ${fmt(at.speed, 1)} mm/s · ${fmt(at.flow, 1)} mm³/s · ${fmt(at.width, 2)} × ${fmt(at.layer, 2)} mm`
+    : part || hudText;
 }
 
 function setStatus(text, kind) {
@@ -794,20 +836,38 @@ function wire() {
       // Not remembered.
     }
   });
-  // Print progress: drag the slider, or scroll over it (a step per move; faster with Shift).
-  const scrub = /** @type {HTMLInputElement} */ ($('scrub'));
-  scrub.addEventListener('input', showProgress);
-  scrub.addEventListener(
+  // Print progress: drag either handle, or scroll over the track (the handle nearer the
+  // pointer moves; a step per 1/500 of the print, faster with Shift).
+  for (const id of ['scrubFrom', 'scrub']) $(id).addEventListener('input', showProgress);
+  const range = $('scrubRange');
+  range.addEventListener(
     'wheel',
     (e) => {
       e.preventDefault();
-      const max = Number(scrub.max) || 1;
+      const lo = /** @type {HTMLInputElement} */ ($('scrubFrom'));
+      const hi = /** @type {HTMLInputElement} */ ($('scrub'));
+      const max = Number(hi.max) || 1;
+      const box = range.getBoundingClientRect();
+      const at = ((e.clientX - box.left) / Math.max(1, box.width)) * max;
+      const handle = Math.abs(at - Number(lo.value)) < Math.abs(at - Number(hi.value)) ? lo : hi;
       const step = Math.max(1, Math.round(max / (e.shiftKey ? 50 : 500)));
-      scrub.value = String(Math.min(max, Math.max(0, Number(scrub.value) + (e.deltaY > 0 ? -step : step))));
-      showProgress();
+      handle.value = String(Math.min(max, Math.max(0, Number(handle.value) + (e.deltaY > 0 ? -step : step))));
+      showProgress(/** @type {any} */ ({ target: handle }));
     },
     { passive: false },
   );
+  // The legend's ends: type a value, Enter or leave the field; ↺ back to automatic.
+  for (const id of ['legendMin', 'legendMax']) {
+    const input = $(id);
+    input.addEventListener('change', setLegendRange);
+    input.addEventListener('keydown', (e) => {
+      if (/** @type {KeyboardEvent} */ (e).key === 'Enter') /** @type {HTMLInputElement} */ (input).blur();
+    });
+  }
+  $('legendAuto').addEventListener('click', () => {
+    viewport.setColorRange(viewport.legend().mode, null, null);
+    renderLegend();
+  });
 
   const templates = /** @type {HTMLSelectElement} */ ($('template'));
   for (const t of TEMPLATES) templates.append(el('option', { value: t.id, text: t.name }));
