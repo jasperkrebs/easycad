@@ -139,7 +139,7 @@ button {
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(180px, 42%) minmax(0, 1fr);
+  grid-template-rows: minmax(260px, 52%) minmax(0, 1fr);
   max-width: 1320px;
   margin: 0 auto;
   padding: 0 12px 12px;
@@ -164,13 +164,22 @@ button {
 }
 
 /* ---------- viewport ---------- */
+/* The 3D view on top, nothing over it; its controls pinned in a strip underneath, so they stay
+   with the view while the panels scroll. */
 .viewport {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   background: var(--view-bg);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
+}
+
+.view-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 #view {
@@ -180,24 +189,36 @@ button {
   touch-action: none;
 }
 
-.view-bar {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  top: 10px;
+.view-tools {
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 6px;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+}
+
+/* One row of controls; on a narrow screen it scrolls sideways instead of wrapping. */
+.view-bar {
+  display: flex;
   gap: 6px;
-  pointer-events: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.view-bar::-webkit-scrollbar {
+  display: none;
 }
 
 .view-bar > * {
-  pointer-events: auto;
+  flex: none;
 }
 
 .seg {
   display: inline-flex;
-  background: var(--card);
+  background: var(--card2);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 3px;
@@ -225,15 +246,23 @@ button {
   color: var(--on-accent);
 }
 
+.view-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 18px;
+}
+
 .view-hud {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 8px;
-  font-size: 0.78rem;
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 0.75rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .seg select {
@@ -247,22 +276,38 @@ button {
   min-height: 34px;
 }
 
-/* The toolpath's colour legend: what it's coloured by, the scale, lowest and highest. */
+/* The toolpath's colour legend, on one line: what it's coloured by, lowest, the scale, highest. */
 .view-legend {
-  position: absolute;
-  right: 10px;
-  bottom: 62px;
+  flex: 0 1 auto;
   display: grid;
-  gap: 3px;
-  min-width: 150px;
-  padding: 6px 8px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  grid-template-columns: auto auto minmax(40px, 110px) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: 0.75rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  pointer-events: none;
+  white-space: nowrap;
+}
+
+.view-legend[hidden] {
+  display: none;
+}
+
+.legend-ends {
+  display: contents;
+}
+
+#legendMin {
+  order: 1;
+}
+
+.legend-bar {
+  order: 2;
+}
+
+#legendMax {
+  order: 3;
 }
 
 .legend-label {
@@ -275,18 +320,9 @@ button {
   border-radius: 4px;
 }
 
-.legend-ends {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
 
 /* Print progress: scrub through the toolpath like a slicer's preview. */
 .view-scrub {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 26px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1202,14 +1238,18 @@ label.check {
   opacity: 0.7;
 }
 
-/* On a phone the 3D view is small: a compact legend. */
+/* On a phone: a smaller legend and stats line under the view. */
 @media (max-width: 520px) {
-  .view-legend {
-    min-width: 0;
-    width: 120px;
-    padding: 4px 6px;
+  /* The controls' row slides sideways: fade its end so it shows there's more. */
+  .view-bar {
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    padding-right: 24px;
+  }
+
+  .view-legend,
+  .view-hud {
     font-size: 0.68rem;
-    gap: 2px;
   }
 
   .legend-bar {
