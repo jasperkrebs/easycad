@@ -586,6 +586,7 @@ fn bend_stool_recipe_matches_easygcode() {
             ("flow", Number(20.0)),
             ("tolerance", Number(0.05)),
             ("brim", Bool(false)),
+            ("brim_top", Bool(false)),
             ("foam", Bool(false)),
             ("foam_up", Number(230.0)),
             ("foam_mid", Number(230.0)),
@@ -712,29 +713,69 @@ fn bend_stool_recipe_matches_easygcode() {
     );
 }
 
-/// The bend stool template as it ships, against EasyGCode's G-code for the owner's own stool
+/// The owner's Ginger G1 as their EasyGCode settings have it: the stool centred at 500/500,
+/// zones at 195 °C, the bed at 65 °C, travel at 3000 mm/min.
+fn owner_g1() -> Profile {
+    Profile {
+        travel_speed: 50.0,
+        center: [500.0, 500.0],
+        pellet: Pellet {
+            up: 195.0,
+            mid: 195.0,
+            down: 195.0,
+            bed: 65.0,
+            ..Pellet::default()
+        },
+        ..Profile::default()
+    }
+}
+
+/// The bend stool template, against EasyGCode's G-code for the owner's own stool
 /// (their EasyGCode settings of 21 Jul 2026): three legs of five hairpins with fillets, the
 /// bend zone spread layer by layer with an overhang drop, a domed seat, a brim around the legs,
 /// foaming with primers, 11 layers at 225 mm³/s. 88,000 commands, every one the same.
 #[test]
 fn bend_stool_with_legs_matches_easygcode() {
+    use Literal::{Bool, Number};
     template_matches(
         STOOL,
-        &[],
-        &Profile {
-            travel_speed: 50.0,
-            center: [500.0, 500.0],
-            pellet: Pellet {
-                up: 195.0,
-                mid: 195.0,
-                down: 195.0,
-                bed: 65.0,
-                ..Pellet::default()
-            },
-            ..Profile::default()
-        },
+        &[("brim_top", Bool(false)), ("brim_lines", Number(3.0))],
+        &owner_g1(),
         include_str!("../../../fixtures/easygcode/stool-legs.gcode"),
     );
+}
+
+/// The owner's stool with the brim around the top layer's outline projected down, keeping clear
+/// of the spread bend zones (EasyGCode's `offsetClosedTrim`), as their settings of 1 Nov 2026
+/// have it: four lines. Their own G-code file is this fixture, and EasyCAD's matches it command
+/// for command. But its outermost line runs about a millimetre past the 1000 mm bed on every
+/// side (EasyGCode doesn't check), so EasyCAD refuses to write it as a file to print; the
+/// template ships with three lines, which fit.
+#[test]
+fn bend_stool_with_a_brim_from_the_top_layer_matches_easygcode() {
+    use Literal::Number;
+    let fixture = include_str!("../../../fixtures/easygcode/stool-top-brim.gcode");
+    let values = vec![("brim_lines".to_string(), Number(4.0))];
+    let e = evaluate(&set_values(STOOL, &values).unwrap(), Quality::Final);
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+    let path = &e.print.as_ref().unwrap().path;
+    let refused = gcode::write(path, &owner_g1(), "Golden").unwrap_err();
+    assert!(refused.contains("leaves the bed"), "{refused}");
+    let ours = gcode::write_unchecked(path, &owner_g1(), "Golden")
+        .unwrap()
+        .text;
+    assert_matches(&ours, fixture);
+    // Three lines (the template as it ships) fit, and are the same G-code but for the
+    // outermost brim line.
+    let three = evaluate(STOOL, Quality::Final);
+    let path = &three.print.as_ref().unwrap().path;
+    let text = gcode::write(path, &owner_g1(), "Golden").unwrap().text;
+    let (a, b) = (commands(&text), commands(fixture));
+    let line = b.len() - a.len();
+    assert!(line > 1000 && line < 2000, "{line}");
+    let tail = a.len() - 60;
+    assert_eq!(a[..20], b[..20]);
+    assert_eq!(a[a.len() - tail..], b[b.len() - tail..]);
 }
 
 /// The toolpath tuning steps (`adjust`, `accelerate`, `fan`, `dwell`) write speeds, fan levels

@@ -3,6 +3,21 @@
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
 next session (human or agent) picks up.
 
+## 2026-11-01 (late): the stool's brim from the top layer
+
+**Landed:** the bend stool can brim the top layer's outline projected down (on by default):
+where the legs bend the top layer is spread furthest out, so the brim keeps clear of what
+overhangs there. `offset(…, trim: true)` is EasyGCode's `offsetClosedTrim`, cutting out the loops
+an outward offset makes at the spread's tight notches. Golden against the owner's own G-code
+file (their settings of 1 Nov: four brim lines, 92,346 lines, every command the same).
+
+**Found:** with four lines that brim's outermost line runs from X/Y −1.0 to 1001.0 mm, past the
+G1's 1000 mm bed on every side. EasyGCode doesn't check; EasyCAD refuses to write it. The
+golden test compares it through a test-only writer without the checks (`gcode::write_unchecked`)
+and checks that the real one refuses it. The template ships with three lines, which fit.
+
+**Open:** if the G1's axes really reach past 0 and 1000 (its printer.cfg `position_min` and
+`position_max`), the bed check could use those limits instead.
 ## 2026-11-01 (late): nothing over the 3D view
 
 **Why:** on a phone the view's controls (show, colour, line width, views, parts), the legend,

@@ -365,6 +365,9 @@ cases['stool-legs'] = stool(
   }
 );
 cases['stool-legs'].brim = { enabled: true, outerStyle: 'normal', base: 'bottom', linesOuter: 3, linesInner: 0, lineWidth: 6, layerHeight: 2, feed: 1200, multiplier: 0 };
+// The same stool as the owner set it up later (their settings of 1 Nov 2026): the brim from the
+// TOP layer's outline projected down, four lines, so it keeps clear of the spread bend zones.
+cases['stool-top-brim'] = { ...cases['stool-legs'], brim: { ...cases['stool-legs'].brim, base: 'top', linesOuter: 4 } };
 // Legs with a zipper seam, no spread, no brim (so a lead-in line), four layers at a set feed;
 // and a domed seat without legs, with a brim, five layers in flow mode.
 cases['stool-zipper'] = stool(

@@ -204,6 +204,8 @@ async function waitForServer(url) {
       ]) {
         await page.click('#tab-settings');
         await page.selectOption('#template', id);
+        // A setting changed for the one before (the stool's brim), so the page asks first.
+        if (await page.isVisible('#replaceConfirm')) await page.click('#replaceYes');
         await page.waitForFunction((t) => document.getElementById('projectName').textContent === t, title, { timeout: 15000 });
         await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-${id}.png`), fullPage: name === 'phone' });
@@ -216,6 +218,10 @@ async function waitForServer(url) {
           await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         }
         if (id === 'bend-stool') {
+          // The fixture brims the bottom layer's outline (three lines).
+          await openGroups(page);
+          await page.uncheck('#set-brim_top');
+          await page.waitForFunction(() => /^param brim_top\s+= false/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
           await printerFields({ 'center-0': 500, 'center-1': 500, travelSpeed: 50, 'pellet-up': 195, 'pellet-mid': 195, 'pellet-down': 195, 'pellet-bed': 65 });
           await page.click('#tab-settings');
         }

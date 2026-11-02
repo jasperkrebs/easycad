@@ -540,6 +540,88 @@ impl Curve {
         Curve::new(points, self.closed)
     }
 
+    /// [`Curve::offset_bisector`], with the folds it makes at tight inward notches cut out
+    /// (EasyGCode's `offsetClosedTrim`, for a brim around a spread-out outline): offsetting
+    /// outward past a notch sharper than the distance makes the curve cross itself in a small
+    /// loop; each crossing is found (against the next 240 segments at most: such loops are
+    /// local) and the loop that runs against the curve's winding is dropped, leaving the two
+    /// sides meeting at the crossing.
+    pub fn offset_bisector_trimmed(&self, distance: f64) -> Curve {
+        let mut lp: Vec<P3> = self.offset_bisector(distance).points;
+        if lp.len() < 4 {
+            return Curve::new(lp, self.closed);
+        }
+        let area = |pts: &[P3]| -> f64 {
+            let n = pts.len();
+            (0..n)
+                .map(|i| {
+                    let (p, q) = (pts[i], pts[(i + 1) % n]);
+                    p[0] * q[1] - q[0] * p[1]
+                })
+                .sum::<f64>()
+                / 2.0
+        };
+        let sign0 = if area(&self.points) >= 0.0 { 1.0 } else { -1.0 };
+        let cr =
+            |a: P3, b: P3, c: P3| (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+        let seg_int = |a: P3, b: P3, c: P3, e: P3| -> Option<P3> {
+            let (d1, d2, d3, d4) = (cr(a, b, c), cr(a, b, e), cr(c, e, a), cr(c, e, b));
+            if !(d1 * d2 < 0.0 && d3 * d4 < 0.0) {
+                return None;
+            }
+            let t = d3 / (d3 - d4);
+            Some([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2]])
+        };
+        let (mut i, mut guard) = (0usize, 0usize);
+        while i < lp.len() && guard < 2000 {
+            let n = lp.len();
+            if n < 4 {
+                break;
+            }
+            let reach = (n - 3).min(240);
+            let mut hit = None;
+            for k in 2..=reach {
+                let j = (i + k) % n;
+                if let Some(x) = seg_int(lp[i], lp[(i + 1) % n], lp[j], lp[(j + 1) % n]) {
+                    hit = Some((k, x));
+                    break;
+                }
+            }
+            let Some((k, x)) = hit else {
+                i += 1;
+                continue;
+            };
+            guard += 1;
+            if i > 0 {
+                lp.rotate_left(i);
+                i = 0;
+            }
+            // x → p1 … pk (back to x), and x → pk+1 … p0 (back to x).
+            let a_loop: Vec<P3> = std::iter::once(x)
+                .chain(lp[1..=k].iter().copied())
+                .collect();
+            let b_loop: Vec<P3> = std::iter::once(x)
+                .chain(lp[k + 1..].iter().copied())
+                .collect();
+            let (aa, ab) = (area(&a_loop) * sign0, area(&b_loop) * sign0);
+            let drop_a = if aa < 0.0 && ab >= 0.0 {
+                true
+            } else if ab < 0.0 && aa >= 0.0 {
+                false
+            } else {
+                aa.abs() <= ab.abs()
+            };
+            lp = if drop_a {
+                let mut out = vec![lp[0], x];
+                out.extend_from_slice(&lp[k + 1..]);
+                out
+            } else {
+                a_loop
+            };
+        }
+        Curve::new(lp, self.closed)
+    }
+
     /// [`Curve::offset`] by a different distance at each point (`distance(point)`, read where
     /// the point is before it moves).
     pub fn offset_by(&self, distance: &dyn Fn(P3) -> f64) -> Curve {

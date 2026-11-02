@@ -910,9 +910,15 @@ pub static NODES: &[Node] = &[
                 1.0,
                 "true: corners mitred (both sides stay at the distance); false: each point along its corner's bisector, as EasyGCode's brims",
             ),
+            opt(
+                "trim",
+                "Bool",
+                0.0,
+                "with `mitre: false`: cut out the small loops it makes at notches tighter than the distance (EasyGCode's brim from a stool's top layer)",
+            ),
         ],
         output: "Curve",
-        doc: "The curve moved sideways in plan, corners mitred; good for smooth curves and distances smaller than their tightest bend. `mitre: false` moves each point straight along its corner's bisector instead, as EasyGCode offsets its brims. (Grasshopper: Offset Curve)",
+        doc: "The curve moved sideways in plan, corners mitred; good for smooth curves and distances smaller than their tightest bend. `mitre: false` moves each point straight along its corner's bisector instead, as EasyGCode offsets its brims; add `trim: true` to cut out the loops that makes at tight notches. (Grasshopper: Offset Curve)",
         run: Run::Op(toolbox::offset),
     },
     Node {
