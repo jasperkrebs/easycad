@@ -60,10 +60,19 @@
               <button type="button" data-view="side" title="From the right side">Side</button>
               <button type="button" data-view="top" title="From above">Top</button>
               <button type="button" id="viewParallel" aria-pressed="true" title="Parallel view, true to proportion (off: perspective)">Parallel</button>
+              <button type="button" id="viewFit" title="Fit the toolpath shown and orbit round its centre (or double-tap the view)">Fit</button>
             </div>
             <div class="seg parts" id="viewParts" role="group" aria-label="Parts shown" hidden></div>
           </div>
           <div class="view-scrub">
+            <button type="button" class="scrub-play" id="scrubPlay" aria-label="Play the print" title="Play the print">▶</button>
+            <select class="scrub-speed" id="scrubSpeed" aria-label="Playback speed" title="Playback speed (× the real print time)">
+              <option value="10">10×</option>
+              <option value="50">50×</option>
+              <option value="200" selected>200×</option>
+              <option value="1000">1000×</option>
+              <option value="5000">5000×</option>
+            </select>
             <!-- Two handles on one track: show the print from one move to another. -->
             <div class="scrub-range" id="scrubRange" title="Print progress: drag either end, or scroll">
               <input type="range" id="scrubFrom" min="0" max="1000" step="1" value="0" aria-label="Show the print from" />

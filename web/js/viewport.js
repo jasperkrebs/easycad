@@ -127,6 +127,7 @@ export function createViewport(canvas) {
     persp.updateProjectionMatrix();
     frameOrtho();
     lineMaterial.resolution.set(w, h);
+    beadEdgeMaterial.resolution.set(w, h);
     requestRender();
   }
   new ResizeObserver(resize).observe(canvas);
@@ -198,17 +199,14 @@ export function createViewport(canvas) {
     return Number.isFinite(lo) ? [lo, hi] : [0, 1];
   }
 
-  /** A colour for value `v` in the range: the accent colours for height, else the scale. */
+  /** A colour for value `v` in the range, on the scale (the same for every colour mode). */
   function colorFor(v, out) {
     const [lo, hi] = range;
     const t = hi > lo ? Math.min(1, Math.max(0, (v - lo) / (hi - lo))) : 0.5;
-    if (colorMode === 'height') return out.copy(heightLow).lerp(heightHigh, t);
     const x = t * (SCALE.length - 1);
     const k = Math.min(SCALE.length - 2, Math.floor(x));
     return out.copy(SCALE[k]).lerp(SCALE[k + 1], x - k);
   }
-  const heightLow = new THREE.Color();
-  const heightHigh = new THREE.Color();
   const travelColor = new THREE.Color();
 
   function pathColors(data) {
@@ -227,8 +225,6 @@ export function createViewport(canvas) {
   }
 
   function recolorPaths() {
-    heightLow.set(token('--accent'));
-    heightHigh.set(token('--accent2'));
     travelColor.set(token('--view-grid'));
     autoRange = colorRange();
     const set = ranges[colorMode] || [null, null];
@@ -429,6 +425,13 @@ export function createViewport(canvas) {
   let totalPoints = 0;
   const nozzle = makeNozzle();
   scene.add(nozzle);
+  // The bead under the nozzle: its cross-section's outline, in a colour that stands out from
+  // the toolpath's scale, drawn over everything.
+  const beadEdgeMaterial = new LineMaterial({ color: 0xff2bd6, linewidth: 3, worldUnits: false, depthTest: false });
+  const beadEdge = new Line2(new LineGeometry(), beadEdgeMaterial);
+  beadEdge.renderOrder = 10;
+  beadEdge.frustumCulled = false;
+  nozzle.add(beadEdge);
   // Compiled now, so the first scroll of the progress slider doesn't stall while it compiles.
   renderer.compile(scene, camera);
   nozzle.visible = false;
@@ -484,9 +487,45 @@ export function createViewport(canvas) {
       const size = Math.max(4 * w, 0.03 * modelSize());
       nozzle.scale.setScalar(size);
       nozzle.position.set(data.points[3 * i], data.points[3 * i + 1], data.points[3 * i + 2]);
+      placeBeadEdge(data, i, size);
     }
     requestRender();
     return last;
+  }
+
+  /**
+   * The outline of the bead the nozzle is laying (move `i`'s width and layer height, across its
+   * direction), in the nozzle's own scaled frame. Hidden on a travel move.
+   */
+  function placeBeadEdge(data, i, size) {
+    const w = data.widths ? data.widths[i] : 0;
+    const h = data.heights ? data.heights[i] : 0;
+    beadEdge.visible = w > 0 && h > 0;
+    if (!beadEdge.visible) return;
+    const p = data.points;
+    const j = i > 0 ? i - 1 : Math.min(i + 1, p.length / 3 - 1);
+    let dx = p[3 * i] - p[3 * j];
+    let dy = p[3 * i + 1] - p[3 * j + 1];
+    if (j > i) [dx, dy] = [-dx, -dy];
+    const len = Math.hypot(dx, dy) || 1;
+    const [ax, ay] = [-dy / len, dx / len];
+    const r = Math.min(w, h) / 2;
+    const c = Math.max(0, w / 2 - r);
+    const pts = [];
+    const steps = 10;
+    for (let k = 0; k <= 2 * steps + 1; k++) {
+      const right = k <= steps;
+      const a = right ? -Math.PI / 2 + (Math.PI * k) / steps : Math.PI / 2 + (Math.PI * (k - steps - 1)) / steps;
+      const u = (right ? c : -c) + r * Math.cos(a);
+      const v = -h / 2 + r * Math.sin(a);
+      pts.push((ax * u) / size, (ay * u) / size, v / size);
+    }
+    pts.push(pts[0], pts[1], pts[2]);
+    beadEdge.geometry.dispose();
+    const g = new LineGeometry();
+    g.setPositions(pts);
+    beadEdge.geometry = g;
+    beadEdge.computeLineDistances();
   }
 
   function modelSize() {
@@ -728,9 +767,63 @@ export function createViewport(canvas) {
       requestRender();
     },
 
-    /** Frames the last result again (double-tap / double-click). */
+    /** Frames the last result again. */
     refit() {
       fit(lastBounds);
+    },
+
+    /**
+     * Frames what's shown of the toolpath (its printing moves, between the progress handles, of
+     * the parts not hidden; else the whole model) and orbits round its centre, keeping the
+     * angle it's seen from: Rhino's zoom extents.
+     */
+    focus() {
+      const shown = progress >= 1 ? Infinity : Math.round(progress * totalPoints);
+      const start = windowFrom <= 0 ? 0 : Math.round(windowFrom * totalPoints);
+      const lo = [Infinity, Infinity, Infinity];
+      const hi = [-Infinity, -Infinity, -Infinity];
+      if (mode !== 'shape') {
+        for (const line of paths.children) {
+          const data = line.userData;
+          if (hiddenParts.has(data.part)) continue;
+          const n = data.points.length / 3;
+          for (let i = Math.max(0, start - data.from); i < Math.min(n, shown - data.from); i++) {
+            if (data.widths && !(data.widths[i] > 0)) continue;
+            for (let k = 0; k < 3; k++) {
+              const v = data.points[3 * i + k];
+              if (v < lo[k]) lo[k] = v;
+              if (v > hi[k]) hi[k] = v;
+            }
+          }
+        }
+      }
+      const bounds = Number.isFinite(lo[0]) ? { min: lo, max: hi } : lastBounds;
+      const dir = camera.position.clone().sub(controls.target);
+      fit(bounds, dir.lengthSq() > 0 ? dir.normalize() : VIEWS.iso);
+    },
+
+    /**
+     * When each point of the toolpaths is reached, in seconds from the start of the print (in
+     * print order, as `pathPoints` counts them): each printing move at its own speed, travels
+     * at `travelSpeed` (mm/s). For playing the print back.
+     * @param {number} travelSpeed
+     */
+    moveTimes(travelSpeed) {
+      const out = new Float64Array(totalPoints);
+      let t = 0;
+      for (const line of paths.children) {
+        const { points: p, speeds, from } = line.userData;
+        const n = p.length / 3;
+        for (let i = 0; i < n; i++) {
+          if (i > 0) {
+            const d = Math.hypot(p[3 * i] - p[3 * i - 3], p[3 * i + 1] - p[3 * i - 2], p[3 * i + 2] - p[3 * i - 1]);
+            const v = speeds && speeds[i] > 0 ? Math.min(speeds[i], travelSpeed) : travelSpeed;
+            t += d / Math.max(0.1, v);
+          }
+          out[from + i] = t;
+        }
+      }
+      return out;
     },
 
     /**
@@ -788,7 +881,7 @@ export function createViewport(canvas) {
     /** The legend: the colour mode, its range and unit, and the colours from low to high. */
     legend() {
       const m = COLOR_MODES[colorMode];
-      const stops = colorMode === 'height' ? [heightLow, heightHigh] : SCALE;
+      const stops = SCALE;
       const set = ranges[colorMode] || [null, null];
       return {
         mode: colorMode,

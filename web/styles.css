@@ -351,6 +351,33 @@ button {
 }
 
 
+/* Play the print back like a video, at a chosen multiple of its real time. */
+.scrub-play {
+  flex: none;
+  width: 32px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card2);
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.scrub-speed {
+  flex: none;
+  width: auto;
+  margin: 0 8px 0 4px;
+  padding: 0 6px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
 /* Print progress: scrub through the toolpath like a slicer's preview, from either end. Two
    range inputs share one track; only their handles take the pointer. The track between the
    handles is filled (--lo and --hi, set from app.js). Its length never changes. */
