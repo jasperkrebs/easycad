@@ -35,40 +35,47 @@
 
     <main class="layout">
       <section class="viewport" aria-label="3D view">
-        <canvas id="view"></canvas>
-        <div class="view-bar">
-          <div class="seg" role="group" aria-label="Show">
-            <button type="button" data-mode="shape" aria-pressed="false">Shape</button>
-            <button type="button" data-mode="path" aria-pressed="false">Toolpath</button>
-            <button type="button" data-mode="both" aria-pressed="true">Both</button>
-          </div>
-          <div class="seg">
-            <select id="viewColor" aria-label="Colour the toolpath by" title="Colour the toolpath by"></select>
-          </div>
-          <div class="seg">
-            <button type="button" id="viewWidth" aria-pressed="false" title="Draw the toolpath as solid beads, at their real line width and layer height, as slicers do">Line width</button>
-            <input type="range" id="viewBeadOpacity" min="10" max="100" step="5" value="40" aria-label="Bead opacity (left: see-through, right: solid)" title="See-through ↔ solid" hidden>
-          </div>
-          <div class="seg" id="viewCam" role="group" aria-label="View">
-            <button type="button" data-view="iso" title="3D view">3D</button>
-            <button type="button" data-view="front" title="From the front">Front</button>
-            <button type="button" data-view="side" title="From the right side">Side</button>
-            <button type="button" data-view="top" title="From above">Top</button>
-            <button type="button" id="viewParallel" aria-pressed="true" title="Parallel view, true to proportion (off: perspective)">Parallel</button>
-          </div>
-          <div class="seg parts" id="viewParts" role="group" aria-label="Parts shown" hidden></div>
+        <div class="view-stage">
+          <canvas id="view"></canvas>
+          <div class="view-message" id="viewMessage" hidden></div>
         </div>
-        <div class="view-legend" id="viewLegend" hidden>
-          <span class="legend-label" id="legendLabel"></span>
-          <span class="legend-bar" id="legendBar"></span>
-          <span class="legend-ends"><span id="legendMin"></span><span id="legendMax"></span></span>
+        <!-- The view's controls, pinned under it: nothing covers the model. -->
+        <div class="view-tools">
+          <div class="view-bar">
+            <div class="seg" role="group" aria-label="Show">
+              <button type="button" data-mode="shape" aria-pressed="false">Shape</button>
+              <button type="button" data-mode="path" aria-pressed="false">Toolpath</button>
+              <button type="button" data-mode="both" aria-pressed="true">Both</button>
+            </div>
+            <div class="seg">
+              <select id="viewColor" aria-label="Colour the toolpath by" title="Colour the toolpath by"></select>
+            </div>
+            <div class="seg">
+              <button type="button" id="viewWidth" aria-pressed="false" title="Draw the toolpath as solid beads, at their real line width and layer height, as slicers do">Line width</button>
+              <input type="range" id="viewBeadOpacity" min="10" max="100" step="5" value="40" aria-label="Bead opacity (left: see-through, right: solid)" title="See-through ↔ solid" hidden>
+            </div>
+            <div class="seg" id="viewCam" role="group" aria-label="View">
+              <button type="button" data-view="iso" title="3D view">3D</button>
+              <button type="button" data-view="front" title="From the front">Front</button>
+              <button type="button" data-view="side" title="From the right side">Side</button>
+              <button type="button" data-view="top" title="From above">Top</button>
+              <button type="button" id="viewParallel" aria-pressed="true" title="Parallel view, true to proportion (off: perspective)">Parallel</button>
+            </div>
+            <div class="seg parts" id="viewParts" role="group" aria-label="Parts shown" hidden></div>
+          </div>
+          <div class="view-scrub">
+            <input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Print progress" title="Print progress: drag or scroll" />
+            <span class="scrub-info" id="scrubInfo"></span>
+          </div>
+          <div class="view-foot">
+            <div class="view-legend" id="viewLegend" hidden>
+              <span class="legend-label" id="legendLabel"></span>
+              <span class="legend-bar" id="legendBar"></span>
+              <span class="legend-ends"><span id="legendMin"></span><span id="legendMax"></span></span>
+            </div>
+            <div class="view-hud" id="hud"></div>
+          </div>
         </div>
-        <div class="view-scrub">
-          <input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Print progress" title="Print progress: drag or scroll" />
-          <span class="scrub-info" id="scrubInfo"></span>
-        </div>
-        <div class="view-hud" id="hud"></div>
-        <div class="view-message" id="viewMessage" hidden></div>
       </section>
 
       <div class="side">

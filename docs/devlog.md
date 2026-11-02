@@ -18,6 +18,19 @@ and checks that the real one refuses it. The template ships with three lines, wh
 
 **Open:** if the G1's axes really reach past 0 and 1000 (its printer.cfg `position_min` and
 `position_max`), the bed check could use those limits instead.
+## 2026-11-01 (late): nothing over the 3D view
+
+**Why:** on a phone the view's controls (show, colour, line width, views, parts), the legend,
+the print-progress slider and the stats covered most of the model.
+
+**Landed:** the view has its own area with nothing on it (only the "engine failed" message);
+its controls sit in a strip pinned under it, so they stay with the view while the panels scroll:
+one row of controls that slides sideways on a narrow screen (its end fades out) instead of
+wrapping, the print-progress slider and its info, and the legend on one line beside the stats.
+On a phone the view's area is a little taller (52 % of the screen, at least 260 px) so the model
+keeps its size. Same element ids, so the app's code is unchanged; the browser tests pass.
+
+**Open:** nothing.
 
 ## 2026-11-01 (night): toolpath colours, print progress, round beads
 
