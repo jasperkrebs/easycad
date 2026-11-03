@@ -127,6 +127,7 @@ export function createViewport(canvas) {
     persp.updateProjectionMatrix();
     frameOrtho();
     lineMaterial.resolution.set(w, h);
+    headLineMaterial.resolution.set(w, h);
     beadEdgeMaterial.resolution.set(w, h);
     requestRender();
   }
@@ -421,6 +422,16 @@ export function createViewport(canvas) {
   /** Which part of the print is shown, as fractions of its moves: from, to (0, 1: all of it). */
   let windowFrom = 0;
   let progress = 1;
+  /** While playing: how much of the move after the end is done (0..1), drawn part way. */
+  let partial = 0;
+  // That move part way: a line, or a short bead, from its start to where the nozzle is.
+  const headLineMaterial = new LineMaterial({ linewidth: 1.1, vertexColors: true, worldUnits: false });
+  const headLine = new Line2(new LineGeometry(), headLineMaterial);
+  headLine.frustumCulled = false;
+  const headBead = new THREE.Mesh(new THREE.BufferGeometry(), beadMaterial);
+  headBead.frustumCulled = false;
+  headLine.visible = headBead.visible = false;
+  scene.add(headLine, headBead);
   /** Points in all the toolpaths shown, in print order. */
   let totalPoints = 0;
   const nozzle = makeNozzle();
@@ -481,12 +492,43 @@ export function createViewport(canvas) {
       /** @type {THREE.Mesh} */ (mesh).geometry.setDrawRange(begin, end - begin);
     }
     nozzle.visible = Boolean(last) && mode !== 'shape';
+    headLine.visible = headBead.visible = false;
     if (last) {
-      const { data, i } = last;
+      const { data } = last;
+      let { i } = last;
+      const n = data.points.length / 3;
+      // Part way along the next move: the nozzle there, and the move drawn up to it.
+      if (partial > 0 && i + 1 < n) {
+        const p = data.points;
+        const f = Math.min(1, partial);
+        const at = [0, 1, 2].map((k) => p[3 * i + k] + (p[3 * i + 3 + k] - p[3 * i + k]) * f);
+        const ends = new Float32Array([p[3 * i], p[3 * i + 1], p[3 * i + 2], ...at]);
+        const color = pathColors({ ...data, points: p.subarray(3 * i, 3 * i + 6), widths: data.widths?.subarray(i, i + 2), speeds: data.speeds?.subarray(i, i + 2), flows: data.flows?.subarray(i, i + 2), heights: data.heights?.subarray(i, i + 2) });
+        const c1 = [color[3], color[4], color[5]];
+        if (showBeads) {
+          const w = data.widths ? data.widths[i + 1] : 0;
+          if (w > 0) {
+            headBead.geometry.dispose();
+            headBead.geometry = beadGeometry(ends, new Float32Array([0, w]), new Float32Array([0, data.heights[i + 1]]), new Float32Array([...c1, ...c1])).geometry;
+            headBead.visible = mode !== 'shape';
+          }
+        } else {
+          headLine.geometry.dispose();
+          const g = new LineGeometry();
+          g.setPositions(ends);
+          g.setColors([...c1, ...c1]);
+          headLine.geometry = g;
+          headLine.visible = mode !== 'shape';
+        }
+        i += 1;
+        last.i = i;
+        last.at = at;
+      }
       const w = data.widths ? (data.widths[i] > 0 ? data.widths[i] : data.widths.find((v) => v > 0) || 1) : 1;
       const size = Math.max(4 * w, 0.03 * modelSize());
       nozzle.scale.setScalar(size);
-      nozzle.position.set(data.points[3 * i], data.points[3 * i + 1], data.points[3 * i + 2]);
+      const at = last.at || [data.points[3 * i], data.points[3 * i + 1], data.points[3 * i + 2]];
+      nozzle.position.set(at[0], at[1], at[2]);
       placeBeadEdge(data, i, size);
     }
     requestRender();
@@ -917,18 +959,21 @@ export function createViewport(canvas) {
      * point and its move's values, or null.
      * @param {number} f the end, 0 to 1
      * @param {number} [from] the start, 0 to 1
+     * @param {number} [part] how much of the move after the end is done (playing back), 0 to 1
      */
-    setProgress(f, from = 0) {
+    setProgress(f, from = 0, part = 0) {
       progress = Math.min(1, Math.max(0, f));
+      partial = progress < 1 ? Math.min(1, Math.max(0, part)) : 0;
       windowFrom = Math.min(progress, Math.max(0, from));
       const last = applyProgress();
       if (!last) return null;
       const { data, i } = last;
       const pick = (list) => (list ? list[i] : 0);
+      const at = last.at || [data.points[3 * i], data.points[3 * i + 1], data.points[3 * i + 2]];
       return {
-        x: data.points[3 * i],
-        y: data.points[3 * i + 1],
-        z: data.points[3 * i + 2],
+        x: at[0],
+        y: at[1],
+        z: at[2],
         travel: Boolean(data.widths) && !(data.widths[i] > 0),
         speed: pick(data.speeds),
         flow: pick(data.flows),
