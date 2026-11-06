@@ -262,6 +262,48 @@ open2 = spiralize(contour(cone, 1), width: 2, flat_top: false)");
     );
 }
 
+/// `steady_start` on every vase-mode step: the same points and extrusion, but each move of the
+/// opening ramp faster by 1 ÷ its share of a full bead; the rest, closing turn included, as set.
+#[test]
+fn every_vase_step_can_start_at_a_steady_flow() {
+    let v = run("wall = loft([circle(20), circle(20) |> move(z: 4)])
+spiral = vase_spiral(wall, layer: 1, width: 2, flow: 10)
+spiral_s = vase_spiral(wall, layer: 1, width: 2, flow: 10, steady_start: true)
+layers = spiralize(contour(wall, 1), width: 2, flow: 10)
+layers_s = spiralize(contour(wall, 1), width: 2, flow: 10, steady_start: true)
+thread = helix(circle(20), 1, 4, width: 2, flow: 10)
+thread_s = helix(circle(20), 1, 4, width: 2, flow: 10, steady_start: true)");
+    for (plain, steady) in [
+        ("spiral", "spiral_s"),
+        ("layers", "layers_s"),
+        ("thread", "thread_s"),
+    ] {
+        let (a, b) = (path(&v, plain), path(&v, steady));
+        assert_eq!((&a.points, &a.flow), (&b.points, &b.flow), "{plain}");
+        let mut sped = 0;
+        for k in 0..a.points.len() {
+            let ramping = a.turn[k] <= 1.0 && a.flow[k] > 0.0 && a.flow[k] < 1.0;
+            if ramping {
+                assert!(
+                    (b.speed[k] * b.flow[k] - 1.0).abs() < 1e-12,
+                    "{plain} move {k}"
+                );
+                sped += 1;
+            } else {
+                assert_eq!(b.speed[k], a.speed[k], "{plain} move {k}");
+            }
+        }
+        assert!(
+            sped + 1 >= a.samples_per_turn,
+            "{plain}: {sped} moves sped up"
+        );
+        assert!(
+            a.flow.last().copied().unwrap_or(1.0) < 1.0,
+            "{plain} still ramps down at the top"
+        );
+    }
+}
+
 #[test]
 fn tuning_a_toolpath() {
     let v = run(r#"wall = loft([circle(20), circle(20) |> move(z: 10)])

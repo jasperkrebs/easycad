@@ -18,8 +18,8 @@
 
 const { chromium } = require('playwright');
 const { spawn } = require('node:child_process');
-const http = require('node:http');
 const path = require('node:path');
+const { sseEvent, startStandIn, waitForServer } = require('./test-helpers.cjs');
 
 const root = path.join(__dirname, '..', 'web');
 const webPort = 8500 + Math.floor(Math.random() * 400);
@@ -52,7 +52,7 @@ function reply(messages) {
 function sse(messages, model) {
   const r = reply(messages);
   const events = [];
-  const send = (type, data) => events.push(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+  const send = (type, data) => events.push(sseEvent(type, data));
   send('message_start', {
     message: { id: 'msg', type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 40, output_tokens: 1 } },
   });
@@ -72,66 +72,27 @@ function sse(messages, model) {
 
 /** The stand-in proxy (Messages API + /feature-request). */
 function startMock(state) {
-  const server = http.createServer((req, res) => {
-    const cors = {
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || '*',
-    };
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204, cors);
-      res.end();
-      return;
-    }
-    // The body's bytes, decoded once at the end: decoding chunk by chunk garbles a character
-    // split across two chunks (the "·" in a tool result), and the test then sees a rewrite.
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      const body = Buffer.concat(chunks).toString('utf8');
-      const route = new URL(req.url, 'http://mock').pathname;
-      if (req.headers.authorization !== `Bearer ${PASSWORD}`) {
-        res.writeHead(401, { ...cors, 'content-type': 'application/json' });
-        res.end('{"type":"error","error":{"type":"authentication_error","message":"wrong password"}}');
+  return startStandIn(PASSWORD, ({ path, body, cors }, res) => {
+    if (path === '/feature-request') {
+      const issue = JSON.parse(body);
+      state.filed.push(issue);
+      if (!state.canFile) {
+        res.writeHead(501, { ...cors, 'content-type': 'application/json' });
+        res.end('{"type":"error","error":{"type":"not_configured","message":"feature requests are not set up on this proxy"}}');
         return;
       }
-      if (route === '/check') {
-        res.writeHead(200, { ...cors, 'content-type': 'application/json' });
-        res.end('{"ok":true}');
-      } else if (route === '/feature-request') {
-        const issue = JSON.parse(body);
-        state.filed.push(issue);
-        if (!state.canFile) {
-          res.writeHead(501, { ...cors, 'content-type': 'application/json' });
-          res.end('{"type":"error","error":{"type":"not_configured","message":"feature requests are not set up on this proxy"}}');
-          return;
-        }
-        res.writeHead(201, { ...cors, 'content-type': 'application/json' });
-        res.end(JSON.stringify({ number: 42, url: `https://github.com/${REPO}/issues/42` }));
-      } else if (route === '/v1/messages') {
-        const json = JSON.parse(body);
-        state.messages.push(json);
-        res.writeHead(200, { ...cors, 'content-type': 'text/event-stream' });
-        res.end(sse(json.messages, json.model));
-      } else {
-        res.writeHead(404, cors);
-        res.end();
-      }
-    });
-  });
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port })));
-}
-
-async function waitForServer(url) {
-  for (let i = 0; i < 50; i++) {
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // not up yet
+      res.writeHead(201, { ...cors, 'content-type': 'application/json' });
+      res.end(JSON.stringify({ number: 42, url: `https://github.com/${REPO}/issues/42` }));
+    } else if (path === '/v1/messages') {
+      const json = JSON.parse(body);
+      state.messages.push(json);
+      res.writeHead(200, { ...cors, 'content-type': 'text/event-stream' });
+      res.end(sse(json.messages, json.model));
+    } else {
+      res.writeHead(404, cors);
+      res.end();
     }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error('web server did not start');
+  });
 }
 
 (async () => {

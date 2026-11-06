@@ -230,7 +230,7 @@ fn typos_get_suggestions() {
             (2, 5, "unknown name `hieght`; did you mean `height`?".to_string()),
             (3, 5, "there's no step called `lofft`; did you mean `loft`?".to_string()),
             (4, 16, "circle: has no input called `rr`; did you mean `r`? (inputs: r, tolerance)".to_string()),
-            (5, 26, "vase_spiral: has no input called `layr`; did you mean `layer`? (inputs: wall, layer, width, speed, flow, flat_top)".to_string()),
+            (5, 26, "vase_spiral: has no input called `layr`; did you mean `layer`? (inputs: wall, layer, width, speed, flow, flat_top, steady_start)".to_string()),
         ]
     );
     let e = run("x = zzz");

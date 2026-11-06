@@ -12,8 +12,8 @@
 
 const { chromium } = require('playwright');
 const { spawn } = require('node:child_process');
-const http = require('node:http');
 const path = require('node:path');
+const { sseEvent, startStandIn, waitForServer } = require('./test-helpers.cjs');
 
 const root = path.join(__dirname, '..', 'web');
 const webPort = 8000 + Math.floor(Math.random() * 500);
@@ -61,7 +61,7 @@ function reply(round) {
 function sse(round, model) {
   const r = reply(round);
   const events = [];
-  const send = (type, data) => events.push(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+  const send = (type, data) => events.push(sseEvent(type, data));
   send('message_start', {
     message: {
       id: `msg_${round}`,
@@ -100,71 +100,30 @@ function sse(round, model) {
 }
 
 /** The stand-in proxy + API. Records every request for the checks below. */
-function startMock() {
+async function startMock() {
   const requests = [];
-  const server = http.createServer((req, res) => {
-    const cors = {
-      'Access-Control-Allow-Origin': req.headers.origin || '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || '*',
-      'Access-Control-Expose-Headers': 'request-id',
-    };
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204, cors);
+  const { server, port } = await startStandIn(PASSWORD, ({ path, body, headers, cors }, res) => {
+    if (path !== '/v1/messages') {
+      res.writeHead(404, cors);
       res.end();
       return;
     }
-    // The body's bytes, decoded once at the end: decoding chunk by chunk garbles a character
-    // split across two chunks (the "·" in a tool result), and the test then sees a rewrite.
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      const body = Buffer.concat(chunks).toString('utf8');
-      const authorized = req.headers.authorization === `Bearer ${PASSWORD}`;
-      if (!authorized) {
-        res.writeHead(401, { ...cors, 'content-type': 'application/json' });
-        res.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'wrong password' } }));
-        return;
-      }
-      if (new URL(req.url, 'http://mock').pathname === '/check') {
-        res.writeHead(200, { ...cors, 'content-type': 'application/json' });
-        res.end('{"ok":true}');
-        return;
-      }
-      if (new URL(req.url, 'http://mock').pathname !== '/v1/messages') {
-        res.writeHead(404, cors);
-        res.end();
-        return;
-      }
-      const json = JSON.parse(body);
-      requests.push({ headers: req.headers, body: json });
-      // Which round this is: how many tool results the conversation already holds.
-      const round = json.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((b) => b.type === 'tool_result').length;
-      res.writeHead(200, { ...cors, 'content-type': 'text/event-stream', 'request-id': `req_${round}` });
-      const events = sse(round, json.model);
-      let i = 0;
-      const tick = () => {
-        if (i < events.length) {
-          res.write(events[i++]);
-          setTimeout(tick, 5);
-        } else res.end();
-      };
-      tick();
-    });
+    const json = JSON.parse(body);
+    requests.push({ headers, body: json });
+    // Which round this is: how many tool results the conversation already holds.
+    const round = json.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((b) => b.type === 'tool_result').length;
+    res.writeHead(200, { ...cors, 'content-type': 'text/event-stream', 'request-id': `req_${round}` });
+    const events = sse(round, json.model);
+    let i = 0;
+    const tick = () => {
+      if (i < events.length) {
+        res.write(events[i++]);
+        setTimeout(tick, 5);
+      } else res.end();
+    };
+    tick();
   });
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, requests, port: server.address().port })));
-}
-
-async function waitForServer(url) {
-  for (let i = 0; i < 50; i++) {
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error('web server did not start');
+  return { server, requests, port };
 }
 
 (async () => {

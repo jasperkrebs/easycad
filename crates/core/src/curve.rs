@@ -1,14 +1,12 @@
 //! Curves: profiles, outlines and sections, stored as evenly enough sampled points.
 //!
-//! Exact NURBS are used where they matter (smoothing through corners, via `curvo`); the result
-//! is sampled once, at the quality the evaluation asked for. That keeps transforms, lofts and
-//! toolpaths simple and fast, which is what interactive tuning needs.
+//! Smooth curves (a cubic spline through every point) are sampled once, at the quality the
+//! evaluation asked for. That keeps transforms, lofts and toolpaths simple and fast, which is
+//! what interactive tuning needs.
 
 use crate::geom::{P3, Xform, dist3, lerp3, signed_area_xy, unit3};
-use curvo::prelude::*;
-use nalgebra::Point3;
 
-/// The most points `smooth` will fit a curve through (the fit solves a dense system).
+/// The most points `smooth` will fit a curve through.
 pub const MAX_SMOOTH_POINTS: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -79,8 +77,10 @@ impl Curve {
         Curve::new(points, true)
     }
 
-    /// A smooth curve through every point (a cubic NURBS interpolation, periodic for closed
-    /// curves), sampled `per_point` times per point, evenly in curve parameter.
+    /// A smooth curve through every point: a cubic spline (curvature continuous; periodic for a
+    /// closed curve, free ends for an open one), its points spaced by the square root of their
+    /// distance (centripetal, which keeps it from looping or overshooting at sharp turns).
+    /// Sampled `per_point` times between each point and the next, starting on the first point.
     pub fn smooth(&self, per_point: usize) -> Result<Curve, String> {
         let pts = self.distinct_points();
         if pts.len() < 3 {
@@ -92,28 +92,40 @@ impl Curve {
                 pts.len()
             ));
         }
-        let degree = if pts.len() >= 4 { 3 } else { 2 };
-        let input: Vec<Point3<f64>> = pts.iter().map(|p| Point3::new(p[0], p[1], p[2])).collect();
-        let fitted = if self.closed {
-            NurbsCurve3D::<f64>::interpolate_periodic(&input, degree, KnotStyle::Centripetal)
-        } else {
-            NurbsCurve3D::<f64>::interpolate(&input, degree)
+        let n = pts.len();
+        let spans = if self.closed { n } else { n - 1 };
+        let at = |i: usize| pts.get(i % n).copied().unwrap_or([0.0; 3]);
+        // Each span's parameter length: the square root of its chord.
+        let h: Vec<f64> = (0..spans).map(|i| dist3(at(i), at(i + 1)).sqrt()).collect();
+        // Second derivatives at the points, one coordinate at a time.
+        let mut m = [vec![0.0; n], vec![0.0; n], vec![0.0; n]];
+        for (axis, out) in m.iter_mut().enumerate() {
+            let y = |i: usize| at(i)[axis];
+            *out = spline_curvatures(&h, &|i| y(i), self.closed)
+                .ok_or("could not fit a smooth curve through these points")?;
         }
-        .map_err(|e| format!("could not fit a smooth curve through these points ({e})"))?;
-
-        let (start, end) = fitted.knots_domain();
         let per_point = per_point.max(1);
-        let (count, last) = if self.closed {
-            (pts.len() * per_point, pts.len() * per_point)
-        } else {
-            ((pts.len() - 1) * per_point + 1, (pts.len() - 1) * per_point)
-        };
-        let points: Vec<P3> = (0..count)
-            .map(|j| {
-                let q = fitted.point_at(start + (end - start) * j as f64 / last as f64);
-                [q.x, q.y, q.z]
-            })
-            .collect();
+        let mut points: Vec<P3> = Vec::with_capacity(spans * per_point + 1);
+        for (i, &hi) in h.iter().enumerate() {
+            let (a, b) = (at(i), at(i + 1));
+            for j in 0..per_point {
+                let f = j as f64 / per_point as f64;
+                points.push(std::array::from_fn(|axis| {
+                    let (mi, mj) = (
+                        m[axis].get(i).copied().unwrap_or(0.0),
+                        m[axis].get((i + 1) % n).copied().unwrap_or(0.0),
+                    );
+                    // The cubic between the two points with those second derivatives.
+                    let (u, v) = (1.0 - f, f);
+                    u * a[axis]
+                        + v * b[axis]
+                        + hi * hi / 6.0 * ((u * u * u - u) * mi + (v * v * v - v) * mj)
+                }));
+            }
+        }
+        if !self.closed {
+            points.push(at(n - 1));
+        }
         if points.iter().flatten().any(|v| !v.is_finite()) {
             return Err("could not fit a smooth curve through these points".into());
         }
@@ -685,6 +697,79 @@ fn ring(r: f64, n: usize) -> Vec<P3> {
         .collect()
 }
 
+/// The second derivatives of a cubic spline through values `y(0..n)` at points `h` apart (span
+/// `i` from point `i` to `i + 1`, the last span back to point 0 when `closed`), continuous in
+/// slope and curvature; an open spline has none at its ends. A tridiagonal system, cyclic when
+/// closed (solved with the Sherman–Morrison correction). `None` if it can't be solved.
+fn spline_curvatures(h: &[f64], y: &dyn Fn(usize) -> f64, closed: bool) -> Option<Vec<f64>> {
+    let n = if closed { h.len() } else { h.len() + 1 };
+    let span = |i: usize| h.get(i).copied().unwrap_or(1.0);
+    let slope = |i: usize| (y(i + 1) - y(i)) / span(i);
+    // Row i: lo·M[i−1] + mid·M[i] + hi·M[i+1] = rhs, from matching slopes at point i.
+    let row = |i: usize| {
+        let prev = if i == 0 { h.len() - 1 } else { i - 1 };
+        let (a, b) = (span(prev), span(i));
+        (a, 2.0 * (a + b), b, 6.0 * (slope(i) - slope(prev)))
+    };
+    if !closed {
+        // Free ends: M = 0 at both, so only the inner points are unknowns.
+        let inner = n - 2;
+        let rows: Vec<_> = (1..=inner).map(row).collect();
+        let mut out = vec![0.0; n];
+        let solved = tridiagonal(&rows)?;
+        out[1..=inner].copy_from_slice(&solved);
+        return Some(out);
+    }
+    let rows: Vec<_> = (0..n).map(row).collect();
+    // Cyclic: the corners (row 0's lo, row n−1's hi) are folded in with Sherman–Morrison.
+    let (corner_lo, corner_hi) = (rows.first()?.0, rows.last()?.2);
+    let gamma = -rows.first()?.1;
+    let mut a = rows.clone();
+    a[0].1 -= gamma;
+    a[n - 1].1 -= corner_hi * corner_lo / gamma;
+    let x = tridiagonal(&a)?;
+    let mut u = vec![0.0; n];
+    u[0] = gamma;
+    u[n - 1] = corner_hi;
+    let ua: Vec<_> = a
+        .iter()
+        .zip(&u)
+        .map(|(r, ui)| (r.0, r.1, r.2, *ui))
+        .collect();
+    let z = tridiagonal(&ua)?;
+    let v = |w: &[f64]| {
+        w.first().copied().unwrap_or(0.0) + corner_lo / gamma * w.last().copied().unwrap_or(0.0)
+    };
+    let factor = v(&x) / (1.0 + v(&z));
+    Some(x.iter().zip(&z).map(|(xi, zi)| xi - factor * zi).collect())
+}
+
+/// Solves a tridiagonal system, rows (lo, mid, hi, rhs), ignoring the first row's lo and the
+/// last row's hi (the Thomas algorithm). `None` if a pivot vanishes.
+fn tridiagonal(rows: &[(f64, f64, f64, f64)]) -> Option<Vec<f64>> {
+    let n = rows.len();
+    let mut c = vec![0.0; n];
+    let mut d = vec![0.0; n];
+    let mut prev = (0.0, 0.0);
+    for (i, &(lo, mid, hi, rhs)) in rows.iter().enumerate() {
+        let lo = if i == 0 { 0.0 } else { lo };
+        let pivot = mid - lo * prev.0;
+        if pivot.abs() < 1e-300 || !pivot.is_finite() {
+            return None;
+        }
+        c[i] = hi / pivot;
+        d[i] = (rhs - lo * prev.1) / pivot;
+        prev = (c[i], d[i]);
+    }
+    let mut x = vec![0.0; n];
+    let mut next = 0.0;
+    for i in (0..n).rev() {
+        x[i] = d[i] - c[i] * next;
+        next = x[i];
+    }
+    Some(x)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,6 +831,40 @@ mod tests {
             .map(|p| p[0].hypot(p[1]))
             .fold(0.0, f64::max);
         assert!(max_r < 45.5, "{max_r}");
+    }
+
+    #[test]
+    fn smooth_is_a_spline_through_every_point() {
+        // A closed spline through a regular 12-gon hugs its circle, and passes every corner.
+        let poly = Curve::circle(10.0, 12);
+        let round = poly.smooth(8).unwrap();
+        assert_eq!(round.points.len(), 12 * 8);
+        for (k, p) in poly.points.iter().enumerate() {
+            assert!(dist3(round.points[k * 8], *p) < 1e-12, "corner {k}");
+        }
+        for p in &round.points {
+            assert!((p[0].hypot(p[1]) - 10.0).abs() < 0.02, "{p:?}");
+        }
+        // Smooth across the seam: the turn from the step into the first point to the step out of
+        // it is the same as at any other corner.
+        let n = round.points.len();
+        let turn = |a: usize, b: usize, c: usize| {
+            let (p, q, r) = (round.points[a], round.points[b], round.points[c]);
+            dist3(
+                [q[0] - p[0], q[1] - p[1], 0.0],
+                [r[0] - q[0], r[1] - q[1], 0.0],
+            )
+        };
+        assert!((turn(n - 1, 0, 1) - turn(7, 8, 9)).abs() < 1e-9);
+        // Open: through its ends and middle, rising then falling, never past the middle.
+        let arch = Curve::new(vec![[0.0; 3], [10.0, 5.0, 0.0], [20.0, 0.0, 0.0]], false);
+        let s = arch.smooth(4).unwrap();
+        assert_eq!(s.points.len(), 2 * 4 + 1);
+        assert_eq!(
+            (s.points[0], s.points[4], s.points[8]),
+            (arch.points[0], arch.points[1], arch.points[2])
+        );
+        assert!(s.points.iter().all(|p| p[1] <= 5.0 + 1e-9 && p[1] >= -1e-9));
     }
 
     #[test]
