@@ -203,7 +203,8 @@ pure-Rust B-rep kernel is mature yet.
 
 ### 4.2 Measured: does it actually run on a phone-class target?
 
-A throwaway probe lives in [`spikes/kernel-probe/`](../spikes/kernel-probe/). It builds a
+A throwaway probe (`spikes/kernel-probe/`, deleted on 6 Nov 2026 once its results were written
+here; its code is in the git history, commit 8fdfc8d) built a
 Grasshopper-style **twisted star vase** two ways:
 
 - **NURBS:** a smooth periodic 7-point star, 24 sections scaled, rotated and lifted, then

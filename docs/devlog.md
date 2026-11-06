@@ -32,6 +32,16 @@ alone; it's now `Toolpath::steady_start` and an input of all four steps (default
 setting in the thread connector and the vessel (when its bottom isn't a fillet, which starts at
 full flow), off by default so their golden files stay the same. The shaker starts at full flow.
 
+**Decisions:** the kernel-probe spike is gone (its results were already in `research.md` §4.2;
+its code is in the history, 8fdfc8d). `smooth` and `interpolate` fit our own cubic spline
+(centripetal, curvature-continuous, periodic when closed; a tridiagonal solve) instead of
+`curvo`'s NURBS, so `curvo` and `nalgebra` are gone with their 70-odd dependencies: the engine
+went from 1,159,545 to 1,039,411 bytes (330 to 296 KB gzipped). No template smooths; the shapes
+differ slightly from the NURBS fit (it sampled evenly in parameter, this samples per span, so
+every `per_point`-th sample is a corner). The old branch `feature/issue-1` was already gone.
+CI runs the smoke test on pull requests that change `web/` (or the test), Playwright 1.56.1,
+with the screenshots kept as the run's artifact.
+
 ## 2026-11-02 (evening): play the print, fit the view, the bead under the nozzle
 
 **Landed:**

@@ -43,7 +43,7 @@ Three rules hold everything together:
 | Layer | Choice | Why |
 |---|---|---|
 | **Engine** | Rust workspace, compiled to **WebAssembly** (browser, phone) and natively (tests, CLI, optional desktop app) | One engine everywhere. Fast, safe, and very agent-friendly (the compiler catches mistakes). Same pattern as ArtCraft. |
-| **Geometry** | `curvo` (NURBS curves/surfaces), `i_overlay` (2D regions/offsets), `kurbo` (2D paths/SVG); later `manifold-rust` (solids), `fidget` (fields) | Pure Rust, permissive licenses, **verified to compile to WASM: 0.44 MB gzipped, ~50 ms for a twisted-vase solve** ([spike](../spikes/kernel-probe/)). |
+| **Geometry** | our own curves and smooth splines (`curvo`, NURBS, was used for smoothing until 6 Nov 2026), `i_overlay` (2D regions/offsets), `kurbo` (2D paths/SVG); later `manifold-rust` (solids), `fidget` (fields) | Pure Rust, permissive licenses, **verified to compile to WASM: 0.44 MB gzipped, ~50 ms for a twisted-vase solve** ([research §4.2](research.md)). |
 | **UI** | Plain HTML + CSS + JavaScript ES modules, no framework, **no bundler** (like EasyGCode), **three.js** viewport | Best possible phone experience (native inputs, keyboard, share sheet). Easy to style like EasyGCode. Zero build step for UI code. |
 | **The app** | **A web app (PWA)**: the same app in the browser on computer, tablet and phone, installable from the browser, works offline | No installers, no app stores, updates arrive automatically. This is how EasyGCode already works. |
 | **Desktop wrapper** | Optional, later: **Tauri 2** around the same `web/` UI | Only for what browsers can't do well: talking to printers on the local network, real file folders. |
@@ -82,7 +82,7 @@ easycad/
 ├─ Cargo.toml              Rust workspace (edition 2024)
 ├─ crates/
 │  ├─ lang/    easycad-lang     parser, formatter, syntax tree, error messages (no geometry)
-│  ├─ geom/    easycad-geom     value types + thin wrappers over curvo / manifold-rust / i_overlay
+│  ├─ geom/    easycad-geom     value types + thin wrappers over manifold-rust / i_overlay
 │  ├─ nodes/   easycad-nodes    the node library: typed inputs/outputs, docs, examples
 │  ├─ eval/    easycad-eval     graph building, type checking, incremental evaluation, caching
 │  ├─ io/      easycad-io       3MF, STL, OBJ, SVG, DXF writers; importers
@@ -99,7 +99,7 @@ easycad/
 ├─ desktop/                Tauri 2 shell (Phase 4)
 ├─ examples/               vase.easycad, box-with-lid.easycad, attractor-panel.easycad, …
 ├─ docs/
-└─ spikes/                 throwaway experiments with results
+└─ spikes/                 throwaway experiments with results (none at the moment)
 ```
 
 **Start small** (this is the layout today, Phase 1b): three crates, `lang`, a combined
@@ -547,7 +547,7 @@ stops at the build height. A failing toolpath gets a message instead of a file.
 | Risk | Mitigation |
 |---|---|
 | The language design is the biggest decision | Keep v0 tiny. Version header in every file (`easycad 0.1`). Canonical formatter. Automatic migration when the syntax changes. |
-| `curvo` and `manifold-rust` are 0.x / new | Wrap them behind our own `geom` API, cover with golden tests, pin versions. Fallback for booleans: the C++ Manifold via its official WASM package. |
+| `manifold-rust` is 0.x / new | Wrap them behind our own `geom` API, cover with golden tests, pin versions. Fallback for booleans: the C++ Manifold via its official WASM package. |
 | Mesh-only solids can't do true edge fillets or STEP yet | Fillet in the profiles (curve fillets) and round with distance fields for now. Exact B-rep is a later milestone (Phase 7). |
 | iOS can evict PWA storage | Explicit save/share of `.easycad` files, autosave plus "export backup", the desktop app. |
 | AI quality varies | AI is optional; locks, diffs, undo; a small eval set of real prompts run on every prompt change. |

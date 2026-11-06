@@ -1,8 +1,8 @@
 # Checks pull requests and `main`, builds the web app, and deploys it to GitHub Pages from `main`
 # (the default branch). Kept light on purpose (1 Nov 2026: a sandbox, not a product): the Rust
-# tests, which include the G-code golden tests, and a build. The browser tests
-# (scripts/smoke-test.cjs, agent-test.cjs, request-test.cjs) are run by hand before a bigger UI
-# change. Pushes to other branches run nothing; a pull request runs the checks once. The feature
+# tests, which include the G-code golden tests, and a build. A pull request that changes web/
+# also runs the smoke test (scripts/smoke-test.cjs: every template on a phone and a desktop in
+# headless Chromium); the agent and request tests are run by hand before a bigger UI change. Pushes to other branches run nothing; a pull request runs the checks once. The feature
 # builder starts this workflow on its own branches itself ("Run workflow").
 #
 # Hosting (decided 15 Oct 2026): the repo is public, so GitHub Pages is free. It needs one
@@ -106,7 +106,7 @@ jobs:
           echo "::notice::The AI proxy is live at $url"
 
   web:
-    name: Web app (build, size budget)
+    name: Web app (build, size budget, smoke test)
     runs-on: ubuntu-24.04
     # Builds while the engine job tests. The proxy job runs only on the default branch, and a
     # broken proxy setup shouldn't stop the website from updating.
@@ -137,6 +137,31 @@ jobs:
         with:
           node-version: 22
       - run: node --test scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs
+      # The smoke test, for pull requests that change the app (or the test itself).
+      - name: Does this pull request change the app?
+        id: app
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --quiet --depth=1 origin "$BASE"
+          if git diff --quiet "$BASE" HEAD -- web scripts/smoke-test.cjs scripts/test-helpers.cjs; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Smoke test (headless Chromium, phone and desktop)
+        if: steps.app.outputs.changed == 'true'
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+          node scripts/smoke-test.cjs smoke-shots
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.app.outputs.changed == 'true'
+        with:
+          name: smoke-test-screenshots
+          path: smoke-shots
+          if-no-files-found: ignore
       - name: App config (the AI proxy's address, when it's deployed, where feature requests go, and this version)
         env:
           AGENT_URL: ${{ needs.proxy.outputs.url }}
