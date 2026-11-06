@@ -42,6 +42,14 @@ every `per_point`-th sample is a corner). The old branch `feature/issue-1` was a
 CI runs the smoke test on pull requests that change `web/` (or the test), Playwright 1.56.1,
 with the screenshots kept as the run's artifact.
 
+**Batch 4, smaller files (part):** the step implementations moved from `nodes.rs` (now the
+table and the call machinery, 2,293 lines with its tests) into `nodes/ops.rs`; the chat's text
+(Markdown, tool-call lines, thinking, money) from `chat.js` into `chat-text.js`.
+
+**Open:** splitting `viewport.js` and `app.js`'s `wire()` waits for the playback commit on
+`claude/stoic-rubin-a9kl9m` (a758abd, which changes both) to reach `main`, so the two don't
+collide.
+
 ## 2026-11-02 (evening): play the print, fit the view, the bead under the nozzle
 
 **Landed:**
