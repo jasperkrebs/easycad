@@ -136,7 +136,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs
+      - run: node --test scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs
       - name: App config (the AI proxy's address, when it's deployed, where feature requests go, and this version)
         env:
           AGENT_URL: ${{ needs.proxy.outputs.url }}

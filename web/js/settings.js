@@ -5,10 +5,10 @@
 
 import { el, numberField, parseNumber } from './dom.js';
 
-export const UNIT_LABELS = { deg: '°', inch: 'in' };
+const UNIT_LABELS = { deg: '°', inch: 'in' };
 
 /** A slider step for a range: about a hundredth of it, rounded down to a power of ten. */
-export function autoStep(min, max) {
+function autoStep(min, max) {
   const span = Math.abs(max - min);
   return span > 0 ? 10 ** Math.floor(Math.log10(span / 100)) : 1;
 }

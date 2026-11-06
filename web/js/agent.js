@@ -31,7 +31,7 @@ const MAX_ROUNDS = 16;
 export const CONTEXT_TAG = '<project>';
 
 /** What a set of usage numbers cost, in dollars. */
-export function costOf(model, usage) {
+function costOf(model, usage) {
   const m = MODELS[model] || MODELS[DEFAULT_MODEL];
   const u = usage || {};
   return (
@@ -77,7 +77,7 @@ ${catalog.trim()}${own}`;
 }
 
 /** The tools the model can call. Sorted by name, and identical on every request (caching). */
-export const TOOLS = [
+const TOOLS = [
   {
     name: 'edit_recipe',
     description:
@@ -270,7 +270,7 @@ export function applyEdits(source, edits) {
 }
 
 /** Checks a tool's input (inputs stream in unvalidated, so the app checks them itself). */
-export function validate(name, input) {
+function validate(name, input) {
   const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
   if (!isObj(input)) return 'the input must be an object';
   if (name === 'edit_recipe') {

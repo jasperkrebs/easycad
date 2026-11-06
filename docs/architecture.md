@@ -153,8 +153,8 @@ show vase
 ```
 
 - **No loops, no mutation, no file or network access.** Each line is one node and each name
-  is a wire. That's why the graph view is a 1:1 projection of the text, and why AI-written
-  definitions are safe to run.
+  is a wire. That's why a recipe maps 1:1 onto a graph of components (the Graph tab drew it
+  that way until 1 Nov 2026), and why AI-written definitions are safe to run.
 - **Lists replicate automatically** (Grasshopper/Dynamo style). `t` is a list of 32 numbers, so
   `sections` becomes a list of 32 curves without any loop.
 
@@ -376,13 +376,14 @@ app: checks the issue (public API) ◄──────────────
 └──────────────────────────────┘
 ```
 
-**Desktop (≥ 960 px):** viewport left (large). The right column holds tabs for Params / Graph /
-Code / Print, with the chat docked below. The Graph view can split side-by-side with the
-viewport, like Rhino + Grasshopper.
+**Desktop (≥ 960 px):** viewport left (large), its controls in a strip under it. The right column
+holds the tabs Settings / Chat / Recipe / Print / About.
 
 **The page never scrolls** (an app shell that fills the screen): the panels scroll on their
 own under their pinned tab row, so the viewport stays in sight however long the settings are.
-On a phone the viewport takes the top 42 % (at least 180 px).
+On a phone the viewport takes the top 52 % (at least 260 px). Nothing sits on the 3D view: its
+controls are pinned in a strip under it (one row that slides sideways, the print progress, the
+legend and stats).
 
 ### 9.2 Panels
 - **Viewport** (three.js):
@@ -426,7 +427,6 @@ On a phone the viewport takes the top 42 % (at least 180 px).
   `--accent2 #2bd9a0`, `--warn #ffb454`, `--border #2a2f3a`.
 - Plus a matching light theme for daylight use, following the system setting.
 - System font, rounded cards, a scrollable tab row, safe-area insets.
-- See the [mockup](mockup/index.html).
 
 ---
 
