@@ -17,6 +17,13 @@ UI mockup (`docs/mockup/`, superseded by the app) deleted with its links; CI run
 tests once (its own job), not twice; `architecture.md` no longer describes the Graph view or the
 old phone layout; October's dev log moved to `devlog-2026-10.md`.
 
+**Batch 2, shared helpers:** `dom.js` has `load`/`save`/`loadJSON`/`saveJSON` for the browser's
+storage (a fallback when storage is missing or refuses, never an error), in place of 24 copied
+try/catch blocks in `app.js`, `chat.js`, `print.js` and `settings.js` (tested in
+`settings.test.mjs`); one formatter for numbers people read (`fmtUpTo`; `agent.js` keeps its own,
+locale-free, for the model). The browser tests share `scripts/test-helpers.cjs`: the web server
+wait and the stand-in proxy (CORS, password, `/check`, the body decoded once).
+
 ## 2026-11-02 (evening): play the print, fit the view, the bead under the nozzle
 
 **Landed:**

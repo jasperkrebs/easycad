@@ -208,6 +208,8 @@ export function numbered(source) {
   return lines.map((l, i) => `${String(i + 1).padStart(width)}| ${l}`).join('\n');
 }
 
+// Numbers for the model, not for people: never localised (1.5, not 1,5), so they read back
+// the same whatever the device's language. (dom.js's fmt formats for people.)
 const fmtNum = (n, digits = 1) => (Number.isFinite(n) ? Number(n.toFixed(digits)).toString() : '?');
 
 /**

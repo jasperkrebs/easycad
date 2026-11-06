@@ -134,3 +134,36 @@ test('a setting with `when` applies only while the setting it names has one of i
   assert.equal(v.strength, false);
   assert.equal(at({ shape: 'own', lip: false, comp: 'width' }).own_r, true);
 });
+
+test('stored settings never throw, with storage or without', async () => {
+  const { load, save, loadJSON, saveJSON } = await import('../web/js/dom.js');
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  try {
+    // Storage that throws on every use (private browsing in some browsers): fallbacks, no errors.
+    const broken = () => {
+      throw new Error('SecurityError');
+    };
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: broken, setItem: broken, removeItem: broken } });
+    assert.equal(load('k', 'fallback'), 'fallback');
+    assert.deepEqual(loadJSON('k', { a: 1 }), { a: 1 });
+    save('k', 'v');
+    saveJSON('k', { a: 2 });
+    // Working storage: values round-trip, null removes, unreadable JSON gives the fallback.
+    const map = new Map();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)), removeItem: (k) => map.delete(k) },
+    });
+    save('k', 'v');
+    assert.equal(load('k'), 'v');
+    save('k', null);
+    assert.equal(load('k', 'gone'), 'gone');
+    saveJSON('j', { a: 3 });
+    assert.deepEqual(loadJSON('j', null), { a: 3 });
+    map.set('bad', '{nope');
+    assert.equal(loadJSON('bad', 'fallback'), 'fallback');
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'localStorage', had);
+    else delete globalThis.localStorage;
+  }
+});

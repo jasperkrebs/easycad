@@ -17,7 +17,7 @@
 // improved too, once the user has chosen to update to it or keep their own.
 
 import { CONTEXT_TAG, DEFAULT_MODEL, EFFORTS, MODELS, applyEdits, closeToolUses, numbered, projectContext, runStatus, runTurn, systemPrompt } from './agent.js';
-import { $, el } from './dom.js';
+import { $, el, load as loadKey, loadJSON, save as saveKey, saveJSON } from './dom.js';
 import { PRINTERS } from './print.js';
 import { listValue } from './settings.js';
 import { createRequests, formatIssue, hasVersion, newId, newIssueUrl } from './requests.js';
@@ -86,12 +86,7 @@ export function createChat(app) {
 
   /** @returns {AiSettings} */
   function settings() {
-    let s = {};
-    try {
-      s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {};
-    } catch {
-      s = {};
-    }
+    const s = loadJSON(SETTINGS_KEY, {});
     return {
       mode: s.mode === 'key' ? 'key' : 'proxy',
       proxyUrl: typeof s.proxyUrl === 'string' && s.proxyUrl ? s.proxyUrl : defaultProxyUrl,
@@ -103,29 +98,14 @@ export function createChat(app) {
   }
 
   function saveSettings(patch) {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings(), ...patch }));
-    } catch {
-      // Private browsing: the settings last until the page closes.
-    }
+    saveJSON(SETTINGS_KEY, { ...settings(), ...patch });
     renderStatus();
   }
 
-  const secret = () => {
-    try {
-      return localStorage.getItem(SECRET_KEY) || '';
-    } catch {
-      return '';
-    }
-  };
+  const secret = () => loadKey(SECRET_KEY);
 
   function setSecret(value) {
-    try {
-      if (value) localStorage.setItem(SECRET_KEY, value);
-      else localStorage.removeItem(SECRET_KEY);
-    } catch {
-      // ignore
-    }
+    saveKey(SECRET_KEY, value || null);
     showSecretState();
     renderStatus();
   }
@@ -158,20 +138,12 @@ export function createChat(app) {
   const month = () => new Date().toISOString().slice(0, 7);
 
   function monthSpend() {
-    try {
-      const s = JSON.parse(localStorage.getItem(SPEND_KEY) || 'null');
-      return s && s.month === month() ? Number(s.usd) || 0 : 0;
-    } catch {
-      return 0;
-    }
+    const s = loadJSON(SPEND_KEY, null);
+    return s && s.month === month() ? Number(s.usd) || 0 : 0;
   }
 
   function addSpend(usd) {
-    try {
-      localStorage.setItem(SPEND_KEY, JSON.stringify({ month: month(), usd: monthSpend() + usd }));
-    } catch {
-      // ignore
-    }
+    saveJSON(SPEND_KEY, { month: month(), usd: monthSpend() + usd });
   }
 
   const money = (usd) => (usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(usd < 1 ? 3 : 2)}`);
@@ -622,11 +594,8 @@ export function createChat(app) {
 
   /** Reloads the app for a shipped step (the new engine), marking it so this happens once. */
   function reloadForStep() {
-    try {
-      sessionStorage.setItem(RELOAD_FLAG, String(Date.now()));
-    } catch {
-      // Without session storage it may reload again later; harmless.
-    }
+    // Without session storage it may reload again later; harmless.
+    saveKey(RELOAD_FLAG, String(Date.now()), { session: true });
     location.reload();
   }
 
@@ -674,12 +643,7 @@ export function createChat(app) {
         continue;
       }
       if (r.status === 'shipped' && !(await runsShipped(r))) {
-        let reloaded = 0;
-        try {
-          reloaded = Number(sessionStorage.getItem(RELOAD_FLAG) || 0);
-        } catch {
-          reloaded = 0;
-        }
+        const reloaded = Number(loadKey(RELOAD_FLAG, '0', { session: true })) || 0;
         // The new site can take a minute to reach every server: retry, but not in a loop.
         const idle = document.hidden || Date.now() - lastActivity > IDLE_RELOAD_MS;
         if (idle && !busy && !app.project().editorDirty && Date.now() - reloaded > 3 * 60 * 1000) reloadForStep();
