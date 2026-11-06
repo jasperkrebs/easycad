@@ -11,6 +11,7 @@ param fit        = 0 mm    in -1..1 step 0.05     "Fit tolerance (on the diamete
 group "Print"
 param line       = 0 mm    in 0..15 step 0.1      "Line width (0: 2.4 × pitch)"
 param flow       = 20      in 0.5..60             "Flow (mm³/s)"
+param steady     = false                          "Steady flow in the first turn (faster where the bead is thin, up to the travel speed)"
 param tolerance  = 0.01 mm in 0.001..0.2          "Chord tolerance"
 
 group "Brim"
@@ -36,7 +37,7 @@ rc      = (inner_d + lw) / 2
 
 # The helix starts at the back (+Y) and rises one pitch per turn to the full height.
 base    = circle(rc, tolerance: tolerance) |> rotate(90)
-coil    = helix(base, pitch: pitch, height: height, width: lw, flow: flow)
+coil    = helix(base, pitch: pitch, height: height, width: lw, flow: flow, steady_start: steady)
 
 # Brim rings outside the wall, outermost first; then up, over and down into the helix.
 bw      = pick(brim_line, brim_line, lw)

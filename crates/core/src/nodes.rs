@@ -1404,9 +1404,15 @@ pub static NODES: &[Node] = &[
                 1.0,
                 "true: a flat closing turn for a level rim; false: an open top",
             ),
+            opt(
+                "steady_start",
+                "Bool",
+                0.0,
+                "true: the extruder runs at the set flow from the start; the first turn moves faster where its bead is thin (each move's speed ÷ its share of a full bead), never faster than the printer's travel speed. For pellet extruders, which can't follow a ramp quickly",
+            ),
         ],
         output: "Toolpath",
-        doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up, snaps to whole layers, and ends with a flat turn that ramps extrusion down (or, with `flat_top: false`, stops at full flow as it reaches the top: EasyGCode's open top).",
+        doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up (with `steady_start`, at a steady flow: faster where the bead is thin), snaps to whole layers, and ends with a flat turn that ramps extrusion down (or, with `flat_top: false`, stops at full flow as it reaches the top: EasyGCode's open top).",
         run: Run::Op(vase_spiral),
     },
     Node {
@@ -1499,9 +1505,15 @@ pub static NODES: &[Node] = &[
                 1.0,
                 "true: start on the bed, extrusion ramping up; false: carry on at full extrusion from something printed before (a flat bottom)",
             ),
+            opt(
+                "steady_start",
+                "Bool",
+                0.0,
+                "true: the extruder runs at the set flow from the start; the first turn moves faster where its bead is thin (each move's speed ÷ its share of a full bead), never faster than the printer's travel speed. For pellet extruders, which can't follow a ramp quickly",
+            ),
         ],
         output: "Toolpath",
-        doc: "Vase mode through any stack of layers, flat or tilted: one continuous spiral that blends each layer into the next, each move extruded for its own local layer height (thin where layers are close, thick where they're apart). Same start ramp and closing turn as vase_spiral; flat, evenly spaced layers print exactly like it. `bead(path, layer: …)` extrudes it for one layer height throughout instead (EasyGCode's squeeze, where layers come closer on overhangs).",
+        doc: "Vase mode through any stack of layers, flat or tilted: one continuous spiral that blends each layer into the next, each move extruded for its own local layer height (thin where layers are close, thick where they're apart). Same start ramp (and `steady_start`) and closing turn as vase_spiral; flat, evenly spaced layers print exactly like it. `bead(path, layer: …)` extrudes it for one layer height throughout instead (EasyGCode's squeeze, where layers come closer on overhangs).",
         run: Run::Op(toolbox::spiralize),
     },
     Node {
@@ -1523,9 +1535,15 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "volumetric flow in mm³/s; when set, it sets the speed (flow ÷ bead area)",
             ),
+            opt(
+                "steady_start",
+                "Bool",
+                0.0,
+                "true: the extruder runs at the set flow from the start; the first turn moves faster where its bead is thin (each move's speed ÷ its share of a full bead), never faster than the printer's travel speed. For pellet extruders, which can't follow a ramp quickly",
+            ),
         ],
         output: "Toolpath",
-        doc: "Vase mode around a circle, rising exactly `pitch` per turn to exactly `height` (any fraction of a turn included, nothing snapped): EasyGCode's thread connector. Starts on the circle's first point with extrusion ramping up over the first turn, ends with a flat turn that ramps it down. One move per point of the circle: `circle(r, tolerance: 0.01)` keeps within 0.01 mm of the true circle. Counter-clockwise rising (a right-hand thread) for a circle as `circle` makes it.",
+        doc: "Vase mode around a circle, rising exactly `pitch` per turn to exactly `height` (any fraction of a turn included, nothing snapped): EasyGCode's thread connector. Starts on the circle's first point with extrusion ramping up over the first turn (with `steady_start`, at a steady flow), ends with a flat turn that ramps it down. One move per point of the circle: `circle(r, tolerance: 0.01)` keeps within 0.01 mm of the true circle. Counter-clockwise rising (a right-hand thread) for a circle as `circle` makes it.",
         run: Run::Op(helix),
     },
     Node {
@@ -2370,12 +2388,15 @@ fn toolpath(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 fn vase_spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let wall = a.surface(0)?;
     let settings = Settings::from_inputs(a.num(2)?, a.num(1)?, a.num(3)?, flow(a, 4)?)?;
-    let path = toolpath::vase_spiral(
+    let mut path = toolpath::vase_spiral(
         wall,
         settings,
         a.flag(5)?,
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
+    if a.flag(6)? {
+        path.steady_start();
+    }
     ctx.spend(path.points.len())?;
     Ok(Value::Toolpath(Rc::new(path)))
 }
@@ -2433,13 +2454,16 @@ fn helix(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let circle = a.curve(0)?;
     let (pitch, height) = (a.num(1)?, a.num(2)?);
     let settings = Settings::from_inputs(a.num(3)?, pitch, a.num(4)?, flow(a, 5)?)?;
-    let path = toolpath::helix(
+    let mut path = toolpath::helix(
         circle,
         pitch,
         height,
         settings,
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
+    if a.flag(6)? {
+        path.steady_start();
+    }
     ctx.spend(path.points.len())?;
     Ok(Value::Toolpath(Rc::new(path)))
 }
@@ -2544,7 +2568,7 @@ mod tests {
         }
         let cat = catalog();
         assert!(cat.starts_with("## Numbers & lists"));
-        assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40, flow: Number = 0, flat_top: Bool = true) -> Toolpath"));
+        assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40, flow: Number = 0, flat_top: Bool = true, steady_start: Bool = false) -> Toolpath"));
         assert!(cat.contains("fade(distance: Number | Field, inside: Number | Field, outside: Number | Field, band: Number | Field = 0) -> Number | Field"));
     }
 

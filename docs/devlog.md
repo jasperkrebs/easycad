@@ -24,6 +24,14 @@ try/catch blocks in `app.js`, `chat.js`, `print.js` and `settings.js` (tested in
 locale-free, for the model). The browser tests share `scripts/test-helpers.cjs`: the web server
 wait and the stand-in proxy (CORS, password, `/check`, the body decoded once).
 
+**Batch 3, one vase ramp:** the start ramp and closing turn of `vase_spiral`, `spiralize`,
+`vase_revolve` and `helix` were the same arithmetic written four times; they're now
+`ramp_up`/`ramp_down` in `toolpath.rs`, and every golden G-code file is byte-identical.
+`steady_start` (a steady flow through the first turn, for pellet extruders) was the lampshade's
+alone; it's now `Toolpath::steady_start` and an input of all four steps (default off), and a
+setting in the thread connector and the vessel (when its bottom isn't a fillet, which starts at
+full flow), off by default so their golden files stay the same. The shaker starts at full flow.
+
 ## 2026-11-02 (evening): play the print, fit the view, the bead under the nozzle
 
 **Landed:**
