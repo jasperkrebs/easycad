@@ -43,4 +43,6 @@ mod eval_tests;
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
+mod lamp_tests;
+#[cfg(test)]
 mod toolbox_tests;
