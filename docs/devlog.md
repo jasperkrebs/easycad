@@ -50,6 +50,26 @@ table and the call machinery, 2,293 lines with its tests) into `nodes/ops.rs`; t
 `claude/stoic-rubin-a9kl9m` (a758abd, which changes both) to reach `main`, so the two don't
 collide.
 
+## 2026-11-03: the nozzle glides along each move
+
+**Found:** playing back, the nozzle waited at the start of a long straight move for as long as
+it takes to print, then jumped to its end.
+
+**Landed:** the view interpolates instead: while playing, the nozzle moves along the move it's
+on at the move's speed, and that move is drawn up to the nozzle (a line, or a short bead); the
+print time in the stats line runs smoothly too. The G-code is unchanged.
+
+**Why not split the G-code's long lines (looked into):**
+- Size: split at 5 mm, the owner's stool goes from 92,346 lines (3.6 MB) to about 111,000
+  (+21 %), at 2 mm to about 167,000 (+80 %); the lampshade +65 % / +241 %. The spiral disc and
+  the thread connector are already under 1 mm a move, so nothing changes there.
+- Pressure advance and motion: nothing gained. Klipper's look-ahead runs straight through
+  points on a straight line without slowing, and pressure advance follows the extruder's
+  *velocity changes*; pieces of one line at one speed and one E per mm have none. More moves
+  only add planner and file load (and on a slow host, the risk of the queue running dry).
+- Splitting helps only where something changes *along* the line (a bead that blends, a speed
+  that ramps): recipes already add those points where needed (`resample`, `bead` with fields).
+
 ## 2026-11-02 (evening): play the print, fit the view, the bead under the nozzle
 
 **Landed:**

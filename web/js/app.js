@@ -342,10 +342,14 @@ function duration(s) {
 
 /** Playing the print back: the animation frame, or 0 while it isn't playing. */
 let playing = 0;
+/** While playing, how much of the move after the end handle is done (0..1): the nozzle glides
+ * along each move instead of waiting at its start and jumping to its end. */
+let playPart = 0;
 
 function stopPlaying() {
   if (playing) cancelAnimationFrame(playing);
   playing = 0;
+  playPart = 0;
   $('scrubPlay').textContent = '▶';
   $('scrubPlay').setAttribute('aria-label', 'Play the print');
 }
@@ -377,6 +381,8 @@ function play() {
       else b = m - 1;
     }
     hi.value = String(Math.min(max, a + 1));
+    const span = (times[a + 1] ?? times[a]) - times[a];
+    playPart = span > 0 ? Math.min(1, (t - times[a]) / span) : 0;
     showProgress();
     if (a + 1 >= max) {
       stopPlaying();
@@ -422,12 +428,13 @@ function showProgress(e) {
   const range = /** @type {HTMLElement} */ ($('scrubRange'));
   range.style.setProperty('--lo', `${scrubFrom * 100}%`);
   range.style.setProperty('--hi', `${scrubAt * 100}%`);
-  const at = viewport.setProgress(scrubAt, scrubFrom);
+  const at = viewport.setProgress(scrubAt, scrubFrom, playing ? playPart : 0);
   let part = scrubFrom > 0 || scrubAt < 1 ? `${fmt(scrubFrom * 100)}–${fmt(scrubAt * 100)} %` : '';
   if (at) {
     const times = timesOf();
     const i = Math.max(0, Math.min(times.length - 1, Number(hi.value) - 1));
-    part += ` · ${duration(times[i])} of ${duration(times[times.length - 1] || 0)}`;
+    const now = times[i] + (playing ? playPart * ((times[i + 1] ?? times[i]) - times[i]) : 0);
+    part += ` · ${duration(now)} of ${duration(times[times.length - 1] || 0)}`;
   }
   $('hud').textContent = at
     ? at.travel
