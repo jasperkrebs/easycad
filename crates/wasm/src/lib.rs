@@ -196,7 +196,7 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&out, "print", &plain(&e.print)?)?;
     set(&out, "prints", &plain(&e.prints)?)?;
     set(&out, "exports", &plain(&e.exports)?)?;
-    set(&out, "parts", &plain(&e.parts)?)?;
+    set(&out, "partList", &plain(&e.parts)?)?;
     set(&out, "ports", &plain(&e.ports)?)?;
     set(&out, "components", &plain(&e.components)?)?;
     let bounds = &e.drawing.bounds;

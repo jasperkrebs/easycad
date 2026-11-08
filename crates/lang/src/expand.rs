@@ -46,6 +46,8 @@ pub struct InputInfo {
     pub value: String,
     /// Whether the part's line gives it (else it's the component's default).
     pub given: bool,
+    /// The name the component's default reads, when it's one name (`on_socket`).
+    pub default: String,
     pub span: Span,
 }
 
@@ -193,6 +195,10 @@ fn expand_part(part: &Part, c: &Component, out: &mut Expanded) {
             group: None,
             value,
             given,
+            default: match &i.default {
+                Expr::Ident { name, .. } => name.clone(),
+                _ => String::new(),
+            },
             span: i.span,
         });
         out.program.bindings.push(Binding {

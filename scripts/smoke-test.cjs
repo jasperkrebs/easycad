@@ -125,7 +125,7 @@ async function saveFrom(page, selector) {
       // Templates replace the project. Only EasyGCode's projects (and the shaker) are offered.
       await page.click('#tab-settings');
       const offered = await page.locator('#template option').evaluateAll((os) => os.map((o) => o.value).filter(Boolean));
-      if (offered.join() !== 'lampshade,vessel,salt-shaker,bend-stool,thread-connector,spiral-disc') failures.push(`${name}: templates offered: ${offered.join()}`);
+      if (offered.join() !== 'lampshade,lamp,vessel,salt-shaker,bend-stool,thread-connector,spiral-disc') failures.push(`${name}: templates offered: ${offered.join()}`);
       if (await page.isVisible('#tab-graph')) failures.push(`${name}: the Graph tab is still there`);
       await page.selectOption('#template', 'vessel');
       // The project was edited, so the page asks before replacing it.
@@ -444,6 +444,31 @@ async function saveFrom(page, selector) {
       if (!/^2 × 0\.6 mm/.test(baseBeads) || baseBeads.includes('|')) failures.push(`${name}: the container's beads: ${baseBeads}`);
       if (!lidBeads.includes('2 × 0.6 mm') || !lidBeads.includes('3 × 0.3 mm')) failures.push(`${name}: the lid's beads: ${lidBeads}`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-print.png`), fullPage: name === 'phone' });
+
+      // The lamp builder: a shade added on a port in the plan (a part line, its own fold-out and
+      // G-code file), then removed again.
+      await page.click('#tab-settings');
+      await page.selectOption('#template', 'lamp');
+      if (await page.isVisible('#replaceConfirm')) await page.click('#replaceYes');
+      await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Lamp', null, { timeout: 15000 });
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      await page.click('#viewPlan');
+      await page.locator('.plan-port[aria-label*="main · End, outside"]').click();
+      await page.selectOption('#addPart-shape', 'tube');
+      await page.click('#addPartYes');
+      await page.waitForFunction(() => /^part tube = shade\(/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      const shown = () => page.waitForFunction(() => document.querySelectorAll('#settings details.part').length === 2 && document.querySelectorAll('#plan .plan-part').length === 2, null, { timeout: 15000 }).then(() => true, () => false);
+      if (!(await shown())) failures.push(`${name}: the lamp's parts: ${await page.locator('#settings details.part').count()} fold-outs, ${await page.locator('#plan .plan-part').count()} in the plan`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-plan.png`) });
+      await page.click('#tab-print');
+      const lampParts = await page.locator('#stats .part-title').allTextContents();
+      if (lampParts.join() !== 'main,tube') failures.push(`${name}: the lamp's G-code parts: ${lampParts.join()}`);
+      await page.click('#tab-settings');
+      await page.click('#settings .remove-part:text("Remove tube")');
+      await page.waitForFunction(() => !/^part tube/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      await page.click('button[data-mode="both"]');
 
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
       if (overflow) failures.push(`${name}: page scrolls sideways`);

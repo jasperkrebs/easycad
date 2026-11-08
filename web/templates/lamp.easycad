@@ -44,11 +44,11 @@ row   = index_of(["E27", "E14", "custom"], socket)
 pitch = item([2.5, 2, thread_pitch], row)
 # The socket as a port (see the shade's ports): the first shade's start runs half a line
 # outside the socket's thread; the socket fills its inside.
-on_socket = [(item([40, 28, thread_d], row) + fit + line) / 2, 0, 1, 100000, less(row, 1.5)]
+on_socket = [(item([40, 28, thread_d], row) + fit + line) / 2, 0, 1, 100000, less(row, 1.5), 1]
 
 # ---- A shade. Where it's mounted comes in as a port: [the radius its straight start runs at,
 # the height where that straight section ends, which way the section runs from there (+1 up),
-# its length, whether it's the socket].
+# its length, whether it's the socket, which face (1 outside, -1 inside)].
 component shade "Shade"
   group "Mount"
   input mount = on_socket "Mounted on"
@@ -314,10 +314,14 @@ component shade "Shade"
   # inside as far in. The start's inside is the socket's; the end is there with a straight end.
   r_end    = item(full_r, count(full_r) - 1)
   end_len_at = pick(is_tube, length, end_on * end_eff)
-  port start_out = [r_t + line + joint_fit, z0, s, pick(is_tube, length, start_eff), 0] "Start, outside"
-  port start_in  = [r_t - line - joint_fit, z0, s, pick(m_socket, 0, pick(is_tube, length, start_eff)), 0] "Start, inside"
-  port end_out   = [r_end + line + joint_fit, z0 + s * top_z, -s, end_len_at, 0] "End, outside"
-  port end_in    = [r_end - line - joint_fit, z0 + s * top_z, -s, end_len_at, 0] "End, inside"
+  # The face it's mounted by is taken (by the socket, or the shade it screws onto), but along
+  # a tube there's room further on.
+  m_side   = item(mount, 5)
+  start_at = pick(is_tube, length, start_eff)
+  port start_out = [r_t + line + joint_fit, z0, s, pick(less(m_side, 0) * (1 - is_tube), 0, start_at), 0, 1] "Start, outside"
+  port start_in  = [r_t - line - joint_fit, z0, s, pick(m_socket, 0, pick(greater(m_side, 0) * (1 - is_tube), 0, start_at)), 0, -1] "Start, inside"
+  port end_out   = [r_end + line + joint_fit, z0 + s * top_z, -s, end_len_at, 0, 1] "End, outside"
+  port end_in    = [r_end - line - joint_fit, z0 + s * top_z, -s, end_len_at, 0, -1] "End, inside"
 
   show wall
   print shown

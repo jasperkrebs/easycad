@@ -108,8 +108,23 @@ The lamp builder is a new template, **Lamp**.
 
 ## Phases
 
-1. Components and parts in the language (parse, expand, rewrites, commands), with tests.
-2. `place` and the collision check.
-3. The shade component and the Lamp template; a one-shade lamp prints the lampshade's G-code.
-4. The app: settings per part, add and remove, the Plan view.
-5. Docs, the agent's guide, screenshots.
+All built 8 Nov 2026:
+1. Components and parts in the language (parse, expand, rewrites, commands), with tests
+   (`crates/lang/src/tests.rs`).
+2. `place` and the collision check (`crates/core/src/assembly.rs`, `eval_tests.rs`).
+3. The shade component and the Lamp template (`web/templates/lamp.easycad`). A one-shade lamp
+   prints EasyGCode's lampshade G-code, all four golden fixtures (`golden_tests.rs`); the
+   assembly tests are in `lamp_tests.rs`.
+4. The app: settings per part, add and remove, the Plan view (`web/js/parts.js`); the smoke test
+   adds a tube on the plan and removes it.
+5. Docs and the agent's guide.
+
+## Still open
+
+- `along` (how far along a section a shade sits) has a fixed range; it could follow the
+  section's length.
+- Renaming a part (the commands add and remove; a part's name comes from its shape).
+- Where a tube meets the next shade the plan's `+` buttons crowd: a tube's start and end are
+  the same section, offered from both ends.
+- The agent hasn't been tried on the lamp yet (its guide describes parts).
+- Up is as printed (the socket at the bottom); a hanging lamp is the plan turned over.

@@ -600,7 +600,12 @@ impl<'a> Runner<'a> {
                 min: None,
                 max: None,
                 step: None,
-                choices: Vec::new(),
+                // Besides the ports there are: what it reads by default (the socket).
+                choices: if input.default.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![Literal::Text(input.default.clone())]
+                },
                 attrs: Vec::new(),
                 when: None,
                 line: input.span.line,

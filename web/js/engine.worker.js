@@ -2,7 +2,7 @@
 // (scripts/build-web.sh). Big arrays go back to the page as transferables: moved, not copied.
 // Every request carries an id, and its answer (result, error or crash) carries the same id.
 
-import init, { engineVersion, evaluate, exportFile, nodeCatalog, setPrinter } from '../pkg/easycad_wasm.js';
+import init, { addPart, engineVersion, evaluate, exportFile, nodeCatalog, removePart, setPrinter } from '../pkg/easycad_wasm.js';
 
 const started = performance.now();
 const loading = init()
@@ -18,6 +18,8 @@ const loading = init()
 function answer(msg) {
   if (msg.type === 'catalog') return { result: nodeCatalog(), transfer: [] };
   if (msg.type === 'setPrinter') return { result: setPrinter(msg.source, msg.name), transfer: [] };
+  if (msg.type === 'addPart') return { result: addPart(msg.source, msg.component, msg.name, msg.values), transfer: [] };
+  if (msg.type === 'removePart') return { result: removePart(msg.source, msg.name), transfer: [] };
   if (msg.type === 'export') {
     const file = exportFile(msg.source, msg.values, msg.which, msg.profile);
     return { result: { name: file.name, data: file.data }, transfer: [file.data.buffer] };

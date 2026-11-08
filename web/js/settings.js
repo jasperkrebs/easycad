@@ -46,7 +46,7 @@ export function listValue(p, raw) {
 
 /** Everything about the settings window except the values, to know when it must be rebuilt. */
 export function layoutKey(params) {
-  return JSON.stringify(params.map((p) => [p.name, p.label, p.group, p.kind, p.unit, p.min, p.max, p.step, p.choices, p.attrs, p.when]));
+  return JSON.stringify(params.map((p) => [p.name, p.label, p.group, p.kind, p.unit, p.min, p.max, p.step, p.choices, p.attrs, p.when, p.part]));
 }
 
 /**
@@ -55,11 +55,15 @@ export function layoutKey(params) {
  * @param {any[]} params the engine's ParamInfo list
  * @param {Record<string, any>} values current values by name
  * @param {(name: string, value: any, quality: 'preview' | 'final') => void} onChange
- * @param {{ broken?: boolean }} [opts] broken: the recipe has errors (they're explained elsewhere)
+ * @param {{ broken?: boolean, ports?: any[], components?: any[], onAddPart?: () => void, onRemovePart?: (name: string) => void }} [opts]
+ *   broken: the recipe has errors (they're explained elsewhere); ports, components: the
+ *   engine's, for parts (each part its own fold-out, an input a list of ports)
  */
 export function renderSettings(host, params, values, onChange, opts = {}) {
   host.replaceChildren();
   const groups = new Map();
+  /** @type {Map<string, { details: HTMLElement, body: HTMLElement, group: string | null }>} */
+  const parts = new Map();
   /** @type {Map<string, HTMLElement>} */
   const rows = new Map();
   // Settings that apply only while another has a value (`when`): shown or hidden after every
@@ -68,6 +72,13 @@ export function renderSettings(host, params, values, onChange, opts = {}) {
     for (const p of params) {
       const row = rows.get(p.name);
       if (row) row.hidden = !applies(p, params, values);
+    }
+    for (const [name, f] of parts) {
+      const count = f.details.querySelector('.group-count');
+      if (count) count.textContent = String(f.details.querySelectorAll(':scope .setting:not([hidden])').length);
+      const shape = values[`${name}.shape`];
+      const tag = f.details.querySelector('.part-shape');
+      if (tag) tag.textContent = shape == null ? '' : String(shape);
     }
     for (const g of groups.values()) {
       const shown = g.querySelectorAll(':scope .setting:not([hidden])').length;
@@ -82,6 +93,22 @@ export function renderSettings(host, params, values, onChange, opts = {}) {
   };
   for (const p of params) {
     if (p.attrs.includes('hidden')) continue;
+    if (p.part) {
+      let f = parts.get(p.part);
+      if (!f) {
+        f = partFoldout(p.part, opts.onRemovePart);
+        parts.set(p.part, f);
+        host.append(f.details);
+      }
+      if ((p.group || null) !== f.group) {
+        f.group = p.group || null;
+        if (f.group) f.body.append(el('div', { className: 'subgroup', text: f.group }));
+      }
+      const row = p.kind === 'port' ? portRow(p, values[p.name] ?? p.value, change, params, values, opts.ports || []) : settingRow(p, values[p.name] ?? p.value, change);
+      rows.set(p.name, row);
+      f.body.append(row);
+      continue;
+    }
     const name = p.group || '';
     if (!groups.has(name)) {
       groups.set(name, name ? foldout(name, ![...groups.keys()].some(Boolean)) : el('div', { className: 'group' }));
@@ -92,11 +119,82 @@ export function renderSettings(host, params, values, onChange, opts = {}) {
     rows.set(p.name, row);
     (g.querySelector('.group-body') || g).append(row);
   }
+  for (const f of parts.values()) f.body.append(f.remove);
+  // A part from each component (a shade, …).
+  for (const c of opts.components || []) {
+    if (!opts.onAddPart) break;
+    const add = el('button', { className: 'btn add-part', type: 'button', text: `Add ${String(c.label).toLowerCase()}` });
+    add.addEventListener('click', () => opts.onAddPart?.());
+    host.append(add);
+  }
   refresh();
   if (!params.length && !opts.broken) {
     host.append(el('p', { className: 'hint', text: 'No settings.' }));
   }
 }
+
+/**
+ * A part's fold-out: its name and shape as the header, its settings underneath (with its own
+ * groups as headings), and a button that removes it.
+ * @param {string} name
+ * @param {((name: string) => void) | undefined} onRemove
+ */
+function partFoldout(name, onRemove) {
+  const details = foldout(name, false, `part:${name}`);
+  details.classList.add('part');
+  const summary = details.querySelector('summary');
+  summary?.querySelector('.group-name')?.after(el('span', { className: 'part-shape' }));
+  const body = /** @type {HTMLElement} */ (details.querySelector('.group-body'));
+  const remove = el('button', { className: 'btn remove-part', type: 'button', text: `Remove ${name}` });
+  remove.addEventListener('click', () => onRemove?.(name));
+  return { details, body, group: null, remove };
+}
+
+/**
+ * Where a part is mounted: a list of the ports it can go on (not its own, nor those of parts
+ * mounted on it), plus what it reads by default (the socket). Ports with no length (a shade
+ * with no straight end) aren't offered.
+ */
+function portRow(p, value, onChange, params, values, ports) {
+  const id = `set-${p.name}`;
+  const row = el('div', { className: 'setting choice' }, [el('label', { htmlFor: id, text: p.label })]);
+  const parentOf = (part) => {
+    const v = values[`${part}.mount`] ?? params.find((q) => q.name === `${part}.mount`)?.value;
+    return typeof v === 'string' && v.includes('.') ? v.split('.')[0] : null;
+  };
+  // This part and everything mounted on it, directly or further out.
+  const own = new Set([p.part]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const q of params) {
+      if (!q.part || own.has(q.part)) continue;
+      const parent = parentOf(q.part);
+      if (parent && own.has(parent)) {
+        own.add(q.part);
+        grew = true;
+      }
+    }
+  }
+  const options = [];
+  for (const c of p.choices) options.push([String(c), humanize(String(c))]);
+  for (const port of ports) {
+    if (own.has(port.part)) continue;
+    if (!(port.value[3] > 0) && port.name !== value) continue;
+    options.push([port.name, `${port.part} · ${port.label}`]);
+  }
+  if (value && !options.some(([v]) => v === value)) options.push([String(value), String(value)]);
+  const select = /** @type {HTMLSelectElement} */ (el('select', { id }, options.map(([v, t]) => el('option', { value: v, text: t }))));
+  select.value = String(value);
+  select.addEventListener('change', () => onChange(p.name, select.value, 'final'));
+  row.append(select);
+  return row;
+}
+
+/** `on_socket` → "On socket". */
+const humanize = (name) => {
+  const s = name.replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
 
 /** Whether a value counts as on: true, a number other than 0, or anything not empty. */
 const on = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'number' ? v !== 0 : Boolean(v));
@@ -134,9 +232,10 @@ function openGroups() {
  * close them; that's remembered by name, so every project with a "Print" group opens it alike.
  * @param {string} name
  * @param {boolean} first
+ * @param {string} [key] what its open state is remembered under (its name)
  */
-function foldout(name, first) {
-  const remembered = openGroups()[name];
+function foldout(name, first, key = name) {
+  const remembered = openGroups()[key];
   const details = /** @type {HTMLDetailsElement} */ (
     el('details', { className: 'group' }, [
       el('summary', {}, [el('span', { className: 'group-name', text: name }), el('span', { className: 'group-count' })]),
@@ -145,7 +244,7 @@ function foldout(name, first) {
   );
   details.open = remembered ?? first;
   details.addEventListener('toggle', () => {
-    saveJSON(OPEN_KEY, { ...openGroups(), [name]: details.open });
+    saveJSON(OPEN_KEY, { ...openGroups(), [key]: details.open });
   });
   return details;
 }
