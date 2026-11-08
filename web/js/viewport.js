@@ -160,6 +160,8 @@ export function createViewport(canvas) {
     flow: { label: 'Flow', unit: 'mm³/s', digits: 1 },
     width: { label: 'Line width', unit: 'mm', digits: 2 },
     layer: { label: 'Layer height', unit: 'mm', digits: 2 },
+    simWidth: { label: 'Simulated width', unit: 'mm', digits: 2 },
+    squish: { label: 'Squish (simulated ÷ planned width)', unit: '×', digits: 2 },
   };
   /** Low to high, as slicers show speeds and widths: blue, cyan, green, yellow, red. */
   const SCALE = ['#3b4cc0', '#2fa4d9', '#5cc46a', '#f2c84b', '#d7372b'].map((c) => new THREE.Color(c));
@@ -177,9 +179,16 @@ export function createViewport(canvas) {
     const travel = data.widths && !(data.widths[i] > 0);
     if (colorMode === 'height') return data.points[3 * i + 2];
     if (travel) return null;
-    const list = { speed: data.speeds, flow: data.flows, width: data.widths, layer: data.heights }[colorMode];
+    if (colorMode === 'squish') return data.simWidths && data.widths[i] > 0 ? data.simWidths[i] / data.widths[i] : null;
+    const list = { speed: data.speeds, flow: data.flows, width: data.widths, layer: data.heights, simWidth: data.simWidths }[colorMode];
     return list ? list[i] : null;
   }
+
+  /** Beads drawn as simulated (how the plastic would actually lie) rather than as planned. */
+  let simulated = false;
+  /** The bead sizes drawn for a toolpath: simulated when that's on and there, else planned. */
+  const beadSizes = (data) =>
+    simulated && data.simWidths ? { widths: data.simWidths, heights: data.simHeights } : { widths: data.widths, heights: data.heights };
 
   /** The range of the colour mode's value over every printing move shown. */
   function colorRange() {
@@ -407,7 +416,8 @@ export function createViewport(canvas) {
     for (const line of paths.children) {
       const data = line.userData;
       if (!data.widths || !data.heights) continue;
-      const { geometry, upTo } = beadGeometry(data.points, data.widths, data.heights, pathColors(data));
+      const sizes = beadSizes(data);
+      const { geometry, upTo } = beadGeometry(data.points, sizes.widths, sizes.heights, pathColors(data));
       const mesh = new THREE.Mesh(geometry, beadMaterial);
       mesh.userData.part = data.part;
       mesh.userData.from = data.from;
@@ -506,10 +516,11 @@ export function createViewport(canvas) {
         const color = pathColors({ ...data, points: p.subarray(3 * i, 3 * i + 6), widths: data.widths?.subarray(i, i + 2), speeds: data.speeds?.subarray(i, i + 2), flows: data.flows?.subarray(i, i + 2), heights: data.heights?.subarray(i, i + 2) });
         const c1 = [color[3], color[4], color[5]];
         if (showBeads) {
-          const w = data.widths ? data.widths[i + 1] : 0;
+          const sizes = beadSizes(data);
+          const w = sizes.widths ? sizes.widths[i + 1] : 0;
           if (w > 0) {
             headBead.geometry.dispose();
-            headBead.geometry = beadGeometry(ends, new Float32Array([0, w]), new Float32Array([0, data.heights[i + 1]]), new Float32Array([...c1, ...c1])).geometry;
+            headBead.geometry = beadGeometry(ends, new Float32Array([0, w]), new Float32Array([0, sizes.heights[i + 1]]), new Float32Array([...c1, ...c1])).geometry;
             headBead.visible = mode !== 'shape';
           }
         } else {
@@ -540,8 +551,9 @@ export function createViewport(canvas) {
    * direction), in the nozzle's own scaled frame. Hidden on a travel move.
    */
   function placeBeadEdge(data, i, size) {
-    const w = data.widths ? data.widths[i] : 0;
-    const h = data.heights ? data.heights[i] : 0;
+    const sizes = beadSizes(data);
+    const w = sizes.widths ? sizes.widths[i] : 0;
+    const h = sizes.heights ? sizes.heights[i] : 0;
     beadEdge.visible = w > 0 && h > 0;
     if (!beadEdge.visible) return;
     const p = data.points;
@@ -774,7 +786,7 @@ export function createViewport(canvas) {
         curves.add(line);
       });
       clear(paths);
-      const { widths, heights, speeds, flows } = /** @type {any} */ (result.paths);
+      const { widths, heights, speeds, flows, simWidths, simHeights, simFlags } = /** @type {any} */ (result.paths);
       totalPoints = 0;
       eachPolyline(result.paths, (points, i, from) => {
         const g = new LineGeometry();
@@ -788,6 +800,9 @@ export function createViewport(canvas) {
           heights: slice(heights),
           speeds: slice(speeds),
           flows: slice(flows),
+          simWidths: slice(simWidths),
+          simHeights: slice(simHeights),
+          simFlags: slice(simFlags),
           part: parts.paths[i] ?? -1,
           from: totalPoints,
         };
@@ -907,6 +922,17 @@ export function createViewport(canvas) {
       return camera === ortho;
     },
 
+    /**
+     * Draws the beads as the simulation found them (how the plastic would actually lie), or as
+     * planned. The result shown has to carry the simulation (`paths.simWidths`).
+     * @param {boolean} on
+     */
+    setSimulated(on) {
+      simulated = on;
+      if (showBeads) buildBeads();
+      applyProgress();
+    },
+
     /** What the toolpath can be coloured by, with labels and units. */
     colorModes: COLOR_MODES,
 
@@ -979,6 +1005,9 @@ export function createViewport(canvas) {
         flow: pick(data.flows),
         width: pick(data.widths),
         layer: pick(data.heights),
+        simWidth: data.simWidths ? data.simWidths[i] : null,
+        simLayer: data.simHeights ? data.simHeights[i] : null,
+        simFlags: data.simFlags ? data.simFlags[i] : 0,
       };
     },
 

@@ -35,7 +35,7 @@ export function createEngine() {
   /** Requests the worker hasn't answered yet, by id. @type {Map<number, { msg: object, resolve: (r: any) => void, reject: (e: Error) => void }>} */
   const pending = new Map();
 
-  /** @typedef {{ source: string, values: object, quality: string, resolve: (r: RunResult | null) => void, reject: (e: Error) => void }} Job */
+  /** @typedef {{ source: string, values: object, quality: string, simulate: number | null, resolve: (r: RunResult | null) => void, reject: (e: Error) => void }} Job */
   /** @type {Job | null} */
   let queued = null;
   let running = false;
@@ -100,7 +100,7 @@ export function createEngine() {
     }
     queued = null;
     running = true;
-    send({ type: 'evaluate', source: job.source, values: job.values, quality: job.quality })
+    send({ type: 'evaluate', source: job.source, values: job.values, quality: job.quality, simulate: job.simulate })
       .then(job.resolve, job.reject)
       .finally(() => {
         running = false;
@@ -118,12 +118,14 @@ export function createEngine() {
      * @param {string} source recipe text
      * @param {Record<string, number | boolean | string>} values setting values, each in its own unit
      * @param {'preview' | 'final'} quality
+     * @param {number | null} [simulate] simulate the beads as they'd actually lie, with this
+     *   extrusion multiplier (null: don't)
      * @returns {Promise<RunResult | null>} null when a newer run replaced this one
      */
-    evaluate(source, values, quality) {
+    evaluate(source, values, quality, simulate = null) {
       return new Promise((resolve, reject) => {
         if (queued) queued.resolve(null);
-        queued = { source, values, quality, resolve, reject };
+        queued = { source, values, quality, simulate, resolve, reject };
         pump();
       });
     },

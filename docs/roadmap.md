@@ -159,6 +159,17 @@ project with good settings, and "a bit taller" is just a slider.
 - **Optional:** sync the project library between devices.
 
 ## Later / when needed
+- **Bead width from the layer below** (the owner's pick, 8 Nov 2026; idea from jüngerkühn's
+  TOOLPATHS, its "Auto Width" mode). The bead simulation (`easycad_core::deposit`, the
+  Simulate button) already works out, move by move, the real gap under the nozzle. Used for
+  printing rather than preview: a toolpath option (say `bead(path, width: "auto")`, or a
+  `follow: true` on the vase steps) that sets each move's extrusion so the bead comes out the
+  planned width in the gap it actually has: less plastic where the layer below is close (a
+  fillet's foot, the stool's overhang drop), more where it's far. For pellets, at large flows
+  and widths, it could drive overhang compensation from the measured gap instead of a fixed
+  rule. Needs: the simulation inside the engine's toolpath steps (not only for the view), a
+  golden test on a hand-checked fixture (G-code safety), and a cap on how far the extrusion may
+  move from the plan.
 - **Robot-arm printing** (the owner's idea, 1 Nov 2026; to revisit). A third kind of printer,
   "robot arm", next to the P1P and the G1. When a project is printed on it, it's sliced for
   the arm rather than for a Cartesian printer: the lines follow the surface instead of running

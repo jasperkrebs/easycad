@@ -415,12 +415,23 @@ async function saveFrom(page, selector) {
       if (!(played > 0.31)) failures.push(`${name}: playing didn't move the print on (${played})`);
       if (!/ of \d/.test(await page.textContent('#hud'))) failures.push(`${name}: no print time while playing: "${await page.textContent('#hud')}"`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-playing.png`) });
+      // The beads simulated (how the plastic actually lies): the Print tab says what it found,
+      // the squish colours show where; off again for the rest.
+      await page.click('#viewSim');
+      await page.waitForFunction(() => /Simulated:/.test(document.getElementById('checks').textContent), null, { timeout: 30000 }).catch(() => failures.push(`${name}: the simulation's findings aren't in the checks`));
+      await page.selectOption('#viewColor', 'squish');
+      if (!/^Squish/.test(await page.textContent('#legendLabel'))) failures.push(`${name}: squish legend: ${await page.textContent('#legendLabel')}`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-simulated.png`) });
+      await page.selectOption('#viewColor', 'height');
+      await page.click('#viewSim');
+      await page.waitForFunction(() => document.getElementById('viewSim').getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
       // Fit: what's shown of the toolpath fills the view.
       await page.click('#viewFit');
       await scrubTo(1);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-progress.png`) });
       await scrubTo(1);
-      if ((await page.textContent('#hud')) !== hud) failures.push(`${name}: the stats line didn't come back: "${await page.textContent('#hud')}"`);
+      const noTime = (t) => t.replace(/ · [\d.,]+ ms$/, '');
+      if (noTime(await page.textContent('#hud')) !== noTime(hud)) failures.push(`${name}: the stats line didn't come back: "${await page.textContent('#hud')}"`);
       await page.click('#tab-print');
       const partTitles = await page.locator('#stats .part-title').allTextContents();
       if (partTitles.join() !== 'base,lid') failures.push(`${name}: the Print tab's parts: ${partTitles.join()}`);

@@ -41,7 +41,12 @@ pub fn node_catalog() -> String {
 /// piece's printed part) }`. A broken recipe doesn't throw: its problems are in
 /// `diagnostics`.
 #[wasm_bindgen]
-pub fn evaluate(source: &str, values: JsValue, quality: &str) -> Result<Object, JsError> {
+pub fn evaluate(
+    source: &str,
+    values: JsValue,
+    quality: &str,
+    simulate: Option<f64>,
+) -> Result<Object, JsError> {
     let quality = if quality == "final" {
         Quality::Final
     } else {
@@ -49,7 +54,45 @@ pub fn evaluate(source: &str, values: JsValue, quality: &str) -> Result<Object, 
     };
     let source = with_values(source, values)?;
     let e = easycad_core::evaluate(&source, quality);
-    to_js(&source, &e)
+    let out = to_js(&source, &e)?;
+    if let Some(multiplier) = simulate {
+        simulation(&out, &e, multiplier)?;
+    }
+    Ok(out)
+}
+
+/// The beads as the plastic would actually lie (`easycad_core::deposit`), added to the result:
+/// `paths.simWidths`, `paths.simHeights` and `paths.simFlags` per point (packed like `widths`),
+/// and `simulation`, what it found. A simulation that can't run is left out, not an error.
+fn simulation(out: &Object, e: &Evaluation, multiplier: f64) -> Result<(), JsError> {
+    let paths: Vec<&easycad_core::toolpath::Toolpath> =
+        e.drawing.paths.iter().map(|p| p.as_ref()).collect();
+    let Ok((beads, summary)) =
+        easycad_core::deposit::simulate(&paths, &e.drawing.path_parts, multiplier)
+    else {
+        return Ok(());
+    };
+    let packed = Reflect::get(out, &JsValue::from_str("paths"))
+        .map_err(|_| JsError::new("internal: no paths"))?;
+    let packed: Object = packed.into();
+    let widths: Vec<f32> = beads
+        .iter()
+        .flat_map(|b| b.widths.iter().copied())
+        .collect();
+    let heights: Vec<f32> = beads
+        .iter()
+        .flat_map(|b| b.heights.iter().copied())
+        .collect();
+    let flags: Vec<u8> = beads.iter().flat_map(|b| b.flags.iter().copied()).collect();
+    set(&packed, "simWidths", &Float32Array::from(widths.as_slice()))?;
+    set(
+        &packed,
+        "simHeights",
+        &Float32Array::from(heights.as_slice()),
+    )?;
+    set(&packed, "simFlags", &Uint8Array::from(flags.as_slice()))?;
+    set(out, "simulation", &plain(&summary)?)?;
+    Ok(())
 }
 
 /// Names the project's printer in the recipe (its `printer "…"` line, added if missing) and

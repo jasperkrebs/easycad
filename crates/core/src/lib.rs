@@ -12,6 +12,7 @@
 pub mod bead;
 pub mod curve;
 pub mod curve_ops;
+pub mod deposit;
 pub mod eval;
 pub mod field;
 pub mod files;

@@ -5,6 +5,36 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-08: the beads as the plastic actually lies
+
+**Why:** the line-width view drew each move's *planned* bead. What comes out depends on what's
+under the nozzle: the same plastic in a smaller gap squeezes out wider. The idea is from
+jüngerkühn's TOOLPATHS (a "global heightfield"); the code is our own.
+
+**Landed:**
+- `easycad_core::deposit`: a heightfield over the bed (a quarter of the narrowest bead per cell,
+  coarser for a big or long print; each printed part on its own empty bed). Move by move in print
+  order, the gap under the nozzle sets the bead's height and its volume (planned bead × the
+  move's extrusion × the printer's multiplier) its width, by the stadium bead model; the bead is
+  then laid into the heightfield. The bead coming out of the nozzle and the layer's own beads at
+  the nozzle's level don't count as floor (beads of one layer lie side by side; a vase's turn
+  below still does). Flags: over 1.5× the planned width, nothing under it for 1.75 layers, the
+  nozzle into the print; moves extruding under half a bead (a ramp running out) only flag a gap.
+- The **Simulate** button (next to Line width): full-quality runs ask the engine for it; the
+  beads are drawn at their simulated size, two colour modes show the simulated width and the
+  squish (simulated ÷ planned), the stats line shows where a move lies, and the Print tab lists
+  what it found. Remembered on the device; a printer change (multiplier) runs it again.
+- What it finds in the templates (`cargo test --release -p easycad-core survey -- --ignored`):
+  the stool lies as planned but for a handful of beads (the overhang drop up to 1.3×); the spiral
+  disc and the thread exactly as planned; the vessel's and shaker's fillet foot squeeze 2–4×
+  (their first fillet turns rise a fraction of a millimetre over the bottom's edge while still
+  extruding a full layer: the squeeze they use on purpose); the lampshade has 22 moves at the rim
+  whose turn steps up further than the bead is tall. 10–350 ms per template.
+
+**Open:** the next step, the bead width following the layer below for printing (roadmap,
+Later). The simulation is per cell, so a bead narrower than about four cells is coarse (prints
+over a metre across).
+
 ## 2026-11-06: cleanup, from a code review
 
 A review of `main` for dead code, duplication and complexity found little dead code; these
