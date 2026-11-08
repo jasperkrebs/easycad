@@ -362,6 +362,10 @@ app: checks the issue (public API) ◄──────────────
 │                              │  3D / Front / Side / Top, Parallel (default) or perspective
 │                              │  Line width: the toolpath as solid beads at their real size
 │                              │  (a round bead swept along the path, round at corners and ends)
+│                              │  Simulate: the beads as the plastic would lie (a heightfield of
+│                              │  what's printed; a smaller gap under the nozzle, a wider bead)
+│                              │  Nozzle: upright, tilted up to 45° or along the wall (the
+│                              │  nozzle and the beads stand along it; preview only)
 │                              │  Colour by: height, speed, flow, line width or layer height,
 │                              │  with a legend; a progress slider scrubs through the print,
 │                              │  a nozzle where it's got to (drag, or scroll over it)

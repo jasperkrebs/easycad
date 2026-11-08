@@ -1094,6 +1094,12 @@ pub struct Revolve {
     /// The first turn at the set flow throughout: each move faster by 1 ÷ its share of a full
     /// bead (the G-code caps it at the printer's travel speed).
     pub steady_start: bool,
+    /// Step each turn along the profile's own length instead of its height (slicing along the
+    /// surface): a turn's `layer` is then its step along the wall, which rises `cos(lean)` of it
+    /// and moves out `sin(lean)` of it, and the per-turn fields read z as the distance along the
+    /// profile. The profile may then run flat (a flat stretch is rings side by side at one
+    /// height); off, a turn rises its `layer` in height, as EasyGCode's lampshade.
+    pub along_surface: bool,
 }
 
 /// One turn of [`vase_revolve`]: where it starts, how far it rises and its settings.
@@ -1110,6 +1116,50 @@ struct Profile {
 }
 
 impl Profile {
+    /// The distance along the profile at each of its points (0 at the first).
+    fn lengths(&self) -> Vec<f64> {
+        let mut out = Vec::with_capacity(self.points.len());
+        let mut s = 0.0;
+        for (i, p) in self.points.iter().enumerate() {
+            if i > 0 {
+                let q = self.points[i - 1];
+                s += (p[0] - q[0]).hypot(p[1] - q[1]);
+            }
+            out.push(s);
+        }
+        out
+    }
+
+    /// The point (radius, height) at distance `s` along the profile (`lengths` from
+    /// [`Profile::lengths`]): linearly between its points; the ends beyond the ends.
+    fn at_length(&self, lengths: &[f64], s: f64) -> [f64; 2] {
+        let pts = &self.points;
+        let n = pts.len();
+        if s <= 0.0 {
+            return pts[0];
+        }
+        if s >= lengths[n - 1] {
+            return pts[n - 1];
+        }
+        let (mut lo, mut hi) = (0, n - 1);
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2;
+            if lengths[mid] <= s {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let span = lengths[hi] - lengths[lo];
+        let f = if span < 1e-12 {
+            1.0
+        } else {
+            ((s - lengths[lo]) / span).clamp(0.0, 1.0)
+        };
+        let (a, b) = (pts[lo], pts[hi]);
+        [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]
+    }
+
     /// The radius at height `z` (EasyGCode's `makeLampSampler`): between the last point at or
     /// below `z` and the next, linearly; the end radii beyond the ends.
     fn r(&self, z: f64) -> f64 {
@@ -1170,6 +1220,7 @@ pub fn vase_revolve(
         seam,
         flat_top,
         steady_start,
+        along_surface,
     } = *options;
     let mut points: Vec<[f64; 2]> = profile.points.iter().map(|p| [p[0], p[2]]).collect();
     if profile.closed {
@@ -1196,17 +1247,32 @@ pub fn vase_revolve(
         return Err("`seam` must be a number".into());
     }
     let profile = Profile { points };
-    let (z0, top) = (
-        profile.points[0][1],
-        profile.points[profile.points.len() - 1][1],
-    );
-    if top - z0 < 1e-6 {
+    let lengths = profile.lengths();
+    // The turns step along q: the height, or (along the surface) the distance along the profile.
+    // `pos(q)` is the profile's (radius, height) there.
+    let pos = |q: f64| -> [f64; 2] {
+        if along_surface {
+            profile.at_length(&lengths, q)
+        } else {
+            [profile.r(q), q]
+        }
+    };
+    let z_start = profile.points[0][1];
+    let z_end = profile.points[profile.points.len() - 1][1];
+    if z_end - z_start < 1e-6 {
         return Err("the profile has no height".into());
     }
+    let (z0, top) = if along_surface {
+        (0.0, lengths[lengths.len() - 1])
+    } else {
+        (z_start, z_end)
+    };
     let seam = seam.to_radians();
-    let on_profile = |z: f64| {
-        let r = profile.r(z);
-        [r * seam.cos(), r * seam.sin(), z]
+    // Where the per-turn fields are read: the profile's point at q, its z being q itself
+    // (the height, or along the surface the distance along the profile).
+    let on_profile = |q: f64| {
+        let r = pos(q)[0];
+        [r * seam.cos(), r * seam.sin(), q]
     };
     let positive = |what: &str, v: f64, z: f64| -> Result<f64, String> {
         if v.is_finite() && v > 0.0 {
@@ -1249,9 +1315,10 @@ pub fn vase_revolve(
         }
         24.max((std::f64::consts::TAU / dth).ceil() as usize)
     };
-    let r_first = profile.r(top.min(first.z + first.dz));
-    let z_top = last.z + last.dz;
-    let r_top = profile.r(z_top);
+    let r_first = pos(top.min(first.z + first.dz))[0];
+    let z_first = pos(top.min(first.z + first.dz))[1];
+    let q_top = last.z + last.dz;
+    let [r_top, z_top] = pos(q_top);
     let counts: Vec<usize> = turns
         .iter()
         .enumerate()
@@ -1259,7 +1326,7 @@ pub fn vase_revolve(
             steps_for(if i == 0 {
                 r_first
             } else {
-                profile.r(t.z).max(profile.r(t.z + t.dz))
+                pos(t.z)[0].max(pos(t.z + t.dz)[0])
             })
         })
         .collect();
@@ -1297,17 +1364,25 @@ pub fn vase_revolve(
         &mut path,
         settings(first.width, first.dz, first.z + first.dz / 2.0)?,
     )?;
-    path.push(at(r_first, 0.0, z0), true, 0.0, 0.0, start_part);
+    path.push(at(r_first, 0.0, z_start), true, 0.0, 0.0, start_part);
     for (i, (t, &steps)) in turns.iter().zip(&counts).enumerate() {
         let part = part_of(&mut path, settings(t.width, t.dz, t.z + t.dz / 2.0)?)?;
         let n = steps as f64;
         for s in 1..=steps {
             let u = s as f64 / n;
-            let zp = t.z + t.dz * u;
-            let (r, ramp) = if i == 0 {
-                (r_first, ramp_up(s, n))
+            let qp = t.z + t.dz * u;
+            let (r, zp, ramp) = if i == 0 {
+                // The ramp turn rises at the radius the next one starts at (by height: exactly
+                // as EasyGCode's arithmetic).
+                let z = if along_surface {
+                    z_start + (z_first - z_start) * u
+                } else {
+                    qp
+                };
+                (r_first, z, ramp_up(s, n))
             } else {
-                (profile.r(zp), 1.0)
+                let [r, z] = pos(qp);
+                (r, z, 1.0)
             };
             path.push(at(r, u, zp), false, ramp, i as f64 + u, part);
         }
@@ -1319,7 +1394,7 @@ pub fn vase_revolve(
     // The closing turn (none for an open top: the last turn ends on the rim at full flow).
     let n = cap as f64;
     if cap > 0 {
-        let part = part_of(&mut path, settings(last.width, last.dz, z_top)?)?;
+        let part = part_of(&mut path, settings(last.width, last.dz, q_top)?)?;
         for s in 1..=cap {
             let u = s as f64 / n;
             path.push(
@@ -1692,6 +1767,81 @@ mod tests {
         assert!((p.flow.last().copied().unwrap() - 1.0 / 448.0).abs() < 1e-12);
     }
 
+    /// Along the surface: up a wall, a turn rises its whole step; out along a flat stretch, the
+    /// turns are rings side by side at one height, each a step further out. Fields read z as
+    /// the distance along the profile.
+    #[test]
+    fn vase_revolve_steps_along_the_surface() {
+        // Straight up 10 mm at radius 20, then flat out to radius 40.
+        let profile = Curve::new(
+            vec![[20.0, 0.0, 0.0], [20.0, 0.0, 10.0], [40.0, 0.0, 10.0]],
+            false,
+        );
+        let read_at = std::cell::RefCell::new(Vec::new());
+        let rise = |p: P3| {
+            read_at.borrow_mut().push(p[2]);
+            Ok(1.0)
+        };
+        let one = |_: P3| Ok(1.0);
+        let none = |_: P3| Ok(0.0);
+        let per_turn = PerTurn {
+            rise: &rise,
+            width: &one,
+            flow: &none,
+        };
+        let options = Revolve {
+            speed: 40.0,
+            bead_layer: 0.0,
+            tolerance: 1.0,
+            seam: 90.0,
+            flat_top: false,
+            steady_start: false,
+            along_surface: true,
+        };
+        let path = vase_revolve(&profile, &per_turn, &options, MAX_PATH_POINTS).unwrap();
+        // 30 mm of profile, one turn per mm.
+        assert_eq!(path.layers, 30);
+        // The fields were read along the profile (up to 30), not by height (up to 10).
+        assert!(read_at.borrow().iter().any(|&q| q > 20.0));
+        let turn_end = |k: usize| {
+            let i = (0..path.points.len())
+                .rev()
+                .find(|&i| (path.turn[i] - k as f64).abs() < 1e-9)
+                .unwrap();
+            path.points[i]
+        };
+        let radius = |p: P3| p[0].hypot(p[1]);
+        // Up the wall: one millimetre a turn, at radius 20.
+        let p = turn_end(5);
+        assert!(
+            (p[2] - 5.0).abs() < 1e-9 && (radius(p) - 20.0).abs() < 1e-9,
+            "{p:?}"
+        );
+        // On the flat: at height 10, a millimetre further out each turn.
+        for k in 12..30 {
+            let (a, b) = (turn_end(k), turn_end(k + 1));
+            assert!((a[2] - 10.0).abs() < 1e-9 && (b[2] - 10.0).abs() < 1e-9);
+            assert!(
+                (radius(b) - radius(a) - 1.0).abs() < 1e-6,
+                "{k}: {} {}",
+                radius(a),
+                radius(b)
+            );
+        }
+        // By height, the same flat profile can't be stepped out: it ends at the top's height.
+        let by_height = vase_revolve(
+            &profile,
+            &per_turn,
+            &Revolve {
+                along_surface: false,
+                ..options
+            },
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
+        assert_eq!(by_height.layers, 10);
+    }
+
     #[test]
     fn an_open_top_ends_the_revolved_spiral_on_the_rim_at_full_flow() {
         // A cylinder 20 mm round and 6 mm high, 2 mm a turn: 3 turns of 24 points.
@@ -1709,6 +1859,7 @@ mod tests {
             seam: 90.0,
             flat_top,
             steady_start: false,
+            along_surface: false,
         };
         let flat = vase_revolve(&profile, &per_turn, &options(true), MAX_PATH_POINTS).unwrap();
         let open = vase_revolve(&profile, &per_turn, &options(false), MAX_PATH_POINTS).unwrap();

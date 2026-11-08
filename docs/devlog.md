@@ -5,6 +5,66 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-08: slicing along the surface, and a nozzle that follows the wall
+
+**Why:** sliced by height, a shade that opens out flat gets its turns further and further apart
+along the wall, until they don't touch; a robot arm (the next printer, `docs/roadmap.md`) would
+print it along the surface with the nozzle along the wall. Both as options: everything prints
+as before unless they're switched on.
+
+**Landed:**
+- `vase_revolve(…, surface: true)`: each turn steps its `layer` along the profile's own length
+  instead of up it; the fields read z as the distance along the profile, and the profile may
+  run flat (rings side by side at one height). Off by default; by height the arithmetic is
+  untouched (golden tests unchanged).
+- The lampshade's **Slicing** setting (Overhangs: height, surface). Along the surface each turn
+  steps the bead's own extent along the wall: pitch·cos(lean) + line·sin(lean) (at most
+  √(pitch² + line²) = 6.5 mm), squeezed by layer-height compensation as before, and an optional
+  **flow where it runs flat** (blending in from 60° to 90° of lean). A test piece: the bell
+  with max angle 90°, sliced both ways.
+- `easycad_core::wall::up_the_wall`: at each point, the direction from the bead underneath (one
+  turn earlier on a spiral, else the nearest point of the layer before) square to the travel.
+  The engine sends it to the view (`paths.ups`).
+- The view's **Nozzle** picker (next to Simulate): upright (a Cartesian printer's), tilted along
+  the wall up to 45° (a robot arm with pellets, which need gravity), or along the wall. The
+  nozzle, the bead outline under it and the beads' cross-sections stand along it. Preview only;
+  remembered on the device.
+
+**Open:** a Cartesian printer printing the flat rim along the surface hangs each ring off the
+one before it (arc-overhang style); it needs a real test print with the slower flat flow.
+The nozzle direction isn't part of the toolpath yet (the view works it out), so nothing can be
+sent to an arm.
+
+## 2026-11-08: the beads as the plastic actually lies
+
+**Why:** the line-width view drew each move's *planned* bead. What comes out depends on what's
+under the nozzle: the same plastic in a smaller gap squeezes out wider. The idea is from
+jüngerkühn's TOOLPATHS (a "global heightfield"); the code is our own.
+
+**Landed:**
+- `easycad_core::deposit`: a heightfield over the bed (a quarter of the narrowest bead per cell,
+  coarser for a big or long print; each printed part on its own empty bed). Move by move in print
+  order, the gap under the nozzle sets the bead's height and its volume (planned bead × the
+  move's extrusion × the printer's multiplier) its width, by the stadium bead model; the bead is
+  then laid into the heightfield. The bead coming out of the nozzle and the layer's own beads at
+  the nozzle's level don't count as floor (beads of one layer lie side by side; a vase's turn
+  below still does). Flags: over 1.5× the planned width, nothing under it for 1.75 layers, the
+  nozzle into the print; moves extruding under half a bead (a ramp running out) only flag a gap.
+- The **Simulate** button (next to Line width): full-quality runs ask the engine for it; the
+  beads are drawn at their simulated size, two colour modes show the simulated width and the
+  squish (simulated ÷ planned), the stats line shows where a move lies, and the Print tab lists
+  what it found. Remembered on the device; a printer change (multiplier) runs it again.
+- What it finds in the templates (`cargo test --release -p easycad-core survey -- --ignored`):
+  the stool lies as planned but for a handful of beads (the overhang drop up to 1.3×); the spiral
+  disc and the thread exactly as planned; the vessel's and shaker's fillet foot squeeze 2–4×
+  (their first fillet turns rise a fraction of a millimetre over the bottom's edge while still
+  extruding a full layer: the squeeze they use on purpose); the lampshade has 22 moves at the rim
+  whose turn steps up further than the bead is tall. 10–350 ms per template.
+
+**Open:** the next step, the bead width following the layer below for printing (roadmap,
+Later). The simulation is per cell, so a bead narrower than about four cells is coarse (prints
+over a metre across).
+
 ## 2026-11-06: cleanup, from a code review
 
 A review of `main` for dead code, duplication and complexity found little dead code; these

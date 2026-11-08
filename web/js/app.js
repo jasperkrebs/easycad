@@ -28,8 +28,12 @@ const STORAGE_KEY = 'easycad.project';
 const VIEW_KEY = 'easycad.view';
 /** The toolpath as lines or as solid beads. */
 const BEADS_KEY = 'easycad.beads';
+/** Whether the beads are simulated (how the plastic actually lies). */
+const SIM_KEY = 'easycad.simulate';
 /** How solid the beads are drawn (10–100 %). */
 const OPACITY_KEY = 'easycad.beadOpacity';
+/** Which way the nozzle and beads stand: upright, tilted (≤45°) or along the wall. */
+const NOZZLE_KEY = 'easycad.nozzle';
 /** What the toolpath is coloured by. */
 const COLOR_KEY = 'easycad.colorMode';
 /** How fast the print plays back. */
@@ -40,6 +44,9 @@ const TABS = ['settings', 'chat', 'recipe', 'print', 'about'];
 const state = {
   /** The recipe text: the project. */
   source: '',
+  /** Whether the beads are simulated (how the plastic actually lies): full-quality runs ask
+   * the engine for it. */
+  simulate: false,
   /** Setting values as last opened, for "Reset settings". */
   openedValues: /** @type {Record<string, any>} */ ({}),
   /** Current setting values (each in its own unit); written into the text on every run. */
@@ -83,7 +90,9 @@ async function run(quality, how = {}) {
   if (how.opened) refitNext = true;
   let result;
   try {
-    result = await engine.evaluate(state.source, state.values, quality);
+    // The simulation only on full-quality runs: a slider being dragged stays quick.
+    const simulate = state.simulate && quality === 'final' ? state.profile.multiplier || 1 : null;
+    result = await engine.evaluate(state.source, state.values, quality, simulate);
   } catch (err) {
     setStatus('Engine error', 'bad');
     showSettingsError(String(err.message || err));
@@ -196,6 +205,31 @@ function printsOf(result) {
 function renderPrintTab() {
   renderPrint($('stats'), $('checks'), printsOf(state.last), state.printer, state.profile);
   renderBeads($('beads'), beadGroups(state.last));
+  renderSimulationChecks();
+}
+
+/** What the bead simulation found, as print checks (while it's on). */
+function renderSimulationChecks() {
+  const sim = state.simulate ? state.last?.simulation : null;
+  if (!sim || !sim.moves) return;
+  const pct = (n) => `${fmt((100 * n) / sim.moves, n * 100 < sim.moves ? 1 : 0)} %`;
+  const items = [];
+  if (sim.wide) items.push(['warn', `Simulated: ${fmt(sim.wide)} moves (${pct(sim.wide)}) come out over 1.5× their planned width, up to ${fmt(sim.maxRatio, 1)}×: the layer below is too close for their plastic (colour by Squish to see where)`]);
+  if (sim.unsupported) items.push(['warn', `Simulated: ${fmt(sim.unsupported)} moves (${pct(sim.unsupported)}) have nothing under them for well over a layer: they hang (a bridge or a steep overhang)`]);
+  if (sim.collisions) items.push(['bad', `Simulated: at ${fmt(sim.collisions)} moves (${pct(sim.collisions)}) the nozzle runs into plastic already printed`]);
+  if (!items.length) items.push(['ok', `Simulated: every bead lies as planned (${fmt(sim.minRatio, 2)}–${fmt(sim.maxRatio, 2)}× its planned width)`]);
+  const host = $('checks');
+  for (const [kind, text] of items) host.append(el('li', {}, [el('span', { className: `dot ${kind === 'ok' ? '' : kind}` }), el('span', { text })]));
+}
+
+/** Simulates the beads (how the plastic actually lies), or stops; runs the recipe again. */
+function setSimulate(on) {
+  state.simulate = on;
+  /** @type {HTMLElement} */ ($('viewSim')).setAttribute('aria-pressed', String(on));
+  save(SIM_KEY, on ? 'on' : 'off');
+  viewport.setSimulated(on);
+  if (on && !state.last?.simulation) run('final');
+  else renderPrintTab();
 }
 
 /** Each printed part's beads (or, with no parts named, all the toolpaths'), for the Print tab. */
@@ -439,7 +473,8 @@ function showProgress(e) {
   $('hud').textContent = at
     ? at.travel
       ? `${part} · Z ${fmt(at.z, 2)} mm · travel`
-      : `${part} · Z ${fmt(at.z, 2)} mm · ${fmt(at.speed, 1)} mm/s · ${fmt(at.flow, 1)} mm³/s · ${fmt(at.width, 2)} × ${fmt(at.layer, 2)} mm`
+      : `${part} · Z ${fmt(at.z, 2)} mm · ${fmt(at.speed, 1)} mm/s · ${fmt(at.flow, 1)} mm³/s · ${fmt(at.width, 2)} × ${fmt(at.layer, 2)} mm` +
+        (state.simulate && at.simWidth ? ` (lies ${fmt(at.simWidth, 2)} × ${fmt(at.simLayer, 2)})` : '')
     : part || hudText;
 }
 
@@ -768,6 +803,8 @@ async function choosePrinter(id) {
 /** The printer or its settings changed: the bed, the checks and the export buttons follow. */
 function onProfileChange() {
   moveTimes = null; // the travel speed counts in the playback's times
+  // The extrusion multiplier counts in the simulation.
+  if (state.simulate && state.last) run('final');
   viewport.setBed(state.profile.bed, state.profile.center);
   renderPrintTab();
   if (state.last) renderExports(state.last);
@@ -860,6 +897,16 @@ function wire() {
     save(OPACITY_KEY, opacity.value);
   });
   showBeads(load(BEADS_KEY) === 'on');
+  // Simulated beads: each fills the gap under the nozzle (remembered on this device). Turning it
+  // on shows the beads.
+  state.simulate = load(SIM_KEY) === 'on';
+  $('viewSim').setAttribute('aria-pressed', String(state.simulate));
+  viewport.setSimulated(state.simulate);
+  $('viewSim').addEventListener('click', () => {
+    const on = !state.simulate;
+    if (on && widthButton.getAttribute('aria-pressed') !== 'true') widthButton.click();
+    setSimulate(on);
+  });
   widthButton.addEventListener('click', () => {
     const on = widthButton.getAttribute('aria-pressed') !== 'true';
     // Beads are the toolpath: show it if only the shape is shown.
@@ -869,6 +916,16 @@ function wire() {
     showBeads(on);
   });
 
+  // Which way the nozzle and beads stand (remembered on this device): preview only.
+  const nozzleSelect = /** @type {HTMLSelectElement} */ ($('viewNozzle'));
+  const storedNozzle = load(NOZZLE_KEY);
+  if (storedNozzle && [...nozzleSelect.options].some((o) => o.value === storedNozzle)) nozzleSelect.value = storedNozzle;
+  viewport.setOrientation(/** @type {any} */ (nozzleSelect.value));
+  nozzleSelect.addEventListener('change', () => {
+    viewport.setOrientation(/** @type {any} */ (nozzleSelect.value));
+    save(NOZZLE_KEY, nozzleSelect.value);
+  });
+
   // What the toolpath is coloured by (remembered on this device), with its legend.
   const colorSelect = /** @type {HTMLSelectElement} */ ($('viewColor'));
   for (const [id, m] of Object.entries(viewport.colorModes)) colorSelect.append(el('option', { value: id, text: m.label }));
@@ -876,6 +933,8 @@ function wire() {
   if (storedColor && storedColor in viewport.colorModes) colorSelect.value = storedColor;
   viewport.setColorMode(/** @type {any} */ (colorSelect.value));
   colorSelect.addEventListener('change', () => {
+    // The simulated colours need the simulation.
+    if ((colorSelect.value === 'simWidth' || colorSelect.value === 'squish') && !state.simulate) setSimulate(true);
     viewport.setColorMode(/** @type {any} */ (colorSelect.value));
     renderLegend();
     save(COLOR_KEY, colorSelect.value);

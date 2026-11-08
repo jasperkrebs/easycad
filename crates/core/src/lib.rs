@@ -12,6 +12,7 @@
 pub mod bead;
 pub mod curve;
 pub mod curve_ops;
+pub mod deposit;
 pub mod eval;
 pub mod field;
 pub mod files;
@@ -27,6 +28,7 @@ pub mod surface;
 pub mod toolpath;
 pub mod toolpath_ops;
 pub mod value;
+pub mod wall;
 
 pub use eval::{
     Diagnostic, Evaluation, Export, ExportKind, ParamInfo, PrintInfo, Quality, Severity, StepInfo,

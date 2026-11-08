@@ -307,6 +307,7 @@ pub(super) fn vase_revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
             seam: a.num(7)?,
             flat_top: a.flag(8)?,
             steady_start: a.flag(9)?,
+            along_surface: a.flag(10)?,
         },
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;

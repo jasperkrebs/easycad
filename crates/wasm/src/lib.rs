@@ -36,12 +36,18 @@ pub fn node_catalog() -> String {
 ///
 /// Returns `{ source, project, printer, notes, params, steps, diagnostics, print, exports,
 /// bounds, mesh: { positions, indices }, curves: { points, starts },
-/// paths: { points, starts, widths, heights, speeds, flows } (each point's line width and
-/// layer height in mm, speed in mm/s and flow in mm³/s: the move that ends there; 0 for travel), parts: { mesh, curves, paths } (each
+/// paths: { points, starts, widths, heights, speeds, flows, ups } (each point's line width and
+/// layer height in mm, speed in mm/s and flow in mm³/s: the move that ends there; 0 for travel;
+/// `ups`: x,y,z of the way up the wall there, `easycad_core::wall`), parts: { mesh, curves, paths } (each
 /// piece's printed part) }`. A broken recipe doesn't throw: its problems are in
 /// `diagnostics`.
 #[wasm_bindgen]
-pub fn evaluate(source: &str, values: JsValue, quality: &str) -> Result<Object, JsError> {
+pub fn evaluate(
+    source: &str,
+    values: JsValue,
+    quality: &str,
+    simulate: Option<f64>,
+) -> Result<Object, JsError> {
     let quality = if quality == "final" {
         Quality::Final
     } else {
@@ -49,7 +55,45 @@ pub fn evaluate(source: &str, values: JsValue, quality: &str) -> Result<Object, 
     };
     let source = with_values(source, values)?;
     let e = easycad_core::evaluate(&source, quality);
-    to_js(&source, &e)
+    let out = to_js(&source, &e)?;
+    if let Some(multiplier) = simulate {
+        simulation(&out, &e, multiplier)?;
+    }
+    Ok(out)
+}
+
+/// The beads as the plastic would actually lie (`easycad_core::deposit`), added to the result:
+/// `paths.simWidths`, `paths.simHeights` and `paths.simFlags` per point (packed like `widths`),
+/// and `simulation`, what it found. A simulation that can't run is left out, not an error.
+fn simulation(out: &Object, e: &Evaluation, multiplier: f64) -> Result<(), JsError> {
+    let paths: Vec<&easycad_core::toolpath::Toolpath> =
+        e.drawing.paths.iter().map(|p| p.as_ref()).collect();
+    let Ok((beads, summary)) =
+        easycad_core::deposit::simulate(&paths, &e.drawing.path_parts, multiplier)
+    else {
+        return Ok(());
+    };
+    let packed = Reflect::get(out, &JsValue::from_str("paths"))
+        .map_err(|_| JsError::new("internal: no paths"))?;
+    let packed: Object = packed.into();
+    let widths: Vec<f32> = beads
+        .iter()
+        .flat_map(|b| b.widths.iter().copied())
+        .collect();
+    let heights: Vec<f32> = beads
+        .iter()
+        .flat_map(|b| b.heights.iter().copied())
+        .collect();
+    let flags: Vec<u8> = beads.iter().flat_map(|b| b.flags.iter().copied()).collect();
+    set(&packed, "simWidths", &Float32Array::from(widths.as_slice()))?;
+    set(
+        &packed,
+        "simHeights",
+        &Float32Array::from(heights.as_slice()),
+    )?;
+    set(&packed, "simFlags", &Uint8Array::from(flags.as_slice()))?;
+    set(out, "simulation", &plain(&summary)?)?;
+    Ok(())
 }
 
 /// Names the project's printer in the recipe (its `printer "…"` line, added if missing) and
@@ -157,6 +201,14 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&paths, "heights", &heights)?;
     set(&paths, "speeds", &speeds)?;
     set(&paths, "flows", &flows)?;
+    let ups: Vec<f32> = e
+        .drawing
+        .paths
+        .iter()
+        .flat_map(|p| easycad_core::wall::up_the_wall(p))
+        .flat_map(|v| v.map(|c| c as f32))
+        .collect();
+    set(&paths, "ups", &Float32Array::from(ups.as_slice()))?;
     set(&out, "paths", &paths)?;
     let parts = parts(&e.drawing)?;
     set(&out, "parts", &parts)?;
