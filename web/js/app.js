@@ -7,7 +7,7 @@
 
 import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
-import { $, copyText, download, el, fmt, parseNumber, slug } from './dom.js';
+import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
 import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
@@ -631,12 +631,7 @@ async function findTemplateUpdate() {
     }
   }
   if (!newer) return;
-  let seen = {};
-  try {
-    seen = JSON.parse(localStorage.getItem(SEEN_KEY) || '{}') || {};
-  } catch {
-    // Unreadable: ask again.
-  }
+  const seen = loadJSON(SEEN_KEY, {});
   const print = fingerprint(withoutValues(newer.text));
   if (seen[newer.id] === print) return;
   const edited = state.template ? mine !== state.template.base : true;
@@ -657,11 +652,7 @@ async function findTemplateUpdate() {
       if (templateOffer !== offer) return;
       box.hidden = true;
       templateOffer = null;
-      try {
-        localStorage.setItem(SEEN_KEY, JSON.stringify({ ...seen, [newer.id]: print }));
-      } catch {
-        // Storage unavailable: it asks again next time.
-      }
+      saveJSON(SEEN_KEY, { ...seen, [newer.id]: print });
       chat.templateAnswered(false);
     },
   };
@@ -699,32 +690,21 @@ let saveTimer = 0;
 function autosave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          source: state.source,
-          openedValues: state.openedValues,
-          printer: state.printer,
-          unsaved: state.unsaved,
-          saveName: /** @type {HTMLInputElement} */ ($('saveName')).value,
-          template: state.template,
-        }),
-      );
-    } catch {
-      // Storage can be unavailable (private browsing); the app works without it.
-    }
+    saveJSON(STORAGE_KEY, {
+      source: state.source,
+      openedValues: state.openedValues,
+      printer: state.printer,
+      unsaved: state.unsaved,
+      saveName: /** @type {HTMLInputElement} */ ($('saveName')).value,
+      template: state.template,
+    });
   }, 300);
 }
 
 function restore() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && typeof saved.source === 'string' && saved.source.trim()) {
-      return saved;
-    }
-  } catch {
-    // Unreadable storage: start from a template.
+  const saved = loadJSON(STORAGE_KEY, null);
+  if (saved && typeof saved.source === 'string' && saved.source.trim()) {
+    return saved;
   }
   return null;
 }
@@ -857,19 +837,9 @@ function wire() {
   const setParallel = (on) => {
     viewport.setParallel(on);
     parallel.setAttribute('aria-pressed', String(on));
-    try {
-      localStorage.setItem(VIEW_KEY, on ? 'parallel' : 'perspective');
-    } catch {
-      // Not remembered; parallel next time.
-    }
+    save(VIEW_KEY, on ? 'parallel' : 'perspective');
   };
-  let stored = '';
-  try {
-    stored = localStorage.getItem(VIEW_KEY) || '';
-  } catch {
-    stored = '';
-  }
-  setParallel(stored !== 'perspective');
+  setParallel(load(VIEW_KEY) !== 'perspective');
   parallel.addEventListener('click', () => setParallel(!viewport.parallel));
   // The toolpath as solid beads at their real line width and layer height, as slicers draw it
   // (remembered on this device).
@@ -879,35 +849,17 @@ function wire() {
     widthButton.setAttribute('aria-pressed', String(on));
     opacity.hidden = !on;
     viewport.setBeads(on);
-    try {
-      localStorage.setItem(BEADS_KEY, on ? 'on' : 'off');
-    } catch {
-      // Not remembered.
-    }
+    save(BEADS_KEY, on ? 'on' : 'off');
   };
-  let beads = '';
-  try {
-    beads = localStorage.getItem(BEADS_KEY) || '';
-  } catch {
-    beads = '';
-  }
   // How see-through the beads are (remembered on this device).
-  try {
-    const stored = Number(localStorage.getItem(OPACITY_KEY));
-    if (stored >= 10 && stored <= 100) opacity.value = String(stored);
-  } catch {
-    // The default.
-  }
+  const storedOpacity = Number(load(OPACITY_KEY));
+  if (storedOpacity >= 10 && storedOpacity <= 100) opacity.value = String(storedOpacity);
   viewport.setBeadOpacity(Number(opacity.value) / 100);
   opacity.addEventListener('input', () => {
     viewport.setBeadOpacity(Number(opacity.value) / 100);
-    try {
-      localStorage.setItem(OPACITY_KEY, opacity.value);
-    } catch {
-      // Not remembered.
-    }
+    save(OPACITY_KEY, opacity.value);
   });
-  showBeads(beads === 'on');
+  showBeads(load(BEADS_KEY) === 'on');
   widthButton.addEventListener('click', () => {
     const on = widthButton.getAttribute('aria-pressed') !== 'true';
     // Beads are the toolpath: show it if only the shape is shown.
@@ -920,21 +872,13 @@ function wire() {
   // What the toolpath is coloured by (remembered on this device), with its legend.
   const colorSelect = /** @type {HTMLSelectElement} */ ($('viewColor'));
   for (const [id, m] of Object.entries(viewport.colorModes)) colorSelect.append(el('option', { value: id, text: m.label }));
-  try {
-    const stored = localStorage.getItem(COLOR_KEY);
-    if (stored && stored in viewport.colorModes) colorSelect.value = stored;
-  } catch {
-    // The default.
-  }
+  const storedColor = load(COLOR_KEY);
+  if (storedColor && storedColor in viewport.colorModes) colorSelect.value = storedColor;
   viewport.setColorMode(/** @type {any} */ (colorSelect.value));
   colorSelect.addEventListener('change', () => {
     viewport.setColorMode(/** @type {any} */ (colorSelect.value));
     renderLegend();
-    try {
-      localStorage.setItem(COLOR_KEY, colorSelect.value);
-    } catch {
-      // Not remembered.
-    }
+    save(COLOR_KEY, colorSelect.value);
   });
   // Print progress: drag either handle, or scroll over the track (the handle nearer the
   // pointer moves; a step per 1/500 of the print, faster with Shift).
@@ -945,19 +889,9 @@ function wire() {
     });
   $('scrubPlay').addEventListener('click', play);
   const speed = /** @type {HTMLSelectElement} */ ($('scrubSpeed'));
-  try {
-    const stored = localStorage.getItem(SPEED_KEY);
-    if (stored && [...speed.options].some((o) => o.value === stored)) speed.value = stored;
-  } catch {
-    // The default.
-  }
-  speed.addEventListener('change', () => {
-    try {
-      localStorage.setItem(SPEED_KEY, speed.value);
-    } catch {
-      // Not remembered.
-    }
-  });
+  const storedSpeed = load(SPEED_KEY);
+  if (storedSpeed && [...speed.options].some((o) => o.value === storedSpeed)) speed.value = storedSpeed;
+  speed.addEventListener('change', () => save(SPEED_KEY, speed.value));
   const range = $('scrubRange');
   range.addEventListener(
     'wheel',

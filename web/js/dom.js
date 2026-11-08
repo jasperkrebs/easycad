@@ -96,9 +96,67 @@ export async function copyText(text) {
 export const fmt = (n, digits = 0) =>
   Number(n).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
+/** A number for people with up to `digits` decimals, as typed (2.5, not 2.50). */
+export const fmtUpTo = (n, digits = 2) => Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
+
 /** "Twisted star vase" → "twisted-star-vase". */
 export const slug = (name) =>
   String(name || 'project')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'project';
+
+// Browser storage, which can be unavailable (private browsing, blocked site data, or a browser
+// that throws on access): reads then give the fallback and writes are dropped, so a setting
+// lasts until the page closes or isn't remembered at all. Never throws.
+
+/** @param {boolean} session */
+const storageArea = (session) => (session ? globalThis.sessionStorage : globalThis.localStorage);
+
+/**
+ * A stored string, or `fallback` when there's none (or no storage).
+ * @param {string} key
+ * @param {string} [fallback]
+ * @param {{ session?: boolean }} [where] sessionStorage instead of localStorage
+ */
+export function load(key, fallback = '', { session = false } = {}) {
+  try {
+    const v = storageArea(session).getItem(key);
+    return v === null ? fallback : v;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Stores a string; `null` removes the key.
+ * @param {string} key
+ * @param {string | null} value
+ * @param {{ session?: boolean }} [where]
+ */
+export function save(key, value, { session = false } = {}) {
+  try {
+    if (value === null) storageArea(session).removeItem(key);
+    else storageArea(session).setItem(key, value);
+  } catch {
+    // No storage: not remembered.
+  }
+}
+
+/**
+ * A stored JSON value, or `fallback` when there's none, it doesn't parse, or it's null.
+ * @template T
+ * @param {string} key
+ * @param {T} fallback
+ * @returns {T | any}
+ */
+export function loadJSON(key, fallback) {
+  try {
+    return JSON.parse(load(key, 'null')) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** @param {string} key @param {any} value */
+export const saveJSON = (key, value) => save(key, JSON.stringify(value));

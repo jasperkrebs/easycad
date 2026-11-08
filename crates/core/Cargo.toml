@@ -9,10 +9,7 @@ publish.workspace = true
 
 [dependencies]
 easycad-lang = { workspace = true }
-curvo = { workspace = true }
-nalgebra = { workspace = true }
 serde = { workspace = true }
-thiserror = { workspace = true }
 
 [lints]
 workspace = true

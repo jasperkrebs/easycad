@@ -3,12 +3,12 @@
 // profile's points). Values are shown and edited in each setting's own unit (18 %, 90°),
 // exactly as they are written in the recipe.
 
-import { el, numberField, parseNumber } from './dom.js';
+import { el, loadJSON, numberField, parseNumber, saveJSON } from './dom.js';
 
-export const UNIT_LABELS = { deg: '°', inch: 'in' };
+const UNIT_LABELS = { deg: '°', inch: 'in' };
 
 /** A slider step for a range: about a hundredth of it, rounded down to a power of ten. */
-export function autoStep(min, max) {
+function autoStep(min, max) {
   const span = Math.abs(max - min);
   return span > 0 ? 10 ** Math.floor(Math.log10(span / 100)) : 1;
 }
@@ -124,12 +124,8 @@ const OPEN_KEY = 'easycad.openGroups';
 
 /** @returns {Record<string, boolean>} */
 function openGroups() {
-  try {
-    const v = JSON.parse(localStorage.getItem(OPEN_KEY) || '{}');
-    return v && typeof v === 'object' ? v : {};
-  } catch {
-    return {};
-  }
+  const v = loadJSON(OPEN_KEY, {});
+  return v && typeof v === 'object' ? v : {};
 }
 
 /**
@@ -149,11 +145,7 @@ function foldout(name, first) {
   );
   details.open = remembered ?? first;
   details.addEventListener('toggle', () => {
-    try {
-      localStorage.setItem(OPEN_KEY, JSON.stringify({ ...openGroups(), [name]: details.open }));
-    } catch {
-      // Not remembered.
-    }
+    saveJSON(OPEN_KEY, { ...openGroups(), [name]: details.open });
   });
   return details;
 }

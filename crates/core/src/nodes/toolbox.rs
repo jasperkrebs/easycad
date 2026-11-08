@@ -487,7 +487,7 @@ pub(super) fn contour(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 pub(super) fn spiralize(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let layers = curves_of(a.items(0)?, "layer")?;
     let width = a.num(1)?;
-    let (path, info) = toolpath::spiralize(
+    let (mut path, info) = toolpath::spiralize(
         &layers,
         width,
         a.num(2)?,
@@ -496,6 +496,9 @@ pub(super) fn spiralize(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         a.flag(5)?,
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
+    if a.flag(6)? {
+        path.steady_start();
+    }
     if info.thickest > 0.8 * width {
         ctx.warn(format!(
             "some layers are {} mm thick, more than about 80 % of the {} mm line width; use more layers",

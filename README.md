@@ -112,7 +112,6 @@ export vase as "twisted-vase.stl"
 | [docs/easygcode-coverage.md](docs/easygcode-coverage.md) | Every EasyGCode project, feature by feature, and the steps that build it |
 | [docs/feature-requests.md](docs/feature-requests.md) | When the AI can't build something: it asks, Claude Code builds the step, the chat carries on |
 | [docs/devlog.md](docs/devlog.md) | What landed, what's open |
-| [docs/mockup/index.html](docs/mockup/index.html) | Clickable UI mockup |
 | [CLAUDE.md](CLAUDE.md) | Guidance for AI agents (and humans) working in this repo |
 
 ## Develop

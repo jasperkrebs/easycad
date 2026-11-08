@@ -17,8 +17,8 @@
 // improved too, once the user has chosen to update to it or keep their own.
 
 import { CONTEXT_TAG, DEFAULT_MODEL, EFFORTS, MODELS, applyEdits, closeToolUses, numbered, projectContext, runStatus, runTurn, systemPrompt } from './agent.js';
-import { $, el } from './dom.js';
-import { PRINTERS } from './print.js';
+import { $, el, load as loadKey, loadJSON, save as saveKey, saveJSON } from './dom.js';
+import { describeTool, money, richText, thinkingBox } from './chat-text.js';
 import { listValue } from './settings.js';
 import { createRequests, formatIssue, hasVersion, newId, newIssueUrl } from './requests.js';
 
@@ -86,12 +86,7 @@ export function createChat(app) {
 
   /** @returns {AiSettings} */
   function settings() {
-    let s = {};
-    try {
-      s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {};
-    } catch {
-      s = {};
-    }
+    const s = loadJSON(SETTINGS_KEY, {});
     return {
       mode: s.mode === 'key' ? 'key' : 'proxy',
       proxyUrl: typeof s.proxyUrl === 'string' && s.proxyUrl ? s.proxyUrl : defaultProxyUrl,
@@ -103,29 +98,14 @@ export function createChat(app) {
   }
 
   function saveSettings(patch) {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings(), ...patch }));
-    } catch {
-      // Private browsing: the settings last until the page closes.
-    }
+    saveJSON(SETTINGS_KEY, { ...settings(), ...patch });
     renderStatus();
   }
 
-  const secret = () => {
-    try {
-      return localStorage.getItem(SECRET_KEY) || '';
-    } catch {
-      return '';
-    }
-  };
+  const secret = () => loadKey(SECRET_KEY);
 
   function setSecret(value) {
-    try {
-      if (value) localStorage.setItem(SECRET_KEY, value);
-      else localStorage.removeItem(SECRET_KEY);
-    } catch {
-      // ignore
-    }
+    saveKey(SECRET_KEY, value || null);
     showSecretState();
     renderStatus();
   }
@@ -158,23 +138,13 @@ export function createChat(app) {
   const month = () => new Date().toISOString().slice(0, 7);
 
   function monthSpend() {
-    try {
-      const s = JSON.parse(localStorage.getItem(SPEND_KEY) || 'null');
-      return s && s.month === month() ? Number(s.usd) || 0 : 0;
-    } catch {
-      return 0;
-    }
+    const s = loadJSON(SPEND_KEY, null);
+    return s && s.month === month() ? Number(s.usd) || 0 : 0;
   }
 
   function addSpend(usd) {
-    try {
-      localStorage.setItem(SPEND_KEY, JSON.stringify({ month: month(), usd: monthSpend() + usd }));
-    } catch {
-      // ignore
-    }
+    saveJSON(SPEND_KEY, { month: month(), usd: monthSpend() + usd });
   }
-
-  const money = (usd) => (usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(usd < 1 ? 3 : 2)}`);
 
   function renderStatus() {
     const s = settings();
@@ -191,70 +161,6 @@ export function createChat(app) {
 
   function scrollDown() {
     log.scrollTop = log.scrollHeight;
-  }
-
-  /** Plain text with a little Markdown (paragraphs, lists, `code`, **bold**, code blocks), built as DOM: no innerHTML. */
-  function richText(text) {
-    const box = el('div', { className: 'md' });
-    const parts = text.split(/```[^\n]*\n?/);
-    parts.forEach((part, i) => {
-      if (i % 2 === 1) {
-        box.append(el('pre', {}, [el('code', { text: part.replace(/\n$/, '') })]));
-        return;
-      }
-      for (const para of part.split(/\n{2,}/)) {
-        const lines = para.split('\n').filter((l) => l.trim());
-        if (!lines.length) continue;
-        if (lines.every((l) => /^\s*([-*]|\d+\.)\s/.test(l))) {
-          box.append(el('ul', {}, lines.map((l) => el('li', {}, inline(l.replace(/^\s*([-*]|\d+\.)\s/, ''))))));
-        } else {
-          const p = el('p');
-          lines.forEach((l, k) => {
-            if (k) p.append(el('br'));
-            p.append(...inline(l));
-          });
-          box.append(p);
-        }
-      }
-    });
-    return box;
-  }
-
-  function inline(text) {
-    return text.split(/(`[^`]+`|\*\*[^*]+\*\*)/).filter(Boolean).map((t) => {
-      if (t.startsWith('`') && t.endsWith('`')) return el('code', { text: t.slice(1, -1) });
-      if (t.startsWith('**') && t.endsWith('**')) return el('b', { text: t.slice(2, -2) });
-      return document.createTextNode(t);
-    });
-  }
-
-  /** A one-line description of a tool call, for the chat. */
-  function describeTool(use) {
-    const i = use.input || {};
-    switch (use.name) {
-      case 'edit_recipe':
-        return `Edited the recipe (${(i.edits || []).length} change${(i.edits || []).length === 1 ? '' : 's'})`;
-      case 'write_recipe':
-        return `Wrote the recipe (${String(i.recipe || '').split('\n').length} lines)`;
-      case 'set_settings':
-        return `Set ${Object.entries(i.values || {}).map(([k, v]) => `${k} = ${v}`).join(', ')}`;
-      case 'set_printer': {
-        const parts = [];
-        if (i.printer) parts.push(`Switched to the ${PRINTERS[i.printer]?.name || i.printer}`);
-        if (i.material) parts.push(`${parts.length ? 'used' : 'Used'} the ${i.material} profile`);
-        const set = Object.entries(i.settings || {}).map(([k, v]) => `${k} = ${v}`);
-        if (set.length) parts.push(`${parts.length ? 'set' : 'Set the printer’s'} ${set.join(', ')}`);
-        return parts.join('; ');
-      }
-      case 'look':
-        return `Looked at the ${i.show === 'toolpath' ? 'toolpath' : i.show === 'shape' ? 'shape' : 'model'}`;
-      case 'read_recipe':
-        return 'Read the recipe';
-      case 'request_feature':
-        return `Proposed a new step: ${i.title || ''}`;
-      default:
-        return use.name;
-    }
   }
 
   function bubble(role, children) {
@@ -319,11 +225,6 @@ export function createChat(app) {
       );
     }
     renderStatus();
-  }
-
-  function thinkingBox(text) {
-    const d = el('details', { className: 'thinking' }, [el('summary', { text: 'Thinking' }), el('p', { text })]);
-    return d;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -622,11 +523,8 @@ export function createChat(app) {
 
   /** Reloads the app for a shipped step (the new engine), marking it so this happens once. */
   function reloadForStep() {
-    try {
-      sessionStorage.setItem(RELOAD_FLAG, String(Date.now()));
-    } catch {
-      // Without session storage it may reload again later; harmless.
-    }
+    // Without session storage it may reload again later; harmless.
+    saveKey(RELOAD_FLAG, String(Date.now()), { session: true });
     location.reload();
   }
 
@@ -674,12 +572,7 @@ export function createChat(app) {
         continue;
       }
       if (r.status === 'shipped' && !(await runsShipped(r))) {
-        let reloaded = 0;
-        try {
-          reloaded = Number(sessionStorage.getItem(RELOAD_FLAG) || 0);
-        } catch {
-          reloaded = 0;
-        }
+        const reloaded = Number(loadKey(RELOAD_FLAG, '0', { session: true })) || 0;
         // The new site can take a minute to reach every server: retry, but not in a loop.
         const idle = document.hidden || Date.now() - lastActivity > IDLE_RELOAD_MS;
         if (idle && !busy && !app.project().editorDirty && Date.now() - reloaded > 3 * 60 * 1000) reloadForStep();

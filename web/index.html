@@ -54,7 +54,7 @@
               <button type="button" id="viewWidth" aria-pressed="false" title="Draw the toolpath as solid beads, at their real line width and layer height, as slicers do">Line width</button>
               <input type="range" id="viewBeadOpacity" min="10" max="100" step="5" value="40" aria-label="Bead opacity (left: see-through, right: solid)" title="See-through ↔ solid" hidden>
             </div>
-            <div class="seg" id="viewCam" role="group" aria-label="View">
+            <div class="seg" role="group" aria-label="View">
               <button type="button" data-view="iso" title="3D view">3D</button>
               <button type="button" data-view="front" title="From the front">Front</button>
               <button type="button" data-view="side" title="From the right side">Side</button>
@@ -139,7 +139,7 @@
             <button class="btn" type="button" id="saveSettings">Save settings</button>
             <button class="btn" type="button" id="loadSettings">Load settings</button>
           </div>
-          <div class="export" id="exportBar">
+          <div class="export">
             <h2 class="spaced">Export</h2>
             <div class="buttons tight" id="exportButtons"></div>
             <p class="hint" id="exportEmpty" hidden>Nothing to export.</p>

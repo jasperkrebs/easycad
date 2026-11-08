@@ -3,12 +3,11 @@
 // (w − h)·h + π·(h/2)². A toolpath can lay many beads; where they blend smoothly from one to
 // another only the extremes are drawn, so the few that matter can be compared side by side.
 
-import { el } from './dom.js';
+import { el, fmtUpTo } from './dom.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
-/** mm for people: up to two decimals, as typed. */
-const mm = (n, digits = 2) => Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
+const mm = fmtUpTo;
 
 /** The bead's cross-section in mm². */
 export function beadArea(w, h) {

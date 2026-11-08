@@ -265,6 +265,25 @@ impl Toolpath {
         }
     }
 
+    /// A steady flow through the opening ramp of a vase-mode spiral: each move of the first turn
+    /// that extrudes a share of a full bead goes that much faster (1 ÷ its share), so the
+    /// extruder never slows down (the G-code caps it at the printer's travel speed). For pellet
+    /// extruders, which can't follow a ramp quickly. The points and extrusion stay as they are;
+    /// the closing turn still ramps down at the set speed.
+    pub fn steady_start(&mut self) {
+        for k in 0..self.points.len() {
+            if self.turn.get(k).copied().unwrap_or(f64::INFINITY) > 1.0 {
+                break;
+            }
+            let share = self.flow.get(k).copied().unwrap_or(1.0);
+            if share > 0.0 && share < 1.0 && !self.travel.get(k).copied().unwrap_or(true) {
+                if let Some(f) = self.speed.get_mut(k) {
+                    *f = 1.0 / share;
+                }
+            }
+        }
+    }
+
     fn push(&mut self, p: P3, travel: bool, flow: f64, turn: f64, part: u16) {
         self.push_with_height(p, travel, flow, turn, part, 0.0);
     }
@@ -540,6 +559,17 @@ fn signed_area_2d(points: &[P2]) -> f64 {
         / 2.0
 }
 
+/// Extrusion of move `s` (from 1) of a ramp up over a turn of `n` moves, 0 → 100 %: each move at
+/// its midpoint value, as EasyGCode does. `ramp_up(n, n)` is the move that finishes the ramp.
+fn ramp_up(s: usize, n: f64) -> f64 {
+    (s as f64 / n + (s as f64 - 1.0) / n) / 2.0
+}
+
+/// Extrusion of move `s` (from 1) of a closing turn of `n` moves, ramping 100 → 0 %.
+fn ramp_down(s: usize, n: f64) -> f64 {
+    (1.0 - ramp_up(s, n)).max(0.0)
+}
+
 /// One continuous vase-mode spiral up a wall of closed sections, refusing to make more than
 /// `max_points` points.
 pub fn vase_spiral(
@@ -621,8 +651,7 @@ pub fn vase_spiral(
         let u = j as f64 / steps;
         let mut p = wall.point_at(first, j);
         p[2] = z0 + layer * u;
-        let ramp = (u + (j as f64 - 1.0) / steps) / 2.0;
-        path.push(p, j == 0, ramp, u, 0);
+        path.push(p, j == 0, ramp_up(j, steps), u, 0);
     }
     // The spiral: z rises one layer per turn.
     for k in 1..layers {
@@ -633,7 +662,7 @@ pub fn vase_spiral(
             p[2] = z0 + rise;
             // The move into the first point of turn 1 still finishes the ramp.
             let flow = if k == 1 && j == 0 {
-                (1.0 + (steps - 1.0) / steps) / 2.0
+                ramp_up(m, steps)
             } else {
                 1.0
             };
@@ -652,14 +681,10 @@ pub fn vase_spiral(
         let u = j as f64 / steps;
         let mut p = wall.point_at(top, j % m);
         p[2] = z0 + total;
-        let flow = if j == 0 {
-            if layers == 1 {
-                (1.0 + (steps - 1.0) / steps) / 2.0
-            } else {
-                1.0
-            }
-        } else {
-            (1.0 - (u + (j as f64 - 1.0) / steps) / 2.0).max(0.0)
+        let flow = match j {
+            0 if layers == 1 => ramp_up(m, steps),
+            0 => 1.0,
+            _ => ramp_down(j, steps),
         };
         path.push(p, false, flow, layers as f64 + u, 0);
     }
@@ -771,7 +796,7 @@ pub fn spiralize(
         let (a, b) = (ring(0, j), ring(1, j));
         if ramp {
             let p = [b[0], b[1], a[2] + (b[2] - a[2]) * u];
-            moves.push((p, (u + (j as f64 - 1.0) / steps) / 2.0, u, height(1, j)));
+            moves.push((p, ramp_up(j, steps), u, height(1, j)));
         } else {
             moves.push((lerp3(a, b, u), 1.0, u, height(1, j)));
         }
@@ -783,7 +808,7 @@ pub fn spiralize(
             let p = lerp3(ring(k, j), ring(k + 1, j), u);
             // The move into the first point of turn 1 still finishes the ramp.
             let flow = if ramp && k == 1 && j == 0 {
-                (1.0 + (steps - 1.0) / steps) / 2.0
+                ramp_up(m, steps)
             } else {
                 1.0
             };
@@ -795,14 +820,10 @@ pub fn spiralize(
     // (or, for an open top, just the move up onto the top layer's seam).
     for j in 0..=(if flat_top { m } else { 0 }) {
         let u = j as f64 / steps;
-        let flow = if j == 0 {
-            if ramp && n == 1 {
-                (1.0 + (steps - 1.0) / steps) / 2.0
-            } else {
-                1.0
-            }
-        } else {
-            (1.0 - (u + (j as f64 - 1.0) / steps) / 2.0).max(0.0)
+        let flow = match j {
+            0 if ramp && n == 1 => ramp_up(m, steps),
+            0 => 1.0,
+            _ => ramp_down(j, steps),
         };
         moves.push((ring(n, j % m), flow, n as f64 + u, height(n, j % m)));
     }
@@ -1284,7 +1305,7 @@ pub fn vase_revolve(
             let u = s as f64 / n;
             let zp = t.z + t.dz * u;
             let (r, ramp) = if i == 0 {
-                (r_first, (u + (s as f64 - 1.0) / n) / 2.0)
+                (r_first, ramp_up(s, n))
             } else {
                 (profile.r(zp), 1.0)
             };
@@ -1293,19 +1314,6 @@ pub fn vase_revolve(
         if i == 0 {
             // The fan comes on after the ramp turn.
             path.layer_starts.push(path.points.len());
-            if steady_start {
-                // A steady flow through the ramp: as each move extrudes a share of a full bead,
-                // it goes that much faster, so the extruder never slows down.
-                let end = path.points.len();
-                for k in 1..end {
-                    let share = path.flow.get(k).copied().unwrap_or(1.0);
-                    if share > 0.0 && share < 1.0 && !path.travel.get(k).copied().unwrap_or(true) {
-                        if let Some(f) = path.speed.get_mut(k) {
-                            *f = 1.0 / share;
-                        }
-                    }
-                }
-            }
         }
     }
     // The closing turn (none for an open top: the last turn ends on the rim at full flow).
@@ -1314,17 +1322,19 @@ pub fn vase_revolve(
         let part = part_of(&mut path, settings(last.width, last.dz, z_top)?)?;
         for s in 1..=cap {
             let u = s as f64 / n;
-            let ramp = (1.0 - (u + (s as f64 - 1.0) / n) / 2.0).max(0.0);
             path.push(
                 at(r_top, u, z_top),
                 false,
-                ramp,
+                ramp_down(s, n),
                 turns.len() as f64 + u,
                 part,
             );
         }
     }
     path.layers = turns.len();
+    if steady_start {
+        path.steady_start();
+    }
     Ok(path)
 }
 
@@ -1392,11 +1402,10 @@ pub fn helix(
     // First turn: from the circle's plane up one pitch while extrusion ramps up.
     for s in 1..=steps {
         let u = s as f64 / n;
-        let ramp = (u + (s as f64 - 1.0) / n) / 2.0;
         path.push(
             at(seam + dir * (tau * u), z0 + pitch * u),
             false,
-            ramp,
+            ramp_up(s, n),
             u,
             0,
         );
@@ -1412,11 +1421,10 @@ pub fn helix(
     let end = seam + dir * (tau * turns);
     for s in 1..=steps {
         let u = s as f64 / n;
-        let flow = (1.0 - (u + (s as f64 - 1.0) / n) / 2.0).max(0.0);
         path.push(
             at(end + dir * (tau * u), z0 + height),
             false,
-            flow,
+            ramp_down(s, n),
             turns + u,
             0,
         );

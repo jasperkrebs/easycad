@@ -38,7 +38,7 @@ What landed and the numbers are in [devlog.md](devlog.md).
   never freezes.
 - **A GPU 3D viewport** (three.js, WebGL2 now; WebGPU later).
 - **Demo:** the twisted star vase, with its spiral toolpath, sliders and print stats, computed
-  by the Rust engine (NURBS via `curvo`).
+  by the Rust engine (NURBS via `curvo` then; since 6 Nov 2026 its own spline).
 - **CI:** formatting, lints (no-panic rules), tests, WebAssembly build with a size limit, and
   deploy as soon as hosting is decided.
 

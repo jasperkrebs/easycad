@@ -6,16 +6,18 @@
 use crate::curve::Curve;
 use crate::eval::Ctx;
 use crate::field::{self, Field, MathFn};
-use crate::geom::{P3, Plane, Xform};
-use crate::spiral;
+use crate::geom::{P3, Plane};
 use crate::surface::Surface;
-use crate::toolpath::{self, MAX_PATH_POINTS, Settings, Toolpath};
+use crate::toolpath::Toolpath;
 use crate::value::Value;
 use std::rc::Rc;
 
 mod curve_tools;
+mod ops;
 mod printing;
 mod toolbox;
+
+use ops::*;
 
 /// How an input takes a list. An *item* input that receives a list runs the node once per item
 /// (Grasshopper's list matching); a *list* input takes the whole list. A *point* input is an
@@ -1404,9 +1406,15 @@ pub static NODES: &[Node] = &[
                 1.0,
                 "true: a flat closing turn for a level rim; false: an open top",
             ),
+            opt(
+                "steady_start",
+                "Bool",
+                0.0,
+                "true: the extruder runs at the set flow from the start; the first turn moves faster where its bead is thin (each move's speed ÷ its share of a full bead), never faster than the printer's travel speed. For pellet extruders, which can't follow a ramp quickly",
+            ),
         ],
         output: "Toolpath",
-        doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up, snaps to whole layers, and ends with a flat turn that ramps extrusion down (or, with `flat_top: false`, stops at full flow as it reaches the top: EasyGCode's open top).",
+        doc: "One continuous spiral up the wall (vase mode, as in EasyGCode): starts on the bed with extrusion ramping up (with `steady_start`, at a steady flow: faster where the bead is thin), snaps to whole layers, and ends with a flat turn that ramps extrusion down (or, with `flat_top: false`, stops at full flow as it reaches the top: EasyGCode's open top).",
         run: Run::Op(vase_spiral),
     },
     Node {
@@ -1499,9 +1507,15 @@ pub static NODES: &[Node] = &[
                 1.0,
                 "true: start on the bed, extrusion ramping up; false: carry on at full extrusion from something printed before (a flat bottom)",
             ),
+            opt(
+                "steady_start",
+                "Bool",
+                0.0,
+                "true: the extruder runs at the set flow from the start; the first turn moves faster where its bead is thin (each move's speed ÷ its share of a full bead), never faster than the printer's travel speed. For pellet extruders, which can't follow a ramp quickly",
+            ),
         ],
         output: "Toolpath",
-        doc: "Vase mode through any stack of layers, flat or tilted: one continuous spiral that blends each layer into the next, each move extruded for its own local layer height (thin where layers are close, thick where they're apart). Same start ramp and closing turn as vase_spiral; flat, evenly spaced layers print exactly like it. `bead(path, layer: …)` extrudes it for one layer height throughout instead (EasyGCode's squeeze, where layers come closer on overhangs).",
+        doc: "Vase mode through any stack of layers, flat or tilted: one continuous spiral that blends each layer into the next, each move extruded for its own local layer height (thin where layers are close, thick where they're apart). Same start ramp (and `steady_start`) and closing turn as vase_spiral; flat, evenly spaced layers print exactly like it. `bead(path, layer: …)` extrudes it for one layer height throughout instead (EasyGCode's squeeze, where layers come closer on overhangs).",
         run: Run::Op(toolbox::spiralize),
     },
     Node {
@@ -1523,9 +1537,15 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "volumetric flow in mm³/s; when set, it sets the speed (flow ÷ bead area)",
             ),
+            opt(
+                "steady_start",
+                "Bool",
+                0.0,
+                "true: the extruder runs at the set flow from the start; the first turn moves faster where its bead is thin (each move's speed ÷ its share of a full bead), never faster than the printer's travel speed. For pellet extruders, which can't follow a ramp quickly",
+            ),
         ],
         output: "Toolpath",
-        doc: "Vase mode around a circle, rising exactly `pitch` per turn to exactly `height` (any fraction of a turn included, nothing snapped): EasyGCode's thread connector. Starts on the circle's first point with extrusion ramping up over the first turn, ends with a flat turn that ramps it down. One move per point of the circle: `circle(r, tolerance: 0.01)` keeps within 0.01 mm of the true circle. Counter-clockwise rising (a right-hand thread) for a circle as `circle` makes it.",
+        doc: "Vase mode around a circle, rising exactly `pitch` per turn to exactly `height` (any fraction of a turn included, nothing snapped): EasyGCode's thread connector. Starts on the circle's first point with extrusion ramping up over the first turn (with `steady_start`, at a steady flow), ends with a flat turn that ramps it down. One move per point of the circle: `circle(r, tolerance: 0.01)` keeps within 0.01 mm of the true circle. Counter-clockwise rising (a right-hand thread) for a circle as `circle` makes it.",
         run: Run::Op(helix),
     },
     Node {
@@ -2123,409 +2143,11 @@ pub fn as_point(l: &crate::value::List) -> Option<P3> {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Node implementations
-// ---------------------------------------------------------------------------------------------
-
-/// The most numbers one `range` may make.
-const MAX_RANGE: usize = 100_000;
-
-fn range(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let (start, end) = (a.num(0)?, a.num(1)?);
-    let n = a.count(2, 1, MAX_RANGE)?;
-    ctx.spend(n)?;
-    let step = if n > 1 {
-        (end - start) / (n - 1) as f64
-    } else {
-        0.0
-    };
-    // The last value is exactly `end`, without rounding drift.
-    Value::list(
-        (0..n)
-            .map(|i| {
-                Value::Number(if i + 1 == n && n > 1 {
-                    end
-                } else {
-                    start + step * i as f64
-                })
-            })
-            .collect(),
-    )
-}
-
-fn count(_: &mut Ctx, a: &Args) -> Result<Value, String> {
-    Ok(Value::Number(a.items(0)?.len() as f64))
-}
-
-fn clamp(a: &[f64]) -> Result<f64, String> {
-    let (v, lo, hi) = (arg(a, 0), arg(a, 1), arg(a, 2));
-    if lo > hi {
-        return Err(format!("`low` ({lo}) is above `high` ({hi})"));
-    }
-    Ok(v.clamp(lo, hi))
-}
-
-fn modulo(a: &[f64]) -> Result<f64, String> {
-    let (x, y) = (arg(a, 0), arg(a, 1));
-    if y == 0.0 {
-        return Err("`b` must not be 0".into());
-    }
-    Ok(x.rem_euclid(y))
-}
-
-fn sqrt(a: &[f64]) -> Result<f64, String> {
-    let x = arg(a, 0);
-    if x < 0.0 {
-        return Err(format!("can't take the square root of {x}"));
-    }
-    Ok(x.sqrt())
-}
-
-fn distance(_: &mut Ctx, a: &Args) -> Result<Value, String> {
-    if let Ok(p) = a.point(0) {
-        return Ok(Value::Field(Rc::new(Field::distance(&Curve::new(
-            vec![p],
-            false,
-        )))));
-    }
-    let c = a.curve(0)?;
-    if c.points.is_empty() {
-        return Err("the curve has no points".into());
-    }
-    Ok(Value::Field(Rc::new(Field::distance(c))))
-}
-
-fn polygon(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let sides = a.count(0, 3, 1000)?;
-    let r = a.positive(1)?;
-    ctx.spend(sides)?;
-    Ok(Value::Curve(Rc::new(Curve::polygon(sides, r))))
-}
-
-fn star(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let tips = a.count(0, 2, 500)?;
-    let outer = a.positive(1)?;
-    let inner = a.num(2)?;
-    if inner < 0.0 {
-        return Err(format!("`inner` must be 0 or more, got {inner}"));
-    }
-    ctx.spend(2 * tips)?;
-    Ok(Value::Curve(Rc::new(Curve::star(tips, outer, inner))))
-}
-
-fn smooth(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let c = a.curve(0)?;
-    let per = ctx.samples(8, 16);
-    ctx.spend(c.points.len().saturating_mul(per))?;
-    Ok(Value::Curve(Rc::new(c.smooth(per)?)))
-}
-
-fn spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let outer = a.num(0)?;
-    let spacing = a.field(1)?;
-    let tolerance = a.num(2)?;
-    let min_samples = a.count(3, 0, 100_000)?;
-    let (start, turns) = (a.num(4)?, a.num(5)?);
-    let max = ctx.remaining().min(MAX_PATH_POINTS);
-    let curve = if turns != 0.0 {
-        if outer != 0.0 {
-            ctx.warn("`outer` is ignored when `turns` is given".into());
-        }
-        let constant = if a.is_field(1) { None } else { Some(a.num(1)?) };
-        spiral::spiral_turns(
-            start,
-            turns,
-            &spacing,
-            constant,
-            tolerance,
-            min_samples,
-            max,
-        )?
-    } else {
-        if start != 0.0 {
-            return Err("`start` needs `turns`: how many turns to make from there".into());
-        }
-        if outer == 0.0 {
-            return Err("give `outer` (the radius to end near) or `turns`".into());
-        }
-        spiral::spiral(outer, &spacing, tolerance, min_samples, max)?
-    };
-    ctx.spend(curve.points.len())?;
-    Ok(Value::Curve(Rc::new(curve)))
-}
-
-fn interlock(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let c = a.curve(0)?;
-    let bumps = a.count(1, 1, 999)?;
-    let width = a.positive(2)?;
-    let stretch = a.num(3)?;
-    if stretch < 0.0 {
-        return Err("`stretch` must be 0 (leave it) or a radius".into());
-    }
-    let smooth = a.flag(4)?;
-    let touch = a.num(5)?;
-    if !smooth && (touch - 1.0).abs() > 1e-12 {
-        return Err("`touch` needs `smooth: true`".into());
-    }
-    ctx.spend(c.points.len() * if smooth { 40 } else { 1 })?;
-    let (curve, info) = if smooth {
-        spiral::interlock_smooth(c, bumps, width, touch)?
-    } else {
-        spiral::interlock(c, bumps, width)?
-    };
-    let curve = if stretch > 0.0 {
-        spiral::end_exactly_at(curve, stretch)
-    } else {
-        curve
-    };
-    if info.bumps != bumps {
-        ctx.warn(format!(
-            "bumps per turn must be odd so a peak always faces the next turn's dip; using {}",
-            info.bumps
-        ));
-    }
-    if info.overlap > 0.25 * width {
-        ctx.warn(format!(
-            "the spread is too short for the wiggles to meet exactly: neighbouring turns overlap by up to {} mm; widen the fade",
-            easycad_lang::format_number((info.overlap * 1000.0).round() / 1000.0)
-        ));
-    }
-    Ok(Value::Curve(Rc::new(curve)))
-}
-
-fn transform(ctx: &mut Ctx, g: &Value, x: &Xform, z_scale: f64) -> Result<Value, String> {
-    match g {
-        Value::Curve(c) => {
-            ctx.spend(c.points.len())?;
-            Ok(Value::Curve(Rc::new(c.transformed(x))))
-        }
-        Value::Surface(s) => {
-            ctx.spend(s.point_count())?;
-            Ok(Value::Surface(Rc::new(s.transformed(x))))
-        }
-        Value::Toolpath(p) => {
-            ctx.spend(p.points.len())?;
-            Ok(Value::Toolpath(Rc::new(p.transformed(x, z_scale)?)))
-        }
-        Value::Point(p) => Ok(Value::Point(x.apply(*p))),
-        Value::Plane(p) => p
-            .transformed(x)
-            .map(Value::Plane)
-            .ok_or_else(|| "this transform flattens the plane".into()),
-        other => Err(format!(
-            "works on curves, surfaces, toolpaths, points and planes, got {}",
-            other.kind()
-        )),
-    }
-}
-
-/// asin/acos in degrees, for inputs within -1..1.
-fn inverse_trig(x: f64, f: fn(f64) -> f64) -> Result<f64, String> {
-    if (-1.0..=1.0).contains(&x) {
-        Ok(f(x).to_degrees())
-    } else {
-        Err(format!("needs a value between -1 and 1, got {x}"))
-    }
-}
-
-fn loft(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let curves = curves_of(a.items(0)?, "section")?;
-    let m = curves.iter().map(|c| c.points.len()).max().unwrap_or(0);
-    ctx.spend(curves.len().saturating_mul(m))?;
-    Ok(Value::Surface(Rc::new(Surface::loft(&curves)?)))
-}
-
-/// The curves in a list input, or a message naming the first item that isn't one.
-fn curves_of<'v>(items: &'v [Value], what: &str) -> Result<Vec<&'v Curve>, String> {
-    items
-        .iter()
-        .enumerate()
-        .map(|(i, v)| match v {
-            Value::Curve(c) => Ok(c.as_ref()),
-            other => Err(format!("{what} {} is {}, not a curve", i + 1, other.kind())),
-        })
-        .collect()
-}
-
-fn cap(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let s = a.surface(0)?;
-    if !s.closed {
-        return Err("needs a surface made of closed sections".into());
-    }
-    ctx.spend(s.point_count())?;
-    Ok(Value::Surface(Rc::new(Surface {
-        capped: true,
-        ..s.as_ref().clone()
-    })))
-}
-
-fn toolpath(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let curves = curves_of(a.items(0)?, "item")?;
-    let settings = Settings::from_inputs(a.num(1)?, a.num(2)?, a.num(3)?, flow(a, 4)?)?;
-    let path = toolpath::from_curves(&curves, settings, ctx.remaining().min(MAX_PATH_POINTS))?;
-    ctx.spend(path.points.len())?;
-    Ok(Value::Toolpath(Rc::new(path)))
-}
-
-fn vase_spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let wall = a.surface(0)?;
-    let settings = Settings::from_inputs(a.num(2)?, a.num(1)?, a.num(3)?, flow(a, 4)?)?;
-    let path = toolpath::vase_spiral(
-        wall,
-        settings,
-        a.flag(5)?,
-        ctx.remaining().min(MAX_PATH_POINTS),
-    )?;
-    ctx.spend(path.points.len())?;
-    Ok(Value::Toolpath(Rc::new(path)))
-}
-
-fn vase_revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let profile = a.curve(0)?;
-    let (rise, width, flow) = (a.field(1)?, a.field(2)?, a.field(4)?);
-    let read = |f: &Rc<Field>, what: &'static str| {
-        let f = f.clone();
-        move |p: P3| -> Result<f64, String> {
-            let v = f.at(p);
-            if v.is_finite() {
-                Ok(v)
-            } else {
-                Err(format!("`{what}` has no value at height {:.2}", p[2]))
-            }
-        }
-    };
-    let (rise, width, flow) = (
-        read(&rise, "layer"),
-        read(&width, "width"),
-        read(&flow, "flow"),
-    );
-    let path = toolpath::vase_revolve(
-        profile,
-        &toolpath::PerTurn {
-            rise: &rise,
-            width: &width,
-            flow: &flow,
-        },
-        &toolpath::Revolve {
-            speed: a.num(3)?,
-            bead_layer: a.num(5)?,
-            tolerance: a.num(6)?,
-            seam: a.num(7)?,
-            flat_top: a.flag(8)?,
-            steady_start: a.flag(9)?,
-        },
-        ctx.remaining().min(MAX_PATH_POINTS),
-    )?;
-    ctx.spend(path.points.len())?;
-    Ok(Value::Toolpath(Rc::new(path)))
-}
-
-/// A `flow` input: 0 (not set) or a volumetric flow in mm³/s.
-fn flow(a: &Args, i: usize) -> Result<f64, String> {
-    let q = a.num(i)?;
-    if q < 0.0 {
-        return Err(format!("`flow` must be 0 (not set) or more, got {q}"));
-    }
-    Ok(q)
-}
-
-fn helix(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let circle = a.curve(0)?;
-    let (pitch, height) = (a.num(1)?, a.num(2)?);
-    let settings = Settings::from_inputs(a.num(3)?, pitch, a.num(4)?, flow(a, 5)?)?;
-    let path = toolpath::helix(
-        circle,
-        pitch,
-        height,
-        settings,
-        ctx.remaining().min(MAX_PATH_POINTS),
-    )?;
-    ctx.spend(path.points.len())?;
-    Ok(Value::Toolpath(Rc::new(path)))
-}
-
-fn stack(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let path = a.toolpath(0)?;
-    let n = a.count(1, 0, 10_000)?;
-    let out = toolpath::stack(
-        path,
-        n,
-        a.num(2)?,
-        a.num(3)?,
-        ctx.remaining().min(MAX_PATH_POINTS),
-    )?;
-    ctx.spend(out.points.len())?;
-    Ok(Value::Toolpath(Rc::new(out)))
-}
-
-fn join(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let paths = a
-        .items(0)?
-        .iter()
-        .enumerate()
-        .map(|(i, v)| match v {
-            Value::Toolpath(p) => Ok(p.as_ref()),
-            other => Err(format!(
-                "item {} is {}, not a toolpath",
-                i + 1,
-                other.kind()
-            )),
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    if paths.is_empty() {
-        return Err("needs at least one toolpath".into());
-    }
-    let out = toolpath::join(
-        &paths,
-        a.num(1)?,
-        a.num(2)?,
-        a.flag(3)?,
-        ctx.remaining().min(MAX_PATH_POINTS),
-    )?;
-    ctx.spend(out.points.len())?;
-    Ok(Value::Toolpath(Rc::new(out)))
-}
-
-fn wave(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
-    let (amplitude, count, phase) = (a.field(1)?, a.num(2)?, a.num(3)?);
-    let max = ctx.remaining().min(MAX_PATH_POINTS);
-    let out = match a.get(0)? {
-        Value::Toolpath(p) => Value::Toolpath(Rc::new(toolpath::wave_path(
-            p, &amplitude, count, phase, max,
-        )?)),
-        Value::Curve(c) => Value::Curve(Rc::new(toolpath::wave_curve(
-            c, &amplitude, count, phase, max,
-        )?)),
-        Value::Surface(s) => {
-            let mut sections = Vec::with_capacity(s.sections.len());
-            for sec in &s.sections {
-                let ring = Curve::new(sec.clone(), s.closed);
-                let waved = toolpath::wave_curve(&ring, &amplitude, count, phase, ctx.remaining())?;
-                ctx.spend(waved.points.len())?;
-                sections.push(waved.points);
-            }
-            Value::Surface(Rc::new(Surface {
-                sections,
-                ..s.as_ref().clone()
-            }))
-        }
-        other => {
-            return Err(format!(
-                "works on toolpaths, curves and surfaces, got {}",
-                other.kind()
-            ));
-        }
-    };
-    if let Value::Toolpath(p) = &out {
-        ctx.spend(p.points.len())?;
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::eval::Quality;
+    use crate::geom::Xform;
 
     #[test]
     fn names_are_unique_and_documented() {
@@ -2544,7 +2166,7 @@ mod tests {
         }
         let cat = catalog();
         assert!(cat.starts_with("## Numbers & lists"));
-        assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40, flow: Number = 0, flat_top: Bool = true) -> Toolpath"));
+        assert!(cat.contains("vase_spiral(wall: Surface, layer: Length, width: Length, speed: Speed = 40, flow: Number = 0, flat_top: Bool = true, steady_start: Bool = false) -> Toolpath"));
         assert!(cat.contains("fade(distance: Number | Field, inside: Number | Field, outside: Number | Field, band: Number | Field = 0) -> Number | Field"));
     }
 

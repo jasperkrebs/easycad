@@ -5,7 +5,7 @@
 // defaults are EasyGCode's, so G-code starts out exactly as EasyGCode would write it; changes are
 // remembered on this device, per printer.
 
-import { el, fmt, numberField, parseNumber } from './dom.js';
+import { el, fmt, loadJSON, numberField, parseNumber, save, saveJSON } from './dom.js';
 
 /** EasyGCode's machine settings (travel 6000 mm/min, end lift 50 mm, the bed centre at 125/125). */
 const EASYGCODE = {
@@ -157,35 +157,27 @@ function defaults(id) {
  */
 export function loadProfile(id) {
   const profile = defaults(id);
-  try {
-    const saved = JSON.parse(localStorage.getItem(storageKey(id)) || 'null');
-    if (saved && typeof saved === 'object') {
-      // Saved before the pellet printer was the G1: its old bed size wasn't the user's choice.
-      if (id === 'pellet' && JSON.stringify(saved.bed) === JSON.stringify(OLD_PELLET_BED)) delete saved.bed;
-      for (const f of FIELDS) {
-        if (f.only && f.only !== profile.mode) continue;
-        const v = getPath(saved, f.key);
-        if (typeof v !== typeof getPath(profile, f.key) || (typeof v === 'number' && !Number.isFinite(v))) continue;
-        if (typeof v === 'number') {
-          const { min, max } = range(id, f);
-          setPath(profile, f.key, Math.min(max ?? v, Math.max(min ?? v, v)));
-        } else {
-          setPath(profile, f.key, v);
-        }
+  const saved = loadJSON(storageKey(id), null);
+  if (saved && typeof saved === 'object') {
+    // Saved before the pellet printer was the G1: its old bed size wasn't the user's choice.
+    if (id === 'pellet' && JSON.stringify(saved.bed) === JSON.stringify(OLD_PELLET_BED)) delete saved.bed;
+    for (const f of FIELDS) {
+      if (f.only && f.only !== profile.mode) continue;
+      const v = getPath(saved, f.key);
+      if (typeof v !== typeof getPath(profile, f.key) || (typeof v === 'number' && !Number.isFinite(v))) continue;
+      if (typeof v === 'number') {
+        const { min, max } = range(id, f);
+        setPath(profile, f.key, Math.min(max ?? v, Math.max(min ?? v, v)));
+      } else {
+        setPath(profile, f.key, v);
       }
     }
-  } catch {
-    // Unreadable storage: the defaults.
   }
   return profile;
 }
 
 function saveProfile(id, profile) {
-  try {
-    localStorage.setItem(storageKey(id), JSON.stringify(profile));
-  } catch {
-    // Storage can be unavailable (private browsing); the settings last until the page closes.
-  }
+  saveJSON(storageKey(id), profile);
 }
 
 /**
@@ -350,11 +342,7 @@ export function renderPrinterSettings(host, id, profile, onChange) {
   const reset = el('button', { className: 'btn', type: 'button', text: 'Back to the defaults' });
   reset.addEventListener('click', () => {
     Object.assign(profile, defaults(id));
-    try {
-      localStorage.removeItem(storageKey(id));
-    } catch {
-      // nothing saved, nothing to remove
-    }
+    save(storageKey(id), null);
     renderPrinterSettings(host, id, profile, onChange);
     onChange();
   });

@@ -13,6 +13,7 @@ const { chromium } = require('playwright');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { waitForServer } = require('./test-helpers.cjs');
 
 const root = path.join(__dirname, '..', 'web');
 const port = 8000 + Math.floor(Math.random() * 1000);
@@ -50,19 +51,6 @@ async function openGroups(page) {
 async function saveFrom(page, selector) {
   const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click(selector)]);
   return { name: download.suggestedFilename(), data: fs.readFileSync(await download.path()) };
-}
-
-async function waitForServer(url) {
-  for (let i = 0; i < 50; i++) {
-    try {
-      const r = await fetch(url);
-      if (r.ok) return;
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error('web server did not start');
 }
 
 (async () => {

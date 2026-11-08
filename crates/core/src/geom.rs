@@ -226,6 +226,7 @@ impl Plane {
     }
 
     /// How far `p` is above the plane (along its normal).
+    #[cfg(test)]
     pub fn height_of(&self, p: P3) -> f64 {
         dot3(sub3(p, self.origin), self.z)
     }
