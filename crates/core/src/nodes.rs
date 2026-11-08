@@ -1246,6 +1246,23 @@ pub static NODES: &[Node] = &[
         run: Run::Op(toolbox::translate),
     },
     Node {
+        name: "place",
+        group: "Transforms",
+        inputs: &[
+            req("geometry", GEOMETRY, "a part's toolpath or shape"),
+            opt("z", "Length", 0.0, "how far up it goes"),
+            opt(
+                "flip",
+                "Bool",
+                0.0,
+                "turned over first (upside down, about the X axis)",
+            ),
+        ],
+        output: GEOMETRY,
+        doc: "Puts a part where it goes in an assembly: turned over (`flip`) and lifted by `z`. A toolpath is only shown there, and still prints as it is, on the bed; a shape is moved there. The engine warns when placed parts' beads run into each other.",
+        run: Run::Op(place),
+    },
+    Node {
         name: "mirror",
         group: "Transforms",
         inputs: &[

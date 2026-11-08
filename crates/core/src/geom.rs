@@ -94,6 +94,16 @@ impl Xform {
         }
     }
 
+    /// Where a part goes in an assembly: lifted by `z`, and with `flip` turned over first (a
+    /// half turn about the X axis: upside down, still the same hand, not a mirror image).
+    pub fn placed(z: f64, flip: bool) -> Self {
+        let s = if flip { -1.0 } else { 1.0 };
+        Xform {
+            m: [[1.0, 0.0, 0.0], [0.0, s, 0.0], [0.0, 0.0, s]],
+            t: [0.0, 0.0, z],
+        }
+    }
+
     pub fn translate(x: f64, y: f64, z: f64) -> Self {
         Xform {
             m: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],

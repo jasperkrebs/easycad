@@ -140,6 +140,9 @@ pub struct Toolpath {
     pub samples_per_turn: usize,
     /// Number of layers (for a spiral: turns, not counting the closing turn).
     pub layers: usize,
+    /// Where it's shown, when that isn't where it prints (`place`: a part in its place in an
+    /// assembly). The G-code and every check use the points as they are.
+    pub view: Option<Xform>,
 }
 
 /// Something the machine does between two moves.
@@ -262,6 +265,7 @@ impl Toolpath {
             layer_starts: vec![0],
             samples_per_turn: 0,
             layers: 1,
+            view: None,
         }
     }
 

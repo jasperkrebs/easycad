@@ -26,6 +26,75 @@ pub struct Program {
     pub bindings: Vec<Binding>,
     /// `show`, `export` and `print` statements.
     pub outputs: Vec<Output>,
+    /// `input name = expression "Label"` (only inside a component): a setting whose value is
+    /// another part's port, or any expression.
+    pub inputs: Vec<Input>,
+    /// `port name = expression "Label"` (only inside a component): a place another part can be
+    /// mounted.
+    pub ports: Vec<Port>,
+    /// `component name "Label" … end`: recipes within the recipe, made into parts.
+    pub components: Vec<Component>,
+    /// `part name = component(setting: value, …)`, in file order.
+    pub parts: Vec<Part>,
+}
+
+/// `component name "Label"` … `end`: settings, inputs, steps, ports and outputs that every part
+/// made from it has its own copy of (see `docs/lamp-builder.md`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Component {
+    pub name: String,
+    pub label: Option<String>,
+    /// Its own settings, inputs, steps, ports and outputs (no components or parts inside).
+    pub body: Program,
+    pub span: Span,
+}
+
+/// `input name = expression "Label"`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Input {
+    pub name: String,
+    pub default: Expr,
+    pub label: Option<String>,
+    pub span: Span,
+}
+
+/// `port name = expression "Label"`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Port {
+    pub name: String,
+    pub expr: Expr,
+    pub label: Option<String>,
+    pub span: Span,
+}
+
+/// `part name = component(setting: value, input: expression, …)`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Part {
+    pub name: String,
+    pub component: String,
+    pub args: Vec<PartArg>,
+    pub span: Span,
+    /// Byte range of the whole statement, to the end of its last line (newline included).
+    pub range: (usize, usize),
+    /// Byte offset of the closing `)`, where a new argument goes.
+    pub close: usize,
+}
+
+/// One `name: value` of a part.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartArg {
+    pub name: String,
+    pub span: Span,
+    pub value: PartValue,
+    /// Byte range of the value as written (a number with its unit).
+    pub range: (usize, usize),
+}
+
+/// A part's argument: a setting's value as written, or an expression (for an input).
+#[derive(Debug, Clone, PartialEq)]
+pub enum PartValue {
+    Literal { value: Literal, unit: Unit },
+    Expr(Expr),
 }
 
 /// A literal setting value.
@@ -120,6 +189,8 @@ pub struct Param {
     /// Byte range of the value literal in the source, so a new value can be written back
     /// without touching anything else on the line.
     pub value_range: (usize, usize),
+    /// The part this setting belongs to (after expanding parts: `tube.shape` is `tube`'s).
+    pub part: Option<String>,
 }
 
 /// When a setting applies: `when legs` (while `legs` is on, or not 0 or empty), `when shape =
@@ -158,6 +229,8 @@ pub enum Output {
         expr: Expr,
         printer: Option<Expr>,
         span: Span,
+        /// The part it prints (after expanding parts): the G-code file's name.
+        part: Option<String>,
     },
 }
 

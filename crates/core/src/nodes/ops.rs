@@ -179,6 +179,20 @@ pub(super) fn interlock(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     Ok(Value::Curve(Rc::new(curve)))
 }
 
+/// `place`: a part where it goes in an assembly. A toolpath keeps its points (it prints where
+/// it is) and is only shown there; anything else is moved there.
+pub(super) fn place(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let x = Xform::placed(a.num(1)?, a.flag(2)?);
+    match a.get(0)? {
+        Value::Toolpath(p) => {
+            let mut placed = (**p).clone();
+            placed.view = Some(x);
+            Ok(Value::Toolpath(Rc::new(placed)))
+        }
+        other => transform(ctx, other, &x, 1.0),
+    }
+}
+
 pub(super) fn transform(
     ctx: &mut Ctx,
     g: &Value,

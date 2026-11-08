@@ -116,6 +116,38 @@ pub struct ParamInfo {
     /// `when …`: the setting shows only while another setting has one of these values.
     pub when: Option<easycad_lang::Condition>,
     pub line: u32,
+    /// The part it belongs to (`tube.shape` is `tube`'s), for its fold-out.
+    pub part: Option<String>,
+}
+
+/// A part made from a component (`part tube = shade(…)`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PartSummary {
+    pub name: String,
+    pub component: String,
+    pub line: u32,
+}
+
+/// A port: a place a part can be mounted, with its value (for the lamp: radius, height, which
+/// way the straight section runs, its length, whether it's the socket).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PortSummary {
+    pub part: String,
+    /// `main.end_out`: what a part's input names to be mounted there.
+    pub name: String,
+    pub label: String,
+    pub value: Vec<f64>,
+}
+
+/// A component, as the "add a part" dialog needs it: its name, and the settings asked when a
+/// part is added (`@ask`), with their choices and defaults.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ComponentSummary {
+    pub name: String,
+    pub label: String,
+    pub ask: Vec<ParamInfo>,
+    /// Its inputs' names (a new part's mount goes in one).
+    pub inputs: Vec<String>,
 }
 
 /// One named step and how it went, for the step list.
@@ -214,6 +246,9 @@ pub struct Evaluation {
     /// each its own G-code file, with the same settings.
     pub prints: Vec<PrintInfo>,
     pub exports: Vec<Export>,
+    pub parts: Vec<PartSummary>,
+    pub ports: Vec<PortSummary>,
+    pub components: Vec<ComponentSummary>,
 }
 
 impl Evaluation {
@@ -268,8 +303,10 @@ pub fn evaluate(source: &str, quality: Quality) -> Evaluation {
             ),
         });
     }
-    let mut runner = Runner::new(&program, quality, &mut out);
+    let expanded = easycad_lang::expand(&program);
+    let mut runner = Runner::new(&expanded.program, quality, &mut out);
     runner.run();
+    runner.parts(&program, &expanded);
     drop(runner);
     out.diagnostics.sort_by_key(|d| (d.line, d.col));
     out
@@ -283,8 +320,11 @@ pub(crate) fn step_values(source: &str, quality: Quality) -> (Evaluation, HashMa
     let Ok(program) = easycad_lang::parse(source) else {
         return (out, HashMap::new());
     };
+    let expanded = easycad_lang::expand(&program);
+    let program = expanded.program.clone();
     let mut runner = Runner::new(&program, quality, &mut out);
     runner.run();
+    runner.parts(&easycad_lang::parse(source).unwrap_or_default(), &expanded);
     let values = program
         .bindings
         .iter()
@@ -451,6 +491,7 @@ impl<'a> Runner<'a> {
                 attrs: p.attrs.clone(),
                 when: p.when.clone(),
                 line: p.span.line,
+                part: p.part.clone(),
             });
         }
         for p in &program.params {
@@ -514,6 +555,122 @@ impl<'a> Runner<'a> {
                 status,
                 summary,
             });
+        }
+    }
+
+    /// The parts, their ports (with their values) and their inputs (as settings), what can be
+    /// added, and what's wrong with them; then whether placed parts run into each other.
+    fn parts(&mut self, original: &Program, expanded: &easycad_lang::Expanded) {
+        for (span, message) in &expanded.errors {
+            self.diag(*span, Severity::Error, message.clone());
+        }
+        self.out.parts = expanded
+            .parts
+            .iter()
+            .map(|p| PartSummary {
+                name: p.name.clone(),
+                component: p.component.clone(),
+                line: p.span.line,
+            })
+            .collect();
+        for port in &expanded.ports {
+            let value = match self.names.get(port.name.as_str()) {
+                Some(Slot::Binding(i)) => match self.state.get(*i) {
+                    Some(State::Done(v)) => numbers(v),
+                    _ => Vec::new(),
+                },
+                _ => Vec::new(),
+            };
+            self.out.ports.push(PortSummary {
+                part: port.part.clone(),
+                name: port.name.clone(),
+                label: port.label.clone().unwrap_or_else(|| humanize(&port.name)),
+                value,
+            });
+        }
+        // Each input as a setting, just before its part's other settings.
+        for input in &expanded.inputs {
+            let info = ParamInfo {
+                name: input.name.clone(),
+                label: input.label.clone().unwrap_or_else(|| humanize(&input.name)),
+                group: input.group.clone(),
+                kind: "port",
+                value: Literal::Text(input.value.clone()),
+                unit: "",
+                min: None,
+                max: None,
+                step: None,
+                choices: Vec::new(),
+                attrs: Vec::new(),
+                when: None,
+                line: input.span.line,
+                part: Some(input.part.clone()),
+            };
+            let at = self
+                .out
+                .params
+                .iter()
+                .position(|p| p.part.as_deref() == Some(input.part.as_str()))
+                .unwrap_or(self.out.params.len());
+            self.out.params.insert(at, info);
+        }
+        self.out.components = original
+            .components
+            .iter()
+            .map(|c| ComponentSummary {
+                name: c.name.clone(),
+                label: c.label.clone().unwrap_or_else(|| humanize(&c.name)),
+                ask: c
+                    .body
+                    .params
+                    .iter()
+                    .filter(|p| p.attrs.iter().any(|a| a == "ask"))
+                    .map(|p| ParamInfo {
+                        name: p.name.clone(),
+                        label: p.label.clone().unwrap_or_else(|| humanize(&p.name)),
+                        group: p.group.clone(),
+                        kind: if p.choices.is_some() {
+                            "choice"
+                        } else {
+                            match p.value {
+                                Literal::Bool(_) => "toggle",
+                                Literal::Text(_) => "text",
+                                Literal::List(_) => "list",
+                                Literal::Number(_) => "number",
+                            }
+                        },
+                        value: p.value.clone(),
+                        unit: p.unit.word(),
+                        min: p.range.map(|r| r.0),
+                        max: p.range.map(|r| r.1),
+                        step: p.step,
+                        choices: p.choices.clone().unwrap_or_default(),
+                        attrs: p.attrs.clone(),
+                        when: p.when.clone(),
+                        line: p.span.line,
+                        part: None,
+                    })
+                    .collect(),
+                inputs: c.body.inputs.iter().map(|i| i.name.clone()).collect(),
+            })
+            .collect();
+        // Placed parts whose beads run into each other.
+        let placed: Vec<(String, Rc<Toolpath>)> = self
+            .out
+            .prints
+            .iter()
+            .filter(|p| p.path.view.is_some())
+            .map(|p| (p.name.clone(), p.path.clone()))
+            .collect();
+        if placed.len() > 1 && self.ctx.quality == Quality::Final {
+            for message in crate::assembly::collisions(&placed) {
+                self.out.diagnostics.push(Diagnostic {
+                    line: 1,
+                    col: 1,
+                    severity: Severity::Warning,
+                    message,
+                });
+            }
         }
     }
 
@@ -781,6 +938,7 @@ impl<'a> Runner<'a> {
                     expr,
                     printer,
                     span,
+                    part: of_part,
                 } => {
                     shown = true;
                     self.drawing_owner = Some(parts.len());
@@ -788,8 +946,9 @@ impl<'a> Runner<'a> {
                     match self.eval(expr) {
                         Ok(Value::Toolpath(p)) => {
                             self.draw(&Value::Toolpath(p.clone()));
-                            let name = match expr {
-                                Expr::Ident { name, .. } => name.clone(),
+                            let name = match (of_part, expr) {
+                                (Some(part), _) => part.clone(),
+                                (None, Expr::Ident { name, .. }) => name.clone(),
                                 _ => format!("print {}", self.out.prints.len() + 1),
                             };
                             if self.out.prints.iter().any(|q| q.name == name) {
@@ -988,13 +1147,31 @@ impl<'a> Runner<'a> {
             }
             // The same toolpath can be both shown and printed: draw it once.
             Value::Toolpath(p) if !drawing.paths.iter().any(|q| Rc::ptr_eq(q, p)) => {
-                drawing.bounds.union(&Bounds::of(&p.points));
+                match &p.view {
+                    // A placed part: where it's shown.
+                    Some(x) => {
+                        let shown: Vec<P3> = p.points.iter().map(|q| x.apply(*q)).collect();
+                        drawing.bounds.union(&Bounds::of(&shown));
+                    }
+                    None => drawing.bounds.union(&Bounds::of(&p.points)),
+                }
                 drawing.paths.push(p.clone());
                 drawing.path_parts.push(owner);
             }
             _ => {}
         }
         true
+    }
+}
+
+/// A value's numbers, flattened (a port's value).
+fn numbers(v: &Value) -> Vec<f64> {
+    match v {
+        Value::Number(n) => vec![*n],
+        Value::Bool(b) => vec![if *b { 1.0 } else { 0.0 }],
+        Value::List(l) => l.items.iter().flat_map(numbers).collect(),
+        Value::Point(p) => p.to_vec(),
+        _ => Vec::new(),
     }
 }
 

@@ -2,7 +2,8 @@
 //! with `|>` continues the previous step, and newlines inside brackets are ignored.
 
 use crate::ast::{
-    Arg, BinOp, Binding, Condition, Expr, Literal, Output, Param, Program, Span, Unit,
+    Arg, BinOp, Binding, Component, Condition, Expr, Input, Literal, Output, Param, Part, PartArg,
+    PartValue, Port, Program, Span, Unit,
 };
 use crate::error::ParseError;
 use crate::lexer::{Tok, Token, lex};
@@ -130,12 +131,22 @@ impl Parser<'_> {
 
     fn program(mut self) -> R<Program> {
         let mut program = Program::default();
+        self.statements(&mut program, None)?;
+        Ok(program)
+    }
+
+    /// Statements until the end of the file, or (inside a component, `component` names it) the
+    /// `end` line.
+    fn statements(&mut self, program: &mut Program, component: Option<&str>) -> R<()> {
         loop {
             while self.eat(&Tok::Newline) {}
             let span = self.span();
             let Tok::Ident(word) = self.peek().clone() else {
                 if *self.peek() == Tok::Eof {
-                    return Ok(program);
+                    if let Some(name) = component {
+                        return Err(self.error(format!("the component `{name}` has no `end` line")));
+                    }
+                    return Ok(());
                 }
                 return Err(self.error(format!(
                     "expected a step like `name = …` or a setting `param …`, found {}",
@@ -146,7 +157,28 @@ impl Parser<'_> {
                 program.bindings.push(self.binding()?);
             } else {
                 self.pos += 1;
+                let top = component.is_none();
                 match word.as_str() {
+                    "end" if !top => {
+                        self.end_of_statement()?;
+                        return Ok(());
+                    }
+                    "easycad" | "project" | "printer" | "note" | "component" | "part" if !top => {
+                        return Err(ParseError::at(
+                            span,
+                            format!(
+                                "`{word}` can't be inside a component; end it with `end` first"
+                            ),
+                        ));
+                    }
+                    "input" | "port" if top => {
+                        return Err(ParseError::at(
+                            span,
+                            format!(
+                                "`{word}` only goes inside a component (`component name` … `end`)"
+                            ),
+                        ));
+                    }
                     "easycad" => {
                         let Some(Token {
                             tok: Tok::Number(_),
@@ -169,6 +201,30 @@ impl Parser<'_> {
                     "note" => program.notes.push(self.text("the note")?),
                     "group" => self.group = Some(self.text("the group name")?),
                     "param" => program.params.push(self.param(span)?),
+                    "input" => {
+                        let (name, default, label) = self.named_expr("the input's name")?;
+                        program.inputs.push(Input {
+                            name,
+                            default,
+                            label,
+                            span,
+                        });
+                    }
+                    "port" => {
+                        let (name, expr, label) = self.named_expr("the port's name")?;
+                        program.ports.push(Port {
+                            name,
+                            expr,
+                            label,
+                            span,
+                        });
+                    }
+                    "component" => {
+                        let component = self.component(span)?;
+                        program.components.push(component);
+                        continue;
+                    }
+                    "part" => program.parts.push(self.part(span)?),
                     "show" => {
                         let mut names = vec![self.ident("a step name to show")?];
                         while self.eat(&Tok::Comma) {
@@ -203,6 +259,7 @@ impl Parser<'_> {
                             expr,
                             printer,
                             span,
+                            part: None,
                         });
                     }
                     other => {
@@ -219,14 +276,165 @@ impl Parser<'_> {
         }
     }
 
-    fn binding(&mut self) -> R<Binding> {
-        let (name, span) = self.ident("a step name")?;
-        if RESERVED.contains(&name.as_str()) {
+    /// `name = expression "Label"` (after `input` or `port`).
+    fn named_expr(&mut self, what: &str) -> R<(String, Expr, Option<String>)> {
+        let (name, span) = self.ident(what)?;
+        self.plain_name(&name, span)?;
+        self.expect(&Tok::Eq, "`=`")?;
+        let expr = self.expr()?;
+        let label = match self.peek().clone() {
+            Tok::Str(s) => {
+                self.pos += 1;
+                Some(s)
+            }
+            _ => None,
+        };
+        Ok((name, expr, label))
+    }
+
+    /// A name for a step, setting, component or part: not a reserved word, no dot (dotted names
+    /// are parts' own steps).
+    fn plain_name(&self, name: &str, span: Span) -> R<()> {
+        if RESERVED.contains(&name) {
             return Err(ParseError::at(
                 span,
                 format!("`{name}` is a reserved word; pick another name"),
             ));
         }
+        if name.contains('.') {
+            return Err(ParseError::at(
+                span,
+                format!("`{name}`: a name can't contain a dot (`main.end_out` is a part's step)"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `component name "Label"`, its statements, `end`.
+    fn component(&mut self, span: Span) -> R<Component> {
+        let (name, name_span) = self.ident("the component's name")?;
+        self.plain_name(&name, name_span)?;
+        let label = match self.peek().clone() {
+            Tok::Str(s) => {
+                self.pos += 1;
+                Some(s)
+            }
+            _ => None,
+        };
+        self.end_of_statement()?;
+        let outer_group = self.group.take();
+        let mut body = Program::default();
+        self.statements(&mut body, Some(&name))?;
+        self.group = outer_group;
+        Ok(Component {
+            name,
+            label,
+            body,
+            span,
+        })
+    }
+
+    /// `part name = component(setting: value, input: expression, …)`.
+    fn part(&mut self, span: Span) -> R<Part> {
+        let start = self
+            .tokens
+            .get(self.pos.saturating_sub(1))
+            .map_or(0, |t| t.start);
+        let (name, name_span) = self.ident("the part's name")?;
+        self.plain_name(&name, name_span)?;
+        self.expect(&Tok::Eq, "`=` and a component, like `part top = shade()`")?;
+        let (component, _) = self.ident("the component it's made from")?;
+        self.expect(&Tok::LParen, "`(` after the component's name")?;
+        let mut args: Vec<PartArg> = Vec::new();
+        while *self.peek() != Tok::RParen {
+            let (arg, arg_span) = self.ident("a setting's name, like `shape: \"bell\"`")?;
+            if args.iter().any(|a| a.name == arg) {
+                return Err(ParseError::at(arg_span, format!("`{arg}` is given twice")));
+            }
+            self.expect(&Tok::Colon, "`:` after the setting's name")?;
+            let from = self.pos;
+            let value_start = self.token().map_or(0, |t| t.start);
+            let value = match self.part_literal()? {
+                Some(v) => v,
+                None => {
+                    self.pos = from;
+                    PartValue::Expr(self.pipeline()?.expr)
+                }
+            };
+            let value_end = self
+                .tokens
+                .get(self.pos.saturating_sub(1))
+                .map_or(value_start, |t| t.end);
+            args.push(PartArg {
+                name: arg,
+                span: arg_span,
+                value,
+                range: (value_start, value_end),
+            });
+            if !self.eat(&Tok::Comma) {
+                break;
+            }
+        }
+        let close = self.expect(&Tok::RParen, "`)` to close the part")?.start;
+        // The statement runs to the end of its line, newline included.
+        let after = self.src.get(close..).and_then(|s| s.find('\n'));
+        let end = after.map_or(self.src.len(), |p| close + p + 1);
+        Ok(Part {
+            name,
+            component,
+            args,
+            span,
+            range: (start, end),
+            close,
+        })
+    }
+
+    /// A setting's value written in a part: a number (with its unit), true/false, text or a
+    /// list of numbers, followed by `,` or `)`. Anything else is an expression (`None`, and
+    /// nothing is used up that matters: the caller starts again).
+    fn part_literal(&mut self) -> R<Option<PartValue>> {
+        let value = match self.peek().clone() {
+            Tok::Minus => {
+                if let Tok::Number(n) = self.peek_at(1).clone() {
+                    self.pos += 2;
+                    Literal::Number(-n)
+                } else {
+                    return Ok(None);
+                }
+            }
+            Tok::Number(n) => {
+                self.pos += 1;
+                Literal::Number(n)
+            }
+            Tok::Str(s) => {
+                self.pos += 1;
+                Literal::Text(s)
+            }
+            Tok::Ident(w) if w == "true" || w == "false" => {
+                self.pos += 1;
+                Literal::Bool(w == "true")
+            }
+            Tok::LBracket => match self.list_literal(false) {
+                Ok(items) => Literal::List(items),
+                Err(_) => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+        let unit = if matches!(value, Literal::List(_)) {
+            Unit::None
+        } else {
+            self.unit()
+        };
+        if matches!(self.peek(), Tok::Comma | Tok::RParen) {
+            Ok(Some(PartValue::Literal { value, unit }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn binding(&mut self) -> R<Binding> {
+        let (name, span) = self.ident("a step name")?;
+        self.plain_name(&name, span)?;
         self.expect(&Tok::Eq, "`=`")?;
         let expr = self.expr()?;
         Ok(Binding { name, expr, span })
@@ -234,12 +442,7 @@ impl Parser<'_> {
 
     fn param(&mut self, span: Span) -> R<Param> {
         let (name, name_span) = self.ident("the setting's name")?;
-        if RESERVED.contains(&name.as_str()) {
-            return Err(ParseError::at(
-                name_span,
-                format!("`{name}` is a reserved word; pick another name"),
-            ));
-        }
+        self.plain_name(&name, name_span)?;
         self.expect(&Tok::Eq, "`=` and a value")?;
 
         let value_start = self.token().map_or(0, |t| t.start);
@@ -299,6 +502,7 @@ impl Parser<'_> {
             when: None,
             span,
             value_range: (value_start, value_end),
+            part: None,
         };
         loop {
             match self.peek().clone() {

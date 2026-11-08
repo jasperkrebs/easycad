@@ -1,0 +1,115 @@
+# The lamp builder: shades that screw into each other
+
+The owner's idea (8 Nov 2026), read back and agreed: every vase-mode wall is a thread on both
+faces (one bead a turn, one pitch a turn). So a shade can screw onto the outside, or into the
+inside, of another shade's straight section, going up or down, and the new shade's own
+straight ends take more shades in turn: a sandbox of shades, planned on screen, each printed on
+its own, without asking the AI.
+
+## Decisions (8 Nov 2026)
+
+| Question | Decision |
+|---|---|
+| Pitch | One for the project: the layer height, which is the socket's thread pitch (E27 2.5 mm, E14 2 mm, or the custom socket's). |
+| Line width | One for the project. |
+| Fit | Two settings: the socket's thread, and every shade-to-shade thread. |
+| Joint length | Per shade: its straight start (the holder that screws on) and its straight end. A global setting overrides every joint's length. |
+| Up and down | As printed: z up from the main shade's throat on the bed. |
+| The first shade | On the socket, or on a custom thread (a tube with no socket: the custom socket). |
+| What connects | A shade's straight start and straight end, inside and outside. A long tube can hold several shades, each sitting further along it. |
+| Assembly order | Not checked. Only collisions are. |
+| Printing | Each shade is its own G-code file, printed alone in the middle of the bed. |
+| New shapes | Tube, bell in-out (opens and closes again), cone in-out (straight lines out and in). |
+
+## How it fits the thread
+
+As the salt shaker's lid (which threads in practice): a shade on the outside of another's
+straight section runs its nozzle `line + fit` further out; one on the inside, `line + fit`
+further in. Both are printed one bead a turn at the same pitch, and the same way round, so the
+threads match; a shade printed the other way up is the same helix turned over, still the same
+hand. On the socket, as today: `(thread diameter + socket fit + line) / 2`.
+
+## How it's built
+
+### 1. Components and parts in the recipe language
+
+A project holds one **component** (a recipe within the recipe: settings, steps, outputs) and
+any number of **parts** made from it, each with its own settings:
+
+```
+component shade "Shade"
+  param shape = "cone" of ["tube", "cone", ...] "Shape" @ask
+  input mount = socket "Mounted on"
+  ...steps...
+  port end_out = [...] "End, outside"
+  print place(path, z: z0, flip: down)
+  show placed_wall
+end
+
+part main = shade()
+part tube = shade(mount: main.end_out, direction: "down", shape: "tube", length: 300 mm)
+```
+
+- A part's settings are the component's settings, named `part.setting` (`tube.shape`), with
+  the values given in its line; the rest keep the component's defaults. Moving a slider writes
+  the value into the part's line (or adds it there), touching nothing else.
+- An **input** is a setting whose value is another part's **port** (`main.end_out`); the
+  settings window shows it as a list of the ports there are.
+- A **port** is a named output, a place another part can be mounted, with a label. For the
+  lamp it's `[radius, height, inward, length, kind]`: the radius the next shade's straight
+  section runs at (the thread's fit already in it), where the straight section ends, which way
+  it runs from there, how long it is (0: no port), and whether it's the socket.
+- Every name inside the component is the part's own; settings and steps outside it are shared
+  (the socket, the layer height, the line width, the fits, the flow).
+- The engine expands the parts into one ordinary recipe before it runs, so everything else
+  (steps, errors, the settings window, printing, the agent's edits) works as before.
+- `@ask` settings are asked when a part is added (the shape, which way it goes).
+
+Commands (the same for the buttons, the agent and the CLI): `addPart(component, name, values)`
+writes a new `part` line; `removePart(name)` removes it and the parts mounted on it.
+
+### 2. Placed toolpaths and the collision check
+
+- `place(path, z, flip)` puts a part where it goes in the assembly, for the view only: the
+  G-code stays the part as printed, on the bed. Flipped is turned over about X (the same hand
+  of thread, not a mirror image).
+- The engine checks every pair of placed parts for beads that run into each other (closer than
+  three quarters of the two beads' widths, at the same height), and warns with the parts'
+  names and the height. Shades screwed together sit a line plus the fit apart, so they pass;
+  a tighter fit than a quarter line would be flagged.
+
+### 3. The shade component
+
+The lampshade's profile code, generalised:
+- the start is a straight holder at the mount's radius (the throat on the socket), its length
+  the shade's start length or the global joint length;
+- shapes: tube, cone, bell, dome, sphere, flat sphere, bell in-out, cone in-out, own;
+- an optional straight end for every shape (the spheres' lip, for all), its length the shade's
+  end length or the global joint length;
+- where it sits: on a port, going up or down, and how far along the straight section it sits
+  (0: flush with its end);
+- ports: start inside, start outside, end inside, end outside (the start's inside is taken
+  when the shade is on the socket; the end's only when there's a straight end).
+
+The single-shade lampshade template stays as it is (it's golden-tested against EasyGCode).
+The lamp builder is a new template, **Lamp**.
+
+### 4. The app
+
+- **Settings:** the shared groups as today (Socket, Print, Overhangs, Brim, Joints), then one
+  fold-out per shade, headed by its name and shape, with a remove button. Inside: where it's
+  mounted, which way, how far along, its shape and that shape's settings, its start and end.
+- **Plan** (a fourth view next to Shape, Toolpath, Both): the assembly's cross-section, every
+  shade a line as wide as its bead, the ports as `+` buttons. Tap a `+`, pick a shape and up or
+  down, and the shade appears there with sensible defaults; tap a shade to open its settings.
+  Collisions are drawn red.
+- **3D view:** the whole assembly, each shade where it goes; the parts buttons show one shade.
+- **Print:** one G-code per shade, each on the bed's centre.
+
+## Phases
+
+1. Components and parts in the language (parse, expand, rewrites, commands), with tests.
+2. `place` and the collision check.
+3. The shade component and the Lamp template; a one-shade lamp prints the lampshade's G-code.
+4. The app: settings per part, add and remove, the Plan view.
+5. Docs, the agent's guide, screenshots.

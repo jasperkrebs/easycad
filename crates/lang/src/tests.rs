@@ -537,3 +537,193 @@ fn settings_can_apply_only_when_another_has_a_value() {
         assert!(parse(bad).is_err(), "{bad}");
     }
 }
+
+// ---- Components and parts (docs/lamp-builder.md)
+
+const RINGS: &str = r#"easycad 0.1
+param line = 6 mm in 1..12 "Line width"
+base = [20, 0]
+
+component ring "Ring"
+  group "Shape"
+  param r = 30 mm in 5..100 "Radius"
+  param how = "plain" of ["plain", "wavy"] "How"
+  param wave = 2 mm "Wave"  when how = "wavy"
+  input mount = base "Mounted on"
+  size = r + item(mount, 0) + line
+  port out = [size + line, 0] "Outside"
+  print circle(size)
+  show size
+end
+
+part a = ring()
+part b = ring(mount: a.out, r: 40 mm)
+"#;
+
+#[test]
+fn parts_expand_into_their_own_names() {
+    let p = parse(RINGS).unwrap();
+    assert_eq!(p.components.len(), 1);
+    assert_eq!(p.parts.len(), 2);
+    let e = crate::expand(&p);
+    assert!(e.errors.is_empty(), "{:?}", e.errors);
+    let names: Vec<&str> = e.program.params.iter().map(|q| q.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["line", "a.r", "a.how", "a.wave", "b.r", "b.how", "b.wave"]
+    );
+    let b_r = e.program.params.iter().find(|q| q.name == "b.r").unwrap();
+    assert_eq!(b_r.value, Literal::Number(40.0));
+    assert_eq!(b_r.part.as_deref(), Some("b"));
+    assert_eq!(b_r.group.as_deref(), Some("Shape"));
+    // `when` follows the part's own setting.
+    let wave = e
+        .program
+        .params
+        .iter()
+        .find(|q| q.name == "b.wave")
+        .unwrap();
+    assert_eq!(wave.when.as_ref().unwrap().name, "b.how");
+    // Steps read the part's own names, and shared ones as they are.
+    let size = e
+        .program
+        .bindings
+        .iter()
+        .find(|x| x.name == "b.size")
+        .unwrap();
+    let mut refs = Vec::new();
+    size.expr.references(&mut refs);
+    let refs: Vec<&str> = refs.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(refs, ["b.r", "b.mount", "line"]);
+    // Inputs: the default, or the part's own.
+    let names: Vec<(&str, &str, bool)> = e
+        .inputs
+        .iter()
+        .map(|i| (i.name.as_str(), i.value.as_str(), i.given))
+        .collect();
+    assert_eq!(
+        names,
+        [("a.mount", "base", false), ("b.mount", "a.out", true)]
+    );
+    assert_eq!(e.inputs[0].group.as_deref(), Some("Shape"));
+    let ports: Vec<&str> = e.ports.iter().map(|q| q.name.as_str()).collect();
+    assert_eq!(ports, ["a.out", "b.out"]);
+    // Each part prints under its own name.
+    let prints: Vec<Option<&str>> = e
+        .program
+        .outputs
+        .iter()
+        .filter_map(|o| match o {
+            Output::Print { part, .. } => Some(part.as_deref()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(prints, [Some("a"), Some("b")]);
+}
+
+#[test]
+fn parts_explain_what_is_wrong() {
+    let errors = |src: &str| -> Vec<String> {
+        crate::expand(&parse(src).unwrap())
+            .errors
+            .into_iter()
+            .map(|(_, m)| m)
+            .collect()
+    };
+    let src = RINGS.replace(
+        "part b = ring(mount: a.out, r: 40 mm)",
+        "part b = ring(size: 3)",
+    );
+    assert_eq!(errors(&src), ["the component `ring` has no setting `size`"]);
+    let src = RINGS.replace(
+        "part b = ring(mount: a.out, r: 40 mm)",
+        "part b = ring(r: line * 2)",
+    );
+    assert_eq!(
+        errors(&src),
+        ["`r` is a setting: give it a value, like `r: 10`"]
+    );
+    let src = RINGS.replace("part b = ring(mount: a.out, r: 40 mm)", "part b = hoop()");
+    assert_eq!(errors(&src), ["there's no component `hoop`"]);
+    let src = RINGS.replace("part b = ring(mount: a.out, r: 40 mm)", "part a = ring()");
+    assert_eq!(errors(&src), ["`a` is defined twice"]);
+    // Statements that can't be inside a component, or outside one.
+    assert!(parse("easycad 0.1\ncomponent c\n  part x = c()\nend\n").is_err());
+    assert!(parse("easycad 0.1\nport p = 1\n").is_err());
+    assert!(parse("easycad 0.1\ncomponent c\n  x = 1\n").is_err());
+    assert!(parse("easycad 0.1\na.b = 1\n").is_err());
+}
+
+#[test]
+fn a_parts_settings_are_written_into_its_own_line() {
+    let values = [
+        ("b.r".to_string(), Literal::Number(45.0)),
+        ("a.how".to_string(), Literal::Text("wavy".into())),
+        ("a.r".to_string(), Literal::Number(12.5)),
+        ("b.mount".to_string(), Literal::Text("base".into())),
+        ("line".to_string(), Literal::Number(5.0)),
+    ];
+    let out = crate::set_values(RINGS, &values).unwrap();
+    assert!(
+        out.contains("part a = ring(how: \"wavy\", r: 12.5 mm)\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("part b = ring(mount: base, r: 45 mm)\n"),
+        "{out}"
+    );
+    assert!(out.contains("param line = 5 mm"), "{out}");
+    // The component itself is untouched.
+    assert!(out.contains("  param r = 30 mm in 5..100 \"Radius\""));
+    // Over several lines, with a trailing comma: added after it.
+    let multi = RINGS.replace(
+        "part b = ring(mount: a.out, r: 40 mm)",
+        "part b = ring(\n  mount: a.out,\n  r: 40 mm,\n)",
+    );
+    let out = crate::set_values(
+        &multi,
+        &[("b.how".to_string(), Literal::Text("wavy".into()))],
+    )
+    .unwrap();
+    assert!(out.contains("  r: 40 mm, how: \"wavy\"\n)"), "{out}");
+    assert!(parse(&out).is_ok());
+}
+
+#[test]
+fn parts_are_added_and_removed_with_what_is_mounted_on_them() {
+    let out = crate::add_part(
+        RINGS,
+        "ring",
+        "c",
+        &[
+            ("mount".to_string(), Literal::Text("b.out".into())),
+            ("r".to_string(), Literal::Number(25.0)),
+        ],
+    )
+    .unwrap();
+    assert!(
+        out.ends_with(
+            "part b = ring(mount: a.out, r: 40 mm)\npart c = ring(mount: b.out, r: 25 mm)\n"
+        ),
+        "{out}"
+    );
+    assert!(crate::add_part(RINGS, "ring", "a", &[]).is_err());
+    assert!(crate::add_part(RINGS, "ring", "line", &[]).is_err());
+    assert!(crate::add_part(RINGS, "hoop", "c", &[]).is_err());
+    assert!(
+        crate::add_part(
+            RINGS,
+            "ring",
+            "c",
+            &[("size".to_string(), Literal::Number(1.0))]
+        )
+        .is_err()
+    );
+    assert!(crate::add_part(RINGS, "ring", "c.d", &[]).is_err());
+    // Removing `b` takes `c` (mounted on it) along; removing `a` takes them all.
+    let gone = crate::remove_part(&out, "b").unwrap();
+    assert!(gone.ends_with("part a = ring()\n"), "{gone}");
+    let gone = crate::remove_part(&out, "a").unwrap();
+    assert!(!gone.contains("part "), "{gone}");
+    assert!(crate::remove_part(&out, "z").is_err());
+}

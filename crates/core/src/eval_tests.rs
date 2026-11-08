@@ -643,3 +643,80 @@ fn cut_cylinder_prints_across_its_ranges() {
         }
     }
 }
+
+/// Parts made from a component: their settings (with their part), ports with values, and the
+/// collision check between placed parts (docs/lamp-builder.md).
+#[test]
+fn placed_parts_report_their_ports_and_collisions() {
+    let recipe = |gap: f64| {
+        format!(
+            r#"easycad 0.1
+param line = 6 mm in 1..12 "Line width"
+base = [30, 0]
+
+component ring "Ring"
+  param extra = 0 mm in 0..50 "Extra radius" @ask
+  input mount = base "Mounted on"
+  r = item(mount, 0) + extra
+  port out = [r + {gap}, 0] "Outside"
+  path = toolpath(circle(r) |> move(z: 0.6), width: line, layer: 0.6)
+  print place(path, z: 10)
+end
+
+part a = ring()
+part b = ring(mount: a.out)
+"#
+        )
+    };
+    let e = evaluate(&recipe(3.0), Quality::Final);
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+    let names: Vec<(&str, Option<&str>, &str)> = e
+        .params
+        .iter()
+        .map(|p| (p.name.as_str(), p.part.as_deref(), p.kind))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("line", None, "number"),
+            ("a.mount", Some("a"), "port"),
+            ("a.extra", Some("a"), "number"),
+            ("b.mount", Some("b"), "port"),
+            ("b.extra", Some("b"), "number"),
+        ]
+    );
+    assert_eq!(e.params[3].value, Literal::Text("a.out".into()));
+    let ports: Vec<(&str, &[f64])> = e
+        .ports
+        .iter()
+        .map(|p| (p.name.as_str(), p.value.as_slice()))
+        .collect();
+    assert_eq!(
+        ports,
+        [("a.out", &[33.0, 0.0][..]), ("b.out", &[36.0, 0.0][..])]
+    );
+    assert_eq!(
+        e.prints.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        ["a", "b"]
+    );
+    assert_eq!(e.components[0].ask[0].name, "extra");
+    assert_eq!(e.components[0].inputs, ["mount"]);
+    // Shown where they're placed (10 mm up), printed on the bed.
+    let printed = e.prints[0].path.points[0][2];
+    assert!(printed < 2.0);
+    assert!(
+        (e.drawing.bounds.min[2] - (10.0 + printed)).abs() < 1e-9,
+        "{:?}",
+        e.drawing.bounds
+    );
+    // 3 mm apart with 6 mm beads: they run into each other; a line apart they don't.
+    let warnings: Vec<&str> = e
+        .diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(warnings, ["`a` and `b` run into each other at 11 mm high"]);
+    let e = evaluate(&recipe(6.0), Quality::Final);
+    assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+}

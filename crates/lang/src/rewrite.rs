@@ -1,12 +1,16 @@
 //! Writing new setting values back into recipe text, touching nothing else. This is how
 //! "Save project" stores what you set with the sliders.
 
-use crate::ast::Literal;
+use crate::ast::{Literal, Unit};
 use crate::error::ParseError;
 use crate::parser::parse;
 
 /// Returns `src` with the given settings' values replaced. Comments, layout and every other
 /// line stay exactly as they were. Unknown names are ignored.
+///
+/// A part's setting (`tube.shape`) is written into the part's line: its value replaced there,
+/// or, when the line doesn't give it yet, added at the end of the line's list. An input's
+/// value is a name (`main.end_out`), written as it is.
 pub fn set_values(src: &str, values: &[(String, Literal)]) -> Result<String, ParseError> {
     let program = parse(src)?;
     let mut edits: Vec<(usize, usize, String)> = program
@@ -19,6 +23,47 @@ pub fn set_values(src: &str, values: &[(String, Literal)]) -> Result<String, Par
                 .map(|(_, v)| (p.value_range.0, p.value_range.1, format_literal(v)))
         })
         .collect();
+    // Parts' settings: replaced in place, or new ones added before each part's `)`.
+    for part in &program.parts {
+        let Some(c) = program.components.iter().find(|c| c.name == part.component) else {
+            continue;
+        };
+        let mut added: Vec<String> = Vec::new();
+        for (name, v) in values {
+            let Some(own) = name
+                .strip_prefix(part.name.as_str())
+                .and_then(|n| n.strip_prefix('.'))
+            else {
+                continue;
+            };
+            let text = if let Some(q) = c.body.params.iter().find(|q| q.name == own) {
+                with_unit(v, q.unit)
+            } else if c.body.inputs.iter().any(|i| i.name == own) {
+                match v {
+                    Literal::Text(t) if is_name(t) => t.clone(),
+                    _ => continue,
+                }
+            } else {
+                continue;
+            };
+            match part.args.iter().find(|a| a.name == own) {
+                Some(a) => edits.push((a.range.0, a.range.1, text)),
+                None => added.push(format!("{own}: {text}")),
+            }
+        }
+        if !added.is_empty() {
+            let before = src.get(..part.close).unwrap_or_default().trim_end();
+            let sep = if before.ends_with('(') || before.ends_with(',') {
+                ""
+            } else {
+                ", "
+            };
+            let lead = if before.ends_with(',') { " " } else { "" };
+            // Inserted right after the last non-space before `)`.
+            let at = before.len();
+            edits.push((at, at, format!("{sep}{lead}{}", added.join(", "))));
+        }
+    }
     // Apply from the end so earlier byte offsets stay valid.
     edits.sort_by_key(|e| std::cmp::Reverse(e.0));
     let mut out = src.to_string();
@@ -31,6 +76,144 @@ pub fn set_values(src: &str, values: &[(String, Literal)]) -> Result<String, Par
             out.replace_range(start..end, &text);
         }
     }
+    Ok(out)
+}
+
+/// A setting's value as typed in a part's line, with the setting's unit (`300 mm`, `50 %`).
+fn with_unit(v: &Literal, unit: Unit) -> String {
+    match v {
+        Literal::Number(_) if unit != Unit::None => {
+            format!("{} {}", format_literal(v), unit.word())
+        }
+        _ => format_literal(v),
+    }
+}
+
+/// A name a recipe can read: letters, digits and `_`, parts joined by dots (`main.end_out`).
+fn is_name(t: &str) -> bool {
+    !t.is_empty()
+        && t.split('.').all(|w| {
+            w.chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+                && w.chars().all(|c| c.is_alphanumeric() || c == '_')
+        })
+}
+
+/// Returns `src` with a new part: `part name = component(setting: value, …)`, after the last
+/// part (or at the end). Values are written like `set_values` writes them. Fails, with a
+/// reason, if the name is taken or not a name, or the component or a setting doesn't exist.
+pub fn add_part(
+    src: &str,
+    component: &str,
+    name: &str,
+    values: &[(String, Literal)],
+) -> Result<String, String> {
+    let program = parse(src).map_err(|e| e.message)?;
+    if !is_name(name) || name.contains('.') || crate::RESERVED.contains(&name) {
+        return Err(format!(
+            "`{name}` can't name a part (letters, digits and _)"
+        ));
+    }
+    let taken = program.params.iter().any(|p| p.name == name)
+        || program.bindings.iter().any(|b| b.name == name)
+        || program.components.iter().any(|c| c.name == name)
+        || program.parts.iter().any(|p| p.name == name);
+    if taken {
+        return Err(format!("there's already something called `{name}`"));
+    }
+    let c = program
+        .components
+        .iter()
+        .find(|c| c.name == component)
+        .ok_or_else(|| format!("there's no component `{component}`"))?;
+    let mut args = Vec::new();
+    for (k, v) in values {
+        if let Some(q) = c.body.params.iter().find(|q| q.name == *k) {
+            args.push(format!("{k}: {}", with_unit(v, q.unit)));
+        } else if c.body.inputs.iter().any(|i| i.name == *k) {
+            match v {
+                Literal::Text(t) if is_name(t) => args.push(format!("{k}: {t}")),
+                _ => return Err(format!("`{k}` takes a name, like `main.end_out`")),
+            }
+        } else {
+            return Err(format!("the component `{component}` has no setting `{k}`"));
+        }
+    }
+    let line = format!("part {name} = {component}({})\n", args.join(", "));
+    let at = program.parts.iter().map(|p| p.range.1).max();
+    let out = match at {
+        Some(at) => {
+            let (before, after) = (
+                src.get(..at).unwrap_or_default(),
+                src.get(at..).unwrap_or_default(),
+            );
+            let gap = if before.ends_with('\n') { "" } else { "\n" };
+            format!("{before}{gap}{line}{after}")
+        }
+        None => {
+            let gap = if src.is_empty() || src.ends_with("\n\n") {
+                ""
+            } else if src.ends_with('\n') {
+                "\n"
+            } else {
+                "\n\n"
+            };
+            format!("{src}{gap}{line}")
+        }
+    };
+    parse(&out).map_err(|e| format!("that would break the recipe ({})", e.message))?;
+    Ok(out)
+}
+
+/// Returns `src` without the part `name`, and without every part mounted on it (whose line
+/// reads one of its steps, `name.…`), and theirs in turn.
+pub fn remove_part(src: &str, name: &str) -> Result<String, String> {
+    let program = parse(src).map_err(|e| e.message)?;
+    if !program.parts.iter().any(|p| p.name == name) {
+        return Err(format!("there's no part `{name}`"));
+    }
+    let mut gone: Vec<&str> = vec![name];
+    loop {
+        let more: Vec<&str> = program
+            .parts
+            .iter()
+            .filter(|p| !gone.contains(&p.name.as_str()))
+            .filter(|p| {
+                p.args.iter().any(|a| match &a.value {
+                    crate::ast::PartValue::Expr(e) => {
+                        let mut refs = Vec::new();
+                        e.references(&mut refs);
+                        refs.iter().any(|(r, _)| {
+                            gone.iter().any(|g| {
+                                r.strip_prefix(g).is_some_and(|rest| rest.starts_with('.'))
+                            })
+                        })
+                    }
+                    _ => false,
+                })
+            })
+            .map(|p| p.name.as_str())
+            .collect();
+        if more.is_empty() {
+            break;
+        }
+        gone.extend(more);
+    }
+    let mut ranges: Vec<(usize, usize)> = program
+        .parts
+        .iter()
+        .filter(|p| gone.contains(&p.name.as_str()))
+        .map(|p| p.range)
+        .collect();
+    ranges.sort_by_key(|r| std::cmp::Reverse(r.0));
+    let mut out = src.to_string();
+    for (a, b) in ranges {
+        if a <= b && b <= out.len() && out.is_char_boundary(a) && out.is_char_boundary(b) {
+            out.replace_range(a..b, "");
+        }
+    }
+    parse(&out).map_err(|e| format!("that would break the recipe ({})", e.message))?;
     Ok(out)
 }
 
