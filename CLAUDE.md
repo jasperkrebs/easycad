@@ -22,8 +22,9 @@ the Chat tab (the agent with the user's key, behind a password proxy; it can swi
 and feature requests (the agent asks for missing steps; Claude Code builds them in Actions;
 `docs/feature-requests.md`). 1 Nov 2026, streamlined for a presentation: the Graph tab is gone
 (and its engine commands), the templates are EasyGCode's projects plus the shaker, settings
-groups fold out, and the app carries no explanatory text. Next: the coat hanger as a
-template.** Hosting: public repo + GitHub Pages, deployed from `main`. Priorities:
+groups fold out, and the app carries no explanatory text. 8 Nov 2026: the lamp builder
+(components and parts in the language, the Lamp template, the Plan view;
+`docs/lamp-builder.md`). Next: the coat hanger as a template.** Hosting: public repo + GitHub Pages, deployed from `main`. Priorities:
 - custom toolpaths and G-code;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.

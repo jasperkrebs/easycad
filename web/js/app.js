@@ -9,14 +9,16 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
-import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from './templates.js';
+import { fileNote, fingerprint, projectOf, withPartsOf, withoutFileNote, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
+import { askNewPart, newPartName, renderPlan } from './parts.js';
 import { beadExtremes, renderBeads } from './beads.js';
 
 const TEMPLATES = [
   { id: 'lampshade', name: 'Lampshade' },
+  { id: 'lamp', name: 'Lamp' },
   { id: 'vessel', name: 'Vessel' },
   { id: 'salt-shaker', name: 'Salt & pepper shaker' },
   { id: 'bend-stool', name: 'Bend stool' },
@@ -107,16 +109,25 @@ async function run(quality, how = {}) {
   if (result.printer && printerFor(result.printer) !== state.printer) setPrinter(printerFor(result.printer));
 
   const errors = result.diagnostics.filter((d) => d.severity === 'error').length;
-  const layout = layoutKey(result.params);
+  // The ports there are (with room) change what a part can be mounted on.
+  const ports = (result.ports || []).map((p) => `${p.name}:${p.value[3] > 0}`).join();
+  const layout = layoutKey(result.params) + ports;
   if (how.fresh || layout !== state.layout) {
     state.layout = layout;
-    renderSettings($('settings'), result.params, state.values, onSettingChange, { broken: errors > 0 });
+    renderSettings($('settings'), result.params, state.values, onSettingChange, {
+      broken: errors > 0,
+      ports: result.ports,
+      components: result.components,
+      onAddPart: () => addPart(),
+      onRemovePart: (name) => removePart(name),
+    });
   }
   viewport.show(result, { refit: refitNext });
   refitNext = false;
   syncScrub();
   renderLegend();
   renderPartToggles(result);
+  renderPlanView(result);
 
   renderProject(result);
   renderPrintTab();
@@ -701,7 +712,8 @@ async function updateToTemplate(id, text) {
   $('templateUpdate').hidden = true;
   const keep = { ...state.values };
   const kind = (v) => (Array.isArray(v) ? 'list' : typeof v);
-  await openSource(text, 'updated');
+  // A project's own parts (its shades) carry over, like its values.
+  await openSource(withPartsOf(text, state.source), 'updated');
   state.template = { id, base: withoutValues(text) };
   let kept = 0;
   for (const [k, v] of Object.entries(keep)) {
@@ -811,6 +823,84 @@ function onProfileChange() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Parts (the lamp builder): the Plan, adding and removing parts, all through engine commands
+// ---------------------------------------------------------------------------------------------
+
+/** The part last tapped in the plan (drawn highlighted). */
+let selectedPart = /** @type {string | null} */ (null);
+
+/** The Plan button shows for recipes with components; the plan redraws with every result. */
+function renderPlanView(result) {
+  const has = (result.components || []).length > 0;
+  const button = $('viewPlan');
+  button.hidden = !has;
+  const on = has && button.getAttribute('aria-pressed') === 'true';
+  $('plan').hidden = !on;
+  if (on) renderPlan($('plan'), result, { onPort: (port) => addPart(port), onPart: (name) => openPart(name), selected: selectedPart });
+}
+
+/** Opens a part's fold-out in the settings and brings it into sight. */
+function openPart(name) {
+  selectedPart = name;
+  selectTab('settings');
+  const id = `set-${name}.mount`;
+  const details = document.getElementById(id)?.closest('details');
+  if (details) {
+    /** @type {HTMLDetailsElement} */ (details).open = true;
+    details.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  if (state.last) renderPlanView(state.last);
+}
+
+/**
+ * Asks where a new part goes and what it is (on a port tapped in the plan, or any), then adds
+ * it with the engine's `addPart` command.
+ * @param {any} [port]
+ */
+async function addPart(port) {
+  const result = state.last;
+  if (!result) return;
+  const answer = await askNewPart($('addPart'), result, port);
+  if (!answer) return;
+  const taken = [...(result.partList || []).map((p) => p.name), ...result.params.map((p) => p.name), ...result.steps.map((s) => s.name)];
+  const name = newPartName(String(answer.values.shape ?? 'part'), taken);
+  const component = result.components.find((c) => c.name === answer.component);
+  const input = component?.inputs[0];
+  try {
+    await engine.idle();
+    const source = await engine.addPart(state.source, answer.component, name, { ...answer.values, ...(input ? { [input]: answer.port } : {}) });
+    selectedPart = name;
+    refitNext = true;
+    await applyRecipe(source);
+    openPart(name);
+  } catch (err) {
+    showSettingsError(String(err.message || err));
+  }
+}
+
+/** Removes a part (and, after asking, the parts mounted on it) with the engine's command. */
+async function removePart(name) {
+  const result = state.last;
+  if (!result) return;
+  const mounted = (part) =>
+    (result.partList || [])
+      .map((p) => p.name)
+      .filter((p) => String(state.values[`${p}.mount`] ?? '').startsWith(`${part}.`));
+  const gone = [];
+  for (let next = mounted(name); next.length; next = next.flatMap(mounted)) gone.push(...next);
+  if (gone.length && !window.confirm(`Remove ${name} and what's mounted on it (${gone.join(', ')})?`)) return;
+  try {
+    await engine.idle();
+    const source = await engine.removePart(state.source, name);
+    if (selectedPart === name || gone.includes(String(selectedPart))) selectedPart = null;
+    refitNext = true;
+    await applyRecipe(source);
+  } catch (err) {
+    showSettingsError(String(err.message || err));
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------------------------
 
@@ -837,9 +927,19 @@ function wire() {
   document.querySelectorAll('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => {
       document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      $('viewPlan').setAttribute('aria-pressed', 'false');
       viewport.setMode(/** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.mode));
+      if (state.last) renderPlanView(state.last);
     }),
   );
+  // The plan: the parts cut through their axis, over the 3D view.
+  $('viewPlan').addEventListener('click', () => {
+    const on = $('viewPlan').getAttribute('aria-pressed') !== 'true';
+    $('viewPlan').setAttribute('aria-pressed', String(on));
+    document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(!on && /** @type {HTMLElement} */ (x).dataset.mode === 'both')));
+    if (!on) viewport.setMode('both');
+    if (state.last) renderPlanView(state.last);
+  });
   // Fit what's shown of the toolpath and orbit round its centre: the Fit button, a double-click,
   // or on a phone a double-tap (touch doesn't make a dblclick everywhere).
   $('viewFit').addEventListener('click', () => viewport.focus());

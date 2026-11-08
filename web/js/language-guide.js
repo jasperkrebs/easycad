@@ -43,6 +43,12 @@ Geometry
 - Curves are point lists, open or closed; \`circle\` and friends start on +X and run counter-clockwise. \`rotate\` takes any axis and centre (counter-clockwise looking against the axis). Surfaces are lofts through section curves (each section's first point is the seam); \`cap\` closes a loft into a solid. Toolpaths are nozzle moves with a line width, layer height and speed.
 - Think in Grasshopper terms: build profiles from points and curves, transform them (by fields where each point needs its own amount), make layers with \`tween\`, \`contour\` or a lifted list, then print.
 
+Components and parts (several of the same thing: the Lamp template's shades)
+- \`component shade "Shade"\` … \`end\` is a recipe within the recipe: settings, steps, outputs, plus \`input mount = on_socket "Mounted on"\` (a value from outside, by default this expression) and \`port end_out = [radius, height, inward, length, socket, side] "End, outside"\` (a place another part can be mounted).
+- \`part tube = shade(mount: main.end_out, shape: "tube", length: 300 mm)\` makes a copy with its own settings: the line gives the values that differ from the component's, and an input another part's port. Inside the component every name is the part's own (\`tube.shape\` from outside); names outside it (\`line\`, \`pitch\`) are shared.
+- Each part's \`print\` is its own G-code file, named after the part. \`place(path, z: …, flip: …)\` shows a part where it goes in the assembly (turned over with \`flip\`) while it still prints on the bed; the engine warns when placed parts run into each other.
+- To add or remove a shade in the Lamp, add or remove a \`part\` line (removing a part breaks the parts mounted on it: remove them too). Don't copy the component.
+
 Outputs
 - \`show a, b\` draws steps in the 3D view (otherwise the last step is drawn).
 - \`print path\` is the toolpath the printer prints: the app writes G-code for the chosen printer from it. Several parts from one window (a container and its lid): one \`print\` per part (\`print base\`, \`print lid\`), each its own G-code file, estimate and checks, all sharing the settings. Each part prints where the recipe puts it: leave them all on the bed's centre (each is its own file); the 3D view has a toggle per part that shows or hides it with the shown shapes only it is made from.

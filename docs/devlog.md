@@ -5,6 +5,34 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-08: the lamp builder
+
+**Why:** every vase-mode wall is a thread on both faces, so shades can screw into each other,
+inside or outside, up or down; the owner wants to plan such lamps as a sandbox, without the AI
+(`docs/lamp-builder.md`, decisions there).
+
+**Landed:**
+- The language: `component name … end` (with `input` and `port`) and `part name =
+  component(…)`. Parts expand into one ordinary recipe (`easycad_lang::expand`): each part's
+  names its own (`tube.shape`), shared ones shared. `set_values` writes a part's setting into
+  its own line (adding it there when missing); `add_part` and `remove_part` (with what's
+  mounted on it) are commands, in wasm as `addPart` and `removePart`.
+- The engine: parts' settings carry their part, inputs show as settings (`kind: "port"`), ports
+  come with their values, components with their `@ask` settings. `place(path, z, flip)` shows a
+  part where it goes while it prints on the bed; placed parts whose beads come within three
+  quarters of a width at the same height are a warning.
+- The **Lamp** template: the shade is the lampshade's arithmetic mounted on a port (radius from
+  the joint: a line plus the fit between shades, as the shaker's lid), any shape with a straight
+  end, and tube, bell in-out and cone in-out. One shade prints EasyGCode's lampshade G-code (all
+  four golden fixtures).
+- The app: a fold-out per shade (its mount, shape and settings, a remove button), "Add shade",
+  and the **Plan** view: the assembly cut through its axis, each shade as wide as its bead,
+  `+` on every free port (tap: shape and up/down, with sizes scaled to where it goes), a shade
+  tapped opens its settings, collisions in red. Template updates keep a project's parts.
+
+**Open:** see `docs/lamp-builder.md` ("Still open"). No print yet of two shades screwed
+together; the shaker's lid says the fit works.
+
 ## 2026-11-08: slicing along the surface, and a nozzle that follows the wall
 
 **Why:** sliced by height, a shade that opens out flat gets its turns further and further apart

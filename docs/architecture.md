@@ -366,6 +366,8 @@ app: checks the issue (public API) ◄──────────────
 │                              │  what's printed; a smaller gap under the nozzle, a wider bead)
 │                              │  Nozzle: upright, tilted up to 45° or along the wall (the
 │                              │  nozzle and the beads stand along it; preview only)
+│                              │  Plan (recipes with parts): the parts cut through their
+│                              │  axis, a + on every free port to add a part there
 │                              │  Colour by: height, speed, flow, line width or layer height,
 │                              │  with a legend; a progress slider scrubs through the print,
 │                              │  a nozzle where it's got to (drag, or scroll over it)

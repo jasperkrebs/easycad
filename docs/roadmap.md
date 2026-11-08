@@ -99,6 +99,12 @@ Split into small steps (15 Oct):
   a lid that threads onto it, two prints from one window. For it: projects that **print several
   parts** (a G-code file, estimate and checks each), **list settings** (a table of rows, like
   radii at heights) and a **smooth `graph`** (through its points, level at both ends).
+- **1f+ (8 Nov 2026): the lamp builder** (`docs/lamp-builder.md`): components and parts in the
+  language (several copies of one recipe, each with its own settings), `place` and a collision
+  check between placed parts, and the **Lamp** template: shades that screw into each other
+  (tube, bell in-out, cone in-out, a straight end for every shape), added and removed on the
+  Plan view or in the settings, each its own G-code file. Open: an `along` slider whose range
+  follows the section's length, renaming parts, the agent trying it out.
 - **1g** ← *next*: the coat hanger as a template; formatter, presets, project library on the
   device, a drawn curve editor for list settings.
 The full Phase 1 scope:

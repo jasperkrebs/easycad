@@ -895,6 +895,92 @@ fn lampshade_recipe_matches_easygcode() {
     );
 }
 
+const LAMP_TEMPLATE: &str = include_str!("../../../web/templates/lamp.easycad");
+
+/// The lamp builder's first shade (`docs/lamp-builder.md`), set up as each of the lampshade's
+/// golden prints, prints EasyGCode's G-code too: its shade is the lampshade's arithmetic, its
+/// part's settings in the `part` line, and where it's shown in the lamp doesn't touch the G-code.
+#[test]
+fn the_lamps_first_shade_prints_the_lampshades_gcode() {
+    use Literal::{Bool, Number, Text};
+    assert!(LAMP_TEMPLATE.contains(STEADY_ON));
+    let lamp = || LAMP_TEMPLATE.replace(STEADY_ON, "param steady     = false");
+    let cone = [
+        ("main.shape", Text("cone".into())),
+        ("main.end_straight", Bool(false)),
+    ];
+    template_matches(
+        &lamp(),
+        &cone,
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/lampshade-flow.gcode"),
+    );
+    template_matches(
+        &lamp().replace("flow: flow_at", "speed: 20"),
+        &[
+            ("socket", Text("E14".into())),
+            ("fit", Number(-0.2)),
+            ("main.shape", Text("bell".into())),
+            ("main.end_straight", Bool(false)),
+            ("main.start_len", Number(15.0)),
+            ("main.opening", Number(180.0)),
+            ("main.transition", Number(60.0)),
+            ("main.max_angle", Number(55.0)),
+            ("compensation", Text("layer height".into())),
+            ("strength", Number(80.0)),
+            ("brim", Bool(true)),
+            ("brim_lines", Number(3.0)),
+            ("brim_width", Number(5.0)),
+            ("brim_layer", Number(2.0)),
+        ],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/lampshade-bell.gcode"),
+    );
+    template_matches(
+        &lamp(),
+        &[
+            ("main.shape", Text("sphere".into())),
+            ("main.start_len", Number(12.0)),
+            ("main.opening", Number(120.0)),
+            ("main.sphere", Number(220.0)),
+            ("main.end_straight", Bool(true)),
+            ("main.end_len", Number(8.0)),
+            ("main.wide_down", Bool(true)),
+            ("max_width", Number(2.0)),
+            ("flow", Number(18.0)),
+            ("shade_flow", Number(30.0)),
+        ],
+        &Profile::default(),
+        include_str!("../../../fixtures/easygcode/lampshade-sphere.gcode"),
+    );
+    template_matches(
+        &lamp(),
+        &[
+            ("socket", Text("custom".into())),
+            ("thread_d", Number(35.0)),
+            ("thread_pitch", Number(3.0)),
+            ("main.shape", Text("dome".into())),
+            ("main.end_straight", Bool(false)),
+            ("main.start_len", Number(10.0)),
+            ("main.fillet", Number(25.0)),
+            ("main.opening", Number(160.0)),
+            ("main.transition", Number(70.0)),
+            ("compensation", Text("off".into())),
+            ("flow", Number(15.0)),
+            ("shade_flow", Number(25.0)),
+            ("flow_ramp", Number(30.0)),
+            ("line", Number(5.0)),
+            ("tolerance", Number(0.08)),
+        ],
+        &Profile {
+            include_start_end: false,
+            center: [150.0, 150.0],
+            ..Profile::default()
+        },
+        include_str!("../../../fixtures/easygcode/lampshade-dome.gcode"),
+    );
+}
+
 /// The lampshade with an open top (`flat_top: false`) prints exactly EasyGCode's lampshade
 /// without its closing turn: the spiral stops on the rim at full flow, and the end block follows.
 /// As it ships (width compensation, volumetric flow) and the capped bell (layer-height

@@ -167,5 +167,28 @@ export function createEngine() {
     setPrinter(source, name) {
       return send({ type: 'setPrinter', source, name });
     },
+
+    /**
+     * Adds a part made from a component (`part name = component(…)`) and returns the new recipe
+     * text. `values` are its settings; an input takes a port's name (`"main.end_out"`).
+     * @param {string} source
+     * @param {string} component
+     * @param {string} name
+     * @param {Record<string, unknown>} values
+     * @returns {Promise<string>}
+     */
+    addPart(source, component, name, values) {
+      return send({ type: 'addPart', source, component, name, values });
+    },
+
+    /**
+     * Removes a part, and every part mounted on it; returns the new recipe text.
+     * @param {string} source
+     * @param {string} name
+     * @returns {Promise<string>}
+     */
+    removePart(source, name) {
+      return send({ type: 'removePart', source, name });
+    },
   };
 }

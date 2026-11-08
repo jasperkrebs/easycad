@@ -164,11 +164,23 @@ pub fn lex(src: &str) -> Result<Vec<Token>, ParseError> {
             }
             c if c.is_alphabetic() || c == '_' => {
                 let mut j = i;
-                while chars
-                    .get(j)
-                    .is_some_and(|&(_, c)| c.is_alphanumeric() || c == '_')
-                {
-                    j += 1;
+                loop {
+                    while chars
+                        .get(j)
+                        .is_some_and(|&(_, c)| c.is_alphanumeric() || c == '_')
+                    {
+                        j += 1;
+                    }
+                    // `main.end_out`: a part's step, one name (a dot then a letter carries on).
+                    if chars.get(j).is_some_and(|&(_, c)| c == '.')
+                        && chars
+                            .get(j + 1)
+                            .is_some_and(|&(_, c)| c.is_alphabetic() || c == '_')
+                    {
+                        j += 1;
+                        continue;
+                    }
+                    break;
                 }
                 let end = chars.get(j).map_or(src.len(), |&(b, _)| b);
                 let word = src.get(start..end).unwrap_or_default().to_string();

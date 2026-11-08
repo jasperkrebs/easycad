@@ -9,6 +9,7 @@
 //!
 //! Rules (see `CLAUDE.md`): no UI, no I/O, no panics. Bad input of any kind becomes a message.
 
+pub mod assembly;
 pub mod bead;
 pub mod curve;
 pub mod curve_ops;
@@ -41,5 +42,7 @@ mod blocks_tests;
 mod eval_tests;
 #[cfg(test)]
 mod golden_tests;
+#[cfg(test)]
+mod lamp_tests;
 #[cfg(test)]
 mod toolbox_tests;

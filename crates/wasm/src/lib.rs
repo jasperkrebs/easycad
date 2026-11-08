@@ -103,6 +103,32 @@ pub fn set_printer(source: &str, name: &str) -> Result<String, JsError> {
     easycad_lang::set_printer(source, name).map_err(|m| JsError::new(&m))
 }
 
+/// Adds a part made from `component`, named `name`, with `values` (`{ setting: value }`; an
+/// input takes a port's name, like `"main.end_out"`), and returns the new recipe text. Throws a
+/// readable message if it can't.
+#[wasm_bindgen(js_name = addPart)]
+pub fn add_part(
+    source: &str,
+    component: &str,
+    name: &str,
+    values: JsValue,
+) -> Result<String, JsError> {
+    let values: BTreeMap<String, Literal> = if values.is_undefined() || values.is_null() {
+        BTreeMap::new()
+    } else {
+        serde_wasm_bindgen::from_value(values)
+            .map_err(|e| JsError::new(&format!("settings: {e}")))?
+    };
+    let pairs: Vec<(String, Literal)> = values.into_iter().collect();
+    easycad_lang::add_part(source, component, name, &pairs).map_err(|m| JsError::new(&m))
+}
+
+/// Removes the part `name` and every part mounted on it; returns the new recipe text.
+#[wasm_bindgen(js_name = removePart)]
+pub fn remove_part(source: &str, name: &str) -> Result<String, JsError> {
+    easycad_lang::remove_part(source, name).map_err(|m| JsError::new(&m))
+}
+
 /// Makes a file to save: `which` is `"print"` for the printed toolpath as G-code, or the index
 /// of an `export` statement (STL for shapes, G-code for a toolpath). `profile` is the printer
 /// (see `easycad_core::gcode::Profile`; missing fields use EasyGCode's defaults). Returns
@@ -170,6 +196,9 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&out, "print", &plain(&e.print)?)?;
     set(&out, "prints", &plain(&e.prints)?)?;
     set(&out, "exports", &plain(&e.exports)?)?;
+    set(&out, "partList", &plain(&e.parts)?)?;
+    set(&out, "ports", &plain(&e.ports)?)?;
+    set(&out, "components", &plain(&e.components)?)?;
     let bounds = &e.drawing.bounds;
     set(
         &out,
@@ -195,7 +224,17 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&out, "mesh", &mesh)?;
     let curves = polylines(e.drawing.curves.iter().map(Vec::as_slice))?;
     set(&out, "curves", &curves)?;
-    let paths = polylines(e.drawing.paths.iter().map(|p| p.points.as_slice()))?;
+    // Placed parts where they're shown (the G-code keeps them where they print).
+    let shown: Vec<std::borrow::Cow<[P3]>> = e
+        .drawing
+        .paths
+        .iter()
+        .map(|p| match &p.view {
+            Some(x) => std::borrow::Cow::Owned(p.points.iter().map(|q| x.apply(*q)).collect()),
+            None => std::borrow::Cow::Borrowed(p.points.as_slice()),
+        })
+        .collect();
+    let paths = polylines(shown.iter().map(|p| p.as_ref()))?;
     let [widths, heights, speeds, flows] = beads(&e.drawing);
     set(&paths, "widths", &widths)?;
     set(&paths, "heights", &heights)?;
@@ -205,7 +244,13 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
         .drawing
         .paths
         .iter()
-        .flat_map(|p| easycad_core::wall::up_the_wall(p))
+        .flat_map(|p| {
+            let ups = easycad_core::wall::up_the_wall(p);
+            match &p.view {
+                Some(x) => ups.into_iter().map(|v| x.apply_vector(v)).collect(),
+                None => ups,
+            }
+        })
         .flat_map(|v| v.map(|c| c as f32))
         .collect();
     set(&paths, "ups", &Float32Array::from(ups.as_slice()))?;

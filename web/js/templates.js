@@ -8,13 +8,61 @@
  * @param {string} text
  */
 export function withoutValues(text) {
-  return text
+  return withoutParts(text)
     .split('\n')
     .map((l) => l.replace(/^(\s*param\s+[A-Za-z_]\w*\s*=)\s*(?:"(?:[^"\\]|\\.)*"(?=\s*"))?[^"\n]*/, '$1'))
     .join('\n')
     .replace(/[ \t]+/g, ' ')
     .replace(/ +$/gm, '')
     .trim();
+}
+
+/**
+ * The recipe's `part` statements (`part tube = shade(…)`, over as many lines as its brackets
+ * take), in order: a project's own shades, like its setting values.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function partStatements(text) {
+  const out = [];
+  const re = /^part\s/gm;
+  let m;
+  while ((m = re.exec(text))) {
+    let depth = 0;
+    let i = m.index;
+    for (; i < text.length; i++) {
+      const c = text[i];
+      if (c === '"') {
+        for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === '\\') i++;
+      } else if (c === '(' || c === '[') depth++;
+      else if (c === ')' || c === ']') depth--;
+      else if (c === '\n' && depth <= 0) break;
+    }
+    out.push(text.slice(m.index, i));
+    re.lastIndex = i;
+  }
+  return out;
+}
+
+/**
+ * The recipe without its `part` statements (and the blank lines they leave).
+ * @param {string} text
+ */
+export function withoutParts(text) {
+  let out = text;
+  for (const p of partStatements(text)) out = out.replace(p, '');
+  return out.replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * A template's new version with a project's own parts in place of the template's.
+ * @param {string} template
+ * @param {string} project
+ */
+export function withPartsOf(template, project) {
+  const mine = partStatements(project);
+  if (!partStatements(template).length || !mine.length) return template;
+  return `${withoutParts(template).trimEnd()}\n\n${mine.join('\n')}\n`;
 }
 
 /**
