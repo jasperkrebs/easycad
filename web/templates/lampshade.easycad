@@ -4,6 +4,7 @@ printer "Ginger G1"
 note "EasyGCode's lampshade as a recipe: a threaded throat that screws onto an E27 or E14 lampholder's shade ring, a fillet, then the shade, printed as one vase-mode helix whose layer height is the thread's pitch. For the cone, bell, dome and sphere its G-code matches EasyGCode's command for command (the flat sphere is the same ellipsoid, sampled evenly)."
 note "Shades: a straight cone, a bell, a dome, a sphere, a flat sphere (UFO), or your own shape (`own_shade`: move its points, add more, or ask the AI for a new one). Every shade is a profile (radius against height); the rest of the recipe doesn't care which."
 note "Overhangs get wider beads (or squeezed layers), turn by turn, from the wall's angle. The flow can change from the throat to the shade over the fillet."
+note "Slicing along the surface (experimental): each turn steps along the wall instead of up it, a bead's height on a wall and its width where the wall runs flat, so a bell opened out to 90° prints its flat rim as rings side by side, like arc overhangs. The compensation then squeezes the step (layer height) or widens the bead (width) on top of that."
 
 group "Socket"
 param socket       = "E27" of ["E27", "E14", "custom"] "Socket"
@@ -17,7 +18,7 @@ param throat     = 20 mm   in 0..100 step 1         "Throat length (straight)"
 param fillet     = 10 mm   in 0..100 step 1         "Fillet radius"
 param opening    = 150 mm  in 10..400 step 1        "Bottom opening diameter"
 param transition = 52 mm   in 1..400 step 1         "Transition height"
-param max_angle  = 0 deg   in 0..89 step 1          "Max angle (bell; 0: uncapped)"  when shape = "bell"
+param max_angle  = 0 deg   in 0..90 step 1          "Max angle (bell; 0: uncapped; 90: it opens out flat)"  when shape = "bell"
 param sphere     = 200 mm  in 20..500 step 1        "Sphere diameter (at its widest)"  when shape = ["sphere", "flat sphere"]
 param flatness   = 0.5     in 0.05..1 step 0.05     "Flatness (flat sphere: height ÷ width)"  when shape = "flat sphere"
 param lip        = false                            "Straight lip at the opening (spheres)"  when shape = ["sphere", "flat sphere"]
@@ -39,6 +40,8 @@ param flat_top   = true                             "Flat closing turn (off: ope
 param steady     = true                             "Steady flow in the first turn (faster where the bead is thin, up to the travel speed)"
 
 group "Overhangs"
+param slicing    = "height" of ["height", "surface"] "Slicing (surface: along the wall, experimental)"
+param flat_flow  = 0       in 0..400                "Flow where it runs flat (mm³/s, 0: as the shade)"  when slicing = "surface"
 param compensation = "width" of ["width", "layer height", "off"] "Compensation"
 param strength   = 100 %   in 0..100                "Strength"  when not compensation = "off"
 param steep      = 0       in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"  when not compensation = "off"
@@ -201,23 +204,39 @@ print_l = pick(wide_down, -reverse(prof_l), prof_l)
 profile = polyline(point(print_r, 0, print_z))
 wall    = revolve(profile)
 
+# ---- Slicing: by height (each turn rises a pitch), or along the surface (each turn steps along
+# the wall; the turn's fields read z as the distance along the profile).
+surface  = less(abs(index_of(["height", "surface"], slicing) - 1), 0.5)
+seg_n    = count(print_r) - 1
+seg_len  = sqrt((item(print_r, series(1, 1, seg_n)) - item(print_r, series(0, 1, seg_n))) ^ 2 + (item(print_z, series(1, 1, seg_n)) - item(print_z, series(0, 1, seg_n))) ^ 2)
+print_s  = flatten([[0], accumulate(seg_len)])
+z_here   = pick(surface, graph(print_s, print_z, z), z)
+
 # ---- Turn by turn: wider beads, or a shorter rise squeezing the bead, where the wall leans;
 # the flow ramps from the throat's to the shade's over the fillet.
 # The extra (1/cos − 1 wider, or 1 − cos lower) is scaled by (angle / pivot)^steep: 1 everywhere
 # at 0; above 0, less below the pivot and more above it (pivot 45°, steep 2: 15° gets 1/9, 80°
 # about 3×).
 comp    = index_of(["width", "layer height", "off"], compensation)
-lean_at = graph(print_z, print_l, z)
+lean_at = pick(surface, graph(print_s, print_l, z), graph(print_z, print_l, z))
 c       = max(0.05, cos(abs(lean_at)))
 curve   = strength * (min(abs(lean_at), 89) / pivot) ^ steep
 width   = pick(less(comp, 0.5), line * min(max_width, 1 + curve * (1 / c - 1)), line)
-rise    = pick(less(abs(comp - 1), 0.5), pitch * max(0.05, 1 - curve * (1 - c)), pitch)
-from_throat = pick(wide_down, top_z - z, z)
+squeeze = pick(less(abs(comp - 1), 0.5), max(0.05, 1 - curve * (1 - c)), 1)
+# Along the surface the step is the bead's own extent along the wall: its height on a wall,
+# blending to its width where the wall runs flat (rings side by side), then squeezed as above.
+along_s = (pitch * cos(abs(lean_at)) + line * sin(abs(lean_at))) * squeeze
+rise    = pick(surface, along_s, pitch * squeeze)
+from_throat = pick(wide_down, top_z - z_here, z_here)
 ramp_h  = pick(flow_ramp, flow_ramp, fillet_top - throat)
 ramp    = pick(greater(ramp_h, 0.000000001), clamp((from_throat - throat) / max(ramp_h, 0.000000001), 0, 1), 1 - less(from_throat, throat))
-flow_at = flow + ramp * (pick(shade_flow, shade_flow, flow) - flow)
+flow_sh = flow + ramp * (pick(shade_flow, shade_flow, flow) - flow)
+# Along the surface, optionally slower where it runs flat (beads hanging in the air need time
+# to cool): blending in from 60° to 90°.
+flat_at = smoothstep(clamp((abs(lean_at) - 60) / 30, 0, 1))
+flow_at = pick(surface * greater(flat_flow, 0), flow_sh + flat_at * (flat_flow - flow_sh), flow_sh)
 
-shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(less(abs(comp - 1), 0.5), pitch, 0), tolerance: tolerance, flat_top: flat_top, steady_start: steady)
+shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(surface, pitch, pick(less(abs(comp - 1), 0.5), pitch, 0)), tolerance: tolerance, flat_top: flat_top, steady_start: steady, surface: surface)
 
 # A brim around the first turn, outermost ring first, hopping between rings and into the shade.
 first_rise  = sample(rise, [0, 0, min(top_z, sample(rise, [0, 0, 0]) / 2)])

@@ -974,3 +974,66 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
     smooth_into_the_wall(&base, 33.0 - 8.0);
     smooth_into_the_wall(&lid, 34.0 - 6.0);
 }
+
+/// Slicing along the surface (the lampshade's experimental option): a bell opened out to 90°
+/// rounds over into a flat rim. Sliced by height (the default; golden-tested) its turns spread
+/// apart along the wall where it leans out, several line widths apart near the rim; sliced along
+/// the surface each turn is at most √(pitch² + line²) = 6.5 mm further along the wall. Both reach
+/// the rim, and the throat (its thread) still rises one pitch (2.5 mm) a turn.
+#[test]
+fn the_lampshade_slices_along_the_surface_on_request() {
+    use easycad_lang::{Literal, set_values};
+    let template = include_str!("../../../web/templates/lampshade.easycad");
+    let path_of = |slicing: &str| {
+        let values = vec![
+            ("shape".to_string(), Literal::Text("bell".into())),
+            ("max_angle".to_string(), Literal::Number(90.0)),
+            ("compensation".to_string(), Literal::Text("off".into())),
+            ("slicing".to_string(), Literal::Text(slicing.into())),
+        ];
+        let (e, _) = step_values(&set_values(template, &values).unwrap(), Quality::Final);
+        assert!(
+            e.errors().next().is_none(),
+            "{slicing}: {:?}",
+            e.diagnostics
+        );
+        e.print.unwrap().path
+    };
+    let (surface, height) = (path_of("surface"), path_of("height"));
+    // (radius, height) where each whole turn starts.
+    let turn_starts = |p: &Toolpath| {
+        let mut out: Vec<(f64, f64, f64)> = Vec::new();
+        for (i, q) in p.points.iter().enumerate() {
+            let k = p.turn[i];
+            if k.fract().abs() < 1e-9 && out.last().is_none_or(|l| l.0 != k) {
+                out.push((k, q[0].hypot(q[1]), q[2]));
+            }
+        }
+        out
+    };
+    let widest_step = |p: &Toolpath| {
+        turn_starts(p)
+            .windows(2)
+            .map(|w| (w[1].1 - w[0].1).hypot(w[1].2 - w[0].2))
+            .fold(0.0, f64::max)
+    };
+    assert!(
+        widest_step(&surface) < 6.5 + 1e-6,
+        "{}",
+        widest_step(&surface)
+    );
+    assert!(widest_step(&height) > 12.0, "{}", widest_step(&height));
+    // Both reach the rim (75 mm round at 72 mm): by height exactly; along the surface within a
+    // quarter of a step (a last bit shorter than that is left off, as by height).
+    let rim = |p: &Toolpath| *turn_starts(p).last().unwrap();
+    let (s, h) = (rim(&surface), rim(&height));
+    assert!(
+        (h.1 - 75.0).abs() < 1e-6 && (h.2 - 72.0).abs() < 1e-6,
+        "{h:?}"
+    );
+    assert!((75.0 - s.1).hypot(72.0 - s.2) < 6.5 / 4.0, "{s:?}");
+    let z_at_turn = |p: &Toolpath, k: f64| turn_starts(p).iter().find(|t| t.0 == k).unwrap().2;
+    for p in [&surface, &height] {
+        assert!((z_at_turn(p, 4.0) - z_at_turn(p, 3.0) - 2.5).abs() < 1e-6);
+    }
+}

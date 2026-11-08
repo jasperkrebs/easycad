@@ -245,7 +245,7 @@ worked out in exact arithmetic by `scripts/hand-checked-fixtures.py`).
 
 ## Steps added for the lampshade (17 Oct 2026)
 
-- `vase_revolve(profile, layer, width, speed, flow, bead_layer, tolerance, seam, flat_top)`:
+- `vase_revolve(profile, layer, width, speed, flow, bead_layer, tolerance, seam, flat_top, steady_start, surface)` (`surface` is EasyCAD's own, off for every EasyGCode project):
   vase mode around a profile of revolution, turn by turn (rise, width and flow from fields;
   `flat_top` since 25 Oct 2026).
 - `graph(xs, ys, x)` (Graph Mapper; a field for `x` gives a field), `bounds(list)`,

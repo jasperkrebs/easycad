@@ -1473,9 +1473,15 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "true: the extruder runs at the set flow from the start; the first turn moves faster where its bead is thin (each move's speed ÷ its share of a full bead), never faster than the printer's travel speed. For pellet extruders, which can't follow a ramp quickly",
             ),
+            opt(
+                "surface",
+                "Bool",
+                0.0,
+                "true: slice along the surface: each turn steps its `layer` along the profile's own length (rising cos of the lean, moving out sin of it), the fields read z as the distance along the profile, and the profile may run flat; false: each turn rises its `layer` in height",
+            ),
         ],
         output: "Toolpath",
-        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed (with `steady_start`, at a steady flow: faster where the bead is thin), a flat closing turn ramps it down (or, with `flat_top: false`, the spiral stops at full flow as it reaches the top: an open rim).",
+        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. With `surface: true` the turns step along the wall instead of up it (slicing along the surface), so a shade that opens out flat prints as rings side by side, arc-overhang style. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed (with `steady_start`, at a steady flow: faster where the bead is thin), a flat closing turn ramps it down (or, with `flat_top: false`, the spiral stops at full flow as it reaches the top: an open rim).",
         run: Run::Op(vase_revolve),
     },
     Node {
