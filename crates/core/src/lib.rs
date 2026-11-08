@@ -28,6 +28,7 @@ pub mod surface;
 pub mod toolpath;
 pub mod toolpath_ops;
 pub mod value;
+pub mod wall;
 
 pub use eval::{
     Diagnostic, Evaluation, Export, ExportKind, ParamInfo, PrintInfo, Quality, Severity, StepInfo,

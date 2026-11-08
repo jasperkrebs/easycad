@@ -36,8 +36,9 @@ pub fn node_catalog() -> String {
 ///
 /// Returns `{ source, project, printer, notes, params, steps, diagnostics, print, exports,
 /// bounds, mesh: { positions, indices }, curves: { points, starts },
-/// paths: { points, starts, widths, heights, speeds, flows } (each point's line width and
-/// layer height in mm, speed in mm/s and flow in mm³/s: the move that ends there; 0 for travel), parts: { mesh, curves, paths } (each
+/// paths: { points, starts, widths, heights, speeds, flows, ups } (each point's line width and
+/// layer height in mm, speed in mm/s and flow in mm³/s: the move that ends there; 0 for travel;
+/// `ups`: x,y,z of the way up the wall there, `easycad_core::wall`), parts: { mesh, curves, paths } (each
 /// piece's printed part) }`. A broken recipe doesn't throw: its problems are in
 /// `diagnostics`.
 #[wasm_bindgen]
@@ -200,6 +201,14 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&paths, "heights", &heights)?;
     set(&paths, "speeds", &speeds)?;
     set(&paths, "flows", &flows)?;
+    let ups: Vec<f32> = e
+        .drawing
+        .paths
+        .iter()
+        .flat_map(|p| easycad_core::wall::up_the_wall(p))
+        .flat_map(|v| v.map(|c| c as f32))
+        .collect();
+    set(&paths, "ups", &Float32Array::from(ups.as_slice()))?;
     set(&out, "paths", &paths)?;
     let parts = parts(&e.drawing)?;
     set(&out, "parts", &parts)?;

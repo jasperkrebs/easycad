@@ -190,6 +190,38 @@ export function createViewport(canvas) {
   const beadSizes = (data) =>
     simulated && data.simWidths ? { widths: data.simWidths, heights: data.simHeights } : { widths: data.widths, heights: data.heights };
 
+  /**
+   * Which way the nozzle and the beads stand: 'upright' (a Cartesian printer's), 'tilt' (along
+   * the wall, at most 45° from upright: a robot arm with pellets, which need gravity) or 'wall'
+   * (along the wall however far it leans). Preview only: the G-code is the same.
+   */
+  let orientation = 'upright';
+  const MAX_TILT = Math.PI / 4;
+  /**
+   * Each point's up direction for the beads and nozzle (x, y, z per point), or null when upright.
+   * From the engine's way up the wall (`paths.ups`), limited to 45° in 'tilt'.
+   * @returns {Float32Array | null}
+   */
+  function upsFor(data) {
+    if (orientation === 'upright' || !data.ups) return null;
+    if (data.upsFor === orientation) return data.tilted;
+    const out = new Float32Array(data.ups);
+    if (orientation === 'tilt') {
+      const [c, s] = [Math.cos(MAX_TILT), Math.sin(MAX_TILT)];
+      for (let i = 0; i < out.length; i += 3) {
+        if (out[i + 2] >= c) continue;
+        const h = Math.hypot(out[i], out[i + 1]);
+        if (h < 1e-9) continue;
+        out[i] = (out[i] / h) * s;
+        out[i + 1] = (out[i + 1] / h) * s;
+        out[i + 2] = c;
+      }
+    }
+    data.upsFor = orientation;
+    data.tilted = out;
+    return out;
+  }
+
   /** The range of the colour mode's value over every printing move shown. */
   function colorRange() {
     let lo = Infinity;
@@ -270,8 +302,10 @@ export function createViewport(canvas) {
    * @param {Float32Array} widths
    * @param {Float32Array} heights
    * @param {Float32Array} colors
+   * @param {Float32Array | null} [ups] each point's up direction (x, y, z), the beads' sections
+   *   standing along it; straight up when not given
    */
-  function beadGeometry(points, widths, heights, colors) {
+  function beadGeometry(points, widths, heights, colors, ups = null) {
     const n = points.length / 3;
     /** @type {number[]} */
     const pos = [];
@@ -304,12 +338,28 @@ export function createViewport(canvas) {
      * @param {{ bx: number, by: number, k: number, side: number } | null} [inner]
      */
     const ring = (x, y, z, ax, ay, w, h, i, inner = null) => {
+      // The section's frame: across (A) and up (V). Upright, A is level and V straight up;
+      // tilted, V is the point's up and A the level across direction turned square to it.
+      let [Ax, Ay, Az, Vx, Vy, Vz] = [ax, ay, 0, 0, 0, 1];
+      let [Bx, By, Bz] = inner ? [inner.bx, inner.by, 0] : [0, 0, 0];
+      if (ups) {
+        [Vx, Vy, Vz] = [ups[3 * i], ups[3 * i + 1], ups[3 * i + 2]];
+        const square = (px, py) => {
+          const d = px * Vx + py * Vy;
+          const [qx, qy, qz] = [px - d * Vx, py - d * Vy, -d * Vz];
+          const len = Math.hypot(qx, qy, qz) || 1;
+          return [qx / len, qy / len, qz / len];
+        };
+        [Ax, Ay, Az] = square(ax, ay);
+        if (inner) [Bx, By, Bz] = square(inner.bx, inner.by);
+      }
       for (const [u, v] of section(w, h)) {
+        const up = v - h / 2;
         if (inner && u * inner.side > 0) {
           const d = Math.abs(u) * inner.k;
-          pos.push(x + inner.bx * d, y + inner.by * d, z - h / 2 + v);
+          pos.push(x + Bx * d + Vx * up, y + By * d + Vy * up, z + Bz * d + Vz * up);
         } else {
-          pos.push(x + ax * u, y + ay * u, z - h / 2 + v);
+          pos.push(x + Ax * u + Vx * up, y + Ay * u + Vy * up, z + Az * u + Vz * up);
         }
         col.push(colors[3 * i], colors[3 * i + 1], colors[3 * i + 2]);
       }
@@ -417,7 +467,7 @@ export function createViewport(canvas) {
       const data = line.userData;
       if (!data.widths || !data.heights) continue;
       const sizes = beadSizes(data);
-      const { geometry, upTo } = beadGeometry(data.points, sizes.widths, sizes.heights, pathColors(data));
+      const { geometry, upTo } = beadGeometry(data.points, sizes.widths, sizes.heights, pathColors(data), upsFor(data));
       const mesh = new THREE.Mesh(geometry, beadMaterial);
       mesh.userData.part = data.part;
       mesh.userData.from = data.from;
@@ -456,6 +506,8 @@ export function createViewport(canvas) {
   // Compiled now, so the first scroll of the progress slider doesn't stall while it compiles.
   renderer.compile(scene, camera);
   nozzle.visible = false;
+
+  const Z_UP = new THREE.Vector3(0, 0, 1);
 
   /** A generic nozzle: a cone with its tip at the origin, a hex block and a heater above. */
   function makeNozzle() {
@@ -520,7 +572,9 @@ export function createViewport(canvas) {
           const w = sizes.widths ? sizes.widths[i + 1] : 0;
           if (w > 0) {
             headBead.geometry.dispose();
-            headBead.geometry = beadGeometry(ends, new Float32Array([0, w]), new Float32Array([0, sizes.heights[i + 1]]), new Float32Array([...c1, ...c1])).geometry;
+            const ups = upsFor(data);
+            const headUps = ups ? new Float32Array([...ups.subarray(3 * i + 3, 3 * i + 6), ...ups.subarray(3 * i + 3, 3 * i + 6)]) : null;
+            headBead.geometry = beadGeometry(ends, new Float32Array([0, w]), new Float32Array([0, sizes.heights[i + 1]]), new Float32Array([...c1, ...c1]), headUps).geometry;
             headBead.visible = mode !== 'shape';
           }
         } else {
@@ -540,6 +594,10 @@ export function createViewport(canvas) {
       nozzle.scale.setScalar(size);
       const at = last.at || [data.points[3 * i], data.points[3 * i + 1], data.points[3 * i + 2]];
       nozzle.position.set(at[0], at[1], at[2]);
+      // Tilted along the wall, the bead's outline with it (it's the nozzle's child).
+      const ups = upsFor(data);
+      if (ups) nozzle.quaternion.setFromUnitVectors(Z_UP, new THREE.Vector3(ups[3 * i], ups[3 * i + 1], ups[3 * i + 2]));
+      else nozzle.quaternion.identity();
       placeBeadEdge(data, i, size);
     }
     requestRender();
@@ -786,7 +844,7 @@ export function createViewport(canvas) {
         curves.add(line);
       });
       clear(paths);
-      const { widths, heights, speeds, flows, simWidths, simHeights, simFlags } = /** @type {any} */ (result.paths);
+      const { widths, heights, speeds, flows, simWidths, simHeights, simFlags, ups } = /** @type {any} */ (result.paths);
       totalPoints = 0;
       eachPolyline(result.paths, (points, i, from) => {
         const g = new LineGeometry();
@@ -803,6 +861,7 @@ export function createViewport(canvas) {
           simWidths: slice(simWidths),
           simHeights: slice(simHeights),
           simFlags: slice(simFlags),
+          ups: ups ? ups.subarray(3 * from, 3 * (from + n)) : undefined,
           part: parts.paths[i] ?? -1,
           from: totalPoints,
         };
@@ -929,6 +988,17 @@ export function createViewport(canvas) {
      */
     setSimulated(on) {
       simulated = on;
+      if (showBeads) buildBeads();
+      applyProgress();
+    },
+
+    /**
+     * Which way the nozzle and the beads stand: 'upright', 'tilt' (along the wall, at most 45°)
+     * or 'wall' (along the wall). Preview only.
+     * @param {'upright' | 'tilt' | 'wall'} next
+     */
+    setOrientation(next) {
+      orientation = ['upright', 'tilt', 'wall'].includes(next) ? next : 'upright';
       if (showBeads) buildBeads();
       applyProgress();
     },

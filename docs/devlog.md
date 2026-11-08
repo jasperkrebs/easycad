@@ -5,6 +5,36 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-08: slicing along the surface, and a nozzle that follows the wall
+
+**Why:** sliced by height, a shade that opens out flat gets its turns further and further apart
+along the wall, until they don't touch; a robot arm (the next printer, `docs/roadmap.md`) would
+print it along the surface with the nozzle along the wall. Both as options: everything prints
+as before unless they're switched on.
+
+**Landed:**
+- `vase_revolve(…, surface: true)`: each turn steps its `layer` along the profile's own length
+  instead of up it; the fields read z as the distance along the profile, and the profile may
+  run flat (rings side by side at one height). Off by default; by height the arithmetic is
+  untouched (golden tests unchanged).
+- The lampshade's **Slicing** setting (Overhangs: height, surface). Along the surface each turn
+  steps the bead's own extent along the wall: pitch·cos(lean) + line·sin(lean) (at most
+  √(pitch² + line²) = 6.5 mm), squeezed by layer-height compensation as before, and an optional
+  **flow where it runs flat** (blending in from 60° to 90° of lean). A test piece: the bell
+  with max angle 90°, sliced both ways.
+- `easycad_core::wall::up_the_wall`: at each point, the direction from the bead underneath (one
+  turn earlier on a spiral, else the nearest point of the layer before) square to the travel.
+  The engine sends it to the view (`paths.ups`).
+- The view's **Nozzle** picker (next to Simulate): upright (a Cartesian printer's), tilted along
+  the wall up to 45° (a robot arm with pellets, which need gravity), or along the wall. The
+  nozzle, the bead outline under it and the beads' cross-sections stand along it. Preview only;
+  remembered on the device.
+
+**Open:** a Cartesian printer printing the flat rim along the surface hangs each ring off the
+one before it (arc-overhang style); it needs a real test print with the slower flat flow.
+The nozzle direction isn't part of the toolpath yet (the view works it out), so nothing can be
+sent to an arm.
+
 ## 2026-11-08: the beads as the plastic actually lies
 
 **Why:** the line-width view drew each move's *planned* bead. What comes out depends on what's

@@ -32,6 +32,8 @@ const BEADS_KEY = 'easycad.beads';
 const SIM_KEY = 'easycad.simulate';
 /** How solid the beads are drawn (10–100 %). */
 const OPACITY_KEY = 'easycad.beadOpacity';
+/** Which way the nozzle and beads stand: upright, tilted (≤45°) or along the wall. */
+const NOZZLE_KEY = 'easycad.nozzle';
 /** What the toolpath is coloured by. */
 const COLOR_KEY = 'easycad.colorMode';
 /** How fast the print plays back. */
@@ -912,6 +914,16 @@ function wire() {
       /** @type {HTMLElement} */ (document.querySelector('[data-mode="both"]')).click();
     }
     showBeads(on);
+  });
+
+  // Which way the nozzle and beads stand (remembered on this device): preview only.
+  const nozzleSelect = /** @type {HTMLSelectElement} */ ($('viewNozzle'));
+  const storedNozzle = load(NOZZLE_KEY);
+  if (storedNozzle && [...nozzleSelect.options].some((o) => o.value === storedNozzle)) nozzleSelect.value = storedNozzle;
+  viewport.setOrientation(/** @type {any} */ (nozzleSelect.value));
+  nozzleSelect.addEventListener('change', () => {
+    viewport.setOrientation(/** @type {any} */ (nozzleSelect.value));
+    save(NOZZLE_KEY, nozzleSelect.value);
   });
 
   // What the toolpath is coloured by (remembered on this device), with its legend.

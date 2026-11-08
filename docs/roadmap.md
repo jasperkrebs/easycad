@@ -183,6 +183,12 @@ project with good settings, and "a bit taller" is just a slider.
     RAPID, or G-code with tool-angle axes), its reach and joint limits as printer settings,
     and checks that every point is reachable;
   - bead cross-sections and the line-width view drawn turned to the nozzle's angle;
+  - **started 8 Nov 2026:** the lampshade slices along the surface on request (`vase_revolve`
+    `surface: true`, its Slicing setting), and the view's Nozzle picker (upright, tilted up to
+    45°, along the wall) stands the nozzle and the beads along the wall, from the bead
+    underneath each point (`easycad_core::wall`). Both are options; neither changes the G-code
+    of anything sliced by height. Still open: the nozzle direction as part of the toolpath
+    (today the view works it out), the arm's own output and reach checks;
   - G-code safety as for every printer: golden-tested output (a hand-checked fixture) before
     anything is printed.
 - Graph positions saved in the project file (a `layout` block); clusters (your own steps made
