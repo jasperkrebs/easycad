@@ -32,13 +32,15 @@ pub fn node_catalog() -> String {
 /// `values` (optional) holds setting values to write into the recipe first, each in its own
 /// unit as shown in the settings window: `{ height: 200, depth: 18 }`. Slider moves become edits
 /// to the recipe text, so the text stays the single source of truth; the edited text comes
-/// back as `source`. `quality` is `"preview"` or `"final"`.
+/// back as `source`. `quality` is `"preview"` or `"final"`. `simulate` (the printer's extrusion
+/// multiplier) adds the bead simulation; `wall` adds the way up the wall at each toolpath point
+/// (for a view that stands the nozzle along it).
 ///
 /// Returns `{ source, project, printer, notes, params, steps, diagnostics, print, exports,
 /// bounds, mesh: { positions, indices }, curves: { points, starts },
 /// paths: { points, starts, widths, heights, speeds, flows, ups } (each point's line width and
 /// layer height in mm, speed in mm/s and flow in mm³/s: the move that ends there; 0 for travel;
-/// `ups`: x,y,z of the way up the wall there, `easycad_core::wall`), parts: { mesh, curves, paths } (each
+/// with `wall`, `ups`: x,y,z of the way up the wall there, `easycad_core::wall`), parts: { mesh, curves, paths } (each
 /// piece's printed part) }`. A broken recipe doesn't throw: its problems are in
 /// `diagnostics`.
 #[wasm_bindgen]
@@ -47,6 +49,7 @@ pub fn evaluate(
     values: JsValue,
     quality: &str,
     simulate: Option<f64>,
+    wall: Option<bool>,
 ) -> Result<Object, JsError> {
     let quality = if quality == "final" {
         Quality::Final
@@ -55,7 +58,7 @@ pub fn evaluate(
     };
     let source = with_values(source, values)?;
     let e = easycad_core::evaluate(&source, quality);
-    let out = to_js(&source, &e)?;
+    let out = to_js(&source, &e, wall.unwrap_or(false))?;
     if let Some(multiplier) = simulate {
         simulation(&out, &e, multiplier)?;
     }
@@ -184,7 +187,7 @@ fn with_values(source: &str, values: JsValue) -> Result<String, JsError> {
     })
 }
 
-fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
+fn to_js(source: &str, e: &Evaluation, wall: bool) -> Result<Object, JsError> {
     let out = Object::new();
     set(&out, "source", &JsValue::from_str(source))?;
     set(&out, "project", &plain(&e.project)?)?;
@@ -240,20 +243,24 @@ fn to_js(source: &str, e: &Evaluation) -> Result<Object, JsError> {
     set(&paths, "heights", &heights)?;
     set(&paths, "speeds", &speeds)?;
     set(&paths, "flows", &flows)?;
-    let ups: Vec<f32> = e
-        .drawing
-        .paths
-        .iter()
-        .flat_map(|p| {
-            let ups = easycad_core::wall::up_the_wall(p);
-            match &p.view {
-                Some(x) => ups.into_iter().map(|v| x.apply_vector(v)).collect(),
-                None => ups,
-            }
-        })
-        .flat_map(|v| v.map(|c| c as f32))
-        .collect();
-    set(&paths, "ups", &Float32Array::from(ups.as_slice()))?;
+    // Only when the view stands the nozzle along the wall: for a print of many rings it takes
+    // several times as long as the recipe itself.
+    if wall {
+        let ups: Vec<f32> = e
+            .drawing
+            .paths
+            .iter()
+            .flat_map(|p| {
+                let ups = easycad_core::wall::up_the_wall(p);
+                match &p.view {
+                    Some(x) => ups.into_iter().map(|v| x.apply_vector(v)).collect(),
+                    None => ups,
+                }
+            })
+            .flat_map(|v| v.map(|c| c as f32))
+            .collect();
+        set(&paths, "ups", &Float32Array::from(ups.as_slice()))?;
+    }
     set(&out, "paths", &paths)?;
     let parts = parts(&e.drawing)?;
     set(&out, "parts", &parts)?;

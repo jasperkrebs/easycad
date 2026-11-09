@@ -573,6 +573,8 @@ const MAX_EXTRUSION: f64 = 4.0;
 const MAX_SPEED_FACTOR: f64 = 1000.0;
 /// The hottest a heater may be set, in °C (the printer settings allow the same).
 const MAX_TEMPERATURE: f64 = 350.0;
+/// The hottest a filament printer's bed may be set, in °C (as the printer settings allow).
+const MAX_FILAMENT_BED: f64 = 150.0;
 /// The range of the printer's speed and extrusion overrides, in %.
 const MIN_OVERRIDE: f64 = 1.0;
 const MAX_OVERRIDE: f64 = 1000.0;
@@ -675,6 +677,17 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
     if p.mode == Mode::Pellet {
         check_pellet_heaters(&p.pellet)?;
     }
+    // The filament printer's own temperatures (the printer settings allow the same ranges).
+    if p.mode == Mode::Filament
+        && !((0.0..=MAX_TEMPERATURE).contains(&p.filament.nozzle)
+            && (0.0..=MAX_FILAMENT_BED).contains(&p.filament.bed))
+    {
+        return Err(format!(
+            "the nozzle is set to {} °C and the bed to {} °C; they go up to {MAX_TEMPERATURE} and {MAX_FILAMENT_BED} °C",
+            num(p.filament.nozzle),
+            num(p.filament.bed)
+        ));
+    }
     let [bx, by, bz] = p.bed;
     for (i, q) in path.points.iter().enumerate() {
         let (x, y, z) = (q[0] + p.center[0], q[1] + p.center[1], q[2]);
@@ -710,6 +723,17 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
             return Err(format!(
                 "move {i} has a speed factor of {speed}; it must be more than 0 and at most {MAX_SPEED_FACTOR}"
             ));
+        }
+        // A feed that rounds to F0: Klipper stops the print on it ("Invalid speed").
+        let travel = i == 0 || path.travel.get(i).copied().unwrap_or(false);
+        if !travel {
+            let feed = path.settings(i).feed_for(path.area(i)) * speed;
+            if !(feed.is_finite() && round(feed) >= 1) {
+                return Err(format!(
+                    "move {i} is too slow to print ({} mm/min); raise its flow or speed, or make its bead smaller",
+                    fixed(feed, 2)
+                ));
+            }
         }
     }
     let own_zones = [p.pellet.up, p.pellet.mid, p.pellet.down];
@@ -878,6 +902,11 @@ mod tests {
             ..Profile::default()
         };
         assert!(write(&small, &bad, "x").is_err());
+        // A move slowed until its feed would be written as F0 (Klipper: "Invalid speed").
+        let mut crawling = small.clone();
+        crawling.speed = vec![0.0001; crawling.points.len()];
+        let err = write(&crawling, &Profile::default(), "x").unwrap_err();
+        assert!(err.contains("too slow to print"), "{err}");
     }
 
     #[test]
@@ -978,6 +1007,13 @@ mod tests {
             ..hot
         };
         assert!(write(&path, &filament, "x").is_ok());
+        let mut melting = filament.clone();
+        melting.filament.nozzle = 500.0;
+        assert!(
+            write(&path, &melting, "x")
+                .unwrap_err()
+                .contains("the nozzle is set to 500 °C")
+        );
 
         // Machine events: a zone set or waited for outside the limits, cooling down included.
         let zones = |zones: [Option<f64>; 3]| Temperatures {

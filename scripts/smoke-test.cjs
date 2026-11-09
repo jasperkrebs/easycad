@@ -428,6 +428,13 @@ async function saveFrom(page, selector) {
       await page.selectOption('#viewColor', 'height');
       await page.click('#viewSim');
       await page.waitForFunction(() => document.getElementById('viewSim').getAttribute('aria-pressed') === 'false', null, { timeout: 5000 });
+      // The nozzle along the wall: the engine works the wall's direction out only then (a run
+      // of its own), and the beads stand along it; upright again for the rest.
+      await page.selectOption('#viewNozzle', 'wall');
+      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 30000 });
+      await page.waitForTimeout(300);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-along-wall.png`) });
+      await page.selectOption('#viewNozzle', 'upright');
       // Fit: what's shown of the toolpath fills the view.
       await page.click('#viewFit');
       await scrubTo(1);

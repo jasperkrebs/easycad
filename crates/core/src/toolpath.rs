@@ -622,7 +622,7 @@ pub fn vase_spiral(
     let height = z_top - z0;
     let layers = (height / layer).round().max(1.0) as usize;
     let total = layers as f64 * layer;
-    let needed = (layers + 1).saturating_mul(m).saturating_add(1);
+    let needed = layers.saturating_add(1).saturating_mul(m).saturating_add(1);
     too_many(
         needed,
         max_points,
@@ -998,8 +998,11 @@ pub fn join(
             continue;
         };
         parts_used += 1;
-        let offset =
-            u16::try_from(out.parts.len()).map_err(|_| "too many joined toolpaths".to_string())?;
+        // Every part index of `path`, moved up by `offset`, must still fit.
+        let offset = u16::try_from(out.parts.len())
+            .ok()
+            .filter(|_| out.parts.len() + path.parts.len() <= usize::from(u16::MAX) + 1)
+            .ok_or("too many joined toolpaths")?;
         // Points of `path` before `first` aren't copied: its opening travel, when the nozzle is
         // already there.
         let mut first = 0;
@@ -2228,6 +2231,35 @@ mod tests {
         assert_eq!(j.settings(3).width, 2.0);
         // Two one-layer parts are one layer.
         assert_eq!((j.layer_starts.clone(), j.layers), (vec![0], 1));
+    }
+
+    #[test]
+    fn a_wall_of_absurd_height_is_refused_not_spiralled_forever() {
+        // More layers than a number holds: counting them wrapped round to "one point needed",
+        // and the spiral then ran for ever (found by tests/fuzz.rs).
+        let c = Curve::circle(40.0, 96);
+        let top = c.transformed(&Xform::translate(0.0, 0.0, 1e300));
+        let w = Surface::loft(&[&c, &top]).unwrap();
+        let err = vase_spiral(&w, settings(2.0, 0.6, 20.0), true, MAX_PATH_POINTS).unwrap_err();
+        assert!(err.contains("too many points"), "{err}");
+    }
+
+    #[test]
+    fn joining_more_parts_than_fit_is_refused() {
+        // Part indices are 16 bits: a join whose parts wouldn't fit must say so, not wrap
+        // round to another part's bead.
+        let mut a = from_curves(
+            &[&Curve::circle(10.0, 8)],
+            settings(2.0, 0.6, 20.0),
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
+        a.parts = vec![settings(2.0, 0.6, 20.0); 40_000];
+        if let Some(last) = a.part.last_mut() {
+            *last = 39_999;
+        }
+        let err = join(&[&a, &a], 0.0, 0.0, false, MAX_PATH_POINTS).unwrap_err();
+        assert!(err.contains("too many joined toolpaths"), "{err}");
     }
 
     #[test]

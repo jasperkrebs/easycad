@@ -1,9 +1,16 @@
-# EasyCAD architecture (proposal)
+# EasyCAD architecture
 
-*Status: decisions answered on 14 Oct 2026 (see [roadmap.md](roadmap.md#decisions-answered-14-oct-2026)).
-Phase 0 and Phase 1a (recipes as files) are done; 1b (G-code) is next. The owner's priority is **custom toolpaths and G-code**; the printing
-workflow is described in [toolpaths-and-skills.md](toolpaths-and-skills.md). Where this document
-mentions solids/3MF/slicers, treat those as "later". Reasoning and sources are in
+*Status (9 Nov 2026): this began as the proposal of 14 Oct 2026 and still reads as one in
+places. **What's built:** the three crates of §3 ("Start small"), the web app, the Chat tab's
+agent and feature requests, G-code for two printers; the phases are in
+[roadmap.md](roadmap.md), what landed in [devlog.md](devlog.md). **Still a plan, not code:**
+the ten-crate split and the command registry with undo (§3, §7), incremental evaluation and
+caching (§6.4: a run evaluates the whole recipe, a few milliseconds for most templates),
+solids, 3MF, SVG/DXF and Rhino files (§10, §11.1), handles in the viewport and direct
+modelling (§9.2, §9.3), the desktop app, MCP and sending to printers (§8.1, §11.3, §12). The
+owner's priority is **custom toolpaths and G-code**, lately large pellet prints on the Ginger
+G1 ([printers.md](printers.md)); the printing workflow is in
+[toolpaths-and-skills.md](toolpaths-and-skills.md), reasoning and sources in
 [research.md](research.md).*
 
 ---
@@ -102,11 +109,15 @@ easycad/
 └─ spikes/                 throwaway experiments with results (none at the moment)
 ```
 
-**Start small** (this is the layout today, Phase 1b): three crates, `lang`, a combined
+**Start small** (this is the layout today): three crates, `lang`, a combined
 `core` (= geom + nodes + eval + the print and io parts) and `wasm`, plus `web/`. They get split
-once they grow. Inside `core`: `eval` (runs recipes), `nodes` (the step library), `curve`,
-`spiral`, `field`, `surface`, `toolpath` and `bead` (geometry and toolpaths), `gcode` and `stl`
-(writers) and `files` (which file a recipe makes, shared by the app, the CLI and MCP).
+once they grow. Inside `lang`: `lexer`, `parser` and `ast`, `expand` (components and parts into
+one plain recipe) and `rewrite` (setting values, the printer and parts written back into the
+text). Inside `core`: `eval` (runs recipes), `nodes` (the step library), `curve`, `curve_ops`,
+`spiral`, `rings`, `legs`, `scatter`, `field`, `surface`, `toolpath`, `toolpath_ops` and `bead`
+(geometry and toolpaths), `assembly` (placed parts and their collisions), `deposit` (the bead
+simulation) and `wall` (the way up the wall, for the view), `gcode` and `stl` (writers) and
+`files` (which file a recipe makes, shared by the app, the CLI and MCP).
 `fixtures/easygcode/` holds G-code written by EasyGCode itself for the golden tests
 (`scripts/easygcode-fixtures.cjs` regenerates it from a clone of EasyGCode).
 

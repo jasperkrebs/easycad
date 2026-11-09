@@ -100,7 +100,7 @@ export function createEngine() {
     }
     queued = null;
     running = true;
-    send({ type: 'evaluate', source: job.source, values: job.values, quality: job.quality, simulate: job.simulate })
+    send({ type: 'evaluate', source: job.source, values: job.values, quality: job.quality, simulate: job.simulate, wall: job.wall })
       .then(job.resolve, job.reject)
       .finally(() => {
         running = false;
@@ -120,12 +120,14 @@ export function createEngine() {
      * @param {'preview' | 'final'} quality
      * @param {number | null} [simulate] simulate the beads as they'd actually lie, with this
      *   extrusion multiplier (null: don't)
+     * @param {boolean} [wall] also work out the way up the wall at each toolpath point
+     *   (`paths.ups`), for a view that stands the nozzle along it
      * @returns {Promise<RunResult | null>} null when a newer run replaced this one
      */
-    evaluate(source, values, quality, simulate = null) {
+    evaluate(source, values, quality, simulate = null, wall = false) {
       return new Promise((resolve, reject) => {
         if (queued) queued.resolve(null);
-        queued = { source, values, quality, simulate, resolve, reject };
+        queued = { source, values, quality, simulate, wall, resolve, reject };
         pump();
       });
     },

@@ -44,6 +44,53 @@ colour, some see-through, some solid.
   steps exactly 2.5 mm along the wall, every bead 6 × 2.5 mm, every turn starting on the seam's
   90°, one straight seam. The gaps in the owner's screenshot came from the version before
   (69 turns, the old step of up to a line width); the test now checks the seam too.
+## 2026-11-09 (later): a review of `main`: the stool 25× quicker, settings that errored, two new tests
+
+A look through the repo for bugs and dead weight, the bend stool and the lampshade first.
+
+**Found and fixed:**
+- **The bend stool took 2.2 s a run in the browser** (89 ms now; the recipe itself is 40 ms).
+  Since 8 Nov every run worked out the way up the wall at each toolpath point for the view's
+  Nozzle picker, upright or not; for the stool's 91,000 points of rings that's ten times the
+  recipe. The engine now does it only when asked (`evaluate`'s `wall`; the app asks while the
+  nozzle isn't upright, and runs once more when it's first tilted), and its search grid is sized
+  per layer (one wide primer line made every layer's cells big): 478 → 170 ms natively.
+- **Settings that led to an error inside their own range:** the stool's foam extrusion under
+  10 % (its speed override would pass the printer's 1000 %; the range is 10–100 % now) and its
+  primer line widths over 20 mm (a bead's limit; 0.4–20 mm now); the lampshade's and lamp's
+  compensated line width over 20 mm (a 12 mm line on a steep wall; it stops at 20 mm now).
+  Golden G-code unchanged.
+- **G-code checks:** a move whose feed would be written as `F0` is refused (Klipper stops the
+  print on it: a very low flow in a huge bead, or a tiny speed factor); the filament printer's
+  nozzle and bed temperatures are checked like the pellet printer's (0–350 and 0–150 °C, as the
+  Print tab allows). `join` refuses more parts than its 16-bit part numbers hold instead of
+  wrapping round to another part's bead (65,536 two-point toolpaths; a made-up case).
+- **A freeze:** `vase_spiral` on a wall of absurd height (1e300 mm: more layers than a number
+  holds) counted its points wrong and then spiralled for ever; it says "too many points" now.
+  Found by the new fuzz test.
+- **Docs:** the README's status, `architecture.md`'s header (what's built, what's still a plan)
+  and its module list.
+
+**New tests:**
+- `crates/core/tests/fuzz.rs`: every template and test recipe damaged (awkward numbers, lines
+  dropped or moved, made-up step calls, stray characters) and run through evaluation, the
+  simulation, G-code and STL; a panic or a hang fails. 40 cases with `cargo test`; a round of
+  6,000 with overflow checks found the freeze above (4 cases); a second of 3,500 found an
+  overflow in the wall direction's grid at a point 1e300 mm away (harmless as shipped, where
+  it wraps to a miss; fixed) and nothing else.
+- `crates/core/tests/sweep.rs` (ignored; a survey to read): each template with every setting at
+  both ends of its range, what the recipe and the G-code writer say, and timings.
+
+**Found, not changed (the owner's call):**
+- A **bell or dome wider than it's tall** (opening − thread > 2 × transition height; the
+  default bell is exactly at the limit: opening 151 mm fails) can't be drawn as one arc and
+  says "the profile must rise all the way". A max angle fixes the bell; the dome has no such
+  setting. A step that lets a recipe say what's wrong in its own words would help here.
+- The stool's foam zones go 150–300 °C in its settings; the G1 takes 160–280 °C, so the ends
+  are refused when the G-code is written (rightly, but late).
+- On a new device the G1's recipe origin is EasyGCode's X125 Y125 on a 1000 mm bed: the stool
+  as shipped leaves the bed until the origin is set (500/500).
+- Still open from before: the HUD counts primer lines as layers (the stool shows 14 for 11).
 
 ## 2026-11-09: along the surface, one layer height a turn
 

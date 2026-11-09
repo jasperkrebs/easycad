@@ -5,7 +5,9 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status:** Phase 1f done (19 Oct 2026). Try it: https://jasperkrebs.github.io/easycad/
+> **Status (9 Nov 2026):** every EasyGCode project is a template, plus the shaker and the lamp
+> builder; the work now is large pellet prints on the Ginger G1, the **bend stool** and the
+> **lampshade** first. Try it: https://jasperkrebs.github.io/easycad/
 > - **Projects are recipes:** small `.easycad` text files. Each one opens with its own
 >   settings window, generated from the recipe (sliders, toggles, dropdowns, and tables for
 >   list settings like radii at heights). One project can print several parts (a container
@@ -34,6 +36,13 @@ become toolpaths, toolpaths become G-code for your printer.
 >   ([docs/easygcode-coverage.md](docs/easygcode-coverage.md)).
 > - **Machine control** as steps: temperatures and waits, speed and extrusion overrides, fan
 >   levels, pauses (EasyGCode's foaming is built from them).
+> - **The print before it's printed:** the toolpath coloured by height, speed, flow or bead
+>   size; played back at the print's own pace with the nozzle on it; the beads drawn at their
+>   real size, or **simulated** as the plastic would lie on what's already printed; the nozzle
+>   upright or along the wall.
+> - **The lamp builder:** shades that screw into each other, planned on a cut-through view,
+>   each its own print ([docs/lamp-builder.md](docs/lamp-builder.md)). The lampshade can also
+>   be sliced **along its surface** (experimental, for a robot arm).
 > - **Next:** the coat hanger as a template, skills for the agent, and 2D curve
 >   editors.
 >
@@ -110,6 +119,8 @@ export vase as "twisted-vase.stl"
 | [docs/research.md](docs/research.md) | What exists, what doesn't, sources, measured kernel spike |
 | [docs/api-key.md](docs/api-key.md) | Connecting the AI: your Claude API key, the password-protected proxy, costs |
 | [docs/easygcode-coverage.md](docs/easygcode-coverage.md) | Every EasyGCode project, feature by feature, and the steps that build it |
+| [docs/printers.md](docs/printers.md) | The printers: the Ginger G1 from its wiki, its limits, materials and checks |
+| [docs/lamp-builder.md](docs/lamp-builder.md) | Components and parts: lamps of shades that screw into each other |
 | [docs/feature-requests.md](docs/feature-requests.md) | When the AI can't build something: it asks, Claude Code builds the step, the chat carries on |
 | [docs/devlog.md](docs/devlog.md) | What landed, what's open |
 | [CLAUDE.md](CLAUDE.md) | Guidance for AI agents (and humans) working in this repo |
@@ -122,8 +133,13 @@ Requirements: Rust (stable, with the `wasm32-unknown-unknown` target) and `wasm-
 ```sh
 scripts/build-web.sh     # Rust → WebAssembly → web/pkg/
 scripts/serve.sh         # http://localhost:8080
-cargo test --workspace   # language and engine tests
+cargo test --workspace   # language and engine tests (golden G-code, damaged recipes)
 ```
+
+Two more for the engine, run by hand: a long round of damaged recipes
+(`FUZZ_CASES=5000 cargo test --release -p easycad-core --test fuzz`), and a survey of every
+template with each setting at both ends of its range, with timings
+(`cargo test --release -p easycad-core --test sweep -- --ignored --nocapture`).
 
 Templates live in `web/templates/*.easycad`; the engine's tests run every one of them, and the
 test-only recipes in `fixtures/recipes/` (the example above, EasyGCode's spoon).
