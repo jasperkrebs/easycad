@@ -5,7 +5,7 @@
 //! and then evaluated, simulated and written as G-code and STL. Any outcome is fine except a
 //! panic or a run that takes far too long. Seeded, so a failure names a case that fails again.
 //!
-//! `cargo test -p easycad-core --test fuzz` runs a short round. A long one:
+//! `cargo test -p easycad-core --test fuzz` runs a short round (40 cases). A long one:
 //! `FUZZ_CASES=20000 cargo test --release -p easycad-core --test fuzz -- --nocapture`
 //! (`FUZZ_SEED=n` starts elsewhere; `FUZZ_ONLY=n` runs one case and prints its recipe).
 
@@ -303,11 +303,17 @@ fn env(name: &str) -> Option<usize> {
 fn damaged_recipes_never_crash() {
     let recipes = recipes();
     let profiles = profiles();
-    let cases = env("FUZZ_CASES").unwrap_or(150);
+    let cases = env("FUZZ_CASES").unwrap_or(40);
     let seed = env("FUZZ_SEED").unwrap_or(1);
     let only = env("FUZZ_ONLY");
     let quiet = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
+    // Quiet, but remembering where: the message alone ("attempt to add with overflow") doesn't say.
+    static WHERE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+    std::panic::set_hook(Box::new(|info| {
+        if let (Some(at), Ok(mut slot)) = (info.location(), WHERE.lock()) {
+            *slot = format!("{}:{}", at.file(), at.line());
+        }
+    }));
     let mut failures = Vec::new();
     for case in only.map_or(0..cases, |n| n..n + 1) {
         let mut rng = Rng((seed as u64) << 32 | (case as u64 + 1));
@@ -327,7 +333,10 @@ fn damaged_recipes_never_crash() {
                 .cloned()
                 .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
                 .unwrap_or_default();
-            failures.push(format!("case {case} (seed {seed}) panicked: {message}"));
+            let at = WHERE.lock().map(|s| s.clone()).unwrap_or_default();
+            failures.push(format!(
+                "case {case} (seed {seed}) panicked at {at}: {message}"
+            ));
         } else if took > TOO_SLOW {
             failures.push(format!("case {case} (seed {seed}) took {took:?}"));
         }

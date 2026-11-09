@@ -148,9 +148,37 @@ fn every_setting_at_its_ends() {
                 .collect();
             source = set_values(&source, &values).unwrap();
         }
+        let started = std::time::Instant::now();
+        let preview = evaluate(&source, Quality::Preview);
+        let preview_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = std::time::Instant::now();
         let base = evaluate(&source, Quality::Final);
+        let final_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let points = |e: &Evaluation| e.prints.iter().map(|p| p.stats.path_points).sum::<usize>();
+        let started = std::time::Instant::now();
+        for p in &base.drawing.paths {
+            let _ = easycad_core::wall::up_the_wall(p);
+        }
+        let wall_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = std::time::Instant::now();
+        let paths: Vec<_> = base.drawing.paths.iter().map(|p| p.as_ref()).collect();
+        let _ = easycad_core::deposit::simulate(&paths, &base.drawing.path_parts, 1.0);
+        let sim_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = std::time::Instant::now();
+        for i in 0..base.prints.len() {
+            let _ = files::make(&base, Which::Print(i), &profile);
+        }
+        let gcode_ms = started.elapsed().as_secs_f64() * 1000.0;
+        println!(
+            "    the view's wall directions {wall_ms:.0} ms, simulation {sim_ms:.0} ms, G-code {gcode_ms:.0} ms"
+        );
         let (problems, warnings) = verdict(&base, &profile);
-        println!("\n=== {name}: {} settings", base.params.len());
+        println!(
+            "\n=== {name}: {} settings; preview {preview_ms:.0} ms ({} points), final {final_ms:.0} ms ({} points)",
+            base.params.len(),
+            points(&preview),
+            points(&base)
+        );
         for p in problems.iter().chain(&warnings) {
             println!("  as shipped: {p}");
         }

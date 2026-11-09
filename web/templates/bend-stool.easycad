@@ -44,20 +44,20 @@ param foam = true "Foaming (pellet printer, 3 layers or more)"
 param foam_up = 195 in 150..300 "Foam upper zone (°C)"  when foam
 param foam_mid = 215 in 150..300 "Foam middle zone (°C)"  when foam
 param foam_down = 230 in 150..300 "Foam lower zone (°C)"  when foam
-param foam_extrusion = 39 % in 1..100 "Foam extrusion"  when foam
+param foam_extrusion = 39 % in 10..100 "Foam extrusion"  when foam
 param exit_cool = 0 in 0..300 "Cool down to this before the last layer (°C, 0: straight to the printer's)"  when foam
 
 group "Foam primers"
 param primer_x = -500 mm in -1000..1000 "Primers start at X (from the print's centre)"  when foam
 param primer_y = -500 mm in -1000..1000 "Primers start at Y (from the print's centre)"  when foam
 param enter_length = 250 mm in 1..1000 "Heat-up primer length"  when foam
-param enter_width = 10 mm in 0.4..30 "Heat-up primer line width"  when foam
+param enter_width = 10 mm in 0.4..20 "Heat-up primer line width"  when foam
 param enter_layer = 2 mm in 0.1..10 "Heat-up primer layer height"  when foam
 param enter_speed = 5.8333 in 0.5..100 "Heat-up primer speed (mm/s)"  when foam
 param enter_flow = 0 in 0..400 "Heat-up primer flow (mm³/s, 0: by speed)"  when foam
 param exit_length = 600 mm in 1..1000 "Cool-down primer length"  when foam
 param exit_lines = 1 in 1..20 step 1 "Cool-down primer lines (a zigzag)"  when foam
-param exit_width = 16 mm in 0.4..30 "Cool-down primer line width"  when foam
+param exit_width = 16 mm in 0.4..20 "Cool-down primer line width"  when foam
 param exit_layer = 6 mm in 0.1..10 "Cool-down primer layer height"  when foam
 param exit_speed = 3 in 0.5..100 "Cool-down primer speed (mm/s)"  when foam
 param exit_flow = 0 in 0..400 "Cool-down primer flow (mm³/s, 0: by speed)"  when foam

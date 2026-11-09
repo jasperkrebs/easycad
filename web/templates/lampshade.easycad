@@ -223,7 +223,7 @@ comp    = pick(surface, 2, index_of(["width", "layer height", "off"], compensati
 lean_at = pick(surface, graph(print_s, print_l, z), graph(print_z, print_l, z))
 c       = max(0.05, cos(abs(lean_at)))
 curve   = strength * (min(abs(lean_at), 89) / pivot) ^ steep
-width   = pick(less(comp, 0.5), line * min(max_width, 1 + curve * (1 / c - 1)), line)
+width   = pick(less(comp, 0.5), min(20, line * min(max_width, 1 + curve * (1 / c - 1))), line)
 squeeze = pick(less(abs(comp - 1), 0.5), max(0.05, 1 - curve * (1 - c)), 1)
 # By height each turn rises a pitch (squeezed as above); along the surface it steps a pitch along
 # the wall, so each bead lies on the one before it, a layer further on, wherever the wall goes.
