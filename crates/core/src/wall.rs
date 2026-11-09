@@ -124,7 +124,11 @@ fn under_by_layers(path: &Toolpath, below: &mut [Option<P3>]) {
             let mut best: Option<(f64, P3)> = None;
             for dx in -1..=1 {
                 for dy in -1..=1 {
-                    for &k in grid.get(&(cx + dx, cy + dy)).into_iter().flatten() {
+                    for &k in grid
+                        .get(&(cx.saturating_add(dx), cy.saturating_add(dy)))
+                        .into_iter()
+                        .flatten()
+                    {
                         let q = nearest_on_segment(path.points[k - 1], path.points[k], p);
                         let d = (p[0] - q[0]).hypot(p[1] - q[1]);
                         if best.is_none_or(|(bd, _)| d < bd) {

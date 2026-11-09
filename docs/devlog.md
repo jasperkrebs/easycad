@@ -36,7 +36,9 @@ A look through the repo for bugs and dead weight, the bend stool and the lampsha
 - `crates/core/tests/fuzz.rs`: every template and test recipe damaged (awkward numbers, lines
   dropped or moved, made-up step calls, stray characters) and run through evaluation, the
   simulation, G-code and STL; a panic or a hang fails. 40 cases with `cargo test`; a round of
-  6,000 with overflow checks found the freeze above (4 cases) and nothing else.
+  6,000 with overflow checks found the freeze above (4 cases); a second of 3,500 found an
+  overflow in the wall direction's grid at a point 1e300 mm away (harmless as shipped, where
+  it wraps to a miss; fixed) and nothing else.
 - `crates/core/tests/sweep.rs` (ignored; a survey to read): each template with every setting at
   both ends of its range, what the recipe and the G-code writer say, and timings.
 
