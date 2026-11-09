@@ -190,3 +190,50 @@ fn each_shades_surface_belongs_to_its_shade() {
     let owners: Vec<Option<usize>> = e.drawing.mesh_parts.iter().map(|(_, p)| *p).collect();
     assert_eq!(owners, [Some(0), Some(1)]);
 }
+
+/// A shade that opens out into its straight end (a bell flat at its rim, a cone) rounds into it
+/// with the fillet, as a sphere closing in does: the wall's angle comes down to vertical in
+/// small steps, with no corner, and the straight end then carries on at the opening's radius.
+#[test]
+fn shades_that_open_out_round_into_their_straight_end() {
+    use Literal::{Bool, Number, Text};
+    for shape in ["bell", "cone", "sphere"] {
+        let src = set_values(
+            LAMP,
+            &[
+                ("main.shape".into(), Text(shape.into())),
+                ("main.end_straight".into(), Bool(true)),
+                ("main.end_len".into(), Number(60.0)),
+                ("main.fillet".into(), Number(100.0)),
+            ],
+        )
+        .unwrap();
+        let (e, v) = crate::eval::step_values(&src, Quality::Final);
+        assert!(e.errors().next().is_none(), "{shape}: {:?}", e.diagnostics);
+        let list = |n: &str| match v.get(n) {
+            Some(crate::value::Value::List(l)) => l
+                .items
+                .iter()
+                .map(|x| match x {
+                    crate::value::Value::Number(k) => *k,
+                    _ => f64::NAN,
+                })
+                .collect::<Vec<f64>>(),
+            _ => panic!("{n}"),
+        };
+        let (r, l) = (list("main.full_r"), list("main.full_l"));
+        let n = r.len();
+        assert_eq!(l[n - 1], 0.0, "{shape}: straight at the end");
+        assert!(
+            (r[n - 1] - r[n - 2]).abs() < 1e-9,
+            "{shape}: the straight end"
+        );
+        // From the shade into the straight end: no step in the wall's angle over 6°.
+        let worst = l
+            .windows(2)
+            .skip(n / 2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max);
+        assert!(worst < 6.0, "{shape}: a corner of {worst}°");
+    }
+}

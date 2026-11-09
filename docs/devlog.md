@@ -5,6 +5,20 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-09: fillets into the straight end, a smooth surface, an open top by default
+
+**Landed:**
+- The lamp's straight end rounds in from either side: a shade that opens out into it (a cone,
+  a bell flat at its rim) now gets the fillet too, the case the spheres had mirrored across the
+  straight end. It used to come out negative and was left off: a corner.
+- Surfaces of revolution are drawn straight from section to section (`Surface::straight`, the
+  3D view only): the smooth curve the full-quality mesh drew through the profile's points
+  overshot where a long straight span met short ones (a groove where the throat meets the
+  shade, a ledge under the straight end) and snapped in after a slider let go. A profile point
+  repeating the one before is left out.
+- Lampshade and lamp end on an open spiral by default (no flat closing turn). The golden tests
+  ask for EasyGCode's closing turn, its width compensation and its ramp.
+
 ## 2026-11-09: colours in the project file, and the view as a PNG
 
 **Landed:**

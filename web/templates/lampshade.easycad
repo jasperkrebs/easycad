@@ -36,7 +36,7 @@ param flow       = 20      in 1..400                "Throat flow (mm³/s)"
 param shade_flow = 0       in 0..400                "Shade flow (mm³/s, 0: as the throat)"
 param flow_ramp  = 0 mm    in 0..200                "Flow ramp height (0: over the fillet)"
 param tolerance  = 0.1 mm  in 0.01..1               "Chord tolerance"
-param flat_top   = true                             "Flat closing turn (off: open spiral)"
+param flat_top   = false                            "Flat closing turn (off: open spiral)"
 param steady     = true                             "Steady flow in the first turn (faster where the bead is thin, up to the travel speed)"
 
 group "Overhangs"

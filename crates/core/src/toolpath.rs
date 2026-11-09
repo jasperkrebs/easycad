@@ -1963,6 +1963,7 @@ mod tests {
             sections: vec![w.sections[0].clone(), w.sections[0].clone()],
             closed: true,
             capped: false,
+            straight: false,
         };
         assert!(
             vase_spiral(&flat, ok, true, MAX_PATH_POINTS)
