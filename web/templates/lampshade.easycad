@@ -247,5 +247,25 @@ brim_rings  = circle(r_first + brim_width / 2 + line / 2 + series(brim_lines - 1
 brimmed     = join(flatten([toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed), [shade]]), clear: 2 * brim_layer)
 path        = pick(brim, brimmed, shade)
 
+# ---- The Plan's marks: each piece of the profile leads to the settings that drive it (drawn
+# the way it prints, turned over when printed wide edge down).
+as_printed = pick(wide_down, top_z, 0)
+shade_top  = cur_top + shift
+side_x     = item(bounds(prof_r), 1) + 2 * line
+mark_throat  = polyline(point([r_t, r_t], 0, [0, throat])) |> place(z: as_printed, flip: wide_down)
+mark_fillet  = pick(blended, polyline(point(arc_r, 0, arc_z + shift)), polyline(point([r_t, r_t + 0.001], 0, [throat, throat]))) |> place(z: as_printed, flip: wide_down)
+mark_shade   = polyline(point(cur_r, 0, cur_z + shift)) |> place(z: as_printed, flip: wide_down)
+mark_opening = polyline(point([0, r_b], 0, [shade_top, shade_top])) |> place(z: as_printed, flip: wide_down)
+mark_height  = polyline(point([side_x, side_x], 0, [shift, shade_top])) |> place(z: as_printed, flip: wide_down)
+mark_lip     = polyline(point([r_b, r_b], 0, [top_z - lip_length, top_z])) |> place(z: as_printed, flip: wide_down)
+mark_lip_arc = pick(lip_arc, polyline(point(arc2_r, 0, cur_top - arc2_z + shift)), mark_lip)
+mark mark_throat for throat, socket, fit "Throat"
+mark mark_fillet for fillet "Fillet"
+mark mark_shade for shape, opening, transition, max_angle, sphere, flatness, own_at, own_r "Shade"
+mark mark_opening for opening "Opening"
+mark mark_height for transition "Height"
+mark pick(lip_on * lip_long, mark_lip, []) for lip_length, lip "Lip"
+mark pick(lip_on * lip_arc, mark_lip_arc |> place(z: as_printed, flip: wide_down), []) for lip_fillet "Lip fillet"
+
 show wall, path
 print path

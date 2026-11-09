@@ -1566,3 +1566,53 @@ details.group.part > summary .group-name {
 .color-row:nth-last-child(-n + 2) {
   grid-template-columns: minmax(60px, auto) 1fr;
 }
+
+/* The plan's marks: a band to tap over each piece of the shape, leading to its settings. */
+.plan-mark {
+  cursor: pointer;
+}
+
+.plan-mark polyline {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.plan-mark-hit {
+  stroke: var(--warn);
+  opacity: 0;
+}
+
+.plan-mark-line {
+  stroke: var(--warn);
+  opacity: 0.55;
+  stroke-dasharray: 2 3;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.5;
+}
+
+.plan-mark:hover .plan-mark-hit,
+.plan-mark:focus .plan-mark-hit {
+  opacity: 0.35;
+}
+
+.plan-mark:hover .plan-mark-line,
+.plan-mark:focus .plan-mark-line {
+  opacity: 1;
+  stroke-dasharray: none;
+}
+
+/* A setting a mark led to: lit up for a moment. */
+.setting.flash {
+  animation: flash 1.6s ease-out;
+}
+
+@keyframes flash {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--warn) 28%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}

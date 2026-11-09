@@ -467,6 +467,9 @@ async function saveFrom(page, selector) {
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Lamp', null, { timeout: 15000 });
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       await page.click('#viewPlan');
+      // The plan's marks lead to the settings that drive each piece: the shade's fillet.
+      await page.locator('.plan-mark[aria-label^="Fillet"]').dispatchEvent('click');
+      if (!(await page.isVisible('[id="set-main.fillet"]'))) failures.push(`${name}: the fillet's mark didn't lead to its setting`);
       await page.locator('.plan-port[aria-label*="main · End, outside"]').click();
       await page.selectOption('#addPart-shape', 'tube');
       await page.click('#addPartYes');

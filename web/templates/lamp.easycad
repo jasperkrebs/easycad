@@ -331,6 +331,28 @@ component shade "Shade"
   port end_out   = [r_end + line + joint_fit, z0 + s * top_z, -s, end_len_at, 0, 1] "End, outside"
   port end_in    = [r_end - line - joint_fit, z0 + s * top_z, -s, end_len_at, 0, -1] "End, inside"
 
+  # ---- The Plan's marks: each piece of the profile leads to the settings that drive it, placed
+  # where the shade goes.
+  shade_top  = cur_top + shift
+  side_x     = item(bounds(full_r), 1) + 2 * line
+  not_tube   = 1 - is_tube
+  mark_start   = polyline(point([r_t, r_t], 0, [0, pick(is_tube, length, throat)])) |> place(z: z0, flip: 1 - up)
+  mark_fillet  = pick(blended, polyline(point(arc_r, 0, arc_z + shift)), polyline(point([r_t, r_t + 0.001], 0, [throat, throat]))) |> place(z: z0, flip: 1 - up)
+  mark_shade   = polyline(point(cur_r, 0, cur_z + shift)) |> place(z: z0, flip: 1 - up)
+  mark_opening = polyline(point([0, r_open], 0, [shade_top, shade_top])) |> place(z: z0, flip: 1 - up)
+  mark_widest  = polyline(point([0, r_w], 0, [h * w_at + shift, h * w_at + shift])) |> place(z: z0, flip: 1 - up)
+  mark_height  = polyline(point([side_x, side_x], 0, [shift, shade_top])) |> place(z: z0, flip: 1 - up)
+  mark_end     = polyline(point([r_end, r_end], 0, [top_z - end_eff, top_z])) |> place(z: z0, flip: 1 - up)
+  mark_end_arc = polyline(point(arc2_r, 0, cur_top - arc2_z + shift)) |> place(z: z0, flip: 1 - up)
+  mark mark_start for start_len, length, mount, direction, along "Start"
+  mark pick(not_tube, mark_fillet, []) for fillet "Fillet"
+  mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, end_d, max_angle, sphere, flatness, own_at, own_r "Shade"
+  mark pick(not_tube, mark_opening, []) for opening, end_d "Opening"
+  mark pick(inout, mark_widest, []) for widest, widest_at "Widest"
+  mark pick(not_tube, mark_height, []) for transition, inout_h "Height"
+  mark pick(lip_on * lip_long, mark_end, []) for end_len, end_straight "Straight end"
+  mark pick(lip_on * lip_arc, mark_end_arc, []) for lip_fillet, fillet "End fillet"
+
   show wall
   print shown
 end

@@ -5,6 +5,23 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-09: the Plan leads to the settings
+
+**Why:** the owner asked to tap a piece of the shape (a fillet, the throat) and land on the
+setting that drives it, in every project, not only the lamp.
+
+**Landed:** `mark curve for setting, … "Label"` in the language (components too, where the
+settings are the part's own). The Plan shows for any recipe with marks: each mark a dotted line
+over the cross-section, a band to tap; the tap opens the Settings tab at the first of its
+settings that shows (fold-outs opened) and lights them all up. The lampshade marks its throat
+(throat, socket, fit), fillet, shade (shape and its settings), opening, height and lip; the
+lamp's shade its start (length, mount), fillet, shade, opening, widest, height, straight end
+and end fillet.
+
+**Open:** the other templates (vessel, shaker, thread, stool, disc) have no marks yet; the
+round ones fit the Plan's cross-section as they are, the stool and the disc would want a view
+from the front or above.
+
 ## 2026-11-09: fillets into the straight end, a smooth surface, an open top by default
 
 **Landed:**

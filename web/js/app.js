@@ -934,9 +934,9 @@ function onProfileChange() {
 /** The part last tapped in the plan (drawn highlighted). */
 let selectedPart = /** @type {string | null} */ (null);
 
-/** The Plan button shows for recipes with components; the plan redraws with every result. */
+/** The Plan button shows for recipes with parts or marks; the plan redraws with every result. */
 function renderPlanView(result) {
-  const has = (result.components || []).length > 0;
+  const has = (result.components || []).length > 0 || (result.marks || []).length > 0;
   const button = $('viewPlan');
   button.hidden = !has;
   const on = has && button.getAttribute('aria-pressed') === 'true';
@@ -944,7 +944,27 @@ function renderPlanView(result) {
   const colors = customColors();
   const prints = printsOf(result);
   const colorOf = (name) => partLook(colors, name, Math.max(0, prints.findIndex((p) => p.name === name))).color;
-  if (on) renderPlan($('plan'), result, { onPort: (port) => addPart(port), onPart: (name) => openPart(name), selected: selectedPart, colorOf });
+  if (on) renderPlan($('plan'), result, { onPort: (port) => addPart(port), onPart: (name) => openPart(name), onMark: (mark) => openSettings(mark.settings), selected: selectedPart, colorOf });
+}
+
+/**
+ * Brings settings into sight (a mark tapped in the plan): the first that shows now, its fold-outs
+ * opened; every one that shows lights up for a moment.
+ * @param {string[]} names
+ */
+function openSettings(names) {
+  selectTab('settings');
+  const rows = names
+    .map((n) => document.getElementById(`set-${n}`)?.closest('.setting'))
+    .filter((row) => row && !row.hidden && !row.closest('[hidden]'));
+  if (!rows.length) return;
+  for (const row of rows) {
+    for (let d = row.closest('details'); d; d = d.parentElement?.closest('details') ?? null) /** @type {HTMLDetailsElement} */ (d).open = true;
+    row.classList.remove('flash');
+    void (/** @type {HTMLElement} */ (row).offsetWidth); // restart the animation
+    row.classList.add('flash');
+  }
+  rows[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 /** Opens a part's fold-out in the settings and brings it into sight. */

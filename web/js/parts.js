@@ -68,7 +68,7 @@ export function sections(result) {
  * where it runs into another), its name beside it, and a `+` at every port with room.
  * @param {HTMLElement} host
  * @param {any} result
- * @param {{ onPort: (port: any) => void, onPart: (name: string) => void, selected?: string | null, colorOf?: (name: string) => string }} handlers
+ * @param {{ onPort: (port: any) => void, onPart: (name: string) => void, onMark: (mark: any) => void, selected?: string | null, colorOf?: (name: string) => string }} handlers
  */
 export function renderPlan(host, result, handlers) {
   host.replaceChildren();
@@ -77,13 +77,23 @@ export function renderPlan(host, result, handlers) {
   // takes several shades along it).
   const used = new Set(result.params.filter((p) => p.kind === 'port').map((p) => String(p.value)));
   const ports = (result.ports || []).filter((p) => p.value.length >= 4 && p.value[3] > 0 && (!used.has(p.name) || p.value[3] >= ROOMY));
-  if (!parts.size) return;
+  const marks = result.marks || [];
+  if (!parts.size && !marks.length) return;
   let [rmax, zmin, zmax] = [1, Infinity, -Infinity];
   for (const { points } of parts.values()) {
     for (const [r, z] of points) {
       rmax = Math.max(rmax, r);
       zmin = Math.min(zmin, z);
       zmax = Math.max(zmax, z);
+    }
+  }
+  for (const m of marks) {
+    for (const line of m.lines) {
+      for (const [x, , z] of line) {
+        rmax = Math.max(rmax, Math.abs(x));
+        zmin = Math.min(zmin, z);
+        zmax = Math.max(zmax, z);
+      }
     }
   }
   for (const p of ports) {
@@ -124,6 +134,24 @@ export function renderPlan(host, result, handlers) {
     label.textContent = name;
     g.addEventListener('click', () => handlers.onPart(name));
   });
+  // The marks: each piece of the shape that leads to its settings, a band to tap (drawn over the
+  // parts, under the ports).
+  for (const mark of marks) {
+    const g = node('g', { class: 'plan-mark', tabindex: 0, role: 'button', 'aria-label': `${mark.label || mark.settings[0]}: its settings` });
+    const title = node('title', {}, g);
+    title.textContent = mark.label || mark.settings.join(', ');
+    for (const line of mark.lines) {
+      const pts = line.map(([x, , z]) => `${x},${-z}`);
+      if (pts.length === 1) pts.push(pts[0]);
+      node('polyline', { points: pts.join(' '), 'stroke-width': 14 * px, class: 'plan-mark-hit' }, g);
+      node('polyline', { points: pts.join(' '), 'stroke-width': 2.5 * px, class: 'plan-mark-line' }, g);
+    }
+    const go = () => handlers.onMark(mark);
+    g.addEventListener('click', go);
+    g.addEventListener('keydown', (e) => {
+      if (/** @type {KeyboardEvent} */ (e).key === 'Enter' || /** @type {KeyboardEvent} */ (e).key === ' ') go();
+    });
+  }
   for (const port of ports) {
     // Outside ports a little further out, inside ones further in, and a little way into the
     // section from its end, so the two faces' buttons (and a shade's end and the next one's
