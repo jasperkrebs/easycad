@@ -468,6 +468,11 @@ async function saveFrom(page, selector) {
       await page.selectOption('#viewColor', 'custom');
       if ((await page.locator('#viewColors input[type="color"]').count()) !== 2) failures.push(`${name}: custom colours for ${await page.locator('#viewColors input[type="color"]').count()} parts`);
       if (await page.isVisible('#viewLegend')) failures.push(`${name}: the legend shows in the custom colours`);
+      // The view as a picture, and the colours in the project file.
+      const picture = await saveFrom(page, '#viewSnap');
+      if (!picture.name.endsWith('.png') || picture.data.subarray(1, 4).toString() !== 'PNG') failures.push(`${name}: the view's picture: ${picture.name}`);
+      const withColors = await saveFrom(page, '#saveProject');
+      if (!/^#~ colors \{.*"custom":true/m.test(withColors.data.toString('utf8'))) failures.push(`${name}: the project file has no colours`);
       await page.selectOption('#viewColor', 'height');
       if (await page.isVisible('#viewColors')) failures.push(`${name}: the custom colours stay after leaving them`);
       await page.click('#tab-print');

@@ -9,7 +9,7 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
-import { fileNote, fingerprint, projectOf, withPartsOf, withoutFileNote, withoutValues } from './templates.js';
+import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
@@ -368,6 +368,40 @@ function customColors() {
   const all = loadJSON(CUSTOM_KEY, {});
   const mine = (all && typeof all === 'object' && all[projectName()]) || {};
   return { parts: mine.parts || {}, light: mine.light ?? 0.5, shadow: mine.shadow ?? 0.5 };
+}
+
+/**
+ * The view's colours as a file keeps them: this project's custom colours, and whether the view
+ * is in them. null when none were chosen.
+ */
+function colorsToSave() {
+  const all = loadJSON(CUSTOM_KEY, {});
+  const mine = all && typeof all === 'object' ? all[projectName()] : null;
+  const custom = /** @type {HTMLSelectElement} */ ($('viewColor')).value === 'custom';
+  if (!mine && !custom) return null;
+  // Every part's colour as shown (chosen, or its own until chosen).
+  const colors = customColors();
+  printsOf(state.last).forEach((p, i) => (colors.parts[p.name] = partLook(colors, p.name, i)));
+  return { ...colors, custom };
+}
+
+/** Puts colours from a file back (and the view in them, when it was saved in them). */
+function restoreColors(colors) {
+  if (!colors || typeof colors !== 'object') return;
+  const parts = colors.parts && typeof colors.parts === 'object' ? colors.parts : {};
+  const clean = {};
+  for (const [name, look] of Object.entries(parts)) {
+    if (look && /^#[0-9a-f]{6}$/i.test(String(look.color))) clean[name] = { color: String(look.color), opacity: Math.min(1, Math.max(0.05, Number(look.opacity) || 1)) };
+  }
+  const unit = (v) => (Number.isFinite(Number(v)) ? Math.min(1, Math.max(0, Number(v))) : 0.5);
+  saveCustomColors({ parts: clean, light: unit(colors.light), shadow: unit(colors.shadow) });
+  customLayout = '';
+  if (colors.custom) {
+    const select = /** @type {HTMLSelectElement} */ ($('viewColor'));
+    select.value = 'custom';
+    select.dispatchEvent(new Event('change'));
+  }
+  renderCustomColors();
 }
 
 function saveCustomColors(colors) {
@@ -1014,6 +1048,11 @@ function wire() {
   // Fit what's shown of the toolpath and orbit round its centre: the Fit button, a double-click,
   // or on a phone a double-tap (touch doesn't make a dblclick everywhere).
   $('viewFit').addEventListener('click', () => viewport.focus());
+  // The view as a picture, sharper than the screen.
+  $('viewSnap').addEventListener('click', async () => {
+    const blob = await (await fetch(viewport.capture(2))).blob();
+    download(`${saveName()}.png`, blob, 'image/png');
+  });
   $('view').addEventListener('dblclick', () => viewport.focus());
   let lastTap = { t: 0, x: 0, y: 0 };
   let touches = 0;
@@ -1188,7 +1227,9 @@ function wire() {
       const picked = /** @type {HTMLInputElement} */ (e.target).files?.[0];
       const text = await readPicked(e.target);
       if (text !== null) {
-        await openSource(withoutFileNote(text));
+        const { text: recipe, colors } = withoutColors(withoutFileNote(text));
+        await openSource(recipe);
+        restoreColors(colors);
         setSaveName((picked?.name || '').replace(/\.easycad$/i, ''));
         autosave();
         checkTemplate();
@@ -1200,7 +1241,8 @@ function wire() {
   $('saveName').addEventListener('input', () => autosave());
   $('saveProject').addEventListener('click', async () => {
     const site = new URL('.', location.href).href;
-    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${await currentSource()}`);
+    const colors = colorsToSave();
+    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${colors ? `${colorsLine(colors)}\n\n` : ''}${await currentSource()}`);
     state.openedValues = { ...state.values };
     state.unsaved = false;
     autosave();
@@ -1226,6 +1268,7 @@ function wire() {
       project: projectName(),
       printer: state.printer,
       values: state.values,
+      ...(colorsToSave() ? { colors: colorsToSave() } : {}),
     };
     download(`${saveName()}-settings.json`, JSON.stringify(data, null, 2), 'application/json');
   });
@@ -1246,6 +1289,7 @@ function wire() {
         }
       }
       if (!used) throw new Error('none of its settings belong to this project.');
+      restoreColors(data.colors);
       state.unsaved = true;
       state.layout = '';
       run('final');

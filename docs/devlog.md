@@ -5,6 +5,17 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-09: colours in the project file, and the view as a PNG
+
+**Landed:**
+- The custom colours travel with the project: a saved project file holds them in one comment
+  line between its note and the recipe (`#~ colors {…}`: each part's colour and opacity, the
+  light, and whether the view was in Custom), and the settings file in a `colors` field.
+  Opening either puts them back (and the view in Custom, if it was); the recipe itself never
+  holds them, so the engine and the agent don't see them.
+- **PNG** (next to Fit): the view as it is on screen, drawn at twice the screen's resolution
+  (at most 4096 pixels across), saved as `<project>.png`.
+
 ## 2026-11-09: custom colours for simple renders
 
 **Why:** the owner wants simple renders of lamps made of several shades: each shade its own
@@ -19,8 +30,7 @@ colour, some see-through, some solid.
 - The engine: what a part shows inside its component (a shade's surface) belongs to that
   part, so the parts buttons hide it with its shade and it takes the shade's colour.
 
-**Open:** the colours live on the device, not in the project file; saving a picture of the
-view (a "render" button) would be the next step.
+**Open:** the colours lived on the device only (done next: in the files, and a PNG button).
 
 ## 2026-11-09: layer height compensation by default; its own strength along the surface
 

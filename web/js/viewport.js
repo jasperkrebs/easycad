@@ -939,6 +939,25 @@ export function createViewport(canvas) {
       requestRender();
     },
 
+    /**
+     * The view as it is on screen, as a PNG (a data URL), drawn at `scale` times the screen's
+     * resolution (at most 4096 pixels across) for a sharper picture.
+     * @param {number} [scale]
+     */
+    capture(scale = 2) {
+      const ratio = renderer.getPixelRatio();
+      const [w, h] = [Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight)];
+      renderer.setPixelRatio(Math.min(ratio * scale, 4096 / w));
+      renderer.setSize(w, h, false);
+      render();
+      // Read right after drawing, while the drawing buffer still holds the frame.
+      const url = renderer.domElement.toDataURL('image/png');
+      renderer.setPixelRatio(ratio);
+      renderer.setSize(w, h, false);
+      requestRender();
+      return url;
+    },
+
     /** Frames the last result again. */
     refit() {
       fit(lastBounds);

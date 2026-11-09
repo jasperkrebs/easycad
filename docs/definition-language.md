@@ -448,6 +448,9 @@ conversation {                               # optional; the engine ignores it
 - **Moving a slider** rewrites only that setting's value in its `param` line; comments, layout
   and everything else stay exactly as they were. Saving the project saves that text.
 - **Choosing a preset** (later) changes only the values.
+- A saved project file may also hold the 3D view's custom colours, in a comment line
+  `#~ colors {…}` before the recipe (each part's colour and opacity, the light). The engine
+  ignores it as any comment; the app reads it when the file opens.
 - **"Save settings"** writes only the values (a small `.json`, like EasyGCode). "Load settings"
   puts them back into the open project.
 

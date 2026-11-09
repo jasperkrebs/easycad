@@ -60,7 +60,12 @@ export function numberField(props, signed = false) {
   return { input, nodes: [flip, input] };
 }
 
-/** Offers text as a file download (on iPhone: "Save to Files"). */
+/**
+ * Offers a file as a download (on iPhone: "Save to Files"): text, or a Blob (a picture).
+ * @param {string} name
+ * @param {string | Blob} text
+ * @param {string} [type]
+ */
 export function download(name, text, type = 'text/plain') {
   const a = /** @type {HTMLAnchorElement} */ (el('a', { href: URL.createObjectURL(new Blob([text], { type })), download: name }));
   document.body.append(a);
