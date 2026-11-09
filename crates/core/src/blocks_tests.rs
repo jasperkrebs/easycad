@@ -978,8 +978,10 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
 /// Slicing along the surface (the lampshade's experimental option): a bell opened out to 90°
 /// rounds over into a flat rim. Sliced by height (the default; golden-tested) its turns spread
 /// apart along the wall where it leans out, several line widths apart near the rim; sliced along
-/// the surface each turn is at most √(pitch² + line²) = 6.5 mm further along the wall. Both reach
-/// the rim, and the throat (its thread) still rises one pitch (2.5 mm) a turn.
+/// the surface each turn is one pitch (2.5 mm) further along the wall, so each bead lies on the
+/// one before even on the flat rim, and every bead is the line's width (no overhang compensation
+/// along the surface, whatever it's set to). Both reach the rim, and the throat (its thread)
+/// still rises one pitch a turn.
 #[test]
 fn the_lampshade_slices_along_the_surface_on_request() {
     use easycad_lang::{Literal, set_values};
@@ -988,7 +990,7 @@ fn the_lampshade_slices_along_the_surface_on_request() {
         let values = vec![
             ("shape".to_string(), Literal::Text("bell".into())),
             ("max_angle".to_string(), Literal::Number(90.0)),
-            ("compensation".to_string(), Literal::Text("off".into())),
+            ("compensation".to_string(), Literal::Text("width".into())),
             ("slicing".to_string(), Literal::Text(slicing.into())),
         ];
         let (e, _) = step_values(&set_values(template, &values).unwrap(), Quality::Final);
@@ -1018,11 +1020,24 @@ fn the_lampshade_slices_along_the_surface_on_request() {
             .fold(0.0, f64::max)
     };
     assert!(
-        widest_step(&surface) < 6.5 + 1e-6,
+        widest_step(&surface) < 2.5 + 1e-6,
         "{}",
         widest_step(&surface)
     );
     assert!(widest_step(&height) > 12.0, "{}", widest_step(&height));
+    // Along the surface every bead is the line's 6 mm; by height the rim's are widened.
+    let widest_bead = |p: &Toolpath| {
+        (1..p.points.len())
+            .filter(|&i| !p.travel[i])
+            .map(|i| p.bead_of(i).0)
+            .fold(0.0, f64::max)
+    };
+    assert!(
+        (widest_bead(&surface) - 6.0).abs() < 1e-9,
+        "{}",
+        widest_bead(&surface)
+    );
+    assert!(widest_bead(&height) > 9.0, "{}", widest_bead(&height));
     // Both reach the rim (75 mm round at 72 mm): by height exactly; along the surface within a
     // quarter of a step (a last bit shorter than that is left off, as by height).
     let rim = |p: &Toolpath| *turn_starts(p).last().unwrap();
@@ -1031,7 +1046,7 @@ fn the_lampshade_slices_along_the_surface_on_request() {
         (h.1 - 75.0).abs() < 1e-6 && (h.2 - 72.0).abs() < 1e-6,
         "{h:?}"
     );
-    assert!((75.0 - s.1).hypot(72.0 - s.2) < 6.5 / 4.0, "{s:?}");
+    assert!((75.0 - s.1).hypot(72.0 - s.2) < 2.5 / 4.0, "{s:?}");
     let z_at_turn = |p: &Toolpath, k: f64| turn_starts(p).iter().find(|t| t.0 == k).unwrap().2;
     for p in [&surface, &height] {
         assert!((z_at_turn(p, 4.0) - z_at_turn(p, 3.0) - 2.5).abs() < 1e-6);

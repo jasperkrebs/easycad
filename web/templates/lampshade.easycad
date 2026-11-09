@@ -4,7 +4,7 @@ printer "Ginger G1"
 note "EasyGCode's lampshade as a recipe: a threaded throat that screws onto an E27 or E14 lampholder's shade ring, a fillet, then the shade, printed as one vase-mode helix whose layer height is the thread's pitch. For the cone, bell, dome and sphere its G-code matches EasyGCode's command for command (the flat sphere is the same ellipsoid, sampled evenly)."
 note "Shades: a straight cone, a bell, a dome, a sphere, a flat sphere (UFO), or your own shape (`own_shade`: move its points, add more, or ask the AI for a new one). Every shade is a profile (radius against height); the rest of the recipe doesn't care which."
 note "Overhangs get wider beads (or squeezed layers), turn by turn, from the wall's angle. The flow can change from the throat to the shade over the fillet."
-note "Slicing along the surface (experimental): each turn steps along the wall instead of up it, a bead's height on a wall and its width where the wall runs flat, so a bell opened out to 90° prints its flat rim as rings side by side, like arc overhangs. The compensation then squeezes the step (layer height) or widens the bead (width) on top of that."
+note "Slicing along the surface (experimental): each turn steps one layer height along the wall instead of up it, so every bead lies on the one before it wherever the wall goes, even where it runs flat (a bell opened out to 90°). The bead stands along the wall, as a robot arm would print it; there's no overhang compensation then."
 
 group "Socket"
 param socket       = "E27" of ["E27", "E14", "custom"] "Socket"
@@ -42,7 +42,7 @@ param steady     = true                             "Steady flow in the first tu
 group "Overhangs"
 param slicing    = "height" of ["height", "surface"] "Slicing (surface: along the wall, experimental)"
 param flat_flow  = 0       in 0..400                "Flow where it runs flat (mm³/s, 0: as the shade)"  when slicing = "surface"
-param compensation = "width" of ["width", "layer height", "off"] "Compensation"
+param compensation = "width" of ["width", "layer height", "off"] "Compensation"  when slicing = "height"
 param strength   = 100 %   in 0..100                "Strength"  when not compensation = "off"
 param steep      = 0       in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"  when not compensation = "off"
 param pivot      = 45 deg  in 5..85 step 1          "Steep curve pivot (as now at this angle)"  when steep
@@ -217,16 +217,17 @@ z_here   = pick(surface, graph(print_s, print_z, z), z)
 # The extra (1/cos − 1 wider, or 1 − cos lower) is scaled by (angle / pivot)^steep: 1 everywhere
 # at 0; above 0, less below the pivot and more above it (pivot 45°, steep 2: 15° gets 1/9, 80°
 # about 3×).
-comp    = index_of(["width", "layer height", "off"], compensation)
+# Along the surface every bead is a layer along the wall however it leans: nothing to make up
+# for, so no compensation (as "off").
+comp    = pick(surface, 2, index_of(["width", "layer height", "off"], compensation))
 lean_at = pick(surface, graph(print_s, print_l, z), graph(print_z, print_l, z))
 c       = max(0.05, cos(abs(lean_at)))
 curve   = strength * (min(abs(lean_at), 89) / pivot) ^ steep
 width   = pick(less(comp, 0.5), line * min(max_width, 1 + curve * (1 / c - 1)), line)
 squeeze = pick(less(abs(comp - 1), 0.5), max(0.05, 1 - curve * (1 - c)), 1)
-# Along the surface the step is the bead's own extent along the wall: its height on a wall,
-# blending to its width where the wall runs flat (rings side by side), then squeezed as above.
-along_s = (pitch * cos(abs(lean_at)) + line * sin(abs(lean_at))) * squeeze
-rise    = pick(surface, along_s, pitch * squeeze)
+# By height each turn rises a pitch (squeezed as above); along the surface it steps a pitch along
+# the wall, so each bead lies on the one before it, a layer further on, wherever the wall goes.
+rise    = pitch * squeeze
 from_throat = pick(wide_down, top_z - z_here, z_here)
 ramp_h  = pick(flow_ramp, flow_ramp, fillet_top - throat)
 ramp    = pick(greater(ramp_h, 0.000000001), clamp((from_throat - throat) / max(ramp_h, 0.000000001), 0, 1), 1 - less(from_throat, throat))
