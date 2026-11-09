@@ -55,6 +55,8 @@ node scripts/agent-test.cjs [dir]  # the Chat tab against a scripted stand-in fo
 node scripts/request-test.cjs [dir]  # feature requests: filed, shipped, the chat carries on
 node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs   # the AI proxy, feature requests, printers, list settings
 python3 scripts/hand-checked-fixtures.py --check   # hand-checked G-code fixtures up to date
+FUZZ_CASES=5000 cargo test --release -p easycad-core --test fuzz   # a long round of damaged recipes (40 run with every `cargo test`)
+cargo test --release -p easycad-core --test sweep -- --ignored --nocapture   # every setting at its ends, with timings
 python3 scripts/third-party-notices.py   # after adding/updating a dependency (CI runs --check)
 ```
 
