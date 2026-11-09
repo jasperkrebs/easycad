@@ -979,9 +979,9 @@ fn the_shaker_prints_a_container_and_a_lid_that_fits_it() {
 /// rounds over into a flat rim. Sliced by height (the default; golden-tested) its turns spread
 /// apart along the wall where it leans out, several line widths apart near the rim; sliced along
 /// the surface each turn is one pitch (2.5 mm) further along the wall, so each bead lies on the
-/// one before even on the flat rim, and every bead is the line's width (no overhang compensation
-/// along the surface, whatever it's set to). Both reach the rim, and the throat (its thread)
-/// still rises one pitch a turn.
+/// one before even on the flat rim, and every bead is the line's width (the compensation's
+/// strength along the surface starts at 0). Both reach the rim along one straight seam, and the
+/// throat (its thread) still rises one pitch a turn.
 #[test]
 fn the_lampshade_slices_along_the_surface_on_request() {
     use easycad_lang::{Literal, set_values};
@@ -1002,6 +1002,18 @@ fn the_lampshade_slices_along_the_surface_on_request() {
         e.print.unwrap().path
     };
     let (surface, height) = (path_of("surface"), path_of("height"));
+    // The seam: every turn starts on the same line down the wall (the seam's 90°).
+    for p in [&surface, &height] {
+        for (i, q) in p.points.iter().enumerate() {
+            if p.turn[i] >= 1.0 && p.turn[i].fract() == 0.0 && !p.travel[i] {
+                assert!(
+                    (q[1].atan2(q[0]).to_degrees() - 90.0).abs() < 1e-9,
+                    "turn {}",
+                    p.turn[i]
+                );
+            }
+        }
+    }
     // (radius, height) where each whole turn starts.
     let turn_starts = |p: &Toolpath| {
         let mut out: Vec<(f64, f64, f64)> = Vec::new();
@@ -1038,6 +1050,30 @@ fn the_lampshade_slices_along_the_surface_on_request() {
         widest_bead(&surface)
     );
     assert!(widest_bead(&height) > 9.0, "{}", widest_bead(&height));
+    // Along the surface the compensation has its own strength (0 to start with): at full
+    // strength, layer height compensation shortens the steps where the wall leans out.
+    let squeezed = {
+        let values = vec![
+            ("shape".to_string(), Literal::Text("bell".into())),
+            ("max_angle".to_string(), Literal::Number(90.0)),
+            ("slicing".to_string(), Literal::Text("surface".into())),
+            (
+                "compensation".to_string(),
+                Literal::Text("layer height".into()),
+            ),
+            ("surface_strength".to_string(), Literal::Number(100.0)),
+        ];
+        let (e, _) = step_values(&set_values(template, &values).unwrap(), Quality::Final);
+        assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+        e.print.unwrap().path
+    };
+    assert!(
+        squeezed.layers > surface.layers + 5,
+        "{} vs {}",
+        squeezed.layers,
+        surface.layers
+    );
+    assert!(widest_step(&squeezed) < 2.5 + 1e-6);
     // Both reach the rim (75 mm round at 72 mm): by height exactly; along the surface within a
     // quarter of a step (a last bit shorter than that is left off, as by height).
     let rim = |p: &Toolpath| *turn_starts(p).last().unwrap();

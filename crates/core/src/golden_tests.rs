@@ -810,11 +810,20 @@ fn toolpath_tuning_matches_the_hand_checked_fixture() {
 const LAMPSHADE_TEMPLATE: &str = include_str!("../../../web/templates/lampshade.easycad");
 const STEADY_ON: &str = "param steady     = true ";
 
+const COMPENSATION: &str = "param compensation = \"layer height\"";
+
 /// The lampshade as EasyGCode prints it: its first turn ramps the flow up with the extrusion
-/// (the template's steady start, for pellet extruders, is EasyCAD's own).
+/// (the template's steady start, for pellet extruders, is EasyCAD's own), and its overhangs get
+/// wider beads (EasyGCode's default; the template's is layer height).
 fn lampshade() -> String {
-    assert!(LAMPSHADE_TEMPLATE.contains(STEADY_ON));
-    LAMPSHADE_TEMPLATE.replace(STEADY_ON, "param steady     = false")
+    as_easygcode(LAMPSHADE_TEMPLATE)
+}
+
+fn as_easygcode(template: &str) -> String {
+    assert!(template.contains(STEADY_ON) && template.contains(COMPENSATION));
+    template
+        .replace(STEADY_ON, "param steady     = false")
+        .replace(COMPENSATION, "param compensation = \"width\"")
 }
 
 /// The lampshade template against EasyGCode's lampshade (`vase_revolve` and the shades as
@@ -903,8 +912,7 @@ const LAMP_TEMPLATE: &str = include_str!("../../../web/templates/lamp.easycad");
 #[test]
 fn the_lamps_first_shade_prints_the_lampshades_gcode() {
     use Literal::{Bool, Number, Text};
-    assert!(LAMP_TEMPLATE.contains(STEADY_ON));
-    let lamp = || LAMP_TEMPLATE.replace(STEADY_ON, "param steady     = false");
+    let lamp = || as_easygcode(LAMP_TEMPLATE);
     let cone = [
         ("main.shape", Text("cone".into())),
         ("main.end_straight", Bool(false)),

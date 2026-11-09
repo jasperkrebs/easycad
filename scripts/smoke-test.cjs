@@ -214,6 +214,9 @@ async function saveFrom(page, selector) {
           await openGroups(page);
           await page.uncheck('#set-steady');
           await page.waitForFunction(() => /^param steady\s+= false/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+          // EasyGCode widens the beads on overhangs; the template squeezes the layers.
+          await page.selectOption('#set-compensation', 'width');
+          await page.waitForFunction(() => /^param compensation = "width"/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
           await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         }
         if (id === 'bend-stool') {

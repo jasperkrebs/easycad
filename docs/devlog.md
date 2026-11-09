@@ -5,6 +5,19 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-09: layer height compensation by default; its own strength along the surface
+
+**Landed:**
+- The lampshade's and lamp's overhang compensation is **layer height** by default (it was
+  width, EasyGCode's; the golden tests ask for width).
+- Along the surface the compensation works again, with its own **Strength along the surface**,
+  0 % to start with: the nozzle turned with the wall makes up for the lean. (The step before
+  switched it off along the surface.)
+- Checked with the owner's settings (a bell 400 mm open, sliced along the surface): every turn
+  steps exactly 2.5 mm along the wall, every bead 6 × 2.5 mm, every turn starting on the seam's
+  90°, one straight seam. The gaps in the owner's screenshot came from the version before
+  (69 turns, the old step of up to a line width); the test now checks the seam too.
+
 ## 2026-11-09: along the surface, one layer height a turn
 
 **Why:** sliced along the surface, each turn stepped the bead's own extent along the wall
