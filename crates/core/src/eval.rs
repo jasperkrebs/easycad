@@ -913,6 +913,18 @@ impl<'a> Runner<'a> {
         let program = self.program;
         let mut shown = false;
         let owners = self.owners();
+        // A part's `print` line (counted among the `print` lines), by part name: what a part
+        // shows belongs to it, made from its print or not (a shade's surface).
+        let part_prints: HashMap<&str, usize> = program
+            .outputs
+            .iter()
+            .filter_map(|o| match o {
+                Output::Print { part, .. } => Some(part.as_deref()),
+                _ => None,
+            })
+            .enumerate()
+            .filter_map(|(k, part)| part.map(|p| (p, k)))
+            .collect();
         // Each `print` line's part (its index in `prints`), once it printed.
         let mut parts: Vec<Option<usize>> = Vec::new();
         for output in &program.outputs {
@@ -920,10 +932,14 @@ impl<'a> Runner<'a> {
                 Output::Show { names, .. } => {
                     for (name, span) in names {
                         shown = true;
+                        let of_part = name
+                            .split_once('.')
+                            .and_then(|(part, _)| part_prints.get(part).copied());
                         self.drawing_owner = match self.names.get(name.as_str()) {
                             Some(Slot::Binding(j)) => owners.get(*j).copied().flatten(),
                             _ => None,
-                        };
+                        }
+                        .or(of_part);
                         match self.lookup(name, *span) {
                             Ok(v) => {
                                 if !self.draw(&v) {

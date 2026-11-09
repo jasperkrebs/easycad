@@ -173,3 +173,20 @@ fn shades_open_out_and_close_in_again() {
         );
     }
 }
+
+/// Each shade's surface (shown inside the component, not made from its print) belongs to its
+/// part, so the view can colour it, see through it or hide it with its shade.
+#[test]
+fn each_shades_surface_belongs_to_its_shade() {
+    let src = with_part(
+        LAMP,
+        "tube",
+        &[
+            ("mount", Literal::Text("main.end_out".into())),
+            ("shape", Literal::Text("tube".into())),
+        ],
+    );
+    let e = run(&src);
+    let owners: Vec<Option<usize>> = e.drawing.mesh_parts.iter().map(|(_, p)| *p).collect();
+    assert_eq!(owners, [Some(0), Some(1)]);
+}

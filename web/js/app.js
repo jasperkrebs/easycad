@@ -36,6 +36,8 @@ const SIM_KEY = 'easycad.simulate';
 const OPACITY_KEY = 'easycad.beadOpacity';
 /** Which way the nozzle and beads stand: upright, tilted (≤45°) or along the wall. */
 const NOZZLE_KEY = 'easycad.nozzle';
+/** Custom colours (the "Custom" colour mode): per project, each part's colour and opacity, and the light. */
+const CUSTOM_KEY = 'easycad.customColors';
 /** What the toolpath is coloured by. */
 const COLOR_KEY = 'easycad.colorMode';
 /** How fast the print plays back. */
@@ -127,6 +129,7 @@ async function run(quality, how = {}) {
   syncScrub();
   renderLegend();
   renderPartToggles(result);
+  renderCustomColors();
   renderPlanView(result);
 
   renderProject(result);
@@ -343,7 +346,8 @@ function renderAbout() {
 function renderLegend() {
   const legend = viewport.legend();
   const box = $('viewLegend');
-  box.hidden = !state.last?.paths?.starts || state.last.paths.starts.length < 2;
+  // The custom colours have their own controls instead.
+  box.hidden = !state.last?.paths?.starts || state.last.paths.starts.length < 2 || legend.mode === 'custom';
   $('legendLabel').textContent = `${legend.label} (${legend.unit})`;
   $('legendBar').style.background = `linear-gradient(to right, ${legend.colors.join(', ')})`;
   for (const [id, v] of [
@@ -354,6 +358,70 @@ function renderLegend() {
     if (document.activeElement !== input) input.value = fmt(v, legend.digits);
   }
   $('legendAuto').hidden = !legend.set;
+}
+
+/** Colours for parts with none chosen yet (the plan's, in order). */
+const PART_COLORS = ['#4f9dff', '#2bd9a0', '#ffb454', '#b58cff', '#3fd0d4', '#ff7ab6'];
+
+/** This project's custom colours: `{ parts: { [name]: { color, opacity } }, light, shadow }`. */
+function customColors() {
+  const all = loadJSON(CUSTOM_KEY, {});
+  const mine = (all && typeof all === 'object' && all[projectName()]) || {};
+  return { parts: mine.parts || {}, light: mine.light ?? 0.5, shadow: mine.shadow ?? 0.5 };
+}
+
+function saveCustomColors(colors) {
+  const all = loadJSON(CUSTOM_KEY, {});
+  saveJSON(CUSTOM_KEY, { ...(all && typeof all === 'object' ? all : {}), [projectName()]: colors });
+}
+
+/** A part's custom colour and opacity (a colour of its own, solid, until chosen). */
+function partLook(colors, name, i) {
+  return colors.parts[name] || { color: PART_COLORS[i % PART_COLORS.length], opacity: 1 };
+}
+
+/** Hands the custom colours to the view, by the parts' places among the prints. */
+function applyCustomColors() {
+  const colors = customColors();
+  viewport.setCustomColors({ parts: printsOf(state.last).map((p, i) => partLook(colors, p.name, i)), light: colors.light, shadow: colors.shadow });
+}
+
+/** The custom colours' controls (colour mode "Custom"): each part's colour and opacity, the light. */
+let customLayout = '';
+function renderCustomColors() {
+  const host = $('viewColors');
+  const on = /** @type {HTMLSelectElement} */ ($('viewColor')).value === 'custom';
+  host.hidden = !on;
+  applyCustomColors();
+  if (!on) return;
+  const prints = printsOf(state.last);
+  const layout = `${projectName()}|${prints.map((p) => p.name).join()}`;
+  if (layout === customLayout && host.childElementCount) return;
+  customLayout = layout;
+  const colors = customColors();
+  const change = (update) => {
+    const next = customColors();
+    update(next);
+    saveCustomColors(next);
+    applyCustomColors();
+    if (state.last && !$('plan').hidden) renderPlanView(state.last);
+  };
+  const slider = (label, value, onInput) => {
+    const input = /** @type {HTMLInputElement} */ (el('input', { type: 'range', min: '0', max: '100', step: '1', value: String(Math.round(value * 100)), 'aria-label': label, title: label }));
+    input.addEventListener('input', () => onInput(Number(input.value) / 100));
+    return input;
+  };
+  host.replaceChildren(
+    ...prints.map((p, i) => {
+      const look = partLook(colors, p.name, i);
+      const color = /** @type {HTMLInputElement} */ (el('input', { type: 'color', value: look.color, 'aria-label': `${p.name}: colour`, title: `${p.name}: colour` }));
+      color.addEventListener('input', () => change((c) => (c.parts[p.name] = { ...partLook(c, p.name, i), color: color.value })));
+      const solid = slider(`${p.name}: see-through ↔ solid`, look.opacity, (v) => change((c) => (c.parts[p.name] = { ...partLook(c, p.name, i), opacity: Math.max(0.05, v) })));
+      return el('div', { className: 'color-row' }, [el('span', { className: 'color-name', text: p.name }), color, solid]);
+    }),
+    el('div', { className: 'color-row' }, [el('span', { className: 'color-name', text: 'Highlights' }), slider('Highlights: how much white', colors.light, (v) => change((c) => (c.light = v)))]),
+    el('div', { className: 'color-row' }, [el('span', { className: 'color-name', text: 'Shadows' }), slider('Shadows: how much black', colors.shadow, (v) => change((c) => (c.shadow = v)))]),
+  );
 }
 
 /** Applies colour range ends typed into the legend (empty or unreadable: automatic). */
@@ -836,7 +904,10 @@ function renderPlanView(result) {
   button.hidden = !has;
   const on = has && button.getAttribute('aria-pressed') === 'true';
   $('plan').hidden = !on;
-  if (on) renderPlan($('plan'), result, { onPort: (port) => addPart(port), onPart: (name) => openPart(name), selected: selectedPart });
+  const colors = customColors();
+  const prints = printsOf(result);
+  const colorOf = (name) => partLook(colors, name, Math.max(0, prints.findIndex((p) => p.name === name))).color;
+  if (on) renderPlan($('plan'), result, { onPort: (port) => addPart(port), onPart: (name) => openPart(name), selected: selectedPart, colorOf });
 }
 
 /** Opens a part's fold-out in the settings and brings it into sight. */
@@ -1037,6 +1108,7 @@ function wire() {
     if ((colorSelect.value === 'simWidth' || colorSelect.value === 'squish') && !state.simulate) setSimulate(true);
     viewport.setColorMode(/** @type {any} */ (colorSelect.value));
     renderLegend();
+    renderCustomColors();
     save(COLOR_KEY, colorSelect.value);
   });
   // Print progress: drag either handle, or scroll over the track (the handle nearer the

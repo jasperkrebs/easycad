@@ -464,6 +464,12 @@ async function saveFrom(page, selector) {
       const shown = () => page.waitForFunction(() => document.querySelectorAll('#settings details.part').length === 2 && document.querySelectorAll('#plan .plan-part').length === 2, null, { timeout: 15000 }).then(() => true, () => false);
       if (!(await shown())) failures.push(`${name}: the lamp's parts: ${await page.locator('#settings details.part').count()} fold-outs, ${await page.locator('#plan .plan-part').count()} in the plan`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-plan.png`) });
+      // Custom colours: a colour and an opacity per shade, for simple renders.
+      await page.selectOption('#viewColor', 'custom');
+      if ((await page.locator('#viewColors input[type="color"]').count()) !== 2) failures.push(`${name}: custom colours for ${await page.locator('#viewColors input[type="color"]').count()} parts`);
+      if (await page.isVisible('#viewLegend')) failures.push(`${name}: the legend shows in the custom colours`);
+      await page.selectOption('#viewColor', 'height');
+      if (await page.isVisible('#viewColors')) failures.push(`${name}: the custom colours stay after leaving them`);
       await page.click('#tab-print');
       const lampParts = await page.locator('#stats .part-title').allTextContents();
       if (lampParts.join() !== 'main,tube') failures.push(`${name}: the lamp's G-code parts: ${lampParts.join()}`);

@@ -5,6 +5,23 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-09: custom colours for simple renders
+
+**Why:** the owner wants simple renders of lamps made of several shades: each shade its own
+colour, some see-through, some solid.
+
+**Landed:**
+- **Custom** in the colour list: a row per printed part (colour picker, see-through ↔ solid)
+  and two sliders for the light: **Highlights** (how much white) and **Shadows** (how deep the
+  black goes); ½ each is the view's usual light. Shapes (Shape mode: smooth surfaces for a
+  render), beads and toolpath lines take the part's colour; shapes and beads its opacity.
+  Remembered on the device per project and part name; the Plan uses the same colours.
+- The engine: what a part shows inside its component (a shade's surface) belongs to that
+  part, so the parts buttons hide it with its shade and it takes the shade's colour.
+
+**Open:** the colours live on the device, not in the project file; saving a picture of the
+view (a "render" button) would be the next step.
+
 ## 2026-11-09: layer height compensation by default; its own strength along the surface
 
 **Landed:**

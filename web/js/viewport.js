@@ -39,7 +39,8 @@ export function createViewport(canvas) {
   let aspect = 1;
   const tanHalf = () => Math.tan(THREE.MathUtils.degToRad(persp.fov / 2));
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f4a, 1.5));
+  const skyLight = new THREE.HemisphereLight(0xffffff, 0x3a3f4a, 1.5);
+  scene.add(skyLight);
   const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
   scene.add(keyLight, keyLight.target);
 
@@ -162,7 +163,17 @@ export function createViewport(canvas) {
     layer: { label: 'Layer height', unit: 'mm', digits: 2 },
     simWidth: { label: 'Simulated width', unit: 'mm', digits: 2 },
     squish: { label: 'Squish (simulated ÷ planned width)', unit: '×', digits: 2 },
+    custom: { label: 'Custom', unit: '', digits: 0 },
   };
+  /**
+   * The custom colours, for simple renders of several parts: each printed part's colour and how
+   * solid it is (by its index among the prints), and the light: how much white the highlights
+   * get and how deep (black) the shadows go, 0..1 (½ each: the view's usual light).
+   */
+  let custom = { parts: /** @type {{ color: string, opacity: number }[]} */ ([]), light: 0.5, shadow: 0.5 };
+  /** Colours for parts with none chosen yet (the plan's). */
+  const PART_COLORS = ['#4f9dff', '#2bd9a0', '#ffb454', '#b58cff', '#3fd0d4', '#ff7ab6'];
+  const partLook = (part) => custom.parts[part] || { color: PART_COLORS[Math.max(0, part) % PART_COLORS.length], opacity: 1 };
   /** Low to high, as slicers show speeds and widths: blue, cyan, green, yellow, red. */
   const SCALE = ['#3b4cc0', '#2fa4d9', '#5cc46a', '#f2c84b', '#d7372b'].map((c) => new THREE.Color(c));
   /** @type {keyof typeof COLOR_MODES} */
@@ -255,9 +266,12 @@ export function createViewport(canvas) {
     const n = data.points.length / 3;
     const out = new Float32Array(n * 3);
     const c = new THREE.Color();
+    const own = new THREE.Color(partLook(data.part ?? -1).color);
     for (let i = 0; i < n; i++) {
-      const v = valueAt(data, i);
+      const travel = data.widths && !(data.widths[i] > 0);
+      const v = colorMode === 'custom' ? (travel ? null : 0) : valueAt(data, i);
       if (v == null) c.copy(travelColor);
+      else if (colorMode === 'custom') c.copy(own);
       else colorFor(v, c);
       out[3 * i] = c.r;
       out[3 * i + 1] = c.g;
@@ -460,6 +474,42 @@ export function createViewport(canvas) {
     return { geometry: g, upTo };
   }
 
+  /** A part's own bead material in the custom colours: as solid as set for it. */
+  function partBeadMaterial(part) {
+    const o = partLook(part ?? -1).opacity;
+    return new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.0, side: THREE.DoubleSide, transparent: o < 1, opacity: o, depthWrite: o >= 1 });
+  }
+
+  /**
+   * Shapes in the custom colours: each part's outside in its colour, its inside a shade darker,
+   * both as solid as set for it; the light's highlights and shadows as set. Otherwise the
+   * view's own look.
+   */
+  function applyCustom() {
+    const on = colorMode === 'custom';
+    for (const child of shapes.children) {
+      const mesh = /** @type {THREE.Mesh} */ (child);
+      const inside = mesh.userData.inside;
+      if (mesh.userData.own) /** @type {THREE.Material} */ (mesh.material).dispose();
+      mesh.userData.own = on;
+      if (!on) {
+        mesh.material = inside ? insideMaterial : meshMaterial;
+        continue;
+      }
+      const look = partLook(mesh.userData.part);
+      const color = new THREE.Color(look.color);
+      if (inside) color.lerp(new THREE.Color(0x000000), 0.35);
+      const o = look.opacity;
+      mesh.material = new THREE.MeshStandardMaterial({ color, roughness: inside ? 0.7 : 0.55, metalness: 0.0, side: inside ? THREE.BackSide : THREE.FrontSide, transparent: o < 1, opacity: o, depthWrite: o >= 1 });
+    }
+    const light = on ? custom.light : 0.5;
+    const shadow = on ? custom.shadow : 0.5;
+    keyLight.intensity = 0.4 + 2.4 * light;
+    skyLight.intensity = 2.6 - 2.2 * shadow;
+    skyLight.groundColor.set(0x3a3f4a).lerp(new THREE.Color(0x000000), shadow);
+    requestRender();
+  }
+
   /** The beads for every toolpath shown as lines, in the same colours and parts. */
   function buildBeads() {
     clear(beads);
@@ -468,7 +518,7 @@ export function createViewport(canvas) {
       if (!data.widths || !data.heights) continue;
       const sizes = beadSizes(data);
       const { geometry, upTo } = beadGeometry(data.points, sizes.widths, sizes.heights, pathColors(data), upsFor(data));
-      const mesh = new THREE.Mesh(geometry, beadMaterial);
+      const mesh = new THREE.Mesh(geometry, colorMode === 'custom' ? partBeadMaterial(data.part) : beadMaterial);
       mesh.userData.part = data.part;
       mesh.userData.from = data.from;
       mesh.userData.upTo = upTo;
@@ -647,8 +697,12 @@ export function createViewport(canvas) {
 
   /** @param {THREE.Group} group */
   function clear(group) {
+    const shared = [meshMaterial, insideMaterial, beadMaterial, lineMaterial, curveMaterial];
     for (const child of [...group.children]) {
       /** @type {any} */ (child).geometry.dispose();
+      // A part's own material (custom colours) goes with it.
+      const material = /** @type {any} */ (child).material;
+      if (material && !shared.includes(material)) material.dispose();
       group.remove(child);
     }
   }
@@ -668,6 +722,7 @@ export function createViewport(canvas) {
     beads.visible = mode !== 'shape' && showBeads;
 
     // With both visible, the shape turns see-through so the toolpath on its surface shows.
+    applyCustom();
     for (const m of [meshMaterial, insideMaterial]) {
       m.transparent = mode === 'both';
       m.opacity = mode === 'both' ? 0.28 : 1;
@@ -830,6 +885,7 @@ export function createViewport(canvas) {
         for (const material of [meshMaterial, insideMaterial]) {
           const m = new THREE.Mesh(g, material);
           m.userData.part = part;
+          m.userData.inside = material === insideMaterial;
           shapes.add(m);
         }
       }
@@ -1014,6 +1070,22 @@ export function createViewport(canvas) {
     setColorMode(next) {
       colorMode = next in COLOR_MODES ? next : 'height';
       recolorPaths();
+      if (showBeads) buildBeads();
+      applyMode();
+    },
+
+    /**
+     * The custom colours (colour mode "custom"): each printed part's colour (`#rrggbb`) and how
+     * solid it is (0..1), by its index among the prints; the highlights' white and the shadows'
+     * black, 0..1.
+     * @param {{ parts: { color: string, opacity: number }[], light: number, shadow: number }} next
+     */
+    setCustomColors(next) {
+      custom = { parts: next.parts.map((p) => ({ color: p.color, opacity: Math.min(1, Math.max(0.05, p.opacity)) })), light: next.light, shadow: next.shadow };
+      if (colorMode !== 'custom') return;
+      recolorPaths();
+      if (showBeads) buildBeads();
+      applyMode();
     },
 
     /** The legend: the colour mode, its range and unit, and the colours from low to high. */

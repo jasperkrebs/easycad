@@ -68,7 +68,7 @@ export function sections(result) {
  * where it runs into another), its name beside it, and a `+` at every port with room.
  * @param {HTMLElement} host
  * @param {any} result
- * @param {{ onPort: (port: any) => void, onPart: (name: string) => void, selected?: string | null }} handlers
+ * @param {{ onPort: (port: any) => void, onPart: (name: string) => void, selected?: string | null, colorOf?: (name: string) => string }} handlers
  */
 export function renderPlan(host, result, handlers) {
   host.replaceChildren();
@@ -113,7 +113,7 @@ export function renderPlan(host, result, handlers) {
   const unit = BUTTON_PX * px;
   [...parts.entries()].forEach(([name, { points, width }], i) => {
     const g = node('g', { class: `plan-part${hit.has(name) ? ' collides' : ''}${handlers.selected === name ? ' selected' : ''}`, 'data-part': name });
-    g.style.setProperty('--part', COLORS[i % COLORS.length]);
+    g.style.setProperty('--part', handlers.colorOf?.(name) ?? COLORS[i % COLORS.length]);
     for (const side of [1, -1]) {
       node('polyline', { points: points.map(([r, z]) => `${side * r},${-z}`).join(' '), 'stroke-width': width }, g);
     }
