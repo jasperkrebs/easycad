@@ -49,6 +49,9 @@ const state = {
   /** Whether the beads are simulated (how the plastic actually lies): full-quality runs ask
    * the engine for it. */
   simulate: false,
+  /** Whether the nozzle and beads stand along the wall (the view's Nozzle picker): then runs ask
+   * the engine for the way up the wall, which takes a while on a print of many rings. */
+  alongWall: false,
   /** Setting values as last opened, for "Reset settings". */
   openedValues: /** @type {Record<string, any>} */ ({}),
   /** Current setting values (each in its own unit); written into the text on every run. */
@@ -94,7 +97,7 @@ async function run(quality, how = {}) {
   try {
     // The simulation only on full-quality runs: a slider being dragged stays quick.
     const simulate = state.simulate && quality === 'final' ? state.profile.multiplier || 1 : null;
-    result = await engine.evaluate(state.source, state.values, quality, simulate);
+    result = await engine.evaluate(state.source, state.values, quality, simulate, state.alongWall);
   } catch (err) {
     setStatus('Engine error', 'bad');
     showSettingsError(String(err.message || err));
@@ -1021,9 +1024,13 @@ function wire() {
   const storedNozzle = load(NOZZLE_KEY);
   if (storedNozzle && [...nozzleSelect.options].some((o) => o.value === storedNozzle)) nozzleSelect.value = storedNozzle;
   viewport.setOrientation(/** @type {any} */ (nozzleSelect.value));
+  state.alongWall = nozzleSelect.value !== 'upright';
   nozzleSelect.addEventListener('change', () => {
     viewport.setOrientation(/** @type {any} */ (nozzleSelect.value));
     save(NOZZLE_KEY, nozzleSelect.value);
+    state.alongWall = nozzleSelect.value !== 'upright';
+    // The engine only works the wall's direction out when asked: run again for it.
+    if (state.alongWall && state.last && !state.last.paths.ups) run('final');
   });
 
   // What the toolpath is coloured by (remembered on this device), with its legend.

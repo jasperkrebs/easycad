@@ -88,19 +88,21 @@ fn under_on_spirals(path: &Toolpath, below: &mut [Option<P3>]) {
 fn under_by_layers(path: &Toolpath, below: &mut [Option<P3>]) {
     let n = path.points.len();
     let starts = &path.layer_starts;
-    let cell = (0..n)
-        .filter(|&i| !path.travel.get(i).copied().unwrap_or(false))
-        .map(|i| path.bead_of(i).0)
-        .fold(0.0, f64::max)
-        .max(0.5)
-        * 2.0;
-    let key = |p: P3| ((p[0] / cell).floor() as i64, (p[1] / cell).floor() as i64);
     for l in 1..starts.len() {
         let (a, b) = (starts[l - 1], starts[l]);
         let c = starts.get(l + 1).copied().unwrap_or(n);
         if a >= b || b >= c || c > n {
             continue;
         }
+        // Cells two of the layer before's widest beads across (its own beads, not the whole
+        // print's: one wide primer line would make every layer's cells, and its search, big).
+        let cell = ((a + 1)..b)
+            .filter(|&k| !path.travel.get(k).copied().unwrap_or(false))
+            .map(|k| path.bead_of(k).0)
+            .fold(0.0, f64::max)
+            .max(0.5)
+            * 2.0;
+        let key = |p: P3| ((p[0] / cell).floor() as i64, (p[1] / cell).floor() as i64);
         // The layer before's extruding moves, by grid cell (each move in the cells of its ends).
         let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
         for k in (a + 1)..b {
