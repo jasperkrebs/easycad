@@ -5,6 +5,21 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-09: along the surface, one layer height a turn
+
+**Why:** sliced along the surface, each turn stepped the bead's own extent along the wall
+(pitch·cos + line·sin of the lean): on a flat rim a whole line width, so each ring was laid
+beside the last with nothing under it (the owner's screenshots).
+
+**Landed:** along the surface every turn steps one pitch (the layer height) along the wall, so
+each bead lies on the one before wherever the wall goes, the bead standing along the wall as a
+robot arm would lay it. No overhang compensation then (it makes up for slicing a leaning wall
+by height; the Compensation setting hides while slicing along the surface). Lampshade and Lamp
+templates; by height nothing changes (golden tests).
+
+**Open:** on a Cartesian printer a flat rim sliced this way pushes each ring against the last
+at the same height; it's for the robot arm first.
+
 ## 2026-11-08: the lamp builder
 
 **Why:** every vase-mode wall is a thread on both faces, so shades can screw into each other,
