@@ -20,14 +20,15 @@ param flow       = 20      in 1..400                "Start flow (mm³/s)"
 param shade_flow = 0       in 0..400                "Shade flow (mm³/s, 0: as the start)"
 param flow_ramp  = 0 mm    in 0..200                "Flow ramp height (0: over the fillet)"
 param tolerance  = 0.1 mm  in 0.01..1               "Chord tolerance"
-param flat_top   = true                             "Flat closing turn (off: open spiral)"
+param flat_top   = false                            "Flat closing turn (off: open spiral)"
 param steady     = true                             "Steady flow in the first turn (faster where the bead is thin, up to the travel speed)"
 
 group "Overhangs"
 param slicing    = "height" of ["height", "surface"] "Slicing (surface: along the wall, experimental)"
 param flat_flow  = 0       in 0..400                "Flow where it runs flat (mm³/s, 0: as the shade)"  when slicing = "surface"
-param compensation = "width" of ["width", "layer height", "off"] "Compensation"  when slicing = "height"
-param strength   = 100 %   in 0..100                "Strength"  when not compensation = "off"
+param compensation = "layer height" of ["layer height", "width", "off"] "Compensation"
+param strength   = 100 %   in 0..100                "Strength"  when slicing = "height"
+param surface_strength = 0 % in 0..100              "Strength along the surface"  when slicing = "surface"
 param steep      = 0       in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"  when not compensation = "off"
 param pivot      = 45 deg  in 5..85 step 1          "Steep curve pivot (as now at this angle)"  when steep
 param max_width  = 2.5     in 1..5 step 0.1         "Max line width (× the line)"  when compensation = "width"
@@ -201,15 +202,21 @@ component shade "Shade"
   cur_l   = pick(blended, flatten([[p_l], item(fl_l, fl_tail)]), fl_l)
 
   # ---- The straight end: the same blend, mirrored, turns the wall back to vertical at the
-  # opening, and a straight end carries on from there.
+  # opening, and a straight end carries on from there. Read from the opening back, the wall
+  # either comes from further out (a sphere closing in) or from further in (a cone or bell
+  # opening out): the second is the first mirrored across the straight end (`sg` -1), so the
+  # fillet rounds the corner either way.
   lip_on   = end_on
   cur_top  = item(cur_z, count(cur_z) - 1)
-  rv_r     = reverse(cur_r)
+  r_open   = pick(greater(k_shape, 5.5), r_e, r_b)
+  rv_r0    = reverse(cur_r)
+  rv_l0    = -reverse(cur_l)
+  sg       = pick(less(item(rv_r0, min(1, count(rv_r0) - 1)), r_open - 0.000001), -1, 1)
+  rv_r     = r_open + sg * (rv_r0 - r_open)
   rv_z     = cur_top - reverse(cur_z)
-  rv_l     = -reverse(cur_l)
+  rv_l     = sg * rv_l0
   rv_n     = count(rv_r)
   rv_rest  = series(1, 1, rv_n - 1)
-  r_open   = pick(greater(k_shape, 5.5), r_e, r_b)
   lf       = max(0, min(pick(lip_fillet, lip_fillet, max(0, fillet)), item(bounds((item(rv_r, rv_rest) - r_open) / max(0.000000000001, 1 - cos(item(rv_l, rv_rest)))), 1) * (1 - 0.000000000001)))
   g2       = rv_r + lf * cos(rv_l) - (r_open + lf)
   lip_arc  = greater(lf, 0.000000001) * less(item(g2, 0), -0.000000001)
@@ -222,15 +229,15 @@ component shade "Shade"
   z_start2 = q_z - lf * sin(q_l)
   arc2_n   = max(4, ceil(abs(q_l) / flare_step))
   arc2_phi = q_l * series(0, 1, arc2_n + 1) / arc2_n
-  arc2_r   = r_open + lf * (1 - cos(arc2_phi))
+  arc2_r   = r_open + sg * lf * (1 - cos(arc2_phi))
   arc2_z   = z_start2 + lf * sin(arc2_phi)
   rv_tail  = series(hit2, 1, max(rv_n - hit2, 1))
   # Back the right way up: what's left of the shade, the lip's arc down to vertical, the lip.
   arc2_down = series(arc2_n - 1, -1, arc2_n)
   lip_long  = greater(end_eff, 0.000000001)
-  lipped_r  = pick(lip_arc, flatten([reverse(item(rv_r, rv_tail)), [q_r], item(arc2_r, arc2_down), pick(lip_long, [item(arc2_r, 0)], [])]), flatten([cur_r, pick(lip_long, [r_open], [])]))
+  lipped_r  = pick(lip_arc, flatten([reverse(item(rv_r0, rv_tail)), [r_open + sg * (q_r - r_open)], item(arc2_r, arc2_down), pick(lip_long, [item(arc2_r, 0)], [])]), flatten([cur_r, pick(lip_long, [r_open], [])]))
   lipped_z  = pick(lip_arc, flatten([cur_top - reverse(item(rv_z, rv_tail)), [cur_top - q_z], cur_top - item(arc2_z, arc2_down), pick(lip_long, [cur_top - item(arc2_z, 0) + end_eff], [])]), flatten([cur_z, pick(lip_long, [cur_top + end_eff], [])]))
-  lipped_l  = pick(lip_arc, flatten([-reverse(item(rv_l, rv_tail)), [-q_l], -item(arc2_phi, arc2_down), pick(lip_long, [0], [])]), flatten([cur_l, pick(lip_long, [0], [])]))
+  lipped_l  = pick(lip_arc, flatten([-reverse(item(rv_l0, rv_tail)), [-sg * q_l], -sg * item(arc2_phi, arc2_down), pick(lip_long, [0], [])]), flatten([cur_l, pick(lip_long, [0], [])]))
   end_r     = pick(lip_on, lipped_r, cur_r)
   end_z     = pick(lip_on, lipped_z, cur_z)
   end_l     = pick(lip_on, lipped_l, cur_l)
@@ -269,12 +276,12 @@ component shade "Shade"
   # The extra (1/cos − 1 wider, or 1 − cos lower) is scaled by (angle / pivot)^steep: 1 everywhere
   # at 0; above 0, less below the pivot and more above it (pivot 45°, steep 2: 15° gets 1/9, 80°
   # about 3×).
-  # Along the surface every bead is a layer along the wall however it leans: nothing to make up
-  # for, so no compensation (as "off").
-  comp    = pick(surface, 2, index_of(["width", "layer height", "off"], compensation))
+  # Along the surface every bead is already a layer along the wall however it leans (the nozzle
+  # turned with the wall makes up for the lean), so its own strength starts at 0.
+  comp    = index_of(["width", "layer height", "off"], compensation)
   lean_at = pick(surface, graph(print_s, print_l, z), graph(print_z, print_l, z))
   c       = max(0.05, cos(abs(lean_at)))
-  curve   = strength * (min(abs(lean_at), 89) / pivot) ^ steep
+  curve   = pick(surface, surface_strength, strength) * (min(abs(lean_at), 89) / pivot) ^ steep
   width   = pick(less(comp, 0.5), min(20, line * min(max_width, 1 + curve * (1 / c - 1))), line)
   squeeze = pick(less(abs(comp - 1), 0.5), max(0.05, 1 - curve * (1 - c)), 1)
   # By height each turn rises a pitch (squeezed as above); along the surface it steps a pitch along
@@ -323,6 +330,28 @@ component shade "Shade"
   port start_in  = [r_t - line - joint_fit, z0, s, pick(m_socket, 0, pick(greater(m_side, 0) * (1 - is_tube), 0, start_at)), 0, -1] "Start, inside"
   port end_out   = [r_end + line + joint_fit, z0 + s * top_z, -s, end_len_at, 0, 1] "End, outside"
   port end_in    = [r_end - line - joint_fit, z0 + s * top_z, -s, end_len_at, 0, -1] "End, inside"
+
+  # ---- The Plan's marks: each piece of the profile leads to the settings that drive it, placed
+  # where the shade goes.
+  shade_top  = cur_top + shift
+  side_x     = item(bounds(full_r), 1) + 2 * line
+  not_tube   = 1 - is_tube
+  mark_start   = polyline(point([r_t, r_t], 0, [0, pick(is_tube, length, throat)])) |> place(z: z0, flip: 1 - up)
+  mark_fillet  = pick(blended, polyline(point(arc_r, 0, arc_z + shift)), polyline(point([r_t, r_t + 0.001], 0, [throat, throat]))) |> place(z: z0, flip: 1 - up)
+  mark_shade   = polyline(point(cur_r, 0, cur_z + shift)) |> place(z: z0, flip: 1 - up)
+  mark_opening = polyline(point([0, r_open], 0, [shade_top, shade_top])) |> place(z: z0, flip: 1 - up)
+  mark_widest  = polyline(point([0, r_w], 0, [h * w_at + shift, h * w_at + shift])) |> place(z: z0, flip: 1 - up)
+  mark_height  = polyline(point([side_x, side_x], 0, [shift, shade_top])) |> place(z: z0, flip: 1 - up)
+  mark_end     = polyline(point([r_end, r_end], 0, [top_z - end_eff, top_z])) |> place(z: z0, flip: 1 - up)
+  mark_end_arc = polyline(point(arc2_r, 0, cur_top - arc2_z + shift)) |> place(z: z0, flip: 1 - up)
+  mark mark_start for start_len, length, mount, direction, along "Start"
+  mark pick(not_tube, mark_fillet, []) for fillet "Fillet"
+  mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, end_d, max_angle, sphere, flatness, own_at, own_r "Shade"
+  mark pick(not_tube, mark_opening, []) for opening, end_d "Opening"
+  mark pick(inout, mark_widest, []) for widest, widest_at "Widest"
+  mark pick(not_tube, mark_height, []) for transition, inout_h "Height"
+  mark pick(lip_on * lip_long, mark_end, []) for end_len, end_straight "Straight end"
+  mark pick(lip_on * lip_arc, mark_end_arc, []) for lip_fillet, fillet "End fillet"
 
   show wall
   print shown

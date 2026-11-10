@@ -4,7 +4,7 @@ printer "Ginger G1"
 note "EasyGCode's lampshade as a recipe: a threaded throat that screws onto an E27 or E14 lampholder's shade ring, a fillet, then the shade, printed as one vase-mode helix whose layer height is the thread's pitch. For the cone, bell, dome and sphere its G-code matches EasyGCode's command for command (the flat sphere is the same ellipsoid, sampled evenly)."
 note "Shades: a straight cone, a bell, a dome, a sphere, a flat sphere (UFO), or your own shape (`own_shade`: move its points, add more, or ask the AI for a new one). Every shade is a profile (radius against height); the rest of the recipe doesn't care which."
 note "Overhangs get wider beads (or squeezed layers), turn by turn, from the wall's angle. The flow can change from the throat to the shade over the fillet."
-note "Slicing along the surface (experimental): each turn steps one layer height along the wall instead of up it, so every bead lies on the one before it wherever the wall goes, even where it runs flat (a bell opened out to 90°). The bead stands along the wall, as a robot arm would print it; there's no overhang compensation then."
+note "Slicing along the surface (experimental): each turn steps one layer height along the wall instead of up it, so every bead lies on the one before it wherever the wall goes, even where it runs flat (a bell opened out to 90°). The bead stands along the wall, as a robot arm would print it, so the overhang compensation has its own strength there, 0 to start with."
 
 group "Socket"
 param socket       = "E27" of ["E27", "E14", "custom"] "Socket"
@@ -36,14 +36,15 @@ param flow       = 20      in 1..400                "Throat flow (mm³/s)"
 param shade_flow = 0       in 0..400                "Shade flow (mm³/s, 0: as the throat)"
 param flow_ramp  = 0 mm    in 0..200                "Flow ramp height (0: over the fillet)"
 param tolerance  = 0.1 mm  in 0.01..1               "Chord tolerance"
-param flat_top   = true                             "Flat closing turn (off: open spiral)"
+param flat_top   = false                            "Flat closing turn (off: open spiral)"
 param steady     = true                             "Steady flow in the first turn (faster where the bead is thin, up to the travel speed)"
 
 group "Overhangs"
 param slicing    = "height" of ["height", "surface"] "Slicing (surface: along the wall, experimental)"
 param flat_flow  = 0       in 0..400                "Flow where it runs flat (mm³/s, 0: as the shade)"  when slicing = "surface"
-param compensation = "width" of ["width", "layer height", "off"] "Compensation"  when slicing = "height"
-param strength   = 100 %   in 0..100                "Strength"  when not compensation = "off"
+param compensation = "layer height" of ["layer height", "width", "off"] "Compensation"
+param strength   = 100 %   in 0..100                "Strength"  when slicing = "height"
+param surface_strength = 0 % in 0..100              "Strength along the surface"  when slicing = "surface"
 param steep      = 0       in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"  when not compensation = "off"
 param pivot      = 45 deg  in 5..85 step 1          "Steep curve pivot (as now at this angle)"  when steep
 param max_width  = 2.5     in 1..5 step 0.1         "Max line width (× the line)"  when compensation = "width"
@@ -217,12 +218,12 @@ z_here   = pick(surface, graph(print_s, print_z, z), z)
 # The extra (1/cos − 1 wider, or 1 − cos lower) is scaled by (angle / pivot)^steep: 1 everywhere
 # at 0; above 0, less below the pivot and more above it (pivot 45°, steep 2: 15° gets 1/9, 80°
 # about 3×).
-# Along the surface every bead is a layer along the wall however it leans: nothing to make up
-# for, so no compensation (as "off").
-comp    = pick(surface, 2, index_of(["width", "layer height", "off"], compensation))
+# Along the surface every bead is already a layer along the wall however it leans (the nozzle
+# turned with the wall makes up for the lean), so its own strength starts at 0.
+comp    = index_of(["width", "layer height", "off"], compensation)
 lean_at = pick(surface, graph(print_s, print_l, z), graph(print_z, print_l, z))
 c       = max(0.05, cos(abs(lean_at)))
-curve   = strength * (min(abs(lean_at), 89) / pivot) ^ steep
+curve   = pick(surface, surface_strength, strength) * (min(abs(lean_at), 89) / pivot) ^ steep
 width   = pick(less(comp, 0.5), min(20, line * min(max_width, 1 + curve * (1 / c - 1))), line)
 squeeze = pick(less(abs(comp - 1), 0.5), max(0.05, 1 - curve * (1 - c)), 1)
 # By height each turn rises a pitch (squeezed as above); along the surface it steps a pitch along
@@ -245,6 +246,26 @@ r_first     = graph(print_z, print_r, min(top_z, first_rise))
 brim_rings  = circle(r_first + brim_width / 2 + line / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
 brimmed     = join(flatten([toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed), [shade]]), clear: 2 * brim_layer)
 path        = pick(brim, brimmed, shade)
+
+# ---- The Plan's marks: each piece of the profile leads to the settings that drive it (drawn
+# the way it prints, turned over when printed wide edge down).
+as_printed = pick(wide_down, top_z, 0)
+shade_top  = cur_top + shift
+side_x     = item(bounds(prof_r), 1) + 2 * line
+mark_throat  = polyline(point([r_t, r_t], 0, [0, throat])) |> place(z: as_printed, flip: wide_down)
+mark_fillet  = pick(blended, polyline(point(arc_r, 0, arc_z + shift)), polyline(point([r_t, r_t + 0.001], 0, [throat, throat]))) |> place(z: as_printed, flip: wide_down)
+mark_shade   = polyline(point(cur_r, 0, cur_z + shift)) |> place(z: as_printed, flip: wide_down)
+mark_opening = polyline(point([0, r_b], 0, [shade_top, shade_top])) |> place(z: as_printed, flip: wide_down)
+mark_height  = polyline(point([side_x, side_x], 0, [shift, shade_top])) |> place(z: as_printed, flip: wide_down)
+mark_lip     = polyline(point([r_b, r_b], 0, [top_z - lip_length, top_z])) |> place(z: as_printed, flip: wide_down)
+mark_lip_arc = pick(lip_arc, polyline(point(arc2_r, 0, cur_top - arc2_z + shift)), mark_lip)
+mark mark_throat for throat, socket, fit "Throat"
+mark mark_fillet for fillet "Fillet"
+mark mark_shade for shape, opening, transition, max_angle, sphere, flatness, own_at, own_r "Shade"
+mark mark_opening for opening "Opening"
+mark mark_height for transition "Height"
+mark pick(lip_on * lip_long, mark_lip, []) for lip_length, lip "Lip"
+mark pick(lip_on * lip_arc, mark_lip_arc |> place(z: as_printed, flip: wide_down), []) for lip_fillet "Lip fillet"
 
 show wall, path
 print path

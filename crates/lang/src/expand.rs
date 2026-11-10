@@ -236,6 +236,20 @@ fn expand_part(part: &Part, c: &Component, out: &mut Expanded) {
                     .collect(),
                 span: *span,
             },
+            Output::Mark {
+                expr,
+                settings,
+                label,
+                span,
+            } => Output::Mark {
+                expr: rename(expr, &own, p),
+                settings: settings
+                    .iter()
+                    .map(|(n, s)| (if own.contains(n) { full(n) } else { n.clone() }, *s))
+                    .collect(),
+                label: label.clone(),
+                span: *span,
+            },
             Output::Export { expr, file, span } => Output::Export {
                 expr: rename(expr, &own, p),
                 file: format!("{p}-{file}"),

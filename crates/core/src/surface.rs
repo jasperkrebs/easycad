@@ -2,7 +2,7 @@
 
 use crate::curve::Curve;
 use crate::field::Field;
-use crate::geom::{P3, Xform, catmull_rom, signed_area_xy};
+use crate::geom::{P3, Xform, catmull_rom, dist3, lerp3, signed_area_xy};
 
 /// The most vertices one preview mesh may have; denser lofts get fewer rings.
 const MAX_MESH_VERTICES: usize = 600_000;
@@ -17,6 +17,10 @@ pub struct Surface {
     pub closed: bool,
     /// Both ends are closed with flat caps, making a solid.
     pub capped: bool,
+    /// Drawn straight from section to section rather than smoothly (a surface of revolution:
+    /// its sections are its profile's points, and a smooth curve through them would overshoot
+    /// where a long straight span meets short ones). Only the 3D view's mesh reads it.
+    pub straight: bool,
 }
 
 /// Triangle mesh for the 3D view: `positions` as x,y,z triples, `indices` as triangles.
@@ -69,6 +73,7 @@ impl Surface {
             sections,
             closed,
             capped: false,
+            straight: false,
         })
     }
 
@@ -99,8 +104,17 @@ impl Surface {
             ));
         }
         let n = samples.max(3);
-        let sections = profile
-            .points
+        // A point repeating the one before adds a span of no height: left out.
+        let mut points: Vec<P3> = Vec::with_capacity(profile.points.len());
+        for p in &profile.points {
+            if points.last().is_none_or(|q| dist3(*q, *p) > 1e-9) {
+                points.push(*p);
+            }
+        }
+        if points.len() < 2 {
+            return Err("the profile needs at least 2 different points".into());
+        }
+        let sections = points
             .iter()
             .map(|p| {
                 (0..n)
@@ -115,6 +129,7 @@ impl Surface {
             sections,
             closed: true,
             capped: false,
+            straight: true,
         })
     }
 
@@ -311,6 +326,24 @@ impl Surface {
         catmull_rom(p0, p1, p2, p3, t)
     }
 
+    /// Like `point_at`, but straight from section to section.
+    fn straight_at(&self, v: f64, j: usize) -> P3 {
+        let n = self.sections.len();
+        let get = |i: usize| {
+            self.sections
+                .get(i)
+                .and_then(|s| s.get(j))
+                .copied()
+                .unwrap_or([0.0; 3])
+        };
+        if n < 2 || !v.is_finite() {
+            return get(0);
+        }
+        let v = v.clamp(0.0, (n - 1) as f64);
+        let i = (v.floor() as usize).min(n - 2);
+        lerp3(get(i), get(i + 1), v - i as f64)
+    }
+
     pub fn transformed(&self, x: &Xform) -> Surface {
         let mirrors = x.mirrors() && self.closed;
         let sections = self
@@ -328,6 +361,7 @@ impl Surface {
             sections,
             closed: self.closed,
             capped: self.capped,
+            straight: self.straight,
         }
     }
 
@@ -354,7 +388,12 @@ impl Surface {
         for r in 0..rings {
             let v = (n - 1) as f64 * r as f64 / (rings - 1) as f64;
             for j in 0..m {
-                mesh.positions.extend(self.point_at(v, j).map(|c| c as f32));
+                let p = if self.straight {
+                    self.straight_at(v, j)
+                } else {
+                    self.point_at(v, j)
+                };
+                mesh.positions.extend(p.map(|c| c as f32));
             }
         }
         let at = |ring: usize, j: usize| (ring * m + j % m) as u32;

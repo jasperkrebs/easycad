@@ -98,7 +98,7 @@ export function fileNote(site) {
     'the settings window; `group` lines sort them; comments start with #. For the language and',
     'every step with its inputs, paste in the text from "Copy for AI" on EasyCAD\'s Recipe tab.',
     'To use it: EasyCAD, Settings, Open. (Lines starting with #| are this note; EasyCAD leaves them',
-    'out when it opens the file.)',
+    'out when it opens the file. A line starting with #~ colors holds the 3D view\'s colours.)',
   ]
     .map((l) => `${NOTE} ${l}`)
     .join('\n');
@@ -115,4 +115,34 @@ export function withoutFileNote(text) {
   if (i === 0) return text;
   while (i < lines.length && !lines[i].trim()) i++;
   return lines.slice(i).join('\n');
+}
+
+/** The project file's line holding the 3D view's custom colours (a comment to the recipe). */
+const COLORS = '#~ colors ';
+
+/**
+ * The line that keeps the view's custom colours in a project file.
+ * @param {unknown} colors
+ */
+export function colorsLine(colors) {
+  return `${COLORS}${JSON.stringify(colors)}`;
+}
+
+/**
+ * A project file's view colours (from its `#~ colors` line), and the text without that line.
+ * @param {string} text
+ * @returns {{ text: string, colors: any }}
+ */
+export function withoutColors(text) {
+  let colors = null;
+  const lines = text.split('\n').filter((l) => {
+    if (!l.startsWith(COLORS)) return true;
+    try {
+      colors = JSON.parse(l.slice(COLORS.length));
+    } catch {
+      // An unreadable line: no colours, and the line goes.
+    }
+    return false;
+  });
+  return { text: lines.join('\n').replace(/^\n+/, ''), colors };
 }

@@ -5,6 +5,76 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-09: the Plan leads to the settings
+
+**Why:** the owner asked to tap a piece of the shape (a fillet, the throat) and land on the
+setting that drives it, in every project, not only the lamp.
+
+**Landed:** `mark curve for setting, … "Label"` in the language (components too, where the
+settings are the part's own). The Plan shows for any recipe with marks: each mark a dotted line
+over the cross-section, a band to tap; the tap opens the Settings tab at the first of its
+settings that shows (fold-outs opened) and lights them all up. The lampshade marks its throat
+(throat, socket, fit), fillet, shade (shape and its settings), opening, height and lip; the
+lamp's shade its start (length, mount), fillet, shade, opening, widest, height, straight end
+and end fillet.
+
+**Open:** the other templates (vessel, shaker, thread, stool, disc) have no marks yet; the
+round ones fit the Plan's cross-section as they are, the stool and the disc would want a view
+from the front or above.
+
+## 2026-11-09: fillets into the straight end, a smooth surface, an open top by default
+
+**Landed:**
+- The lamp's straight end rounds in from either side: a shade that opens out into it (a cone,
+  a bell flat at its rim) now gets the fillet too, the case the spheres had mirrored across the
+  straight end. It used to come out negative and was left off: a corner.
+- Surfaces of revolution are drawn straight from section to section (`Surface::straight`, the
+  3D view only): the smooth curve the full-quality mesh drew through the profile's points
+  overshot where a long straight span met short ones (a groove where the throat meets the
+  shade, a ledge under the straight end) and snapped in after a slider let go. A profile point
+  repeating the one before is left out.
+- Lampshade and lamp end on an open spiral by default (no flat closing turn). The golden tests
+  ask for EasyGCode's closing turn, its width compensation and its ramp.
+
+## 2026-11-09: colours in the project file, and the view as a PNG
+
+**Landed:**
+- The custom colours travel with the project: a saved project file holds them in one comment
+  line between its note and the recipe (`#~ colors {…}`: each part's colour and opacity, the
+  light, and whether the view was in Custom), and the settings file in a `colors` field.
+  Opening either puts them back (and the view in Custom, if it was); the recipe itself never
+  holds them, so the engine and the agent don't see them.
+- **PNG** (next to Fit): the view as it is on screen, drawn at twice the screen's resolution
+  (at most 4096 pixels across), saved as `<project>.png`.
+
+## 2026-11-09: custom colours for simple renders
+
+**Why:** the owner wants simple renders of lamps made of several shades: each shade its own
+colour, some see-through, some solid.
+
+**Landed:**
+- **Custom** in the colour list: a row per printed part (colour picker, see-through ↔ solid)
+  and two sliders for the light: **Highlights** (how much white) and **Shadows** (how deep the
+  black goes); ½ each is the view's usual light. Shapes (Shape mode: smooth surfaces for a
+  render), beads and toolpath lines take the part's colour; shapes and beads its opacity.
+  Remembered on the device per project and part name; the Plan uses the same colours.
+- The engine: what a part shows inside its component (a shade's surface) belongs to that
+  part, so the parts buttons hide it with its shade and it takes the shade's colour.
+
+**Open:** the colours lived on the device only (done next: in the files, and a PNG button).
+
+## 2026-11-09: layer height compensation by default; its own strength along the surface
+
+**Landed:**
+- The lampshade's and lamp's overhang compensation is **layer height** by default (it was
+  width, EasyGCode's; the golden tests ask for width).
+- Along the surface the compensation works again, with its own **Strength along the surface**,
+  0 % to start with: the nozzle turned with the wall makes up for the lean. (The step before
+  switched it off along the surface.)
+- Checked with the owner's settings (a bell 400 mm open, sliced along the surface): every turn
+  steps exactly 2.5 mm along the wall, every bead 6 × 2.5 mm, every turn starting on the seam's
+  90°, one straight seam. The gaps in the owner's screenshot came from the version before
+  (69 turns, the old step of up to a line width); the test now checks the seam too.
 ## 2026-11-09 (later): a review of `main`: the stool 25× quicker, settings that errored, two new tests
 
 A look through the repo for bugs and dead weight, the bend stool and the lampshade first.

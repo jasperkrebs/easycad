@@ -214,6 +214,13 @@ async function saveFrom(page, selector) {
           await openGroups(page);
           await page.uncheck('#set-steady');
           await page.waitForFunction(() => /^param steady\s+= false/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+          // EasyGCode closes with a flat turn; the template ends on an open spiral.
+          await page.check('#set-flat_top');
+          await page.waitForFunction(() => /^param flat_top\s+= true/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+          await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+          // EasyGCode widens the beads on overhangs; the template squeezes the layers.
+          await page.selectOption('#set-compensation', 'width');
+          await page.waitForFunction(() => /^param compensation = "width"/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
           await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         }
         if (id === 'bend-stool') {
@@ -460,6 +467,9 @@ async function saveFrom(page, selector) {
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Lamp', null, { timeout: 15000 });
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       await page.click('#viewPlan');
+      // The plan's marks lead to the settings that drive each piece: the shade's fillet.
+      await page.locator('.plan-mark[aria-label^="Fillet"]').dispatchEvent('click');
+      if (!(await page.isVisible('[id="set-main.fillet"]'))) failures.push(`${name}: the fillet's mark didn't lead to its setting`);
       await page.locator('.plan-port[aria-label*="main · End, outside"]').click();
       await page.selectOption('#addPart-shape', 'tube');
       await page.click('#addPartYes');
@@ -468,6 +478,17 @@ async function saveFrom(page, selector) {
       const shown = () => page.waitForFunction(() => document.querySelectorAll('#settings details.part').length === 2 && document.querySelectorAll('#plan .plan-part').length === 2, null, { timeout: 15000 }).then(() => true, () => false);
       if (!(await shown())) failures.push(`${name}: the lamp's parts: ${await page.locator('#settings details.part').count()} fold-outs, ${await page.locator('#plan .plan-part').count()} in the plan`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-plan.png`) });
+      // Custom colours: a colour and an opacity per shade, for simple renders.
+      await page.selectOption('#viewColor', 'custom');
+      if ((await page.locator('#viewColors input[type="color"]').count()) !== 2) failures.push(`${name}: custom colours for ${await page.locator('#viewColors input[type="color"]').count()} parts`);
+      if (await page.isVisible('#viewLegend')) failures.push(`${name}: the legend shows in the custom colours`);
+      // The view as a picture, and the colours in the project file.
+      const picture = await saveFrom(page, '#viewSnap');
+      if (!picture.name.endsWith('.png') || picture.data.subarray(1, 4).toString() !== 'PNG') failures.push(`${name}: the view's picture: ${picture.name}`);
+      const withColors = await saveFrom(page, '#saveProject');
+      if (!/^#~ colors \{.*"custom":true/m.test(withColors.data.toString('utf8'))) failures.push(`${name}: the project file has no colours`);
+      await page.selectOption('#viewColor', 'height');
+      if (await page.isVisible('#viewColors')) failures.push(`${name}: the custom colours stay after leaving them`);
       await page.click('#tab-print');
       const lampParts = await page.locator('#stats .part-title').allTextContents();
       if (lampParts.join() !== 'main,tube') failures.push(`${name}: the lamp's G-code parts: ${lampParts.join()}`);

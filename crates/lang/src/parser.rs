@@ -246,6 +246,35 @@ impl Parser<'_> {
                         let file = self.text("the file name")?;
                         program.outputs.push(Output::Export { expr, file, span });
                     }
+                    "mark" => {
+                        let expr = self.expr()?;
+                        match self.peek() {
+                            Tok::Ident(w) if w == "for" => self.pos += 1,
+                            other => {
+                                return Err(self.error(format!(
+                                    "expected `for` and the settings it leads to, found {}",
+                                    other.describe()
+                                )));
+                            }
+                        }
+                        let mut settings = vec![self.ident("a setting's name")?];
+                        while self.eat(&Tok::Comma) {
+                            settings.push(self.ident("a setting's name")?);
+                        }
+                        let label = match self.peek().clone() {
+                            Tok::Str(s) => {
+                                self.pos += 1;
+                                Some(s)
+                            }
+                            _ => None,
+                        };
+                        program.outputs.push(Output::Mark {
+                            expr,
+                            settings,
+                            label,
+                            span,
+                        });
+                    }
                     "print" => {
                         let expr = self.expr()?;
                         let printer = match self.peek() {

@@ -173,3 +173,110 @@ fn shades_open_out_and_close_in_again() {
         );
     }
 }
+
+/// Each shade's surface (shown inside the component, not made from its print) belongs to its
+/// part, so the view can colour it, see through it or hide it with its shade.
+#[test]
+fn each_shades_surface_belongs_to_its_shade() {
+    let src = with_part(
+        LAMP,
+        "tube",
+        &[
+            ("mount", Literal::Text("main.end_out".into())),
+            ("shape", Literal::Text("tube".into())),
+        ],
+    );
+    let e = run(&src);
+    let owners: Vec<Option<usize>> = e.drawing.mesh_parts.iter().map(|(_, p)| *p).collect();
+    assert_eq!(owners, [Some(0), Some(1)]);
+}
+
+/// A shade that opens out into its straight end (a bell flat at its rim, a cone) rounds into it
+/// with the fillet, as a sphere closing in does: the wall's angle comes down to vertical in
+/// small steps, with no corner, and the straight end then carries on at the opening's radius.
+#[test]
+fn shades_that_open_out_round_into_their_straight_end() {
+    use Literal::{Bool, Number, Text};
+    for shape in ["bell", "cone", "sphere"] {
+        let src = set_values(
+            LAMP,
+            &[
+                ("main.shape".into(), Text(shape.into())),
+                ("main.end_straight".into(), Bool(true)),
+                ("main.end_len".into(), Number(60.0)),
+                ("main.fillet".into(), Number(100.0)),
+            ],
+        )
+        .unwrap();
+        let (e, v) = crate::eval::step_values(&src, Quality::Final);
+        assert!(e.errors().next().is_none(), "{shape}: {:?}", e.diagnostics);
+        let list = |n: &str| match v.get(n) {
+            Some(crate::value::Value::List(l)) => l
+                .items
+                .iter()
+                .map(|x| match x {
+                    crate::value::Value::Number(k) => *k,
+                    _ => f64::NAN,
+                })
+                .collect::<Vec<f64>>(),
+            _ => panic!("{n}"),
+        };
+        let (r, l) = (list("main.full_r"), list("main.full_l"));
+        let n = r.len();
+        assert_eq!(l[n - 1], 0.0, "{shape}: straight at the end");
+        assert!(
+            (r[n - 1] - r[n - 2]).abs() < 1e-9,
+            "{shape}: the straight end"
+        );
+        // From the shade into the straight end: no step in the wall's angle over 6°.
+        let worst = l
+            .windows(2)
+            .skip(n / 2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max);
+        assert!(worst < 6.0, "{shape}: a corner of {worst}°");
+    }
+}
+
+/// The Plan's marks lead to the settings that drive each piece: a shade's are its own (inside
+/// the component, `fillet` is `main.fillet`), placed where it goes; a straight end only has one
+/// when it's there. A mark naming no setting is a warning.
+#[test]
+fn marks_lead_to_each_shades_own_settings() {
+    let e = run(LAMP);
+    let mark = |label: &str| e.marks.iter().find(|m| m.label.as_deref() == Some(label));
+    assert_eq!(mark("Fillet").unwrap().settings, ["main.fillet"]);
+    assert!(mark("Straight end").is_some(), "the sphere ends straight");
+    let start = &mark("Start").unwrap().lines[0];
+    assert_eq!((start[0][0], start[0][2]), (23.0, 0.0));
+    let tube = with_part(
+        LAMP,
+        "tube",
+        &[
+            ("mount", Literal::Text("main.end_out".into())),
+            ("shape", Literal::Text("tube".into())),
+        ],
+    );
+    let e = run(&tube);
+    let tube_marks: Vec<&str> = e
+        .marks
+        .iter()
+        .filter(|m| m.settings.iter().all(|s| s.starts_with("tube.")))
+        .filter_map(|m| m.label.as_deref())
+        .collect();
+    assert_eq!(tube_marks, ["Start"], "a tube is one straight piece");
+    let lampshade = include_str!("../../../web/templates/lampshade.easycad");
+    let e = run(lampshade);
+    assert!(e.marks.iter().any(|m| m.settings == ["fillet"]));
+    assert!(
+        e.marks.iter().all(|m| m.label.as_deref() != Some("Lip")),
+        "no lip on a cone"
+    );
+    let broken = lampshade.replace("mark mark_fillet for fillet", "mark mark_fillet for filet");
+    let e = run(&broken);
+    assert!(
+        e.diagnostics
+            .iter()
+            .any(|d| d.message == "`mark … for filet`: there's no setting `filet`")
+    );
+}

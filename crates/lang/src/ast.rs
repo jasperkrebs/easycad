@@ -232,6 +232,14 @@ pub enum Output {
         /// The part it prints (after expanding parts): the G-code file's name.
         part: Option<String>,
     },
+    /// `mark curve for setting, setting "Label"`: in the Plan, this piece of the shape is drawn
+    /// as a mark that leads to the settings that drive it.
+    Mark {
+        expr: Expr,
+        settings: Vec<(String, Span)>,
+        label: Option<String>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

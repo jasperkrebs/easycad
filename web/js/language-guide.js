@@ -47,6 +47,7 @@ Components and parts (several of the same thing: the Lamp template's shades)
 - \`component shade "Shade"\` … \`end\` is a recipe within the recipe: settings, steps, outputs, plus \`input mount = on_socket "Mounted on"\` (a value from outside, by default this expression) and \`port end_out = [radius, height, inward, length, socket, side] "End, outside"\` (a place another part can be mounted).
 - \`part tube = shade(mount: main.end_out, shape: "tube", length: 300 mm)\` makes a copy with its own settings: the line gives the values that differ from the component's, and an input another part's port. Inside the component every name is the part's own (\`tube.shape\` from outside); names outside it (\`line\`, \`pitch\`) are shared.
 - Each part's \`print\` is its own G-code file, named after the part. \`place(path, z: …, flip: …)\` shows a part where it goes in the assembly (turned over with \`flip\`) while it still prints on the bed; the engine warns when placed parts run into each other.
+- \`mark curve for setting, other "Label"\` (anywhere, components too) marks a piece of the shape in the Plan view (drawn in the XZ plane like a profile); tapping it opens those settings. Mark the pieces a setting drives when you write a project.
 - To add or remove a shade in the Lamp, add or remove a \`part\` line (removing a part breaks the parts mounted on it: remove them too). Don't copy the component.
 
 Outputs

@@ -422,6 +422,12 @@ part tube = shade(mount: main.end_out, shape: "tube", height: 300 mm)
   (adding it to the line when it wasn't there); `@ask` settings are asked when a part is added.
 - `place(path, z, flip)` puts a part where it goes in the assembly, for the view: it's still
   printed as it is, on the bed. The engine warns when placed parts' beads run into each other.
+- `mark curve for setting, setting "Label"` marks a piece of the shape for the **Plan**: drawn
+  there (in the XZ plane: x from the axis, z up, as a profile is drawn), a tap on it leads to
+  the settings named, the first that shows opened and all of them lit up. In a component the
+  settings are the part's own. The lampshade marks its throat, fillet, shade, opening, height
+  and lip; the lamp's shade the same per shade. An empty list marks nothing (a lip that isn't
+  there).
 - Commands: `addPart(component, name, values)` adds a `part` line after the last one;
   `removePart(name)` removes it, with every part mounted on it.
 
@@ -448,6 +454,9 @@ conversation {                               # optional; the engine ignores it
 - **Moving a slider** rewrites only that setting's value in its `param` line; comments, layout
   and everything else stay exactly as they were. Saving the project saves that text.
 - **Choosing a preset** (later) changes only the values.
+- A saved project file may also hold the 3D view's custom colours, in a comment line
+  `#~ colors {…}` before the recipe (each part's colour and opacity, the light). The engine
+  ignores it as any comment; the app reads it when the file opens.
 - **"Save settings"** writes only the values (a small `.json`, like EasyGCode). "Load settings"
   puts them back into the open project.
 

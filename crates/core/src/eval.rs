@@ -120,6 +120,15 @@ pub struct ParamInfo {
     pub part: Option<String>,
 }
 
+/// A `mark`: a piece of the shape the Plan draws (lines in the XZ plane: x from the axis, z up),
+/// leading to the settings that drive it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct MarkInfo {
+    pub settings: Vec<String>,
+    pub label: Option<String>,
+    pub lines: Vec<Vec<P3>>,
+}
+
 /// A part made from a component (`part tube = shade(…)`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PartSummary {
@@ -248,6 +257,7 @@ pub struct Evaluation {
     pub exports: Vec<Export>,
     pub parts: Vec<PartSummary>,
     pub ports: Vec<PortSummary>,
+    pub marks: Vec<MarkInfo>,
     pub components: Vec<ComponentSummary>,
 }
 
@@ -913,6 +923,18 @@ impl<'a> Runner<'a> {
         let program = self.program;
         let mut shown = false;
         let owners = self.owners();
+        // A part's `print` line (counted among the `print` lines), by part name: what a part
+        // shows belongs to it, made from its print or not (a shade's surface).
+        let part_prints: HashMap<&str, usize> = program
+            .outputs
+            .iter()
+            .filter_map(|o| match o {
+                Output::Print { part, .. } => Some(part.as_deref()),
+                _ => None,
+            })
+            .enumerate()
+            .filter_map(|(k, part)| part.map(|p| (p, k)))
+            .collect();
         // Each `print` line's part (its index in `prints`), once it printed.
         let mut parts: Vec<Option<usize>> = Vec::new();
         for output in &program.outputs {
@@ -920,10 +942,14 @@ impl<'a> Runner<'a> {
                 Output::Show { names, .. } => {
                     for (name, span) in names {
                         shown = true;
+                        let of_part = name
+                            .split_once('.')
+                            .and_then(|(part, _)| part_prints.get(part).copied());
                         self.drawing_owner = match self.names.get(name.as_str()) {
                             Some(Slot::Binding(j)) => owners.get(*j).copied().flatten(),
                             _ => None,
-                        };
+                        }
+                        .or(of_part);
                         match self.lookup(name, *span) {
                             Ok(v) => {
                                 if !self.draw(&v) {
@@ -1014,6 +1040,44 @@ impl<'a> Runner<'a> {
                     }
                 }
                 Output::Export { expr, file, span } => self.export(expr, file, *span),
+                Output::Mark {
+                    expr,
+                    settings,
+                    label,
+                    span,
+                } => {
+                    for (name, at) in settings {
+                        let known = program.params.iter().any(|p| p.name == *name)
+                            || program.bindings.iter().any(|b| b.name == *name);
+                        if !known {
+                            self.diag(
+                                *at,
+                                Severity::Warning,
+                                format!("`mark … for {name}`: there's no setting `{name}`"),
+                            );
+                        }
+                    }
+                    match self.eval(expr) {
+                        Ok(v) => {
+                            let mut lines = Vec::new();
+                            mark_lines(&v, &mut lines);
+                            let nothing = matches!(&v, Value::List(l) if l.items.is_empty());
+                            if lines.is_empty() && !nothing {
+                                let msg =
+                                    format!("`mark` needs curves or points, got {}", v.kind());
+                                self.diag(*span, Severity::Warning, msg);
+                            } else if !lines.is_empty() {
+                                self.out.marks.push(MarkInfo {
+                                    settings: settings.iter().map(|(n, _)| n.clone()).collect(),
+                                    label: label.clone(),
+                                    lines,
+                                });
+                            }
+                        }
+                        Err(Fail::Error(s, m)) => self.diag(s, Severity::Warning, m),
+                        Err(Fail::Skipped) => {}
+                    }
+                }
             }
         }
         self.drawing_owner = None;
@@ -1166,6 +1230,40 @@ impl<'a> Runner<'a> {
             _ => {}
         }
         true
+    }
+}
+
+/// What a `mark` draws: each curve a line, a list of points one line, a point a dot.
+fn mark_lines(v: &Value, out: &mut Vec<Vec<P3>>) {
+    const MAX_LINES: usize = 64;
+    if out.len() >= MAX_LINES {
+        return;
+    }
+    match v {
+        Value::Curve(c) => {
+            let mut points = c.points.clone();
+            if c.closed
+                && let Some(first) = c.points.first()
+            {
+                points.push(*first);
+            }
+            out.push(points);
+        }
+        Value::Point(p) => out.push(vec![*p]),
+        Value::List(l) if l.items.is_empty() => {}
+        Value::List(l) if l.items.iter().all(|i| matches!(i, Value::Point(_))) => {
+            out.push(
+                l.items
+                    .iter()
+                    .filter_map(|i| match i {
+                        Value::Point(p) => Some(*p),
+                        _ => None,
+                    })
+                    .collect(),
+            );
+        }
+        Value::List(l) => l.items.iter().for_each(|i| mark_lines(i, out)),
+        _ => {}
     }
 }
 
