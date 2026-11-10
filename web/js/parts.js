@@ -1,19 +1,26 @@
 // The lamp builder's parts on screen (docs/lamp-builder.md): the Plan (the assembly's
-// cross-section, every part as wide as its bead, its ports as `+` buttons), the dialog that
-// adds a part, and the values a new part starts with. Nothing here edits the recipe: adding and
-// removing go through the engine's commands (app.js).
+// cross-section, every part as wide as its bead), its add buttons (one per way a new part can go
+// on a free port: inside or outside the wall by where it sits, up or down by its arrow), the
+// selected part's bar (its shape, which way it goes, its switches, its settings, remove), and the
+// values a new part starts with. Nothing here edits the recipe: every change is handed to app.js,
+// which goes through the engine's commands (addPart, removePart, setting values).
 
 import { el } from './dom.js';
+import { applies } from './settings.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 /** Colours for the parts, in order (EasyGCode's palette: blue, green, amber, violet, teal, pink). */
 const COLORS = ['#4f9dff', '#2bd9a0', '#ffb454', '#b58cff', '#3fd0d4', '#ff7ab6'];
-/** A section this long (mm) takes more than one part. */
-const ROOMY = 60;
-/** The `+` buttons' radius on screen, in pixels. */
-const BUTTON_PX = 11;
 /** Points per part drawn in the plan, at most. */
-const PLAN_POINTS = 600;
+const PLAN_POINTS = 900;
+/** An add button's size on screen (px): a comfortable touch target. */
+const BUTTON = 40;
+/** Room (px) kept round the drawing: labels on the left, add buttons on the right. */
+const INSET = { top: 14, right: 62, bottom: 14, left: 70 };
+/** Room (px) the selected part's bar takes at the bottom. */
+const BAR = 60;
+/** How long a new part's straight start is unless the recipe says otherwise (the shade's default). */
+const HOLD = 20;
 
 /**
  * Which parts the engine says run into each other (`a` and `b` run into each other …).
@@ -64,115 +71,528 @@ export function sections(result) {
 }
 
 /**
- * Draws the plan: the assembly cut through its axis (both halves), each part in its colour (red
- * where it runs into another), its name beside it, and a `+` at every port with room.
- * @param {HTMLElement} host
- * @param {any} result
- * @param {{ onPort: (port: any) => void, onPart: (name: string) => void, onMark: (mark: any) => void, selected?: string | null, colorOf?: (name: string) => string }} handlers
+ * Whether any part's beads lie on a radius over a stretch of height (a face taken there).
+ * @param {Map<string, { points: number[][], width: number }>} parts
+ * @param {number} r
+ * @param {number} za
+ * @param {number} zb
  */
-export function renderPlan(host, result, handlers) {
-  host.replaceChildren();
-  const parts = sections(result);
-  // Ports with room: not one a part is already mounted on, unless its section is long (a tube
-  // takes several shades along it).
-  const used = new Set(result.params.filter((p) => p.kind === 'port').map((p) => String(p.value)));
-  const ports = (result.ports || []).filter((p) => p.value.length >= 4 && p.value[3] > 0 && (!used.has(p.name) || p.value[3] >= ROOMY));
-  const marks = result.marks || [];
-  if (!parts.size && !marks.length) return;
-  let [rmax, zmin, zmax] = [1, Infinity, -Infinity];
-  for (const { points } of parts.values()) {
-    for (const [r, z] of points) {
-      rmax = Math.max(rmax, r);
-      zmin = Math.min(zmin, z);
-      zmax = Math.max(zmax, z);
-    }
+function taken(parts, r, za, zb) {
+  const [lo, hi] = za < zb ? [za, zb] : [zb, za];
+  for (const { points, width } of parts.values()) {
+    const near = 0.5 * width;
+    for (const [pr, pz] of points) if (pz >= lo && pz <= hi && Math.abs(pr - r) < near) return true;
   }
-  for (const m of marks) {
-    for (const line of m.lines) {
-      for (const [x, , z] of line) {
-        rmax = Math.max(rmax, Math.abs(x));
-        zmin = Math.min(zmin, z);
-        zmax = Math.max(zmax, z);
+  return false;
+}
+
+/**
+ * Where a new part can go: every port with a straight section ([radius, height, inward, length,
+ * socket, side]) whose face is free for a straight start somewhere along it, with how far along
+ * that is (0: flush with its end; further on where a part already sits there, as a long tube
+ * takes several), and the ways it can go (the component's `direction` choices).
+ * @param {any} result
+ * @param {Map<string, { points: number[][], width: number }>} parts
+ * @param {Set<string>} [hidden] parts hidden from the view: no add buttons on them
+ * @param {number} [hold] a new part's straight start (mm)
+ * @returns {{ port: any, along: number }[]}
+ */
+export function freePorts(result, parts, hidden = new Set(), hold = HOLD) {
+  const out = [];
+  for (const port of result.ports || []) {
+    const [r, z, inward, length] = port.value;
+    if (port.value.length < 4 || !(length > 0) || hidden.has(port.part)) continue;
+    const need = Math.min(hold, length);
+    // A millimetre at a time along the section, the first stretch a straight start fits (with a
+    // little play at either end, so it doesn't touch what's there).
+    for (let a = 0; a + need <= length + 1e-9; a += 1) {
+      if (!taken(parts, r, z + inward * (a - 2), z + inward * (a + need + 2))) {
+        out.push({ port, along: a });
+        break;
       }
     }
   }
-  for (const p of ports) {
-    rmax = Math.max(rmax, p.value[0]);
-    zmin = Math.min(zmin, p.value[1]);
-    zmax = Math.max(zmax, p.value[1]);
-  }
-  const pad = Math.max(12, 0.08 * Math.max(2 * rmax, zmax - zmin));
-  const [x0, w] = [-rmax - pad, 2 * (rmax + pad)];
-  const [y0, h] = [-(zmax + pad), zmax - zmin + 2 * pad];
+  return out;
+}
+
+/** The component's `@ask` setting named `name`, if any. */
+const askOf = (component, name) => (component?.ask || []).find((p) => p.name === name);
+
+/** The part a mark belongs to: its settings are the part's (`main.fillet`). */
+function markPart(mark, partNames) {
+  const first = String(mark.settings?.[0] ?? '');
+  const dot = first.indexOf('.');
+  const name = dot > 0 ? first.slice(0, dot) : '';
+  return partNames.has(name) ? name : null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The view: fitted to the drawing, then zoomed and panned by hand (wheel, pinch, drag); a
+// double-click or the Fit button fits it again.
+// ---------------------------------------------------------------------------------------------
+
+const view = { zoom: 1, panX: 0, panY: 0 };
+/** What the plan last drew, so a resize, a zoom or a pan can draw it again. */
+let drawn = /** @type {{ host: HTMLElement, result: any, handlers: PlanHandlers } | null} */ (null);
+
+/** Fits the plan to its drawing again (forgets the zoom and pan). */
+export function fitPlan() {
+  view.zoom = 1;
+  view.panX = 0;
+  view.panY = 0;
+  if (drawn && !drawn.host.hidden) draw();
+}
+
+/**
+ * @typedef {{
+ *   selected?: string | null,
+ *   hidden?: Set<string>,
+ *   colorOf?: (name: string) => string,
+ *   onSelect: (name: string | null) => void,
+ *   onMark: (mark: any, part: string | null) => void,
+ *   onAdd: (add: { port: any | null, values: Record<string, unknown> }) => void,
+ *   onSet: (name: string, values: Record<string, unknown>) => void,
+ *   onOpen: (name: string) => void,
+ *   onRemove: (name: string) => void,
+ * }} PlanHandlers
+ */
+
+/**
+ * Draws the plan: the assembly cut through its axis (both halves), each part in its colour (red
+ * where it runs into another; faint while hidden), its name on the left, the marks that lead to
+ * settings, the add buttons on every free port, and the selected part's bar.
+ * @param {HTMLElement} host
+ * @param {any} result
+ * @param {PlanHandlers} handlers
+ */
+export function renderPlan(host, result, handlers) {
+  drawn = { host, result, handlers };
+  if (!host.dataset.wired) wire(host);
+  draw();
+}
+
+/** The pointer and wheel handling, once per host: zoom, pan, and a tap on nothing deselects. */
+function wire(host) {
+  host.dataset.wired = '1';
+  /** @type {Map<number, { x: number, y: number }>} */
+  const pointers = new Map();
+  let moved = 0;
+  let pinch = 0;
+  const local = (e) => {
+    const box = host.getBoundingClientRect();
+    return { x: e.clientX - box.left, y: e.clientY - box.top };
+  };
+  const zoomAt = (x, y, factor) => {
+    const next = Math.min(40, Math.max(0.4, view.zoom * factor));
+    const f = next / view.zoom;
+    const { cx, cy } = centre(host);
+    // Keep the point under the pointer where it is.
+    view.panX = (x - cx) * (1 - f) + view.panX * f;
+    view.panY = (y - cy) * (1 - f) + view.panY * f;
+    view.zoom = next;
+    draw();
+  };
+  host.addEventListener(
+    'wheel',
+    (e) => {
+      if (/** @type {HTMLElement} */ (e.target).closest('.plan-bar')) return;
+      e.preventDefault();
+      const { x, y } = local(e);
+      zoomAt(x, y, Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)));
+    },
+    { passive: false },
+  );
+  host.addEventListener('pointerdown', (e) => {
+    if (/** @type {HTMLElement} */ (e.target).closest('button, select, .plan-bar')) return;
+    pointers.set(e.pointerId, local(e));
+    if (pointers.size === 1) moved = 0;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+  });
+  host.addEventListener('pointermove', (e) => {
+    const last = pointers.get(e.pointerId);
+    if (!last) return;
+    const now = local(e);
+    if (pointers.size === 1) {
+      moved += Math.hypot(now.x - last.x, now.y - last.y);
+      if (moved > 6) {
+        if (!host.hasPointerCapture(e.pointerId)) host.setPointerCapture(e.pointerId);
+        view.panX += now.x - last.x;
+        view.panY += now.y - last.y;
+        draw();
+      }
+      pointers.set(e.pointerId, now);
+      return;
+    }
+    pointers.set(e.pointerId, now);
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    moved = 100;
+    if (pinch > 0 && d > 0) zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, d / pinch);
+    pinch = d;
+  });
+  const up = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = 0;
+  };
+  host.addEventListener('pointerup', up);
+  host.addEventListener('pointercancel', up);
+  // A drag or a pinch is not a tap.
+  host.addEventListener(
+    'click',
+    (e) => {
+      if (moved > 6 && !(/** @type {HTMLElement} */ (e.target).closest('button, select, .plan-bar'))) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    },
+    true,
+  );
+  host.addEventListener('click', (e) => {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (!t.closest('.plan-part[data-part], .plan-mark, .plan-add, .plan-bar')) drawn?.handlers.onSelect(null);
+  });
+  host.addEventListener('dblclick', (e) => {
+    if (!(/** @type {HTMLElement} */ (e.target).closest('.plan-part, .plan-mark, .plan-add, .plan-bar'))) fitPlan();
+  });
+  host.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && drawn?.handlers.selected) drawn.handlers.onSelect(null);
+  });
+  new ResizeObserver(() => {
+    if (drawn && !host.hidden) draw();
+  }).observe(host);
+}
+
+/** The middle of the host's drawing area (px), where zooming starts from. */
+function centre(host) {
+  return { cx: host.clientWidth / 2, cy: host.clientHeight / 2 };
+}
+
+/** What a control in the plan is, to find it again once the plan is drawn anew. */
+function focusKey(n) {
+  if (!(n instanceof Element)) return null;
+  const set = n.getAttribute('data-set');
+  const part = n.getAttribute('data-part');
+  if (set) return `set:${set}`;
+  if (part) return `part:${part}`;
+  return `${n.getAttribute('class') || ''}|${n.getAttribute('aria-label') || ''}`;
+}
+
+/** Draws what renderPlan was last given, at the current zoom and pan (the focus kept). */
+function draw() {
+  if (!drawn) return;
+  const { host } = drawn;
+  const had = host.contains(document.activeElement) ? focusKey(document.activeElement) : null;
+  paint();
+  if (!had) return;
+  // The same control, or (it's gone: the add button used) the selected part's bar.
+  const again = [...host.querySelectorAll('[tabindex], button, select')].find((n) => focusKey(n) === had) || host.querySelector('.plan-bar select, .plan-bar button');
+  /** @type {HTMLElement | null | undefined} */ (again)?.focus({ preventScroll: true });
+}
+
+function paint() {
+  if (!drawn) return;
+  const { host, result, handlers } = drawn;
+  host.replaceChildren();
+  const W = host.clientWidth;
+  const H = host.clientHeight;
+  if (W < 10 || H < 10) return;
+  const hidden = handlers.hidden || new Set();
+  const parts = sections(result);
+  const partNames = new Set((result.partList || []).map((p) => p.name));
+  const selected = handlers.selected && partNames.has(handlers.selected) ? handlers.selected : null;
+  const component = (result.components || [])[0];
+  const marks = (result.marks || []).filter((m) => {
+    const part = markPart(m, partNames);
+    return !part || !hidden.has(part);
+  });
+  const free = component ? freePorts(result, parts, hidden) : [];
+  // No part yet: one add button where the first one goes (on what its input is by default).
+  const empty = component && !partNames.size;
+
+  // The drawing's extent (mm): parts, marks and ports.
+  let [rmax, zmin, zmax] = [1, Infinity, -Infinity];
+  const take = (r, z) => {
+    rmax = Math.max(rmax, Math.abs(r));
+    zmin = Math.min(zmin, z);
+    zmax = Math.max(zmax, z);
+  };
+  for (const { points, width } of parts.values()) for (const [r, z] of points) take(r + width / 2, z);
+  for (const m of marks) for (const line of m.lines) for (const [x, , z] of line) take(x, z);
+  for (const { port } of free) take(port.value[0], port.value[1]);
+  if (!Number.isFinite(zmin)) [zmin, zmax, rmax] = [0, 100, 50];
+  const inset = { ...INSET, bottom: INSET.bottom + (selected ? BAR : 0) };
+  const k0 = Math.min((W - inset.left - inset.right) / (2 * rmax), (H - inset.top - inset.bottom) / Math.max(1, zmax - zmin));
+  const k = Math.max(0.01, k0) * view.zoom;
+  // Fitted: the drawing in the middle of the room left round it; then zoomed about the middle.
+  const fx = inset.left + (W - inset.left - inset.right) / 2;
+  const fy = inset.top + (H - inset.top - inset.bottom) / 2 + ((zmax + zmin) / 2) * k0;
+  const { cx, cy } = centre(host);
+  const X = (r) => cx + (fx - cx) * view.zoom + view.panX + r * k;
+  const Y = (z) => cy + (fy - cy) * view.zoom + view.panY - z * k;
+
   const svg = document.createElementNS(SVG, 'svg');
-  svg.setAttribute('viewBox', `${x0} ${y0} ${w} ${h}`);
-  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Plan: the parts cut through their axis');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('role', 'group');
+  svg.setAttribute('aria-label', 'Plan');
   const node = (name, attrs, parent = svg) => {
     const n = document.createElementNS(SVG, name);
-    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+    for (const [key, v] of Object.entries(attrs)) n.setAttribute(key, String(v));
     parent.append(n);
     return n;
   };
-  // The axis.
-  node('line', { x1: 0, y1: -(zmax + pad / 2), x2: 0, y2: -(zmin - pad / 2), class: 'plan-axis' });
+  const line = (pts) => pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  node('line', { x1: X(0), y1: 0, x2: X(0), y2: H, class: 'plan-axis' });
+
+  // The parts, the selected one with a halo; the others a little fainter while one is selected.
   const hit = collidingParts(result.diagnostics);
-  // Model units per screen pixel, so labels and buttons keep their size on screen.
-  const px = Math.max(w / Math.max(1, host.clientWidth), h / Math.max(1, host.clientHeight));
-  const unit = BUTTON_PX * px;
   [...parts.entries()].forEach(([name, { points, width }], i) => {
-    const g = node('g', { class: `plan-part${hit.has(name) ? ' collides' : ''}${handlers.selected === name ? ' selected' : ''}`, 'data-part': name });
+    const off = hidden.has(name);
+    const cls = ['plan-part', hit.has(name) && 'collides', selected === name && 'selected', selected && selected !== name && 'dim', off && 'off'].filter(Boolean).join(' ');
+    // A part (`part` line) is selected by a tap; a recipe's only toolpath is just drawn.
+    const own = partNames.has(name);
+    const g = node('g', own ? { class: cls, 'data-part': name, tabindex: 0, role: 'button', 'aria-pressed': String(selected === name), 'aria-label': name } : { class: `${cls} still` });
     g.style.setProperty('--part', handlers.colorOf?.(name) ?? COLORS[i % COLORS.length]);
-    for (const side of [1, -1]) {
-      node('polyline', { points: points.map(([r, z]) => `${side * r},${-z}`).join(' '), 'stroke-width': width }, g);
+    const px = Math.max(1.5, width * k);
+    const halves = [1, -1].map((side) => line(points.map(([r, z]) => [X(side * r), Y(z)])));
+    if (selected === name) for (const pts of halves) node('polyline', { points: pts, 'stroke-width': px + 8, class: 'plan-halo' }, g);
+    for (const pts of halves) node('polyline', { points: pts, 'stroke-width': Math.max(14, px), class: 'plan-hit' }, g);
+    for (const pts of halves) node('polyline', { points: pts, 'stroke-width': px, class: 'plan-wall' }, g);
+    // Its name on the left, beside its widest point (the right is for the add buttons).
+    // (Where it's as wide for a while, as a tube is all along, half way along that.)
+    const widest = Math.max(...points.map((p) => p[0]));
+    const there = points.filter((p) => p[0] >= widest - 0.5).sort((a, b) => a[1] - b[1]);
+    const far = there[Math.floor(there.length / 2)];
+    if (far && own) {
+      const label = node('text', { x: Math.max(4, X(-far[0]) - px / 2 - 6), y: Y(far[1]), class: 'plan-label', 'text-anchor': X(-far[0]) - px / 2 - 6 < 40 ? 'start' : 'end' }, g);
+      label.textContent = name;
     }
-    // Its name beside its widest point.
-    let far = points[0];
-    for (const p of points) if (p[0] > far[0]) far = p;
-    const label = node('text', { x: far[0] + width, y: -far[1], 'font-size': 13 * px, class: 'plan-label' }, g);
-    label.textContent = name;
-    g.addEventListener('click', () => handlers.onPart(name));
-  });
-  // The marks: each piece of the shape that leads to its settings, a band to tap (drawn over the
-  // parts, under the ports).
-  for (const mark of marks) {
-    const g = node('g', { class: 'plan-mark', tabindex: 0, role: 'button', 'aria-label': `${mark.label || mark.settings[0]}: its settings` });
-    const title = node('title', {}, g);
-    title.textContent = mark.label || mark.settings.join(', ');
-    for (const line of mark.lines) {
-      const pts = line.map(([x, , z]) => `${x},${-z}`);
-      if (pts.length === 1) pts.push(pts[0]);
-      node('polyline', { points: pts.join(' '), 'stroke-width': 14 * px, class: 'plan-mark-hit' }, g);
-      node('polyline', { points: pts.join(' '), 'stroke-width': 2.5 * px, class: 'plan-mark-line' }, g);
-    }
-    const go = () => handlers.onMark(mark);
-    g.addEventListener('click', go);
+    if (!own) return;
+    const pick = () => handlers.onSelect(selected === name ? null : name);
+    g.addEventListener('click', pick);
     g.addEventListener('keydown', (e) => {
-      if (/** @type {KeyboardEvent} */ (e).key === 'Enter' || /** @type {KeyboardEvent} */ (e).key === ' ') go();
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        pick();
+      }
     });
-  }
-  for (const port of ports) {
-    // Outside ports a little further out, inside ones further in, and a little way into the
-    // section from its end, so the two faces' buttons (and a shade's end and the next one's
-    // start) stay apart.
-    const [pr, pz, inward] = port.value;
-    const side = port.value[5] < 0 ? -1 : 1;
-    const r = pr + side * unit * 1.1;
-    const z = pz + inward * unit * 1.2;
-    const g = node('g', { class: 'plan-port', tabindex: 0, role: 'button', 'aria-label': `Add here: ${port.part} · ${port.label}` });
-    node('line', { x1: pr, y1: -pz, x2: r, y2: -z, class: 'plan-port-stem', 'stroke-width': px * 1.5 }, g);
-    node('circle', { cx: r, cy: -z, r: unit }, g);
-    node('path', { d: `M${r - unit * 0.55},${-z}h${unit * 1.1}M${r},${-z - unit * 0.55}v${unit * 1.1}`, 'stroke-width': px * 2 }, g);
-    const title = node('title', {}, g);
-    title.textContent = `${port.part} · ${port.label}`;
-    const go = () => handlers.onPort(port);
+  });
+
+  // The marks: each piece of the shape that leads to its settings, a band to tap (over the parts).
+  for (const mark of marks) {
+    const part = markPart(mark, partNames);
+    const what = mark.label || mark.settings[0];
+    const g = node('g', { class: `plan-mark${selected && part !== selected ? ' dim' : ''}`, tabindex: 0, role: 'button', 'aria-label': part ? `${what} · ${part}` : what });
+    node('title', {}, g).textContent = part ? `${what} · ${part}` : what;
+    for (const ln of mark.lines) {
+      const pts = ln.map(([x, , z]) => [X(x), Y(z)]);
+      if (pts.length === 1) pts.push([pts[0][0] + 0.01, pts[0][1]]);
+      node('polyline', { points: line(pts), class: 'plan-mark-hit' }, g);
+      node('polyline', { points: line(pts), class: 'plan-mark-line' }, g);
+    }
+    const go = () => handlers.onMark(mark, part);
     g.addEventListener('click', go);
     g.addEventListener('keydown', (e) => {
-      if (/** @type {KeyboardEvent} */ (e).key === 'Enter' || /** @type {KeyboardEvent} */ (e).key === ' ') go();
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        go();
+      }
     });
   }
   host.append(svg);
+
+  // The add buttons: a pair (up, down) beside every free port of the selected part (of the only
+  // part, when there's one), on the face's side of the wall (outside to the right of it, inside
+  // to the left), a stem to where it screws on. The other parts' free ports are dots.
+  const active = selected ?? (partNames.size === 1 ? [...partNames][0] : null);
+  const dirAsk = askOf(component, 'direction');
+  const ways = dirAsk ? dirAsk.choices.map(String) : [''];
+  /** @type {{ port: any, along: number, ways: string[], ax: number, ay: number, x: number, y: number, w: number, h: number, side: number }[]} */
+  const pills = [];
+  /** @type {number[][]} */
+  const dots = [];
+  for (const { port, along } of free) {
+    const [r, z, inward, , , faceSide] = port.value;
+    const side = faceSide < 0 ? -1 : 1;
+    // Where the straight start would sit: along the section from its end.
+    const za = z + inward * along;
+    const ax = X(r);
+    const ay = Y(za + inward * Math.min(4, port.value[3] / 4));
+    if (port.part !== active) {
+      dots.push([ax, ay]);
+      continue;
+    }
+    const h = ways.length * BUTTON + (ways.length - 1) * 2;
+    pills.push({ port, along, ways, ax, ay, x: ax + side * (14 + BUTTON / 2), y: ay, w: BUTTON, h, side });
+  }
+  if (empty) {
+    const ways0 = dirAsk ? [String(dirAsk.value)] : [''];
+    pills.push({ port: null, along: 0, ways: ways0, ax: X(0), ay: Y(0), x: X(0) + 14 + BUTTON / 2, y: Y(0) - BUTTON / 2, w: BUTTON, h: BUTTON, side: 1 });
+  }
+  spread(pills, W, H - (selected ? BAR : 0));
+  if (pills.length || dots.length) {
+    const stems = document.createElementNS(SVG, 'svg');
+    stems.setAttribute('class', 'plan-stems');
+    stems.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    stems.setAttribute('aria-hidden', 'true');
+    for (const [x, y] of dots) node('circle', { cx: x, cy: y, r: 3, class: 'plan-dot free' }, stems);
+    for (const p of pills) {
+      if (!p.port) continue;
+      const ex = p.x - p.side * (p.w / 2);
+      node('line', { x1: p.ax, y1: p.ay, x2: ex, y2: p.y, class: 'plan-stem' }, stems);
+      node('circle', { cx: p.ax, cy: p.ay, r: 3.5, class: 'plan-dot' }, stems);
+    }
+    host.append(stems);
+  }
+  for (const p of pills) {
+    const where = p.port ? `${p.port.part} · ${p.port.label}` : 'first';
+    const group = el('div', { className: `plan-add${p.side < 0 ? ' inside' : ''}`, role: 'group', 'aria-label': `Add ${String(component?.label || 'part').toLowerCase()}: ${where}` });
+    group.style.left = `${p.x - p.w / 2}px`;
+    group.style.top = `${p.y - p.h / 2}px`;
+    for (const way of p.ways) {
+      const label = `Add ${String(component?.label || 'part').toLowerCase()}: ${where}${way ? `, going ${way}` : ''}`;
+      const b = el('button', { type: 'button', className: 'plan-add-btn', 'aria-label': label, title: label, 'data-way': way, 'data-port': p.port?.name ?? '' });
+      b.append(addIcon(way));
+      b.addEventListener('click', () => {
+        /** @type {Record<string, unknown>} */
+        const values = {};
+        if (way) values.direction = way;
+        if (p.along > 0) values.along = p.along;
+        handlers.onAdd({ port: p.port, values });
+      });
+      group.append(b);
+    }
+    host.append(group);
+  }
+
+  if (selected) host.append(partBar(result, selected, component, handlers));
+}
+
+/**
+ * Moves the add buttons apart where they'd overlap (each other, or off the plan): along the
+ * wall, up or down, as little as it takes.
+ * @param {{ x: number, y: number, w: number, h: number }[]} pills
+ * @param {number} W
+ * @param {number} H
+ */
+function spread(pills, W, H) {
+  const gap = 6;
+  for (let round = 0; round < 40; round++) {
+    let moved = false;
+    for (let i = 0; i < pills.length; i++) {
+      for (let j = i + 1; j < pills.length; j++) {
+        const [a, b] = [pills[i], pills[j]];
+        const ox = (a.w + b.w) / 2 + gap - Math.abs(a.x - b.x);
+        const oy = (a.h + b.h) / 2 + gap - Math.abs(a.y - b.y);
+        if (ox <= 0 || oy <= 0) continue;
+        // Up and down, the higher one up.
+        const s = a.y < b.y || (a.y === b.y && i < j) ? -1 : 1;
+        a.y += (s * oy) / 2;
+        b.y -= (s * oy) / 2;
+        moved = true;
+      }
+    }
+    for (const p of pills) {
+      const y = Math.min(H - p.h / 2 - 4, Math.max(p.h / 2 + 4, p.y));
+      const x = Math.min(W - p.w / 2 - 4, Math.max(p.w / 2 + 4, p.x));
+      if (x !== p.x || y !== p.y) moved = true;
+      p.x = x;
+      p.y = y;
+    }
+    if (!moved) break;
+  }
+}
+
+/** A `+` with an arrow the way a new part goes (up, down; none: just the `+`). */
+function addIcon(way) {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG, 'path');
+  const plus = way ? 'M4 12h8M8 8v8' : 'M6 12h12M12 6v12';
+  const arrow = way === 'up' ? 'M17.5 20V5M13.5 9l4-4 4 4' : way === 'down' ? 'M17.5 4v15M13.5 15l4 4 4-4' : '';
+  path.setAttribute('d', `${plus}${arrow}`);
+  svg.append(path);
+  return svg;
+}
+
+/** A small line icon for the bar's buttons. */
+function icon(d) {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG, 'path');
+  path.setAttribute('d', d);
+  svg.append(path);
+  return svg;
+}
+
+const ICONS = {
+  settings: 'M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4',
+  remove: 'M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13M10.5 11v6M13.5 11v6',
+  close: 'M6 6l12 12M18 6L6 18',
+  up: 'M12 20V5M7 10l5-5 5 5',
+  down: 'M12 4v15M7 14l5 5 5-5',
+};
+
+/** A setting's label without what's in brackets ("Straight end (more shades…)": "Straight end"). */
+const shortLabel = (label) => String(label).replace(/\s*\(.*\)\s*$/, '').trim();
+
+/**
+ * The selected part's bar: its name; its `@ask` settings (a list for a choice of many, a flip for
+ * a choice of two, up and down as arrows); its on/off settings that apply; its settings; hide in
+ * the 3D view; remove; close.
+ */
+function partBar(result, name, component, handlers) {
+  const params = result.params.filter((p) => p.part === name);
+  const values = Object.fromEntries(result.params.map((p) => [p.name, p.value]));
+  const own = (p) => p.name.slice(name.length + 1);
+  const bar = el('div', { className: 'plan-bar', role: 'toolbar', 'aria-label': name });
+  const color = handlers.colorOf?.(name);
+  const title = el('button', { type: 'button', className: 'plan-bar-name', text: name, title: `${name}: settings`, 'aria-label': `${name}: settings` });
+  if (color) title.style.setProperty('--part', color);
+  title.addEventListener('click', () => handlers.onOpen(name));
+  bar.append(title);
+  const tool = (cls, d, label, go) => {
+    const b = el('button', { type: 'button', className: `plan-bar-btn ${cls}`, title: label, 'aria-label': label });
+    b.append(icon(d));
+    b.addEventListener('click', go);
+    return b;
+  };
+  // The `@ask` settings, a list (the shape) before a flip (up, down).
+  const asked = new Set((component?.ask || []).map((p) => p.name));
+  const askedHere = params.filter((p) => asked.has(own(p)) && p.kind === 'choice').sort((a, b) => b.choices.length - a.choices.length);
+  for (const p of askedHere) {
+    const key = own(p);
+    const value = String(p.value);
+    if (p.choices.length === 2) {
+      const next = String(p.choices.find((c) => String(c) !== value));
+      const arrows = value === 'up' || value === 'down';
+      const b = el('button', { type: 'button', className: 'plan-bar-btn', 'data-set': key, title: `${p.label}: ${value} → ${next}`, 'aria-label': `${p.label}: ${value}, switch to ${next}` });
+      if (arrows) b.append(icon(ICONS[/** @type {'up' | 'down'} */ (value)]));
+      else b.textContent = value;
+      b.addEventListener('click', () => handlers.onSet(name, { [key]: next }));
+      bar.append(b);
+    } else {
+      const select = /** @type {HTMLSelectElement} */ (el('select', { className: 'plan-bar-select', 'data-set': key, 'aria-label': p.label, title: p.label }, p.choices.map((c) => el('option', { value: String(c), text: String(c) }))));
+      select.value = value;
+      select.addEventListener('change', () => handlers.onSet(name, { [key]: select.value }));
+      bar.append(select);
+    }
+  }
+  bar.append(tool('settings', ICONS.settings, `${name}: settings`, () => handlers.onOpen(name)), tool('remove', ICONS.remove, `Remove ${name}`, () => handlers.onRemove(name)));
+  // Its on/off settings that apply (a straight end, …).
+  for (const p of params) {
+    if (p.kind !== 'toggle' || p.attrs.includes('hidden') || !applies(p, result.params, values)) continue;
+    const on = p.value === true;
+    const b = el('button', { type: 'button', className: 'plan-bar-chip', 'aria-pressed': String(on), 'data-set': own(p), text: shortLabel(p.label), title: p.label });
+    b.addEventListener('click', () => handlers.onSet(name, { [own(p)]: !on }));
+    bar.append(b);
+  }
+  bar.append(tool('close', ICONS.close, 'Done', () => handlers.onSelect(null)));
+  return bar;
 }
 
 /**
@@ -214,71 +634,18 @@ export function shadeDefaults(shape, port) {
 }
 
 /**
- * The dialog that adds a part: where it goes (a port; the one tapped in the plan), then the
- * component's `@ask` settings (the shade's shape, which way it goes). Resolves with what to add,
- * or null.
- * @param {HTMLElement} host the dialog's element
- * @param {any} result
- * @param {any} [port] the port tapped, if any
- * @returns {Promise<{ component: string, port: string, values: Record<string, unknown> } | null>}
+ * The values a part's shape brings when it's switched to another: the new shape's sizes scaled to
+ * where the part sits, for the settings the old shape didn't use (those it did keep their values).
+ * @param {string} from the old shape
+ * @param {string} to the new shape
+ * @param {number[] | null} port the port it's on (null: the default, e.g. the socket)
  */
-export function askNewPart(host, result, port) {
-  const component = (result.components || [])[0];
-  const ports = (result.ports || []).filter((p) => p.value.length >= 4 && p.value[3] > 0);
-  if (!component) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    host.replaceChildren();
-    const field = (label, control) => el('label', { className: 'setting choice' }, [el('span', { text: label }), control]);
-    const where = /** @type {HTMLSelectElement} */ (
-      el(
-        'select',
-        { id: 'addPartPort' },
-        ports.map((p) => el('option', { value: p.name, text: `${p.part} · ${p.label}` })),
-      )
-    );
-    if (port) where.value = port.name;
-    const asks = component.ask.map((p) => {
-      const select = /** @type {HTMLSelectElement} */ (
-        el(
-          'select',
-          { id: `addPart-${p.name}` },
-          p.choices.map((c) => el('option', { value: String(c), text: String(c) })),
-        )
-      );
-      select.value = String(p.value);
-      return { p, select };
-    });
-    const direction = asks.find((a) => a.p.name === 'direction');
-    // On from the port's section, unless chosen otherwise.
-    const follow = () => {
-      const chosen = ports.find((p) => p.name === where.value);
-      if (direction && chosen && !direction.select.dataset.touched) direction.select.value = chosen.value[2] < 0 ? 'up' : 'down';
-    };
-    direction?.select.addEventListener('change', () => (direction.select.dataset.touched = '1'));
-    where.addEventListener('change', follow);
-    follow();
-    const add = el('button', { className: 'btn primary', type: 'button', text: 'Add', id: 'addPartYes' });
-    const cancel = el('button', { className: 'btn', type: 'button', text: 'Cancel', id: 'addPartNo' });
-    const done = (answer) => {
-      host.hidden = true;
-      host.replaceChildren();
-      resolve(answer);
-    };
-    add.addEventListener('click', () => {
-      const chosen = ports.find((p) => p.name === where.value);
-      const values = {};
-      for (const { p, select } of asks) values[p.name] = p.choices.find((c) => String(c) === select.value) ?? select.value;
-      const shape = String(values.shape ?? '');
-      done({ component: component.name, port: where.value, values: { ...(chosen ? shadeDefaults(shape, chosen.value) : {}), ...values } });
-    });
-    cancel.addEventListener('click', () => done(null));
-    host.append(
-      el('h2', { text: `Add ${String(component.label).toLowerCase()}` }),
-      field('Mounted on', where),
-      ...asks.map(({ p, select }) => field(p.label, select)),
-      el('div', { className: 'buttons' }, [add, cancel]),
-    );
-    host.hidden = false;
-    where.focus();
-  });
+export function shapeSwitch(from, to, port) {
+  if (!port) return {};
+  const before = shadeDefaults(from, port);
+  const after = shadeDefaults(to, port);
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const [k, v] of Object.entries(after)) if (k !== 'direction' && !(k in before)) out[k] = v;
+  return out;
 }

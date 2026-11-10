@@ -5,6 +5,37 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-10: the Plan as the place to work, recipes that explain themselves, the G1's origin
+
+**Landed:**
+- **The Plan (lamp):** every free port of the selected shade has add buttons, a `+` with an
+  arrow up or down, on the side of the wall the new shade screws onto (outside right, inside
+  left). One tap adds a cone sized for where it goes, selected, its own buttons showing; the
+  add dialog is gone. A tapped shade is selected (a halo, the others dimmed) with a bar at the
+  Plan's foot: its name (opens its settings), shape, which way it goes (tap to flip), settings,
+  remove, its on/off settings. Wheel or pinch zooms, drag pans, Fit re-fits; drawn in screen
+  pixels so lines and buttons keep their size. Details in `docs/lamp-builder.md`.
+- **Found on the way:** moving any slider of a lamp's shade wrote every one of the shade's
+  settings into its part line; only the setting moved is written now.
+- **`require(value, test, message)`:** a recipe says what's wrong in its own words. It passes
+  its value through while the test holds; otherwise the line's error is exactly the message
+  (`warn: true`: a warning) and the steps reading it are skipped, so it's the only message. The
+  lampshade and the lamp's shade use it for a bell (no max angle) or dome wider than it's tall
+  (it used to say "the profile must rise all the way"). The AI's guide asks for it.
+- **The G1's origin is its bed's centre,** from the printer: 500/500, following the bed when
+  its size is changed (an origin moved by hand stays). A saved 125/125 becomes the centre. The
+  P1P keeps EasyGCode's 125/125. The smoke test sets 125/125 where it compares with
+  EasyGCode's fixtures.
+- **Research:** `docs/grasshopper.md`: a toolpath into Rhino, the engine inside a script
+  component, definitions from recipes, reading Grasshopper files, building without the AI.
+  Nothing built, nothing tried in a Rhino.
+
+**Open:** a selected tube shows four pairs of add buttons, crowded on a phone until zoomed; the
+free-port check looks at a new shade's straight start only (a bad spot shows red after the
+add). Proposed, not built: tap a mark and add a step to it (a fillet), picking a shade in the
+3D view, drag handles in the Plan, renaming a part, undo for every edit, the Plan as a PNG,
+marks for the other templates.
+
 ## 2026-11-09: the Plan leads to the settings
 
 **Why:** the owner asked to tap a piece of the shape (a fillet, the throat) and land on the
