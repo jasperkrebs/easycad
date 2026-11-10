@@ -99,7 +99,7 @@ async function run(quality, how = {}) {
   try {
     // The simulation only on full-quality runs: a slider being dragged stays quick.
     const simulate = state.simulate && quality === 'final' ? state.profile.multiplier || 1 : null;
-    result = await engine.evaluate(state.source, state.values, quality, simulate, state.alongWall);
+    result = await engine.evaluate(state.source, changedValues(), quality, simulate, state.alongWall);
   } catch (err) {
     setStatus('Engine error', 'bad');
     showSettingsError(String(err.message || err));
@@ -149,6 +149,15 @@ async function run(quality, how = {}) {
   else setStatus(`Engine ready · ${fmt(result.ms)} ms`, 'ok');
   autosave();
   return result;
+}
+
+/**
+ * The values that differ from what the recipe says (its last run): only those are written into
+ * the text, so a part's line gains just the settings moved, not every one it has.
+ */
+function changedValues() {
+  const was = new Map((state.last?.params || []).map((p) => [p.name, JSON.stringify(p.value)]));
+  return Object.fromEntries(Object.entries(state.values).filter(([k, v]) => was.get(k) !== JSON.stringify(v)));
 }
 
 function onSettingChange(name, value, quality) {
