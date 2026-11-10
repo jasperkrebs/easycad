@@ -37,6 +37,37 @@ pub(super) fn pick(_: &mut Ctx, a: &Args) -> Result<Value, String> {
         .ok_or_else(|| "missing value".into())
 }
 
+/// Passes `value` through when `test` holds. When it doesn't, the recipe's own `message` is
+/// the error (or, with `warn`, a warning). `call` leaves the step's name off these messages.
+pub(super) fn require(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let mut holds = true;
+    let mut stack = vec![a.get(1)?];
+    while let Some(v) = stack.pop() {
+        match v {
+            Value::Bool(b) => holds &= *b,
+            Value::Number(n) => holds &= *n != 0.0,
+            Value::List(l) => stack.extend(l.items.iter()),
+            Value::Field(_) => {
+                return Err("require: `test` is a field, which has no single value; reduce it to a number or true/false first".into());
+            }
+            other => {
+                return Err(format!(
+                    "require: `test` must be true/false, a number or a list of them, got {}",
+                    other.kind()
+                ));
+            }
+        }
+    }
+    if !holds {
+        let message = a.text(2)?.to_string();
+        if !a.flag(3)? {
+            return Err(message);
+        }
+        ctx.warn(message);
+    }
+    Ok(a.get(0)?.clone())
+}
+
 /// Where `value` first appears in the list, counting from 0 (as `item` counts).
 pub(super) fn index_of(_: &mut Ctx, a: &Args) -> Result<Value, String> {
     let items = a.items(0)?;

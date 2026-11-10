@@ -280,3 +280,37 @@ fn marks_lead_to_each_shades_own_settings() {
             .any(|d| d.message == "`mark … for filet`: there's no setting `filet`")
     );
 }
+
+/// A bell or dome wider than it is tall says how to fix it instead of failing deep inside.
+#[test]
+fn a_shade_too_wide_for_its_height_says_so() {
+    use Literal::{Number, Text};
+    for (shape, words) in [
+        ("bell", "This bell is wider"),
+        ("dome", "This dome is wider"),
+    ] {
+        let src = set_values(
+            LAMP,
+            &[
+                ("main.shape".into(), Text(shape.into())),
+                ("main.opening".into(), Number(300.0)),
+            ],
+        )
+        .unwrap();
+        let e = run(&src);
+        let errors: Vec<_> = e.errors().map(|d| d.message.as_str()).collect();
+        assert_eq!(errors.len(), 1, "{shape}: {:?}", e.diagnostics);
+        assert!(errors[0].starts_with(words), "{}", errors[0]);
+    }
+    let src = set_values(
+        LAMP,
+        &[
+            ("main.shape".into(), Text("bell".into())),
+            ("main.opening".into(), Number(300.0)),
+            ("main.max_angle".into(), Number(60.0)),
+        ],
+    )
+    .unwrap();
+    let e = run(&src);
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+}

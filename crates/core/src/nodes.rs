@@ -260,6 +260,27 @@ pub static NODES: &[Node] = &[
         run: Run::Op(curve_tools::pick),
     },
     Node {
+        name: "require",
+        group: "Numbers & lists",
+        inputs: &[
+            tree(
+                "value",
+                "Any",
+                "passed through unchanged when the test holds",
+            ),
+            tree(
+                "test",
+                "Bool | Number | List",
+                "true, or any number but 0; a list: every item must hold",
+            ),
+            req("message", "Text", "what to tell the user when it doesn't"),
+            opt("warn", "Bool", 0.0, "true: only warn, and carry on"),
+        ],
+        output: "Any",
+        doc: "Lets a recipe explain itself. Passes `value` through when `test` holds; when it doesn't, the line is an error whose message is exactly your `message` (with `warn: true`, a warning, and the recipe carries on). Steps that read a failed `require` are skipped, so your message is the only complaint: `profile = polyline(...) |> require(greater(h, dr), \"Too wide for its height: raise the height or lower the opening\")` guards what would fail further on. A list test needs every item to hold; a field has no single value and is refused. Write the message as how to fix it.",
+        run: Run::Op(curve_tools::require),
+    },
+    Node {
         name: "index_of",
         group: "Numbers & lists",
         inputs: &[
