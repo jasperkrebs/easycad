@@ -5,6 +5,17 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-10: a reload right after a change kept the change; the smoke test's settling
+
+**Why:** CI's smoke test failed on PR #20 ("offered again after updating"): the project is
+saved on the device 300 ms after the last change, and the test reloads at once after a
+template update, so the update was lost and offered again. The same happened to anyone
+reloading or closing the tab within that moment. Separately, the plan's 40 px check sometimes
+measured the buttons of a drawing just replaced (0 px), a race in the test.
+
+**Landed:** the project is saved at once when the page goes (`pagehide`) if a save is waiting.
+The smoke test measures the add buttons once the plan has settled.
+
 ## 2026-11-10: slide a shade along its thread; screw it off in 3D
 
 **Why:** the owner wanted to plan by hand: move a shade along the threaded section it sits on,

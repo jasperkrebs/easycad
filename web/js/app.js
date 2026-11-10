@@ -852,17 +852,27 @@ async function updateToTemplate(id, text) {
 let saveTimer = 0;
 function autosave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveJSON(STORAGE_KEY, {
-      source: state.source,
-      openedValues: state.openedValues,
-      printer: state.printer,
-      unsaved: state.unsaved,
-      saveName: /** @type {HTMLInputElement} */ ($('saveName')).value,
-      template: state.template,
-    });
-  }, 300);
+  saveTimer = setTimeout(saveNow, 300);
 }
+
+/** Saves the project on the device now (what autosave does a moment after the last change). */
+function saveNow() {
+  clearTimeout(saveTimer);
+  saveTimer = 0;
+  saveJSON(STORAGE_KEY, {
+    source: state.source,
+    openedValues: state.openedValues,
+    printer: state.printer,
+    unsaved: state.unsaved,
+    saveName: /** @type {HTMLInputElement} */ ($('saveName')).value,
+    template: state.template,
+  });
+}
+
+// A reload, or the tab closed, within the moment autosave waits: saved now, not lost.
+window.addEventListener('pagehide', () => {
+  if (saveTimer) saveNow();
+});
 
 function restore() {
   const saved = loadJSON(STORAGE_KEY, null);
