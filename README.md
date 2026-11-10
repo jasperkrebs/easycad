@@ -122,6 +122,7 @@ export vase as "twisted-vase.stl"
 | [docs/printers.md](docs/printers.md) | The printers: the Ginger G1 from its wiki, its limits, materials and checks |
 | [docs/lamp-builder.md](docs/lamp-builder.md) | Components and parts: lamps of shades that screw into each other |
 | [docs/feature-requests.md](docs/feature-requests.md) | When the AI can't build something: it asks, Claude Code builds the step, the chat carries on |
+| [docs/grasshopper.md](docs/grasshopper.md) | Research: toolpaths and recipes in Grasshopper, Grasshopper files in EasyCAD, building without the AI |
 | [docs/devlog.md](docs/devlog.md) | What landed, what's open |
 | [CLAUDE.md](CLAUDE.md) | Guidance for AI agents (and humans) working in this repo |
 

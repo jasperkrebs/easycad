@@ -871,10 +871,18 @@ impl<'a> Runner<'a> {
             });
         }
         let result = nodes::call(&mut self.ctx, node, values);
+        // `require` speaks in the recipe's own words: no step name in front of them.
+        let say = |m: String| {
+            if name == "require" {
+                m
+            } else {
+                format!("{name}: {m}")
+            }
+        };
         for warning in std::mem::take(&mut self.ctx.warnings) {
-            self.diag(span, Severity::Warning, format!("{name}: {warning}"));
+            self.diag(span, Severity::Warning, say(warning));
         }
-        result.map_err(|m| Fail::Error(span, format!("{name}: {m}")))
+        result.map_err(|m| Fail::Error(span, say(m)))
     }
 
     // ------------------------------------------------------------------------- outputs

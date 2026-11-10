@@ -128,7 +128,12 @@ own_l     = atan2(item(own_rr, own_next) - item(own_rr, own_prev), item(own_zz, 
 # The chosen shade.
 k_shape = index_of(["cone", "bell", "dome", "sphere", "flat sphere", "own"], shape)
 fl_r = pick(less(k_shape, 0.5), cone_r, pick(less(k_shape, 1.5), bell_r, pick(less(k_shape, 2.5), dome_r, pick(less(k_shape, 3.5), sphere_r, pick(less(k_shape, 4.5), flat_r, own_rr)))))
-fl_z = pick(less(k_shape, 0.5), cone_z, pick(less(k_shape, 1.5), bell_z, pick(less(k_shape, 2.5), dome_z, pick(less(k_shape, 3.5), sphere_z, pick(less(k_shape, 4.5), flat_z, own_zz)))))
+# A bell or dome wider than it is tall can't be drawn as one arc (its wall would pass 90°): say how to fix it,
+# only for the shape that's chosen. The steps that read `fl_z` are skipped, so this is the only message.
+is_bell  = less(abs(k_shape - 1), 0.5)
+is_dome  = less(abs(k_shape - 2), 0.5)
+too_wide = greater(dr, h)
+fl_z = pick(less(k_shape, 0.5), cone_z, pick(less(k_shape, 1.5), bell_z, pick(less(k_shape, 2.5), dome_z, pick(less(k_shape, 3.5), sphere_z, pick(less(k_shape, 4.5), flat_z, own_zz))))) |> require(1 - is_bell * too_wide * less(max_angle, 0.000001), "This bell is wider than it is tall: raise the transition height, lower the opening, or set a max angle") |> require(1 - is_dome * too_wide, "This dome is wider than it is tall: raise the transition height or lower the opening")
 fl_l = pick(less(k_shape, 0.5), cone_l, pick(less(k_shape, 1.5), bell_l, pick(less(k_shape, 2.5), dome_l, pick(less(k_shape, 3.5), sphere_l, pick(less(k_shape, 4.5), flat_l, own_l)))))
 
 # ---- The fillet: a tangent arc from the vertical throat onto the shade, where the shade first

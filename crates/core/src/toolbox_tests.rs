@@ -394,3 +394,116 @@ fn hostile_inputs_give_messages_not_crashes() {
         let _ = e.diagnostics.len();
     }
 }
+
+// ------------------------------------------------------------------------------- require
+
+fn evaluation(body: &str) -> crate::eval::Evaluation {
+    crate::eval::evaluate(&format!("easycad 0.1\n{body}\n"), Quality::Final)
+}
+
+fn status(e: &crate::eval::Evaluation, name: &str) -> &'static str {
+    e.steps.iter().find(|s| s.name == name).unwrap().status
+}
+
+#[test]
+fn require_passes_its_value_through_when_the_test_holds() {
+    let v = run("a = 5 |> require(greater(5, 2), \"too small\")\nb = require([1, 2], 3, \"no\")");
+    assert_eq!(num(&v, "a"), 5.0);
+    assert_eq!(nums(&v, "b"), [1.0, 2.0]);
+    let v = run("c = 7 |> require(true, \"no\")");
+    assert_eq!(num(&v, "c"), 7.0);
+}
+
+#[test]
+fn require_fails_with_exactly_the_recipes_message() {
+    let e = evaluation("x = 1\na = x |> require(less(5, 2), \"Make it smaller.\")");
+    let errors: Vec<_> = e.errors().collect();
+    assert_eq!(errors.len(), 1, "{:?}", e.diagnostics);
+    assert_eq!(errors[0].message, "Make it smaller.");
+    assert_eq!(errors[0].line, 3);
+    assert_eq!(status(&e, "a"), "error");
+}
+
+#[test]
+fn require_can_only_warn() {
+    let body = "ok = 4 |> require(false, \"Thin walls.\", warn: true)\n";
+    assert_eq!(messages(body, Severity::Warning), ["Thin walls."]);
+    let v = run(body);
+    assert_eq!(num(&v, "ok"), 4.0);
+}
+
+#[test]
+fn require_takes_a_list_and_refuses_a_field() {
+    assert!(messages("a = 1 |> require([true, 1, 2], \"x\")", Severity::Error).is_empty());
+    assert!(messages("a = 1 |> require([[true], [1, 0]], \"x\")", Severity::Error).len() == 1);
+    assert_eq!(
+        error("a = 1 |> require([1, 0, 1], \"one failed\")"),
+        "one failed"
+    );
+    assert!(messages("a = 1 |> require([], \"x\")", Severity::Error).is_empty());
+    let e = error("a = 1 |> require(z, \"x\")");
+    assert!(e.contains("field") && e.contains("no single value"), "{e}");
+    assert!(error("a = 1 |> require(\"yes\", \"x\")").contains("must be true/false"));
+}
+
+#[test]
+fn steps_that_read_a_failed_require_are_skipped_not_failed() {
+    let e = evaluation(
+        "guarded = 3 |> require(false, \"Fix the setting.\")\nnext = sqrt(0 - guarded)\nlater = next + 1",
+    );
+    assert_eq!(e.errors().count(), 1, "{:?}", e.diagnostics);
+    assert_eq!(status(&e, "guarded"), "error");
+    assert_eq!(status(&e, "next"), "skipped");
+    assert_eq!(status(&e, "later"), "skipped");
+}
+
+fn lampshade_with(values: &[(&str, easycad_lang::Literal)]) -> crate::eval::Evaluation {
+    let values: Vec<(String, easycad_lang::Literal)> = values
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect();
+    let src = include_str!("../../../web/templates/lampshade.easycad");
+    crate::eval::evaluate(
+        &easycad_lang::set_values(src, &values).unwrap(),
+        Quality::Final,
+    )
+}
+
+#[test]
+fn the_lampshade_explains_a_bell_or_dome_wider_than_it_is_tall() {
+    use easycad_lang::Literal::{Number, Text};
+    let shape = |s: &str| ("shape", Text(s.into()));
+    for (name, words) in [
+        ("bell", "This bell is wider"),
+        ("dome", "This dome is wider"),
+    ] {
+        let e = lampshade_with(&[shape(name), ("opening", Number(300.0))]);
+        let errors: Vec<_> = e.errors().map(|d| d.message.as_str()).collect();
+        assert_eq!(errors.len(), 1, "{name}: {:?}", e.diagnostics);
+        assert!(errors[0].starts_with(words), "{}", errors[0]);
+        assert!(!errors[0].contains("vase_revolve"), "{}", errors[0]);
+    }
+    // A bell with a max angle opens out as far as it can, then runs straight.
+    let e = lampshade_with(&[
+        shape("bell"),
+        ("opening", Number(300.0)),
+        ("max_angle", Number(60.0)),
+    ]);
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+    assert!(e.print.is_some());
+    // Other shapes never see the message, and a tall enough bell is fine.
+    for s in ["cone", "sphere"] {
+        let e = lampshade_with(&[shape(s), ("opening", Number(300.0))]);
+        assert!(
+            e.errors()
+                .all(|d| !d.message.contains("wider than it is tall")),
+            "{s}: {:?}",
+            e.diagnostics
+        );
+    }
+    let e = lampshade_with(&[shape("bell"), ("transition", Number(200.0))]);
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+    // As shipped.
+    let e = lampshade_with(&[]);
+    assert!(e.errors().next().is_none() && e.print.is_some());
+}
