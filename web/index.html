@@ -47,7 +47,7 @@
               <button type="button" data-mode="shape" aria-pressed="false">Shape</button>
               <button type="button" data-mode="path" aria-pressed="false">Toolpath</button>
               <button type="button" data-mode="both" aria-pressed="true">Both</button>
-              <button type="button" id="viewPlan" aria-pressed="false" title="The shape cut through its axis: tap a piece for its settings, + to add a part there" hidden>Plan</button>
+              <button type="button" id="viewPlan" aria-pressed="false" title="Plan: the cut through the axis" hidden>Plan</button>
             </div>
             <div class="seg">
               <select id="viewColor" aria-label="Colour the toolpath by" title="Colour the toolpath by"></select>
@@ -143,7 +143,6 @@
             </div>
           </div>
           <div id="settings"></div>
-          <div class="sheet" id="addPart" role="dialog" aria-modal="true" aria-label="Add a part" hidden></div>
           <p class="error" id="settingsError" hidden></p>
           <div class="buttons">
             <button class="btn" type="button" id="resetSettings">Reset settings</button>

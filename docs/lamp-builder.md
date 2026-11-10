@@ -63,7 +63,9 @@ part tube = shade(mount: main.end_out, direction: "down", shape: "tube", length:
   (the socket, the layer height, the line width, the fits, the flow).
 - The engine expands the parts into one ordinary recipe before it runs, so everything else
   (steps, errors, the settings window, printing, the agent's edits) works as before.
-- `@ask` settings are asked when a part is added (the shape, which way it goes).
+- `@ask` settings are the choices a new part comes with (the shape, which way it goes): in the
+  Plan a `direction` choice is one add button per way, the rest start at their defaults and are
+  on the selected part's bar.
 
 Commands (the same for the buttons, the agent and the CLI): `addPart(component, name, values)`
 writes a new `part` line; `removePart(name)` removes it and the parts mounted on it.
@@ -99,10 +101,37 @@ The lamp builder is a new template, **Lamp**.
 - **Settings:** the shared groups as today (Socket, Print, Overhangs, Brim, Joints), then one
   fold-out per shade, headed by its name and shape, with a remove button. Inside: where it's
   mounted, which way, how far along, its shape and that shape's settings, its start and end.
-- **Plan** (a fourth view next to Shape, Toolpath, Both): the assembly's cross-section, every
-  shade a line as wide as its bead, the ports as `+` buttons. Tap a `+`, pick a shape and up or
-  down, and the shade appears there with sensible defaults; tap a shade to open its settings.
-  Collisions are drawn red.
+  "Add shade" shows the Plan, with the last shade selected.
+- **Plan** (a fourth view next to Shape, Toolpath, Both; the place to work on the assembly):
+  the assembly's cross-section, every shade a line as wide as its bead, in its colour (its
+  custom colour when chosen; red where it runs into another; faint while hidden from the 3D
+  view), its name on the left. Drawn in screen pixels: lines, labels and buttons keep their
+  size; the wheel or a pinch zooms, a drag pans, a double-click or Fit fits it again.
+  - **Tap a shade** to select it: a halo, the others step back, and its **bar** along the plan's
+    foot: its name (its settings), its shape (a list), which way it goes (an arrow: tap to
+    flip), settings, remove, its on/off settings that apply (a straight end, printed wide edge
+    down) and done. Tap it again, tap nothing, or Escape, to deselect. With the Settings tab
+    showing, its fold-out comes into sight.
+  - **Add buttons:** beside every free port of the selected shade (of the only shade, when
+    there's one), one button per way a new shade can go: a `+` with an arrow up or down (the
+    component's `direction` choices), on the side of the wall it screws onto (outside: to the
+    wall's right; inside: to its left, towards the axis), with a stem to the spot. One tap adds
+    the shade (`addPart`) with the component's default shape, its sizes scaled to where it goes,
+    and it arrives selected, its own add buttons showing, so the next one is one tap more. The
+    other shades' free ports are dots. Buttons are 40 px, pushed apart along the wall where
+    they'd overlap.
+  - **Which ports are free** comes from the drawing: a port with a straight section, and room on
+    its face for a straight start (20 mm, or the section's length) that no shade's beads lie on.
+    Where one already sits (a shade at a tube's end), the new one goes further along (`along`)
+    past it; a short section that's taken offers nothing.
+  - **Just added**, while nothing else has changed, a new shape or way from the bar adds the
+    shade afresh (from the recipe as it was before): a `cone` switched to a tube is called
+    `tube`, with the tube's sizes. After that a new shape keeps the name, and brings its sizes
+    for the settings the old shape didn't use.
+  - **Tap a mark** (start, fillet, shade, opening, height, straight end…): its shade is selected
+    and the Settings tab opens at the setting, lit up.
+  - With no shade at all, one add button (up) puts the first on the socket.
+- A setting changed anywhere (the bar, a slider) writes only that setting into the part's line.
 - **3D view:** the whole assembly, each shade where it goes; the parts buttons show one shade.
 - **Print:** one G-code per shade, each on the bed's centre.
 
@@ -116,15 +145,23 @@ All built 8 Nov 2026:
    prints EasyGCode's lampshade G-code, all four golden fixtures (`golden_tests.rs`); the
    assembly tests are in `lamp_tests.rs`.
 4. The app: settings per part, add and remove, the Plan view (`web/js/parts.js`); the smoke test
-   adds a tube on the plan and removes it.
+   adds a tube on the plan and removes it. 10 Nov 2026: the Plan's add buttons (a `+` and an
+   arrow per way, on the face's side), selection and the bar, zoom and pan; the smoke test adds
+   shades through the buttons (outside and inside), switches a shape and flips a shade from the
+   bar, removes one, selects and deselects, and checks a hidden shade; `settings.test.mjs` checks
+   which ports are free and how far along.
 5. Docs and the agent's guide.
 
 ## Still open
 
 - `along` (how far along a section a shade sits) has a fixed range; it could follow the
   section's length.
-- Renaming a part (the commands add and remove; a part's name comes from its shape).
-- Where a tube meets the next shade the plan's `+` buttons crowd: a tube's start and end are
-  the same section, offered from both ends.
+- Renaming a part (the commands add and remove; a part's name comes from its shape, and only a
+  shade just added is renamed when its shape changes).
+- A tube's start and end are the same section, offered from both ends: four pairs of add
+  buttons round a selected tube, crowded on a phone until zoomed in.
+- The add buttons don't check the new shade's body, only its straight start: a shade that runs
+  into another shows red once added (the bar removes it again).
+- Selection is the plan's only: the 3D view doesn't highlight the selected shade.
 - The agent hasn't been tried on the lamp yet (its guide describes parts).
 - Up is as printed (the socket at the bottom); a hanging lamp is the plan turned over.

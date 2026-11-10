@@ -13,7 +13,7 @@ import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColor
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
-import { askNewPart, newPartName, renderPlan } from './parts.js';
+import { fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch } from './parts.js';
 import { beadExtremes, renderBeads } from './beads.js';
 
 const TEMPLATES = [
@@ -99,7 +99,7 @@ async function run(quality, how = {}) {
   try {
     // The simulation only on full-quality runs: a slider being dragged stays quick.
     const simulate = state.simulate && quality === 'final' ? state.profile.multiplier || 1 : null;
-    result = await engine.evaluate(state.source, state.values, quality, simulate, state.alongWall);
+    result = await engine.evaluate(state.source, changedValues(), quality, simulate, state.alongWall);
   } catch (err) {
     setStatus('Engine error', 'bad');
     showSettingsError(String(err.message || err));
@@ -123,7 +123,7 @@ async function run(quality, how = {}) {
       broken: errors > 0,
       ports: result.ports,
       components: result.components,
-      onAddPart: () => addPart(),
+      onAddPart: () => showPlan(),
       onRemovePart: (name) => removePart(name),
     });
   }
@@ -149,6 +149,15 @@ async function run(quality, how = {}) {
   else setStatus(`Engine ready · ${fmt(result.ms)} ms`, 'ok');
   autosave();
   return result;
+}
+
+/**
+ * The values that differ from what the recipe says (its last run): only those are written into
+ * the text, so a part's line gains just the settings moved, not every one it has.
+ */
+function changedValues() {
+  const was = new Map((state.last?.params || []).map((p) => [p.name, JSON.stringify(p.value)]));
+  return Object.fromEntries(Object.entries(state.values).filter(([k, v]) => was.get(k) !== JSON.stringify(v)));
 }
 
 function onSettingChange(name, value, quality) {
@@ -206,6 +215,7 @@ function renderPartToggles(result) {
         if (hiddenParts.has(p.name)) hiddenParts.delete(p.name);
         else hiddenParts.add(p.name);
         renderPartToggles(state.last);
+        if (state.last) renderPlanView(state.last);
       });
       return b;
     }),
@@ -931,20 +941,67 @@ function onProfileChange() {
 // Parts (the lamp builder): the Plan, adding and removing parts, all through engine commands
 // ---------------------------------------------------------------------------------------------
 
-/** The part last tapped in the plan (drawn highlighted). */
+/** The part selected in the plan (drawn highlighted, its bar showing). */
 let selectedPart = /** @type {string | null} */ (null);
+/**
+ * The part the plan just added, while nothing else has changed: switching its shape then adds it
+ * afresh under its new shape's name (from the recipe as it was before), so a `cone` that becomes
+ * a tube is called `tube`.
+ * @type {{ name: string, before: string, after: string, values: Record<string, unknown>, port: any } | null}
+ */
+let freshPart = null;
+
+/** Whether the plan is the view shown. */
+const planOn = () => $('viewPlan').getAttribute('aria-pressed') === 'true';
 
 /** The Plan button shows for recipes with parts or marks; the plan redraws with every result. */
 function renderPlanView(result) {
   const has = (result.components || []).length > 0 || (result.marks || []).length > 0;
   const button = $('viewPlan');
   button.hidden = !has;
-  const on = has && button.getAttribute('aria-pressed') === 'true';
+  const on = has && planOn();
   $('plan').hidden = !on;
+  // The plan has no colours and no print to play: the view's foot gives its room to the plan.
+  document.body.toggleAttribute('data-plan', on);
+  if (selectedPart &&!(result.partList || []).some((p) => p.name === selectedPart)) selectedPart = null;
+  if (!on) return;
   const colors = customColors();
   const prints = printsOf(result);
   const colorOf = (name) => partLook(colors, name, Math.max(0, prints.findIndex((p) => p.name === name))).color;
-  if (on) renderPlan($('plan'), result, { onPort: (port) => addPart(port), onPart: (name) => openPart(name), onMark: (mark) => openSettings(mark.settings), selected: selectedPart, colorOf });
+  renderPlan($('plan'), result, {
+    selected: selectedPart,
+    hidden: hiddenParts,
+    colorOf,
+    onSelect: (name) => selectPart(name),
+    onMark: (mark, part) => {
+      if (part) selectPart(part, false);
+      openSettings(mark.settings);
+    },
+    onAdd: (add) => addPartAt(add.port, add.values),
+    onSet: (name, values) => setPartValues(name, values),
+    onOpen: (name) => openPart(name),
+    onRemove: (name) => removePart(name),
+  });
+}
+
+/** Shows the plan (the Plan button pressed). */
+function showPlan() {
+  if (!planOn()) $('viewPlan').click();
+  // Its add buttons are the selected part's: the last part, unless one is selected.
+  const parts = state.last?.partList || [];
+  if (!selectedPart && parts.length) selectPart(parts[parts.length - 1].name, false);
+}
+
+/**
+ * Selects a part in the plan (null: none). With the Settings tab showing, its fold-out comes
+ * into sight too.
+ * @param {string | null} name
+ * @param {boolean} [follow] bring its settings into sight (when they're showing)
+ */
+function selectPart(name, follow = true) {
+  selectedPart = name;
+  if (name && follow && !$('panel-settings').hidden) showPartSettings(name);
+  if (state.last) renderPlanView(state.last);
 }
 
 /**
@@ -967,43 +1024,88 @@ function openSettings(names) {
   rows[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
-/** Opens a part's fold-out in the settings and brings it into sight. */
+/** A part's fold-out in the settings: opened and brought into sight. */
+function showPartSettings(name) {
+  const details = document.getElementById(`set-${name}.mount`)?.closest('details');
+  if (!details) return;
+  /** @type {HTMLDetailsElement} */ (details).open = true;
+  details.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+/** Opens a part's fold-out in the Settings tab (and selects it in the plan). */
 function openPart(name) {
   selectedPart = name;
   selectTab('settings');
-  const id = `set-${name}.mount`;
-  const details = document.getElementById(id)?.closest('details');
-  if (details) {
-    /** @type {HTMLDetailsElement} */ (details).open = true;
-    details.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }
+  showPartSettings(name);
   if (state.last) renderPlanView(state.last);
 }
 
+/** Names a new part can't have: the parts', settings' and steps' names. */
+function takenNames(result) {
+  return [...(result.partList || []).map((p) => p.name), ...result.params.map((p) => p.name), ...result.steps.map((s) => s.name)];
+}
+
 /**
- * Asks where a new part goes and what it is (on a port tapped in the plan, or any), then adds
- * it with the engine's `addPart` command.
- * @param {any} [port]
+ * Adds a part where an add button in the plan says (a port, or the default for the first part)
+ * with the engine's `addPart` command: its component's `@ask` settings at their defaults unless
+ * given (the button's way, up or down), its sizes scaled to where it goes. It arrives selected.
+ * @param {any | null} port
+ * @param {Record<string, unknown>} values
+ * @param {string} [from] the recipe to add it to (the current one; the one before, when a part
+ *   just added changes shape)
  */
-async function addPart(port) {
+async function addPartAt(port, values, from) {
   const result = state.last;
-  if (!result) return;
-  const answer = await askNewPart($('addPart'), result, port);
-  if (!answer) return;
-  const taken = [...(result.partList || []).map((p) => p.name), ...result.params.map((p) => p.name), ...result.steps.map((s) => s.name)];
-  const name = newPartName(String(answer.values.shape ?? 'part'), taken);
-  const component = result.components.find((c) => c.name === answer.component);
-  const input = component?.inputs[0];
+  const component = result?.components?.[0];
+  if (!result || !component) return;
+  const base = { ...Object.fromEntries(component.ask.map((p) => [p.name, p.value])), ...values };
+  /** @type {Record<string, unknown>} */
+  const sized = port ? shadeDefaults(String(base.shape ?? ''), port.value) : {};
+  delete sized.direction;
+  const all = { ...sized, ...base };
+  const before = from ?? state.source;
+  const replaced = from ? freshPart?.name : null;
+  const taken = takenNames(result).filter((n) => !replaced || (n !== replaced && !n.startsWith(`${replaced}.`)));
+  const name = newPartName(String(all.shape ?? component.name), taken);
+  const input = component.inputs[0];
   try {
     await engine.idle();
-    const source = await engine.addPart(state.source, answer.component, name, { ...answer.values, ...(input ? { [input]: answer.port } : {}) });
+    const source = await engine.addPart(before, component.name, name, { ...all, ...(input && port ? { [input]: port.name } : {}) });
     selectedPart = name;
+    if (replaced && hiddenParts.delete(replaced)) hiddenParts.add(name);
     refitNext = true;
+    fitPlan();
     await applyRecipe(source);
-    openPart(name);
+    freshPart = { name, before, after: state.source, values: base, port };
+    if (!$('panel-settings').hidden) showPartSettings(name);
   } catch (err) {
     showSettingsError(String(err.message || err));
   }
+}
+
+/**
+ * Changes a part's settings from the plan's bar (its shape, which way it goes, a switch). A part
+ * just added, while nothing else has changed, is added afresh with its new `@ask` values (under
+ * the new shape's name, its sizes scaled for it); otherwise the values are set, and a new shape
+ * brings its sizes for the settings the old one didn't use.
+ * @param {string} name
+ * @param {Record<string, unknown>} values the part's own settings (`shape`, not `main.shape`)
+ */
+async function setPartValues(name, values) {
+  const result = state.last;
+  if (!result) return;
+  const asked = new Set((result.components?.[0]?.ask || []).map((p) => p.name));
+  if (freshPart && freshPart.name === name && freshPart.after === state.source && Object.keys(values).every((k) => asked.has(k))) {
+    await addPartAt(freshPart.port, { ...freshPart.values, ...values }, freshPart.before);
+    return;
+  }
+  if (values.shape !== undefined) {
+    const old = String(state.values[`${name}.shape`] ?? '');
+    const mount = (result.ports || []).find((p) => p.name === String(state.values[`${name}.mount`] ?? ''));
+    values = { ...shapeSwitch(old, String(values.shape), mount ? mount.value : null), ...values };
+  }
+  freshPart = null;
+  await applyValues(Object.fromEntries(Object.entries(values).map(([k, v]) => [`${name}.${k}`, v])));
 }
 
 /** Removes a part (and, after asking, the parts mounted on it) with the engine's command. */
@@ -1021,7 +1123,9 @@ async function removePart(name) {
     await engine.idle();
     const source = await engine.removePart(state.source, name);
     if (selectedPart === name || gone.includes(String(selectedPart))) selectedPart = null;
+    freshPart = null;
     refitNext = true;
+    fitPlan();
     await applyRecipe(source);
   } catch (err) {
     showSettingsError(String(err.message || err));
@@ -1070,7 +1174,7 @@ function wire() {
   });
   // Fit what's shown of the toolpath and orbit round its centre: the Fit button, a double-click,
   // or on a phone a double-tap (touch doesn't make a dblclick everywhere).
-  $('viewFit').addEventListener('click', () => viewport.focus());
+  $('viewFit').addEventListener('click', () => (planOn() ? fitPlan() : viewport.focus()));
   // The view as a picture, sharper than the screen.
   $('viewSnap').addEventListener('click', async () => {
     const blob = await (await fetch(viewport.capture(2))).blob();
