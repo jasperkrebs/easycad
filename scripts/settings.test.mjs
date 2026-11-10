@@ -1,12 +1,14 @@
 // Tests for list settings and projects with several parts, as the app and the agent see them
-// (web/js/settings.js, web/js/agent.js), and for telling when a project's template has been
-// improved since (web/js/templates.js); run with `node --test scripts/` (CI does).
+// (web/js/settings.js, web/js/agent.js, the Plan's add buttons in web/js/parts.js), and for
+// telling when a project's template has been improved since (web/js/templates.js); run with
+// `node --test scripts/` (CI does).
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runStatus } from '../web/js/agent.js';
 import { parseNumber } from '../web/js/dom.js';
+import { freePorts, newPartName, sections, shapeSwitch } from '../web/js/parts.js';
 import { applies, listValue } from '../web/js/settings.js';
 import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from '../web/js/templates.js';
 
@@ -166,4 +168,72 @@ test('stored settings never throw, with storage or without', async () => {
     if (had) Object.defineProperty(globalThis, 'localStorage', had);
     else delete globalThis.localStorage;
   }
+});
+
+// ---- The Plan's add buttons (web/js/parts.js): where a new shade can go, and what it starts with.
+
+/**
+ * An engine result with parts' toolpaths: each part a straight wall at radius `r` from `z0` to
+ * `z1` (a point a millimetre), and ports `[radius, height, inward, length, socket, side]`.
+ */
+function planResult(parts, ports) {
+  const points = [];
+  const starts = [0];
+  const widths = [];
+  for (const { r, z0, z1 } of parts) {
+    for (let z = z0; z <= z1; z += 1) {
+      points.push(r, 0, z);
+      widths.push(6);
+    }
+    starts.push(points.length / 3);
+  }
+  return {
+    paths: { points, starts, widths },
+    parts: { paths: parts.map((_, i) => i) },
+    prints: parts.map((p) => ({ name: p.name })),
+    ports: ports.map(([part, name, value]) => ({ part, name: `${part}.${name}`, label: name, value })),
+  };
+}
+
+test('a new shade goes on a free face, further along where one already sits', () => {
+  // A tube (r 30, z 0..200); a shade's holder outside its top (r 36, z 180..200).
+  const result = planResult(
+    [
+      { name: 'tube', r: 30, z0: 0, z1: 200 },
+      { name: 'cone', r: 36, z0: 180, z1: 200 },
+    ],
+    [
+      ['tube', 'end_out', [36, 200, -1, 200, 0, 1]],
+      ['tube', 'end_in', [24, 200, -1, 200, 0, -1]],
+      ['tube', 'start_in', [24, 0, 1, 0, 0, -1]],
+      ['cone', 'end_out', [42, 300, -1, 20, 0, 1]],
+    ],
+  );
+  const along = Object.fromEntries(freePorts(result, sections(result)).map((f) => [f.port.name, f.along]));
+  assert.equal(along['tube.end_in'], 0, 'inside: free at the end');
+  assert.ok(along['tube.end_out'] >= 22 && along['tube.end_out'] <= 24, `outside: past the cone's holder (${along['tube.end_out']})`);
+  assert.equal('tube.start_in' in along, false, 'no section there');
+  assert.equal(along['cone.end_out'], 0);
+  // A short section that's taken offers nothing; a hidden part's ports aren't offered.
+  const short = planResult(
+    [
+      { name: 'a', r: 30, z0: 0, z1: 20 },
+      { name: 'b', r: 36, z0: 0, z1: 20 },
+    ],
+    [['a', 'start_out', [36, 0, 1, 20, 0, 1]]],
+  );
+  assert.deepEqual(freePorts(short, sections(short)), []);
+  assert.deepEqual(
+    freePorts(result, sections(result), new Set(['tube'])).map((f) => f.port.name),
+    ['cone.end_out'],
+  );
+});
+
+test("a shade's new shape brings its sizes for the settings it didn't use before", () => {
+  const port = [30, 100, -1, 20, 0, 1];
+  assert.deepEqual(shapeSwitch('cone', 'sphere', port), { sphere: 214 });
+  assert.deepEqual(shapeSwitch('cone', 'tube', port), {});
+  assert.deepEqual(shapeSwitch('tube', 'cone', port), { opening: 164 });
+  assert.deepEqual(shapeSwitch('tube', 'cone', null), {}, "on the socket: the template's own");
+  assert.equal(newPartName('bell in-out', ['bell_in_out']), 'bell_in_out2');
 });
