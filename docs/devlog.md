@@ -5,6 +5,17 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-10: the smoke test after the G1's origin moved to its bed's centre
+
+**Why:** PR #18 moved the G1's recipe origin from EasyGCode's 125/125 to its bed's centre
+(500/500). The smoke test compares the app's G-code for the spiral disc, thread connector and
+lampshade with EasyGCode's fixtures, made at 125/125, on the pellet printer: every move came out
+375 mm over, and the PR's CI failed (the smoke test runs on pull requests only, so `main`'s run
+after the merge was green).
+
+**Landed:** the smoke test sets the origin to 125/125 for its EasyGCode comparisons and puts
+the printer back to its defaults after each. The G-code itself is as the PR made it.
+
 ## 2026-11-09: the Plan leads to the settings
 
 **Why:** the owner asked to tap a piece of the shape (a fillet, the throat) and land on the
