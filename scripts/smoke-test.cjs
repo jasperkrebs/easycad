@@ -176,6 +176,23 @@ async function saveFrom(page, selector) {
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Spiral disc', null, { timeout: 15000 });
       await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-disc-settings.png`), fullPage: name === 'phone' });
+      const printerFields = async (values) => {
+        await page.click('#tab-print');
+        if (!(await page.isVisible('#printerSettings input'))) await page.click('#panel-print summary');
+        for (const [key, v] of Object.entries(values)) {
+          await page.fill(`#printer-${key}`, String(v));
+          await page.dispatchEvent(`#printer-${key}`, 'change');
+        }
+      };
+      // The G1's origin is its bed's centre (500/500); EasyGCode's fixtures were written with
+      // the origin at its own 125/125.
+      const EASYGCODE_ORIGIN = { 'center-0': 125, 'center-1': 125 };
+      if ((await page.inputValue('#printer')) !== 'pellet') failures.push(`${name}: the spiral disc should pick the G1`);
+      await printerFields({});
+      const origin = [await page.inputValue('#printer-center-0'), await page.inputValue('#printer-center-1')].join('/');
+      if (origin !== '500/500') failures.push(`${name}: the G1's origin should be its bed's centre, got ${origin}`);
+      await printerFields(EASYGCODE_ORIGIN);
+      await page.click('#tab-settings');
       const gcode = await saveFrom(page, '#exportButtons button.primary');
       const want = commands(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'easygcode', 'sdisc-flow.gcode'), 'utf8'));
       const got = commands(gcode.data.toString('utf8'));
@@ -188,14 +205,6 @@ async function saveFrom(page, selector) {
       // So do the thread connector and the lampshade (EasyGCode's defaults, its pellet printer),
       // and the bend stool: the owner's own, with their G1's settings (the stool centred at
       // 500/500, zones at 195 °C, the bed at 65 °C, travel at 50 mm/s).
-      const printerFields = async (values) => {
-        await page.click('#tab-print');
-        if (!(await page.isVisible('#printerSettings input'))) await page.click('#panel-print summary');
-        for (const [key, v] of Object.entries(values)) {
-          await page.fill(`#printer-${key}`, String(v));
-          await page.dispatchEvent(`#printer-${key}`, 'change');
-        }
-      };
       for (const [id, title, fixture] of [
         ['thread-connector', 'Thread connector', 'thread-default.gcode'],
         ['bend-stool', 'Bend stool', 'stool-legs.gcode'],
@@ -235,6 +244,9 @@ async function saveFrom(page, selector) {
         if (id === 'bend-stool') {
           await page.click('#tab-print');
           await page.click('#printerSettings button:text("Back to the defaults")');
+          // The defaults put the origin back at the bed's centre; the lampshade's fixture
+          // is EasyGCode's.
+          await printerFields(EASYGCODE_ORIGIN);
           await page.click('#tab-settings');
         }
         const expected = commands(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'easygcode', fixture), 'utf8'));
