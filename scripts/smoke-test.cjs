@@ -459,25 +459,74 @@ async function saveFrom(page, selector) {
       if (!lidBeads.includes('2 × 0.6 mm') || !lidBeads.includes('3 × 0.3 mm')) failures.push(`${name}: the lid's beads: ${lidBeads}`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-shaker-print.png`), fullPage: name === 'phone' });
 
-      // The lamp builder: a shade added on a port in the plan (a part line, its own fold-out and
-      // G-code file), then removed again.
+      // The lamp builder in the plan: shades added with the add buttons (a part line, its own
+      // fold-out and G-code file), changed and removed from the selected shade's bar.
       await page.click('#tab-settings');
       await page.selectOption('#template', 'lamp');
       if (await page.isVisible('#replaceConfirm')) await page.click('#replaceYes');
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Lamp', null, { timeout: 15000 });
-      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      const ready = () => page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      const recipeHas = (re, has = true) => page.waitForFunction(([src, flags, want]) => new RegExp(src, flags).test(document.getElementById('recipe').value) === want, [re.source, re.flags, has], { timeout: 15000 }).then(() => true, () => false);
+      const partLines = () => page.evaluate(() => (document.getElementById('recipe').value.match(/^part .*$/gm) || []).join(' / '));
+      const barFor = () => page.locator('#plan .plan-bar').getAttribute('aria-label', { timeout: 3000 }).catch(() => null);
+      const barIs = (part) => page.waitForFunction((p) => document.querySelector('#plan .plan-bar')?.getAttribute('aria-label') === p, part, { timeout: 15000 }).then(() => true, () => false);
+      await ready();
       await page.click('#viewPlan');
-      // The plan's marks lead to the settings that drive each piece: the shade's fillet.
+      // One shade: its add buttons show, up and down at every free face (start outside, end
+      // inside and outside), each with its arrow.
+      const ways = await page.locator('#plan .plan-add-btn').evaluateAll((b) => b.map((x) => `${x.dataset.port}:${x.dataset.way}`).sort().join());
+      if (ways !== 'main.end_in:down,main.end_in:up,main.end_out:down,main.end_out:up,main.start_out:down,main.start_out:up') failures.push(`${name}: the plan's add buttons: ${ways}`);
+      const small = await page.locator('#plan .plan-add-btn').evaluateAll((b) => b.filter((x) => x.getBoundingClientRect().width < 40 || x.getBoundingClientRect().height < 40).length);
+      if (small) failures.push(`${name}: ${small} add buttons are smaller than 40 px`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-plan.png`) });
+      // The plan's marks lead to the settings that drive each piece (the shade's fillet), and
+      // select the shade.
       await page.locator('.plan-mark[aria-label^="Fillet"]').dispatchEvent('click');
       if (!(await page.isVisible('[id="set-main.fillet"]'))) failures.push(`${name}: the fillet's mark didn't lead to its setting`);
-      await page.locator('.plan-port[aria-label*="main · End, outside"]').click();
-      await page.selectOption('#addPart-shape', 'tube');
-      await page.click('#addPartYes');
-      await page.waitForFunction(() => /^part tube = shade\(/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
-      await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+      if (!(await barIs('main'))) failures.push(`${name}: the fillet's mark didn't select main (bar: ${await barFor()})`);
+      // One tap: a shade outside main's end, going up; it arrives selected.
+      await page.click('#plan .plan-add-btn[data-port="main.end_out"][data-way="up"]');
+      if (!(await recipeHas(/^part cone = shade\(.*direction: "up".*mount: main\.end_out|^part cone = shade\(.*mount: main\.end_out.*direction: "up"/m))) failures.push(`${name}: the add button's shade: ${await partLines()}`);
+      await ready();
+      if (!(await barIs('cone'))) failures.push(`${name}: the new shade isn't selected (bar: ${await barFor()})`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-added.png`) });
+      // Its shape from the bar: just added, it becomes a tube, named as one.
+      await page.selectOption('#plan .plan-bar select[data-set="shape"]', 'tube');
+      if (!(await recipeHas(/^part tube = shade\(.*shape: "tube"/m)) || !(await recipeHas(/^part cone/m, false))) failures.push(`${name}: the shape from the bar: ${await partLines()}`);
+      await ready();
+      if (!(await barIs('tube'))) failures.push(`${name}: the tube isn't selected (bar: ${await barFor()})`);
       const shown = () => page.waitForFunction(() => document.querySelectorAll('#settings details.part').length === 2 && document.querySelectorAll('#plan .plan-part').length === 2, null, { timeout: 15000 }).then(() => true, () => false);
       if (!(await shown())) failures.push(`${name}: the lamp's parts: ${await page.locator('#settings details.part').count()} fold-outs, ${await page.locator('#plan .plan-part').count()} in the plan`);
-      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-plan.png`) });
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-tube.png`) });
+      // Inside the tube's end, going down; flipped up from the bar; removed from the bar.
+      await page.click('#plan .plan-add-btn[data-port="tube.end_in"][data-way="down"]');
+      if (!(await recipeHas(/^part cone = shade\(.*mount: tube\.end_in/m))) failures.push(`${name}: inside the tube: ${await partLines()}`);
+      await ready();
+      if (!(await barIs('cone'))) failures.push(`${name}: the shade inside isn't selected (bar: ${await barFor()})`);
+      await page.click('#plan .plan-bar button[data-set="direction"]');
+      if (!(await recipeHas(/^part cone = shade\(.*direction: "up"/m))) failures.push(`${name}: flipped up: ${await partLines()}`);
+      await ready();
+      if (!(await barIs('cone'))) failures.push(`${name}: the flipped shade isn't selected (bar: ${await barFor()})`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-inside.png`) });
+      await page.click('#plan .plan-bar .remove');
+      if (!(await recipeHas(/^part cone/m, false))) failures.push(`${name}: removed from the bar: ${await partLines()}`);
+      await ready();
+      if (!(await page.waitForSelector('#plan .plan-bar', { state: 'detached', timeout: 15000 }).then(() => true, () => false))) failures.push(`${name}: the bar stays for a removed shade`);
+      // Tapping a shade selects it (its bar), tapping nothing deselects.
+      await page.locator('#plan .plan-part[data-part="tube"] .plan-label').click();
+      if (!(await barIs('tube'))) failures.push(`${name}: tapping the tube selected ${await barFor()}`);
+      // A setting moved from the bar is written into the shade's line, and nothing else is.
+      await page.click('#plan .plan-bar button[data-set="wide_down"]');
+      if (!(await recipeHas(/^part tube = shade\(direction: "up", mount: main\.end_out, shape: "tube", wide_down: true\)$/m))) failures.push(`${name}: a switch from the bar: ${await partLines()}`);
+      await ready();
+      await page.click('#plan .plan-bar button[data-set="wide_down"]');
+      await ready();
+      await page.mouse.click(...(await page.locator('#plan').boundingBox().then((b) => [b.x + 6, b.y + 6])));
+      if (!(await page.waitForSelector('#plan .plan-bar', { state: 'detached', timeout: 5000 }).then(() => true, () => false))) failures.push(`${name}: tapping nothing kept the selection`);
+      // A shade hidden from the 3D view is faint in the plan, without add buttons.
+      await page.click('#viewParts button:text("tube")');
+      if (!(await page.locator('#plan .plan-part[data-part="tube"].off').count()) || (await page.locator('#plan .plan-add-btn[data-port^="tube."]').count())) failures.push(`${name}: the hidden tube in the plan`);
+      await page.click('#viewParts button:text("tube")');
       // Custom colours: a colour and an opacity per shade, for simple renders.
       await page.selectOption('#viewColor', 'custom');
       if ((await page.locator('#viewColors input[type="color"]').count()) !== 2) failures.push(`${name}: custom colours for ${await page.locator('#viewColors input[type="color"]').count()} parts`);
