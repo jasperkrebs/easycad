@@ -1377,6 +1377,11 @@ label.check {
 }
 
 /* ---------- the lamp builder: parts, the plan, adding a part ---------- */
+/* Brought into sight from the plan: its header clear of the tabs above it. */
+details.group.part {
+  scroll-margin-top: 64px;
+}
+
 details.group.part > summary .group-name {
   color: var(--text);
   text-transform: none;
