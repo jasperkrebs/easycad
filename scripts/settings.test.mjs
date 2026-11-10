@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runStatus } from '../web/js/agent.js';
 import { parseNumber } from '../web/js/dom.js';
-import { freePorts, newPartName, sections, shapeSwitch } from '../web/js/parts.js';
+import { freePorts, newPartName, sections, shapeSwitch, threadOf, withMounted } from '../web/js/parts.js';
 import { applies, listValue } from '../web/js/settings.js';
 import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from '../web/js/templates.js';
 
@@ -236,4 +236,47 @@ test("a shade's new shape brings its sizes for the settings it didn't use before
   assert.deepEqual(shapeSwitch('tube', 'cone', port), { opening: 164 });
   assert.deepEqual(shapeSwitch('tube', 'cone', null), {}, "on the socket: the template's own");
   assert.equal(newPartName('bell in-out', ['bell_in_out']), 'bell_in_out2');
+});
+
+test('a shade slides along the thread it is screwed onto, the shades on it with it', () => {
+  // A tube on the sphere's end (outside), a cone on the tube's end (inside, 30 mm in), and a
+  // dome on the cone; the sphere on the socket.
+  const param = (name, value, extra = {}) => ({ name, value, kind: 'number', ...extra });
+  const result = {
+    partList: ['main', 'tube', 'cone', 'dome'].map((name) => ({ name })),
+    params: [
+      param('joint', 0),
+      param('main.mount', 'on_socket'),
+      param('main.along', 0),
+      param('tube.mount', 'main.end_out'),
+      param('tube.along', 0),
+      param('tube.start_len', 20),
+      param('tube.shape', 'tube'),
+      param('tube.length', 200),
+      param('cone.mount', 'tube.end_in'),
+      param('cone.along', 30, { max: 1000 }),
+      param('cone.start_len', 25),
+      param('cone.shape', 'cone'),
+      param('dome.mount', 'cone.start_out'),
+      param('dome.along', 0),
+    ],
+    ports: [
+      { name: 'on_socket', part: '', value: [23, 0, 1, 100000, 1, 1] },
+      { name: 'main.end_out', part: 'main', value: [81, 214, -1, 20, 0, 1] },
+      { name: 'tube.end_in', part: 'tube', value: [75, 394, -1, 200, 0, -1] },
+    ],
+  };
+  // On the socket: no slide (the socket's thread is the socket's).
+  assert.equal(threadOf(result, 'main'), null);
+  // The tube's holder fills the sphere's straight end: no room to slide.
+  assert.deepEqual({ ...threadOf(result, 'tube'), port: undefined }, { port: undefined, inward: -1, along: 0, hold: 20, max: 0 });
+  // The cone can go as far along the tube as leaves its 25 mm holder on it.
+  const cone = threadOf(result, 'cone');
+  assert.equal(cone.inward, -1);
+  assert.equal(cone.along, 30);
+  assert.equal(cone.max, 175);
+  // Moving the tube moves the cone and the dome; moving the cone, the dome.
+  assert.deepEqual(withMounted(result, 'tube'), ['tube', 'cone', 'dome']);
+  assert.deepEqual(withMounted(result, 'cone'), ['cone', 'dome']);
+  assert.deepEqual(withMounted(result, 'dome'), ['dome']);
 });

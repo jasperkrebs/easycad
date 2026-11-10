@@ -520,6 +520,27 @@ async function saveFrom(page, selector) {
       await ready();
       if (!(await barIs('cone'))) failures.push(`${name}: the flipped shade isn't selected (bar: ${await barFor()})`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-inside.png`) });
+      // Dragged down the tube's thread: further along it, written into its line.
+      const grip = await page.evaluate(() => {
+        const pl = /** @type {SVGPolylineElement} */ (document.querySelector('#plan .plan-part.slidable .plan-hit'));
+        const p = pl.points.getItem(Math.floor(pl.points.numberOfItems / 2));
+        const r = pl.ownerSVGElement.getBoundingClientRect();
+        return { x: r.left + p.x, y: r.top + p.y };
+      });
+      await page.mouse.move(grip.x, grip.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 6; i++) await page.mouse.move(grip.x, grip.y + i * 8);
+      await page.mouse.up();
+      if (!(await recipeHas(/^part cone = shade\(.*along: [1-9]\d* mm/m))) failures.push(`${name}: dragged along the thread: ${await partLines()}`);
+      await ready();
+      // Screwed off in the 3D view, and back to the plan.
+      await page.click('#plan .plan-bar .screw');
+      if (!(await page.isVisible('#screwPanel')) || !(await page.isHidden('#plan'))) failures.push(`${name}: the screw preview didn't open`);
+      await page.fill('#screwTurns', '4');
+      if (!/^4\.00 turns · 10\.0 mm/.test(await page.textContent('#screwReadout'))) failures.push(`${name}: the screw preview: ${await page.textContent('#screwReadout')}`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-screw.png`) });
+      await page.click('#screwDone');
+      if (!(await page.isVisible('#plan')) || !(await barIs('cone'))) failures.push(`${name}: back from the screw preview`);
       await page.click('#plan .plan-bar .remove');
       if (!(await recipeHas(/^part cone/m, false))) failures.push(`${name}: removed from the bar: ${await partLines()}`);
       await ready();

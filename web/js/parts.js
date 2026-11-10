@@ -116,6 +116,52 @@ export function freePorts(result, parts, hidden = new Set(), hold = HOLD) {
 }
 
 /** The component's `@ask` setting named `name`, if any. */
+/**
+ * How a part sits on the thread it's screwed onto: the port it's on, which way that straight
+ * section runs from its end (`inward`, +1 up), how far along it sits (`along`, mm), how much of
+ * its own straight start screws on (`hold`), and how far along it can go (`max`). null for a part
+ * on the socket (whose thread is the socket's), or with no such settings.
+ * @param {any} result
+ * @param {string} name
+ */
+export function threadOf(result, name) {
+  const value = (key) => result.params.find((p) => p.name === key)?.value;
+  const mount = value(`${name}.mount`);
+  const port = (result.ports || []).find((p) => p.name === mount);
+  const along = Number(value(`${name}.along`));
+  if (!port || port.value.length < 4 || port.value[4] > 0.5 || !Number.isFinite(along)) return null;
+  const joint = Number(value('joint')) || 0;
+  let hold = joint > 0 ? joint : Number(value(`${name}.start_len`)) || 0;
+  if (value(`${name}.shape`) === 'tube') hold = Math.min(hold, Number(value(`${name}.length`)) || hold);
+  const limit = result.params.find((p) => p.name === `${name}.along`)?.max ?? 1000;
+  const max = Math.max(0, Math.min(limit, port.value[3] - hold));
+  return { port, inward: port.value[2] < 0 ? -1 : 1, along, hold, max };
+}
+
+/**
+ * A part and every part mounted on it, directly or further out (they move with it).
+ * @param {any} result
+ * @param {string} name
+ */
+export function withMounted(result, name) {
+  const out = [name];
+  const parentOf = (part) => {
+    const v = result.params.find((p) => p.name === `${part}.mount`)?.value;
+    return typeof v === 'string' && v.includes('.') ? v.split('.')[0] : null;
+  };
+  const names = (result.partList || []).map((p) => p.name);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const n of names) {
+      if (!out.includes(n) && out.includes(String(parentOf(n)))) {
+        out.push(n);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
 const askOf = (component, name) => (component?.ask || []).find((p) => p.name === name);
 
 /** The part a mark belongs to: its settings are the part's (`main.fillet`). */
@@ -132,6 +178,8 @@ function markPart(mark, partNames) {
 // ---------------------------------------------------------------------------------------------
 
 const view = { zoom: 1, panX: 0, panY: 0 };
+/** The last drawing's scale (px per mm) and each part's group, for sliding a part. */
+let painted = { k: 1, groups: /** @type {Map<string, SVGGElement>} */ (new Map()) };
 /** What the plan last drew, so a resize, a zoom or a pan can draw it again. */
 let drawn = /** @type {{ host: HTMLElement, result: any, handlers: PlanHandlers } | null} */ (null);
 
@@ -154,6 +202,7 @@ export function fitPlan() {
  *   onSet: (name: string, values: Record<string, unknown>) => void,
  *   onOpen: (name: string) => void,
  *   onRemove: (name: string) => void,
+ *   onScrew?: (name: string) => void,
  * }} PlanHandlers
  */
 
@@ -202,8 +251,27 @@ function wire(host) {
     },
     { passive: false },
   );
+  /**
+   * Sliding the selected part along the thread it's screwed onto: where the press started, its
+   * `along` then, and the parts that move with it.
+   * @type {{ name: string, y: number, from: number, to: number, info: any, moving: string[], tag: HTMLElement } | null}
+   */
+  let slide = null;
   host.addEventListener('pointerdown', (e) => {
     if (/** @type {HTMLElement} */ (e.target).closest('button, select, .plan-bar')) return;
+    // The selected part, under the pointer even where a mark lies over it.
+    const on = document.elementsFromPoint(e.clientX, e.clientY).map((n) => n.closest('.plan-part.slidable[data-part]')).find(Boolean);
+    const name = on?.getAttribute('data-part');
+    const info = name && drawn ? threadOf(drawn.result, name) : null;
+    if (name && info && drawn) {
+      const tag = el('div', { className: 'plan-slide' });
+      host.append(tag);
+      slide = { name, y: local(e).y, from: info.along, to: info.along, info, moving: withMounted(drawn.result, name), tag };
+      host.classList.add('sliding');
+      host.setPointerCapture(e.pointerId);
+      moved = 0;
+      return;
+    }
     pointers.set(e.pointerId, local(e));
     if (pointers.size === 1) moved = 0;
     if (pointers.size === 2) {
@@ -212,6 +280,24 @@ function wire(host) {
     }
   });
   host.addEventListener('pointermove', (e) => {
+    if (slide) {
+      const now = local(e);
+      moved = Math.max(moved, Math.abs(now.y - slide.y));
+      // Up the screen is up the lamp; the section runs `inward` from its end, and `along` counts
+      // into it, so a part `dz` higher sits `dz · inward` further along. Whole millimetres, kept
+      // on the section.
+      const dz = (slide.y - now.y) / painted.k;
+      const to = Math.round(Math.min(slide.info.max, Math.max(0, slide.from + dz * slide.info.inward)));
+      slide.to = to;
+      const shift = (to - slide.from) * slide.info.inward * painted.k;
+      for (const n of slide.moving) painted.groups.get(n)?.setAttribute('transform', `translate(0 ${-shift})`);
+      const box = painted.groups.get(slide.name)?.getBoundingClientRect();
+      const hostBox = host.getBoundingClientRect();
+      slide.tag.textContent = `${slide.name} · ${to} mm along`;
+      slide.tag.style.left = `${Math.max(4, (box ? box.right - hostBox.left : now.x) + 8)}px`;
+      slide.tag.style.top = `${now.y - 14}px`;
+      return;
+    }
     const last = pointers.get(e.pointerId);
     if (!last) return;
     const now = local(e);
@@ -234,6 +320,15 @@ function wire(host) {
     pinch = d;
   });
   const up = (e) => {
+    if (slide) {
+      const { name, from, to, tag } = slide;
+      slide = null;
+      tag.remove();
+      host.classList.remove('sliding');
+      if (to !== from) drawn?.handlers.onSet(name, { along: to });
+      else draw();
+      return;
+    }
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = 0;
   };
@@ -326,6 +421,7 @@ function paint() {
   const inset = { ...INSET, bottom: INSET.bottom + (selected ? BAR : 0) };
   const k0 = Math.min((W - inset.left - inset.right) / (2 * rmax), (H - inset.top - inset.bottom) / Math.max(1, zmax - zmin));
   const k = Math.max(0.01, k0) * view.zoom;
+  painted = { k, groups: new Map() };
   // Fitted: the drawing in the middle of the room left round it; then zoomed about the middle.
   const fx = inset.left + (W - inset.left - inset.right) / 2;
   const fy = inset.top + (H - inset.top - inset.bottom) / 2 + ((zmax + zmin) / 2) * k0;
@@ -353,7 +449,9 @@ function paint() {
     const cls = ['plan-part', hit.has(name) && 'collides', selected === name && 'selected', selected && selected !== name && 'dim', off && 'off'].filter(Boolean).join(' ');
     // A part (`part` line) is selected by a tap; a recipe's only toolpath is just drawn.
     const own = partNames.has(name);
-    const g = node('g', own ? { class: cls, 'data-part': name, tabindex: 0, role: 'button', 'aria-pressed': String(selected === name), 'aria-label': name } : { class: `${cls} still` });
+    const slides = own && selected === name && threadOf(result, name);
+    const g = node('g', own ? { class: `${cls}${slides ? ' slidable' : ''}`, 'data-part': name, tabindex: 0, role: 'button', 'aria-pressed': String(selected === name), 'aria-label': name } : { class: `${cls} still` });
+    painted.groups.set(name, /** @type {SVGGElement} */ (g));
     g.style.setProperty('--part', handlers.colorOf?.(name) ?? COLORS[i % COLORS.length]);
     const px = Math.max(1.5, width * k);
     const halves = [1, -1].map((side) => line(points.map(([r, z]) => [X(side * r), Y(z)])));
@@ -533,6 +631,7 @@ const ICONS = {
   settings: 'M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4',
   remove: 'M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13M10.5 11v6M13.5 11v6',
   close: 'M6 6l12 12M18 6L6 18',
+  screw: 'M6 5c4 0 12 1.5 12 3S6 10.5 6 12s12 1.5 12 3S6 17.5 6 19M12 2v3M12 19v3',
   up: 'M12 20V5M7 10l5-5 5 5',
   down: 'M12 4v15M7 14l5 5 5-5',
 };
@@ -582,6 +681,7 @@ function partBar(result, name, component, handlers) {
       bar.append(select);
     }
   }
+  if (handlers.onScrew && threadOf(result, name)) bar.append(tool('screw', ICONS.screw, `${name}: screw it on and off`, () => handlers.onScrew?.(name)));
   bar.append(tool('settings', ICONS.settings, `${name}: settings`, () => handlers.onOpen(name)), tool('remove', ICONS.remove, `Remove ${name}`, () => handlers.onRemove(name)));
   // Its on/off settings that apply (a straight end, …).
   for (const p of params) {

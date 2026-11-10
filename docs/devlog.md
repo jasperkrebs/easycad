@@ -5,6 +5,26 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-10: slide a shade along its thread; screw it off in 3D
+
+**Why:** the owner wanted to plan by hand: move a shade along the threaded section it sits on,
+and see the threading itself, turning a shade on and off.
+
+**Landed:**
+- **Drag** the selected shade in the Plan: along the straight section it's screwed onto, the
+  shades mounted on it with it, a pill reading how far along; letting go writes its `along`
+  (`threadOf` and `withMounted` in `web/js/parts.js`, node-tested). On the socket it doesn't
+  slide; where its straight start fills the section there's no room to (the tube on the
+  sphere's 20 mm end).
+- **Screw** (the bar's helix button): the 3D view with a slider of turns; the shade and what's
+  on it turn about the axis (a right-hand thread: counter-clockwise seen from where it advances)
+  and move out one pitch a turn, to "off" (its straight start plus how far along it sat). The
+  view turns and lifts the parts' objects (`viewport.setPartMotion`); nothing is evaluated.
+- The smoke test drags the shade inside the tube and screws it 4 turns (10 mm).
+
+**Open:** the screw preview doesn't check the turning shade against the others (the collision
+check is the engine's, for placed parts at rest).
+
 ## 2026-11-10: the Plan as the place to work, recipes that explain themselves, the G1's origin
 
 **Landed:**

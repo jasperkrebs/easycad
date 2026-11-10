@@ -525,6 +525,7 @@ export function createViewport(canvas) {
       mesh.visible = !hiddenParts.has(data.part);
       beads.add(mesh);
     }
+    applyMotion();
   }
 
   // ---- Print progress: the toolpath up to one move, and a nozzle there ----
@@ -713,7 +714,25 @@ export function createViewport(canvas) {
       for (const child of group.children) child.visible = !hiddenParts.has(child.userData.part);
     }
     for (const child of beads.children) child.visible = !hiddenParts.has(child.userData.part);
+    applyMotion();
     applyProgress();
+  }
+
+  /**
+   * Parts turned and lifted about the Z axis (the screw preview), by their index among the
+   * prints: `angle` in degrees (counter-clockwise from above), `dz` in mm. A view only.
+   * @type {Map<number, { angle: number, dz: number }>}
+   */
+  let motion = new Map();
+  function applyMotion() {
+    for (const group of [shapes, paths, curves, beads]) {
+      for (const child of group.children) {
+        const m = motion.get(child.userData.part);
+        child.rotation.set(0, 0, m ? THREE.MathUtils.degToRad(m.angle) : 0);
+        child.position.set(0, 0, m ? m.dz : 0);
+      }
+    }
+    requestRender();
   }
 
   function applyMode() {
@@ -1182,6 +1201,16 @@ export function createViewport(canvas) {
      * made from; shows the rest.
      * @param {number[]} indices
      */
+    /**
+     * Turns and lifts parts about the Z axis, by their index among the prints (the screw
+     * preview: a thread turning on); an empty map puts them all back.
+     * @param {Map<number, { angle: number, dz: number }>} next
+     */
+    setPartMotion(next) {
+      motion = next;
+      applyMotion();
+    },
+
     setHiddenParts(indices) {
       hiddenParts = new Set(indices);
       applyParts();
