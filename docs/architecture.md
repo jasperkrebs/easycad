@@ -380,7 +380,7 @@ app: checks the issue (public API) ◄──────────────
 │                              │  Colour by Custom: a colour and opacity per part, and the
 │                              │  light's highlights and shadows (simple renders)
 │                              │  Plan (recipes with parts): the parts cut through their
-│                              │  axis, a + on every free port to add a part there
+│                              │  axis; tap a part for its bar, a + and arrow to add one
 │                              │  Colour by: height, speed, flow, line width or layer height,
 │                              │  with a legend; a progress slider scrubs through the print,
 │                              │  a nozzle where it's got to (drag, or scroll over it)

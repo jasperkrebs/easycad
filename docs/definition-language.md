@@ -419,7 +419,8 @@ part tube = shade(mount: main.end_out, shape: "tube", height: 300 mm)
   values. Each part's `print` is its own G-code file, named after the part.
 - In the settings window each part is a fold-out of its own; an input shows as a list of the
   ports it can be mounted on. Moving a part's slider writes the value into that part's line
-  (adding it to the line when it wasn't there); `@ask` settings are asked when a part is added.
+  (adding it to the line when it wasn't there); `@ask` settings are a new part's choices (the
+  Plan offers them on its add buttons and on the selected part's bar).
 - `place(path, z, flip)` puts a part where it goes in the assembly, for the view: it's still
   printed as it is, on the bed. The engine warns when placed parts' beads run into each other.
 - `mark curve for setting, setting "Label"` marks a piece of the shape for the **Plan**: drawn
