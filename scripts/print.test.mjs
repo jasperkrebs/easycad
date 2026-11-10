@@ -2,8 +2,27 @@
 // G1's ranges and presets, and the print checks its wiki calls for.
 
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 import { G1, PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, machineGuide, materialOf, printChecks, printerFor } from '../web/js/print.js';
+
+// A stand-in for the browser's localStorage, so settings are saved and reloaded as on a device.
+const store = {};
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (k) => store[k] ?? null,
+    setItem: (k, v) => {
+      store[k] = String(v);
+    },
+    removeItem: (k) => {
+      delete store[k];
+    },
+  },
+});
+
+beforeEach(() => {
+  for (const k of Object.keys(store)) delete store[k];
+});
 
 /** Print statistics as the engine reports them: a 100 mm vase spiral by default. */
 const stats = (over = {}) => ({
@@ -34,9 +53,53 @@ test("the G1's defaults are its bed and its heater limits", () => {
   assert.equal(p.maxFlow, 200);
   assert.deepEqual([p.pellet.minExtrudeTemp, p.pellet.maxTemp, p.pellet.maxBed], [160, 280, 110]);
   // EasyGCode's machine settings, so the G-code stays EasyGCode's.
-  assert.deepEqual([p.center, p.travelSpeed, p.pellet.up, p.pellet.pa], [[125, 125], 100, 210, 0.3]);
+  assert.deepEqual([p.center, p.travelSpeed, p.pellet.up, p.pellet.pa], [[500, 500], 100, 210, 0.3]);
   // The nozzle is chosen per project, not set on the printer.
   assert.equal(p.nozzle, undefined);
+});
+
+test("the G1's origin is its bed's centre, and follows the bed", () => {
+  assert.deepEqual(loadProfile('pellet').center, [500, 500]);
+  const p = loadProfile('pellet');
+  const r = changeSettings('pellet', p, { 'bed.0': 800, 'bed.1': 600 });
+  assert.deepEqual(r.changed, ['bed.0', 'bed.1']);
+  assert.deepEqual(p.center, [400, 300]);
+  // Saved, and reopened: still the centre of the saved bed.
+  assert.deepEqual(loadProfile('pellet').center, [400, 300]);
+  assert.deepEqual(loadProfile('pellet').bed, [800, 600, 1000]);
+  // An origin the user moved stays where they put it, even when the bed changes.
+  changeSettings('pellet', p, { 'center.0': 50 });
+  changeSettings('pellet', p, { 'bed.0': 1000 });
+  assert.deepEqual(p.center, [50, 300]);
+  changeSettings('pellet', p, { 'bed.1': 1000 });
+  assert.deepEqual(p.center, [50, 500]);
+});
+
+test("an origin saved before the G1 followed its bed", () => {
+  const key = 'easycad.printer.pellet';
+  // EasyGCode's old default was never the user's choice.
+  store[key] = JSON.stringify({ center: [125, 125], travelSpeed: 80 });
+  let p = loadProfile('pellet');
+  assert.deepEqual([p.center, p.travelSpeed], [[500, 500], 80]);
+  // With a saved bed of their own, the centre is that bed's.
+  store[key] = JSON.stringify({ center: [125, 125], bed: [800, 700, 900] });
+  assert.deepEqual(loadProfile('pellet').center, [400, 350]);
+  // Any other origin is theirs.
+  store[key] = JSON.stringify({ center: [125, 300] });
+  assert.deepEqual(loadProfile('pellet').center, [125, 300]);
+  store[key] = JSON.stringify({ center: [0, 0], bed: [800, 700, 900] });
+  assert.deepEqual(loadProfile('pellet').center, [0, 0]);
+  delete store[key];
+});
+
+test("the P1P keeps EasyGCode's origin, and a bed change leaves it", () => {
+  const p = loadProfile('p1p');
+  assert.deepEqual(p.center, [125, 125]);
+  changeSettings('p1p', p, { 'bed.0': 300 });
+  assert.deepEqual(p.center, [125, 125]);
+  store['easycad.printer.p1p'] = JSON.stringify({ center: [125, 125] });
+  assert.deepEqual(loadProfile('p1p').center, [125, 125]);
+  delete store['easycad.printer.p1p'];
 });
 
 test("settings stay inside the G1's own ranges", () => {
@@ -101,8 +164,9 @@ test('the G1 checks low flow, pressure advance in vase mode and the fan', () => 
   assert.equal(find(printChecks(stats({ flowMm3S: 260 }), 'pellet', p), /manages about 200/)[0], 'bad');
   // A fan event (or the setting) above ~70 %.
   assert.equal(find(printChecks(stats({ maxFanPct: 100 }), 'pellet', p), /Part fan up to 100 %/)[0], 'warn');
-  // Off the bed when the origin's too close to its edge.
-  assert.equal(find(printChecks(stats({ bounds: { min: [-200, -50, 0], max: [200, 50, 60] } }), 'pellet', p), /Off the/)[0], 'bad');
+  // Off the bed when the origin's too close to its edge (the G1's is its centre: 500 mm from it).
+  assert.equal(find(printChecks(stats({ bounds: { min: [-200, -50, 0], max: [200, 50, 60] } }), 'pellet', p), /Off the/), undefined);
+  assert.equal(find(printChecks(stats({ bounds: { min: [-200, -50, 0], max: [600, 50, 60] } }), 'pellet', p), /Off the/)[0], 'bad');
 });
 
 test('the P1P keeps its own checks', () => {

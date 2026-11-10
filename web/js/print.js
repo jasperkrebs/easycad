@@ -26,6 +26,8 @@ const EASYGCODE = {
 export const G1 = {
   /** Heater and motion limits from printer.cfg: Klipper stops a print that asks for more. */
   limits: { minExtrudeTemp: 160, maxTemp: 280, maxBed: 110, maxSpeed: 300 },
+  /** Build volume (mm): where a recipe's origin goes is the middle of its X and Y. */
+  bed: [1000, 1000, 1000],
   /**
    * The interchangeable nozzles, with the layer height and line width Ginger's process profiles
    * use (layers about half the nozzle: thicker ones drag the nozzle on the layer below), and the
@@ -70,6 +72,11 @@ export const G1 = {
 
 const { minExtrudeTemp, maxTemp, maxBed, maxSpeed } = G1.limits;
 
+/** The middle of a bed (X, Y). */
+function bedCentre(bed) {
+  return [bed[0] / 2, bed[1] / 2];
+}
+
 // maxFlow: the most volumetric flow (mm³/s) the printer melts reliably, for the Print tab's check
 // (0: not checked). The P1P's hotend manages about 20 mm³/s with PLA; Ginger's profiles run the
 // G1 at 200. recipeName: what a recipe's `printer "…"` line says for it. limits: ranges the
@@ -92,7 +99,8 @@ export const PRINTERS = {
     defaults: {
       ...EASYGCODE,
       mode: 'pellet',
-      bed: [1000, 1000, 1000],
+      bed: [...G1.bed],
+      center: bedCentre(G1.bed), // the bed's centre, from the printer
       maxFlow: 200,
       pellet: { ...EASYGCODE.pellet, minExtrudeTemp, maxTemp, maxBed },
     },
@@ -101,6 +109,20 @@ export const PRINTERS = {
 
 /** The bed the pellet printer had before it was the G1, replaced when found in saved settings. */
 const OLD_PELLET_BED = [400, 400, 400];
+
+/** EasyGCode's origin, which the G1 had before it followed its bed: not the user's choice. */
+const OLD_PELLET_CENTER = [125, 125];
+
+/**
+ * Sets a field. On the G1 the recipe origin follows the bed: changing the bed's width or depth
+ * moves that axis of the origin along, as long as the origin still sat at the old bed's centre
+ * (an origin the user moved stays where they put it).
+ */
+function setField(id, profile, key, value) {
+  const axis = id === 'pellet' ? ['bed.0', 'bed.1'].indexOf(key) : -1;
+  if (axis >= 0 && profile.center[axis] === profile.bed[axis] / 2) profile.center[axis] = value / 2;
+  setPath(profile, key, value);
+}
 
 /** The fields of the printer settings, by path into the profile. `only`: for one mode. */
 const FIELDS = [
@@ -161,17 +183,22 @@ export function loadProfile(id) {
   if (saved && typeof saved === 'object') {
     // Saved before the pellet printer was the G1: its old bed size wasn't the user's choice.
     if (id === 'pellet' && JSON.stringify(saved.bed) === JSON.stringify(OLD_PELLET_BED)) delete saved.bed;
+    // Same for the origin at EasyGCode's 125/125: it's replaced by the bed's centre (below).
+    const oldCenter = id === 'pellet' && JSON.stringify(saved.center) === JSON.stringify(OLD_PELLET_CENTER);
+    if (oldCenter) delete saved.center;
     for (const f of FIELDS) {
       if (f.only && f.only !== profile.mode) continue;
       const v = getPath(saved, f.key);
       if (typeof v !== typeof getPath(profile, f.key) || (typeof v === 'number' && !Number.isFinite(v))) continue;
       if (typeof v === 'number') {
         const { min, max } = range(id, f);
-        setPath(profile, f.key, Math.min(max ?? v, Math.max(min ?? v, v)));
+        setField(id, profile, f.key, Math.min(max ?? v, Math.max(min ?? v, v)));
       } else {
         setPath(profile, f.key, v);
       }
     }
+    // An origin that wasn't saved follows a bed that was (the G1's bed is the user's to size).
+    if (id === 'pellet' && !Array.isArray(saved.center)) profile.center = bedCentre(profile.bed);
   }
   return profile;
 }
@@ -246,7 +273,7 @@ export function changeSettings(id, profile, patch) {
       const { min, max } = range(id, f);
       const tidy = Math.min(max ?? v, Math.max(min ?? v, v));
       if (tidy !== v) notes.push(`\`${key}\` clamped to ${tidy} (range ${min}..${max})`);
-      setPath(profile, key, tidy);
+      setField(id, profile, key, tidy);
     }
     changed.push(key);
   }
@@ -272,7 +299,7 @@ export function describePrinter(id, profile) {
 export function machineGuide() {
   const nozzles = G1.nozzles.map((n) => `${n.d} mm: layer ${n.layer}, line ${n.line}${n.maxFlow ? `, up to ~${n.maxFlow} mm³/s` : ''}`);
   return `The pellet printer is a Ginger Additive G1 (Klipper, 3 heating zones, E in mm³), and every pellet template is made for it:
-- Build volume 1000 × 1000 × 1000 mm. The recipe origin sits at X125 Y125 (EasyGCode's); a big print needs it moved. The bed's sensor is at its centre (X500 Y500): a large solid bottom right over it can fool the bed into its 110 °C cutoff.
+- Build volume 1000 × 1000 × 1000 mm. The recipe origin sits at the bed's centre (X500 Y500, from the bed size; set_printer \`center.0\`/\`center.1\` offsets it). The bed's temperature sensor is there too: a large solid bottom right over it can fool the bed into its 110 °C cutoff.
 - Nozzles are interchangeable and chosen per project (the user mostly runs the 5 mm; a project's notes may say which), with Ginger's layer height and line width: ${nozzles.join('; ')}. Layers thicker than about half the nozzle drag it on the layer below.
 - Flow: Ginger's profiles run 200 mm³/s (up to 500 on big nozzles with the right material). Below about ${G1.lowFlow} mm³/s (and really around 100) the barrel inlet can plug, because the passing pellets are what cool it: at low flow, run the upper (feeding) zone 10–40 °C below the other two, never hotter. Layer time, not flow, is usually what limits a good print: thick beads need time to cool.
 - Zones: upper (feeding, Klipper's \`extruder\`), middle (melting, \`extruder1\`), lower (nozzle, \`extruder2\`), each ${minExtrudeTemp}–${maxTemp} °C (Klipper won't extrude below ${minExtrudeTemp}); bed up to ${maxBed} °C. Material presets (set_printer \`material\`, from Ginger Slicer): ${G1.materials.map((m) => `${m.name} ${m.up}/${m.mid}/${m.down}, bed ${m.bed}, ${m.maxFlow} mm³/s`).join('; ')}.
@@ -327,8 +354,12 @@ export function renderPrinterSettings(host, id, profile, onChange) {
         }
         const tidy = Math.min(max ?? v, Math.max(min ?? v, v));
         input.value = String(tidy);
-        setPath(profile, f.key, tidy);
+        setField(id, profile, f.key, tidy);
         saveProfile(id, profile);
+        for (const k of ['center.0', 'center.1']) {
+          const centre = /** @type {HTMLInputElement | null} */ (host.querySelector(`#printer-${k.replace('.', '-')}`));
+          if (centre) centre.value = String(getPath(profile, k));
+        }
         if (materials.length) {
           const select = /** @type {HTMLSelectElement | null} */ (host.querySelector('#printer-material'));
           if (select) select.value = materialOf(id, profile)?.name ?? '';
