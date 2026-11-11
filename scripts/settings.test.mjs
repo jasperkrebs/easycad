@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { runStatus } from '../web/js/agent.js';
 import { parseNumber } from '../web/js/dom.js';
-import { freePorts, newPartName, sections, shapeSwitch, threadOf, withMounted } from '../web/js/parts.js';
+import { assemblyMotion, assemblySteps, freePorts, newPartName, sections, shapeSwitch, threadOf, withMounted } from '../web/js/parts.js';
 import { applies, listValue } from '../web/js/settings.js';
 import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from '../web/js/templates.js';
 
@@ -279,4 +279,50 @@ test('a shade slides along the thread it is screwed onto, the shades on it with 
   assert.deepEqual(withMounted(result, 'tube'), ['tube', 'cone', 'dome']);
   assert.deepEqual(withMounted(result, 'cone'), ['cone', 'dome']);
   assert.deepEqual(withMounted(result, 'dome'), ['dome']);
+});
+
+test('taken apart: furthest out first, each turned off its thread then moved on by its thread', () => {
+  // A tube screwed onto the sphere's end (going up, the section running down from its end), a
+  // cone screwed onto the tube's end, 30 mm along; the sphere on the socket stays.
+  const param = (name, value) => ({ name, value, kind: 'number' });
+  const result = {
+    partList: ['main', 'tube', 'cone'].map((name) => ({ name })),
+    prints: ['main', 'tube', 'cone'].map((name) => ({ name })),
+    params: [
+      param('joint', 0),
+      param('main.mount', 'on_socket'),
+      param('main.along', 0),
+      param('tube.mount', 'main.end_out'),
+      param('tube.along', 0),
+      param('tube.start_len', 20),
+      param('tube.shape', 'tube'),
+      param('tube.length', 200),
+      param('cone.mount', 'tube.end_out'),
+      param('cone.along', 30),
+      param('cone.start_len', 20),
+      param('cone.shape', 'cone'),
+    ],
+    ports: [
+      { name: 'on_socket', part: '', value: [23, 0, 1, 100000, 1, 1] },
+      { name: 'main.end_out', part: 'main', value: [81, 214, -1, 20, 0, 1] },
+      { name: 'tube.end_out', part: 'tube', value: [87, 394, -1, 200, 0, 1] },
+    ],
+    // Every part's toolpath printed 2.5 mm a turn.
+    paths: { starts: [0, 2, 4, 6], heights: new Float32Array([2.5, 2.5, 2.5, 2.5, 2.5, 2.5]) },
+    parts: { paths: [0, 1, 2] },
+  };
+  const steps = assemblySteps(result);
+  assert.deepEqual(steps.map((s) => s.name), ['cone', 'tube']);
+  assert.deepEqual(steps[0], { name: 'cone', parent: 'tube', out: 1, travel: 50, gap: 20, pitch: 2.5 });
+  // Half way: the cone is off (its 50 mm of thread in 20 turns, then 20 mm on), the tube still on.
+  const half = assemblyMotion(steps, 0.5);
+  assert.deepEqual(half.get('cone'), { angle: 7200, dz: 70 });
+  assert.deepEqual(half.get('tube'), { angle: 0, dz: 0 });
+  // A quarter: the cone half way through its 70 mm, 35 mm up, 14 turns.
+  assert.deepEqual(assemblyMotion(steps, 0.25).get('cone'), { angle: 5040, dz: 35 });
+  // Exploded: the tube off too (20 + 20 mm, 8 turns), and the cone rode along with it.
+  const all = assemblyMotion(steps, 1);
+  assert.deepEqual(all.get('tube'), { angle: 2880, dz: 40 });
+  assert.deepEqual(all.get('cone'), { angle: 7200 + 2880, dz: 110 });
+  assert.equal(all.has('main'), false, 'on the socket it stays');
 });

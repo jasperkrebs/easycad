@@ -39,12 +39,6 @@
           <canvas id="view"></canvas>
           <div class="view-message" id="viewMessage" hidden></div>
           <div class="plan" id="plan" hidden></div>
-          <div class="screw-panel" id="screwPanel" role="group" aria-label="Screw preview" hidden>
-            <span class="screw-name" id="screwName"></span>
-            <input type="range" id="screwTurns" min="0" max="10" step="0.02" value="0" aria-label="Turns off the thread" />
-            <span class="screw-readout" id="screwReadout"></span>
-            <button type="button" class="btn" id="screwDone">Done</button>
-          </div>
         </div>
         <!-- The view's controls, pinned under it: nothing covers the model. -->
         <div class="view-tools">
@@ -93,6 +87,12 @@
               <input type="range" id="scrubFrom" min="0" max="1000" step="1" value="0" aria-label="Show the print from" />
               <input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Show the print up to" />
             </div>
+          </div>
+          <!-- The assembly taken apart, a shade at a time (furthest out first), as the print plays. -->
+          <div class="view-scrub view-assembly" id="viewAssembly" hidden>
+            <button type="button" class="scrub-play" id="asmPlay" aria-label="Take the lamp apart" title="Take the lamp apart (or put it together)">▶</button>
+            <input type="range" class="asm-range" id="asmRange" min="0" max="1000" step="1" value="0" aria-label="Taken apart" title="Assembled ↔ exploded" />
+            <button type="button" class="asm-explode" id="asmExplode" aria-pressed="false" title="Exploded view: every shade unscrewed">Exploded</button>
           </div>
           <div class="view-foot">
             <div class="view-legend" id="viewLegend" hidden>

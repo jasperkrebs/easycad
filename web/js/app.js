@@ -13,7 +13,7 @@ import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColor
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
-import { fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch, threadOf, withMounted } from './parts.js';
+import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch } from './parts.js';
 import { beadExtremes, renderBeads } from './beads.js';
 
 const TEMPLATES = [
@@ -132,6 +132,7 @@ async function run(quality, how = {}) {
   syncScrub();
   renderLegend();
   renderPartToggles(result);
+  applyAssembly(result);
   renderCustomColors();
   renderPlanView(result);
 
@@ -652,7 +653,6 @@ function note(text) {
 
 /** Replaces the recipe (an agent edit), runs it at full quality and returns the result. */
 async function applyRecipe(text) {
-  endScrew(false);
   state.source = text;
   state.unsaved = true;
   setDirty(false);
@@ -992,7 +992,7 @@ function renderPlanView(result) {
     onSet: (name, values) => setPartValues(name, values),
     onOpen: (name) => openPart(name),
     onRemove: (name) => removePart(name),
-    onScrew: (name) => startScrew(name),
+    offsets: assemblyOffsets,
   });
 }
 
@@ -1120,79 +1120,61 @@ async function setPartValues(name, values) {
   await applyValues(Object.fromEntries(Object.entries(values).map(([k, v]) => [`${name}.${k}`, v])));
 }
 
-// ---- The screw preview: a part (and what's mounted on it) turned off its thread in the 3D
-// view, a right-hand thread: a turn counter-clockwise (seen from where it advances) moves it one
-// pitch, out of the section it's screwed into. A view only: nothing in the recipe changes.
+// ---- The assembly taken apart (the view's assembly row): a shade at a time, furthest out
+// first, each turned off its thread and moved on by a gap as long as the thread, the shades on it
+// riding along; at the end, the exploded view. A view only: nothing in the recipe changes.
 
-/** @type {{ name: string, indices: number[], inward: number, pitch: number, travel: number } | null} */
-let screwing = null;
+/** How far it's taken apart (0: assembled, 1: exploded), and the animation playing it. */
+const assembly = { u: 0, frame: 0, steps: /** @type {ReturnType<typeof assemblySteps>} */ ([]) };
 
-/** The thread's pitch where a part prints: its toolpath's layer height (the most common one). */
-function pitchOf(result, index) {
-  const { starts, heights } = result.paths || {};
-  const owner = result.parts?.paths || [];
-  const seen = new Map();
-  for (let k = 0; heights && k + 1 < starts.length; k++) {
-    if (owner[k] !== index) continue;
-    for (let i = starts[k]; i < starts[k + 1]; i++) {
-      const h = Math.round(heights[i] * 100) / 100;
-      if (h > 0) seen.set(h, (seen.get(h) || 0) + 1);
-    }
-  }
-  return [...seen.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 0;
-}
+/** Seconds per shade unscrewed, while it plays. */
+const SECONDS_PER_STEP = 2.2;
 
-/** Starts the screw preview of a part (from the plan's bar): the 3D view, a slider of turns. */
-function startScrew(name) {
-  const result = state.last;
-  const info = result && threadOf(result, name);
-  if (!result || !info) return;
+/** The offsets now (by part name), for the plan; the 3D view gets them by print. */
+let assemblyOffsets = /** @type {Map<string, number>} */ (new Map());
+
+/** Works out the steps for this result and shows the parts where `assembly.u` puts them. */
+function applyAssembly(result = state.last) {
+  assembly.steps = result ? assemblySteps(result) : [];
+  $('viewAssembly').hidden = !assembly.steps.length;
+  if (!assembly.steps.length) assembly.u = 0;
+  const motion = assemblyMotion(assembly.steps, assembly.u);
   const prints = printsOf(result);
-  const index = prints.findIndex((p) => p.name === name);
-  const pitch = pitchOf(result, index);
-  if (index < 0 || !(pitch > 0)) return;
-  const indices = withMounted(result, name)
-    .map((n) => prints.findIndex((p) => p.name === n))
-    .filter((i) => i >= 0);
-  // It comes off once it has moved out by its straight start and how far along it sat.
-  const travel = info.along + info.hold;
-  screwing = { name, indices, inward: info.inward, pitch, travel };
-  // From the plan to the 3D view.
-  $('viewPlan').setAttribute('aria-pressed', 'false');
-  document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(/** @type {HTMLElement} */ (x).dataset.mode === 'both')));
-  viewport.setMode('both');
-  $('plan').hidden = true;
-  const range = /** @type {HTMLInputElement} */ ($('screwTurns'));
-  range.max = String(Math.ceil((travel / pitch + 0.5) * 2) / 2);
-  range.value = '0';
-  $('screwName').textContent = name;
-  $('screwPanel').hidden = false;
-  viewport.refit();
-  screwTo(0);
+  viewport.setPartMotion(new Map([...motion].map(([name, m]) => [prints.findIndex((p) => p.name === name), m]).filter(([i]) => i >= 0)));
+  assemblyOffsets = new Map([...motion].map(([name, m]) => [name, m.dz]));
+  /** @type {HTMLInputElement} */ ($('asmRange')).value = String(Math.round(assembly.u * 1000));
+  $('asmExplode').setAttribute('aria-pressed', String(assembly.u >= 1));
+  $('asmPlay').textContent = assembly.frame ? '❚❚' : '▶';
 }
 
-/** The part `turns` turns off its thread. */
-function screwTo(turns) {
-  if (!screwing) return;
-  const { indices, inward, pitch, travel } = screwing;
-  // Out of the section: against the way it runs from its end.
-  const out = -inward;
-  const motion = new Map(indices.map((i) => [i, { angle: out * 360 * turns, dz: out * pitch * turns }]));
-  viewport.setPartMotion(motion);
-  const moved = pitch * turns;
-  $('screwReadout').textContent = `${fmt(turns, 2)} turns · ${fmt(moved, 1)} mm${moved >= travel - 1e-6 ? ' · off' : ''}`;
+/** Sets how far it's taken apart, and shows it (the plan too). */
+function setAssembly(u) {
+  assembly.u = Math.min(1, Math.max(0, u));
+  applyAssembly();
+  if (state.last && !$('plan').hidden) renderPlanView(state.last);
 }
 
-/** Ends the screw preview: the parts back where they go, and back to the plan. */
-function endScrew(toPlan = true) {
-  if (!screwing) return;
-  screwing = null;
-  viewport.setPartMotion(new Map());
-  $('screwPanel').hidden = true;
-  if (toPlan && state.last) {
-    $('viewPlan').setAttribute('aria-pressed', 'true');
-    renderPlanView(state.last);
-  }
+function stopAssembly() {
+  cancelAnimationFrame(assembly.frame);
+  assembly.frame = 0;
+  $('asmPlay').textContent = '▶';
+}
+
+/** Plays it: apart, or (taken apart already) back together. */
+function playAssembly() {
+  if (assembly.frame) return stopAssembly();
+  const way = assembly.u >= 1 ? -1 : 1;
+  const total = Math.max(1, assembly.steps.length) * SECONDS_PER_STEP;
+  let last = performance.now();
+  const tick = (now) => {
+    const u = assembly.u + (way * (now - last)) / 1000 / total;
+    last = now;
+    const done = way > 0 ? u >= 1 : u <= 0;
+    assembly.frame = done ? 0 : requestAnimationFrame(tick);
+    setAssembly(u);
+  };
+  assembly.frame = requestAnimationFrame(tick);
+  $('asmPlay').textContent = '❚❚';
 }
 
 /** Removes a part (and, after asking, the parts mounted on it) with the engine's command. */
@@ -1251,12 +1233,18 @@ function wire() {
       if (state.last) renderPlanView(state.last);
     }),
   );
-  // The screw preview's slider and Done.
-  $('screwTurns').addEventListener('input', () => screwTo(Number(/** @type {HTMLInputElement} */ ($('screwTurns')).value)));
-  $('screwDone').addEventListener('click', () => endScrew());
+  // The assembly row: play it apart (or together), scrub it, or jump to the exploded view.
+  $('asmPlay').addEventListener('click', () => playAssembly());
+  $('asmRange').addEventListener('input', () => {
+    stopAssembly();
+    setAssembly(Number(/** @type {HTMLInputElement} */ ($('asmRange')).value) / 1000);
+  });
+  $('asmExplode').addEventListener('click', () => {
+    stopAssembly();
+    setAssembly(assembly.u >= 1 ? 0 : 1);
+  });
   // The plan: the parts cut through their axis, over the 3D view.
   $('viewPlan').addEventListener('click', () => {
-    endScrew(false);
     const on = $('viewPlan').getAttribute('aria-pressed') !== 'true';
     $('viewPlan').setAttribute('aria-pressed', String(on));
     document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(!on && /** @type {HTMLElement} */ (x).dataset.mode === 'both')));
@@ -1267,8 +1255,10 @@ function wire() {
   // or on a phone a double-tap (touch doesn't make a dblclick everywhere).
   $('viewFit').addEventListener('click', () => (planOn() ? fitPlan() : viewport.focus()));
   // The view as a picture, sharper than the screen.
+  // What's shown: the plan when it's up, else the 3D view (taken apart, when it is).
   $('viewSnap').addEventListener('click', async () => {
-    const blob = await (await fetch(viewport.capture(2))).blob();
+    const url = $('plan').hidden ? viewport.capture(2) : await capturePlan($('plan'), 2);
+    const blob = await (await fetch(url)).blob();
     download(`${saveName()}.png`, blob, 'image/png');
   });
   $('view').addEventListener('dblclick', () => viewport.focus());

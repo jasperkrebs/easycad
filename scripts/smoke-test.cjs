@@ -525,27 +525,20 @@ async function saveFrom(page, selector) {
       await ready();
       if (!(await barIs('cone'))) failures.push(`${name}: the flipped shade isn't selected (bar: ${await barFor()})`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-inside.png`) });
-      // Dragged down the tube's thread: further along it, written into its line.
-      const grip = await page.evaluate(() => {
-        const pl = /** @type {SVGPolylineElement} */ (document.querySelector('#plan .plan-part.slidable .plan-hit'));
-        const p = pl.points.getItem(Math.floor(pl.points.numberOfItems / 2));
-        const r = pl.ownerSVGElement.getBoundingClientRect();
-        return { x: r.left + p.x, y: r.top + p.y };
-      });
-      await page.mouse.move(grip.x, grip.y);
-      await page.mouse.down();
-      for (let i = 1; i <= 6; i++) await page.mouse.move(grip.x, grip.y + i * 8);
-      await page.mouse.up();
-      if (!(await recipeHas(/^part cone = shade\(.*along: [1-9]\d* mm/m))) failures.push(`${name}: dragged along the thread: ${await partLines()}`);
-      await ready();
-      // Screwed off in the 3D view, and back to the plan.
-      await page.click('#plan .plan-bar .screw');
-      if (!(await page.isVisible('#screwPanel')) || !(await page.isHidden('#plan'))) failures.push(`${name}: the screw preview didn't open`);
-      await page.fill('#screwTurns', '4');
-      if (!/^4\.00 turns · 10\.0 mm/.test(await page.textContent('#screwReadout'))) failures.push(`${name}: the screw preview: ${await page.textContent('#screwReadout')}`);
-      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-screw.png`) });
-      await page.click('#screwDone');
-      if (!(await page.isVisible('#plan')) || !(await barIs('cone'))) failures.push(`${name}: back from the screw preview`);
+      // Taken apart: the assembly row plays the cone (inside the tube's end) off, then the tube;
+      // Exploded is the end of it, and the plan shows them apart; back together, as they were.
+      if (!(await page.isVisible('#viewAssembly'))) failures.push(`${name}: no assembly row for a lamp of three shades`);
+      await page.click('#asmExplode');
+      const apart = () => page.evaluate(() => [...document.querySelectorAll('#plan .plan-part[transform]')].map((g) => g.getAttribute('data-part')).sort().join());
+      if ((await apart()) !== 'cone,tube' || (await page.getAttribute('#asmExplode', 'aria-pressed')) !== 'true') failures.push(`${name}: exploded, the plan moved: ${await apart()}`);
+      if (await page.locator('#plan .plan-add-btn').count()) failures.push(`${name}: add buttons while it's apart`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-exploded.png`) });
+      // The picture is what's shown: here, the plan taken apart.
+      const planPicture = await saveFrom(page, '#viewSnap');
+      if (planPicture.data.subarray(1, 4).toString() !== 'PNG') failures.push(`${name}: the plan's picture: ${planPicture.name}`);
+      await page.click('#asmPlay');
+      await page.waitForFunction(() => document.getElementById('asmRange').value === '0', null, { timeout: 20000 }).catch(() => failures.push(`${name}: playing it back together didn't end together`));
+      if (await apart()) failures.push(`${name}: back together, still apart: ${await apart()}`);
       await page.click('#plan .plan-bar .remove');
       if (!(await recipeHas(/^part cone/m, false))) failures.push(`${name}: removed from the bar: ${await partLines()}`);
       await ready();
