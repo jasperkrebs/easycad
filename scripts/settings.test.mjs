@@ -320,9 +320,11 @@ test('taken apart: furthest out first, each turned off its thread then moved on 
   assert.deepEqual(half.get('tube'), { angle: 0, dz: 0 });
   // A quarter: the cone half way through its 70 mm, 35 mm up, 14 turns.
   assert.deepEqual(assemblyMotion(steps, 0.25).get('cone'), { angle: 5040, dz: 35 });
-  // Exploded: the tube off too (20 + 20 mm, 8 turns), and the cone rode along with it.
+  // Exploded: the tube off too (20 + 20 mm, 8 turns); the cone rode up with it without turning
+  // any more (it was off already: only the shade coming off turns).
   const all = assemblyMotion(steps, 1);
   assert.deepEqual(all.get('tube'), { angle: 2880, dz: 40 });
-  assert.deepEqual(all.get('cone'), { angle: 7200 + 2880, dz: 110 });
+  assert.deepEqual(all.get('cone'), { angle: 7200, dz: 110 });
+  assert.deepEqual(assemblyMotion(steps, 0.75).get('cone'), { angle: 7200, dz: 90 });
   assert.equal(all.has('main'), false, 'on the socket it stays');
 });
