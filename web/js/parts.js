@@ -162,6 +162,93 @@ export function withMounted(result, name) {
   return out;
 }
 
+/**
+ * The thread's pitch where a part prints: its toolpath's layer height (the most common one).
+ * @param {any} result
+ * @param {number} index the part's place among the prints
+ */
+export function pitchOf(result, index) {
+  const { starts, heights } = result.paths || {};
+  const owner = result.parts?.paths || [];
+  const seen = new Map();
+  for (let k = 0; heights && starts && k + 1 < starts.length; k++) {
+    if (owner[k] !== index) continue;
+    for (let i = starts[k]; i < starts[k + 1]; i++) {
+      const h = Math.round(heights[i] * 100) / 100;
+      if (h > 0) seen.set(h, (seen.get(h) || 0) + 1);
+    }
+  }
+  return [...seen.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 0;
+}
+
+/**
+ * The assembly taken apart, a step per part screwed onto another (the socket's stays): the part
+ * furthest out first, then inwards, so every part comes off a part still in place. Each turns
+ * off its thread (`travel`: how far along it sat plus its straight start, at `pitch` a turn,
+ * `out`: the way off, against the way the section runs) and then moves on without turning by
+ * `gap` (its straight start: as long as the thread was), so the exploded parts stand apart.
+ * @param {any} result
+ * @returns {{ name: string, parent: string | null, out: number, travel: number, gap: number, pitch: number }[]}
+ */
+export function assemblySteps(result) {
+  const names = (result.partList || []).map((p) => p.name);
+  const prints = (result.prints || []).map((p) => p.name);
+  const parentOf = (part) => {
+    const v = result.params.find((p) => p.name === `${part}.mount`)?.value;
+    return typeof v === 'string' && v.includes('.') ? v.split('.')[0] : null;
+  };
+  const depth = (part) => {
+    let d = 0;
+    for (let p = parentOf(part); p && d < names.length; p = parentOf(p)) d++;
+    return d;
+  };
+  const steps = [];
+  for (const name of names) {
+    const info = threadOf(result, name);
+    const pitch = pitchOf(result, prints.indexOf(name));
+    if (!info || !(pitch > 0)) continue;
+    steps.push({ name, parent: parentOf(name), out: -info.inward, travel: info.along + info.hold, gap: info.hold, pitch, depth: depth(name), at: names.indexOf(name) });
+  }
+  steps.sort((a, b) => b.depth - a.depth || b.at - a.at);
+  return steps.map(({ name, parent, out, travel, gap, pitch }) => ({ name, parent, out, travel, gap, pitch }));
+}
+
+/**
+ * Where every part is at `u` of the way through taking the assembly apart (0: assembled, 1:
+ * exploded): each step takes an equal share of the time, turning its part off its thread and
+ * then moving it on. A part moves with everything it's mounted on (they all turn about the same
+ * axis, so the turns and the moves just add up). By part name: `angle` in degrees
+ * (counter-clockwise from above), `dz` in mm.
+ * @param {ReturnType<typeof assemblySteps>} steps
+ * @param {number} u
+ */
+export function assemblyMotion(steps, u) {
+  const n = steps.length;
+  /** @type {Map<string, { angle: number, dz: number }>} */
+  const own = new Map();
+  steps.forEach((step, i) => {
+    const s = Math.min(1, Math.max(0, u * n - i));
+    const dist = s * (step.travel + step.gap);
+    const turned = Math.min(dist, step.travel);
+    own.set(step.name, { angle: (step.out * 360 * turned) / step.pitch, dz: step.out * dist });
+  });
+  const parent = new Map(steps.map((s) => [s.name, s.parent]));
+  /** @type {Map<string, { angle: number, dz: number }>} */
+  const out = new Map();
+  for (const step of steps) {
+    let angle = 0;
+    let dz = 0;
+    const seen = new Set();
+    for (let p = /** @type {string | null | undefined} */ (step.name); p && own.has(p) && !seen.has(p); p = parent.get(p)) {
+      seen.add(p);
+      angle += own.get(p)?.angle ?? 0;
+      dz += own.get(p)?.dz ?? 0;
+    }
+    out.set(step.name, { angle, dz });
+  }
+  return out;
+}
+
 const askOf = (component, name) => (component?.ask || []).find((p) => p.name === name);
 
 /** The part a mark belongs to: its settings are the part's (`main.fillet`). */
@@ -179,7 +266,7 @@ function markPart(mark, partNames) {
 
 const view = { zoom: 1, panX: 0, panY: 0 };
 /** The last drawing's scale (px per mm) and each part's group, for sliding a part. */
-let painted = { k: 1, groups: /** @type {Map<string, SVGGElement>} */ (new Map()) };
+
 /** What the plan last drew, so a resize, a zoom or a pan can draw it again. */
 let drawn = /** @type {{ host: HTMLElement, result: any, handlers: PlanHandlers } | null} */ (null);
 
@@ -202,7 +289,7 @@ export function fitPlan() {
  *   onSet: (name: string, values: Record<string, unknown>) => void,
  *   onOpen: (name: string) => void,
  *   onRemove: (name: string) => void,
- *   onScrew?: (name: string) => void,
+ *   offsets?: Map<string, number>,
  * }} PlanHandlers
  */
 
@@ -251,59 +338,32 @@ function wire(host) {
     },
     { passive: false },
   );
-  /**
-   * Sliding the selected part along the thread it's screwed onto: where the press started, its
-   * `along` then, and the parts that move with it.
-   * @type {{ name: string, y: number, from: number, to: number, info: any, moving: string[], tag: HTMLElement } | null}
-   */
-  let slide = null;
+  /** Where the press started, and how far a press may wander and still be a tap (a finger
+   * wanders more than a mouse). */
+  let start = { x: 0, y: 0 };
+  let slop = 5;
   host.addEventListener('pointerdown', (e) => {
     if (/** @type {HTMLElement} */ (e.target).closest('button, select, .plan-bar')) return;
-    // The selected part, under the pointer even where a mark lies over it.
-    const on = document.elementsFromPoint(e.clientX, e.clientY).map((n) => n.closest('.plan-part.slidable[data-part]')).find(Boolean);
-    const name = on?.getAttribute('data-part');
-    const info = name && drawn ? threadOf(drawn.result, name) : null;
-    if (name && info && drawn) {
-      const tag = el('div', { className: 'plan-slide' });
-      host.append(tag);
-      slide = { name, y: local(e).y, from: info.along, to: info.along, info, moving: withMounted(drawn.result, name), tag };
-      host.classList.add('sliding');
-      host.setPointerCapture(e.pointerId);
-      moved = 0;
-      return;
-    }
     pointers.set(e.pointerId, local(e));
-    if (pointers.size === 1) moved = 0;
+    if (pointers.size === 1) {
+      moved = 0;
+      start = local(e);
+      slop = e.pointerType === 'mouse' ? 5 : 12;
+    }
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       pinch = Math.hypot(a.x - b.x, a.y - b.y);
+      moved = 100;
     }
   });
   host.addEventListener('pointermove', (e) => {
-    if (slide) {
-      const now = local(e);
-      moved = Math.max(moved, Math.abs(now.y - slide.y));
-      // Up the screen is up the lamp; the section runs `inward` from its end, and `along` counts
-      // into it, so a part `dz` higher sits `dz · inward` further along. Whole millimetres, kept
-      // on the section.
-      const dz = (slide.y - now.y) / painted.k;
-      const to = Math.round(Math.min(slide.info.max, Math.max(0, slide.from + dz * slide.info.inward)));
-      slide.to = to;
-      const shift = (to - slide.from) * slide.info.inward * painted.k;
-      for (const n of slide.moving) painted.groups.get(n)?.setAttribute('transform', `translate(0 ${-shift})`);
-      const box = painted.groups.get(slide.name)?.getBoundingClientRect();
-      const hostBox = host.getBoundingClientRect();
-      slide.tag.textContent = `${slide.name} · ${to} mm along`;
-      slide.tag.style.left = `${Math.max(4, (box ? box.right - hostBox.left : now.x) + 8)}px`;
-      slide.tag.style.top = `${now.y - 14}px`;
-      return;
-    }
     const last = pointers.get(e.pointerId);
     if (!last) return;
     const now = local(e);
     if (pointers.size === 1) {
-      moved += Math.hypot(now.x - last.x, now.y - last.y);
-      if (moved > 6) {
+      // Not a tap once it has gone further than the slop from where it started; then it pans.
+      moved = Math.max(moved, Math.hypot(now.x - start.x, now.y - start.y));
+      if (moved > slop) {
         if (!host.hasPointerCapture(e.pointerId)) host.setPointerCapture(e.pointerId);
         view.panX += now.x - last.x;
         view.panY += now.y - last.y;
@@ -320,25 +380,34 @@ function wire(host) {
     pinch = d;
   });
   const up = (e) => {
-    if (slide) {
-      const { name, from, to, tag } = slide;
-      slide = null;
-      tag.remove();
-      host.classList.remove('sliding');
-      if (to !== from) drawn?.handlers.onSet(name, { along: to });
-      else draw();
-      return;
-    }
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = 0;
   };
+  // Safari on an iPhone pinches with its own gesture events (and would zoom the page): the plan
+  // zooms with them instead, when two-finger pointer events didn't already.
+  let gesture = 1;
+  host.addEventListener('gesturestart', (e) => {
+    e.preventDefault();
+    gesture = 1;
+  });
+  host.addEventListener('gesturechange', (e) => {
+    e.preventDefault();
+    const scale = Number(/** @type {any} */ (e).scale) || 1;
+    if (pinch === 0 && scale > 0) {
+      const { cx, cy } = centre(host);
+      zoomAt(cx, cy, scale / gesture);
+    }
+    gesture = scale;
+    moved = 100;
+  });
+  host.addEventListener('gestureend', (e) => e.preventDefault());
   host.addEventListener('pointerup', up);
   host.addEventListener('pointercancel', up);
   // A drag or a pinch is not a tap.
   host.addEventListener(
     'click',
     (e) => {
-      if (moved > 6 && !(/** @type {HTMLElement} */ (e.target).closest('button, select, .plan-bar'))) {
+      if (moved > slop && !(/** @type {HTMLElement} */ (e.target).closest('button, select, .plan-bar'))) {
         e.stopPropagation();
         e.preventDefault();
       }
@@ -347,10 +416,10 @@ function wire(host) {
   );
   host.addEventListener('click', (e) => {
     const t = /** @type {HTMLElement} */ (e.target);
-    if (!t.closest('.plan-part[data-part], .plan-mark, .plan-add, .plan-bar')) drawn?.handlers.onSelect(null);
+    if (!t.closest('.plan-part[data-part], .plan-mark, .plan-add, .plan-bar, .plan-zoom')) drawn?.handlers.onSelect(null);
   });
   host.addEventListener('dblclick', (e) => {
-    if (!(/** @type {HTMLElement} */ (e.target).closest('.plan-part, .plan-mark, .plan-add, .plan-bar'))) fitPlan();
+    if (!(/** @type {HTMLElement} */ (e.target).closest('.plan-part, .plan-mark, .plan-add, .plan-bar, .plan-zoom'))) fitPlan();
   });
   host.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && drawn?.handlers.selected) drawn.handlers.onSelect(null);
@@ -358,6 +427,17 @@ function wire(host) {
   new ResizeObserver(() => {
     if (drawn && !host.hidden) draw();
   }).observe(host);
+}
+
+/** Zooms about the middle of the plan (the zoom buttons). */
+function zoomCentre(factor) {
+  if (!drawn) return;
+  const next = Math.min(40, Math.max(0.4, view.zoom * factor));
+  const f = next / view.zoom;
+  view.panX *= f;
+  view.panY *= f;
+  view.zoom = next;
+  draw();
 }
 
 /** The middle of the host's drawing area (px), where zooming starts from. */
@@ -403,7 +483,11 @@ function paint() {
     const part = markPart(m, partNames);
     return !part || !hidden.has(part);
   });
-  const free = component ? freePorts(result, parts, hidden) : [];
+  // Taken apart (the assembly row): each part drawn where it has moved to; the ports have moved
+  // with them, so no add buttons until it's together again.
+  const offsets = handlers.offsets || new Map();
+  const apart = [...offsets.values()].some((dz) => Math.abs(dz) > 1e-6);
+  const free = component && !apart ? freePorts(result, parts, hidden) : [];
   // No part yet: one add button where the first one goes (on what its input is by default).
   const empty = component && !partNames.size;
 
@@ -414,14 +498,13 @@ function paint() {
     zmin = Math.min(zmin, z);
     zmax = Math.max(zmax, z);
   };
-  for (const { points, width } of parts.values()) for (const [r, z] of points) take(r + width / 2, z);
+  for (const [name, { points, width }] of parts) for (const [r, z] of points) take(r + width / 2, z + (offsets.get(name) || 0));
   for (const m of marks) for (const line of m.lines) for (const [x, , z] of line) take(x, z);
   for (const { port } of free) take(port.value[0], port.value[1]);
   if (!Number.isFinite(zmin)) [zmin, zmax, rmax] = [0, 100, 50];
   const inset = { ...INSET, bottom: INSET.bottom + (selected ? BAR : 0) };
   const k0 = Math.min((W - inset.left - inset.right) / (2 * rmax), (H - inset.top - inset.bottom) / Math.max(1, zmax - zmin));
   const k = Math.max(0.01, k0) * view.zoom;
-  painted = { k, groups: new Map() };
   // Fitted: the drawing in the middle of the room left round it; then zoomed about the middle.
   const fx = inset.left + (W - inset.left - inset.right) / 2;
   const fy = inset.top + (H - inset.top - inset.bottom) / 2 + ((zmax + zmin) / 2) * k0;
@@ -449,9 +532,8 @@ function paint() {
     const cls = ['plan-part', hit.has(name) && 'collides', selected === name && 'selected', selected && selected !== name && 'dim', off && 'off'].filter(Boolean).join(' ');
     // A part (`part` line) is selected by a tap; a recipe's only toolpath is just drawn.
     const own = partNames.has(name);
-    const slides = own && selected === name && threadOf(result, name);
-    const g = node('g', own ? { class: `${cls}${slides ? ' slidable' : ''}`, 'data-part': name, tabindex: 0, role: 'button', 'aria-pressed': String(selected === name), 'aria-label': name } : { class: `${cls} still` });
-    painted.groups.set(name, /** @type {SVGGElement} */ (g));
+    const g = node('g', own ? { class: cls, 'data-part': name, tabindex: 0, role: 'button', 'aria-pressed': String(selected === name), 'aria-label': name } : { class: `${cls} still` });
+    if (offsets.get(name)) g.setAttribute('transform', `translate(0 ${(-(offsets.get(name) || 0) * k).toFixed(1)})`);
     g.style.setProperty('--part', handlers.colorOf?.(name) ?? COLORS[i % COLORS.length]);
     const px = Math.max(1.5, width * k);
     const halves = [1, -1].map((side) => line(points.map(([r, z]) => [X(side * r), Y(z)])));
@@ -483,6 +565,7 @@ function paint() {
     const part = markPart(mark, partNames);
     const what = mark.label || mark.settings[0];
     const g = node('g', { class: `plan-mark${selected && part !== selected ? ' dim' : ''}`, tabindex: 0, role: 'button', 'aria-label': part ? `${what} · ${part}` : what });
+    if (part && offsets.get(part)) g.setAttribute('transform', `translate(0 ${(-(offsets.get(part) || 0) * k).toFixed(1)})`);
     node('title', {}, g).textContent = part ? `${what} · ${part}` : what;
     for (const ln of mark.lines) {
       const pts = ln.map(([x, , z]) => [X(x), Y(z)]);
@@ -565,6 +648,15 @@ function paint() {
     host.append(group);
   }
 
+  // Zoom buttons (a sure way on a phone, where a pinch may belong to the page).
+  const zoom = el('div', { className: 'plan-zoom', role: 'group', 'aria-label': 'Zoom' });
+  for (const [label, f] of /** @type {[string, number][]} */ ([['+', 1.5], ['−', 1 / 1.5]])) {
+    const b = el('button', { type: 'button', text: label, 'aria-label': f > 1 ? 'Zoom in' : 'Zoom out', title: f > 1 ? 'Zoom in' : 'Zoom out' });
+    b.addEventListener('click', () => zoomCentre(f));
+    zoom.append(b);
+  }
+  host.append(zoom);
+
   if (selected) host.append(partBar(result, selected, component, handlers));
 }
 
@@ -631,7 +723,6 @@ const ICONS = {
   settings: 'M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4',
   remove: 'M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13M10.5 11v6M13.5 11v6',
   close: 'M6 6l12 12M18 6L6 18',
-  screw: 'M6 5c4 0 12 1.5 12 3S6 10.5 6 12s12 1.5 12 3S6 17.5 6 19M12 2v3M12 19v3',
   up: 'M12 20V5M7 10l5-5 5 5',
   down: 'M12 4v15M7 14l5 5 5-5',
 };
@@ -681,7 +772,6 @@ function partBar(result, name, component, handlers) {
       bar.append(select);
     }
   }
-  if (handlers.onScrew && threadOf(result, name)) bar.append(tool('screw', ICONS.screw, `${name}: screw it on and off`, () => handlers.onScrew?.(name)));
   bar.append(tool('settings', ICONS.settings, `${name}: settings`, () => handlers.onOpen(name)), tool('remove', ICONS.remove, `Remove ${name}`, () => handlers.onRemove(name)));
   // Its on/off settings that apply (a straight end, …).
   for (const p of params) {

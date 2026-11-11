@@ -5,6 +5,28 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-11: the lamp taken apart (an animation and the exploded view); the Plan on a phone
+
+**Why:** on the owner's phone a mark tapped in the Plan didn't open its setting, the plan
+didn't zoom, and dragging a shade felt wrong; and the screw preview, one shade at a time from
+its bar, wanted to be an animation like the print's, all the shades, ending in an exploded view.
+
+**Landed:**
+- **Taps on a phone:** a press counted as a pan once it had wandered 6 px (summed up), and a
+  finger wanders more: the mark's tap was swallowed. Now it's how far from where it started,
+  12 px for a finger (5 for a mouse). Tested with a wobbling touch on an emulated iPhone, where
+  `main` did nothing.
+- **Zoom on a phone:** Safari's gesture events zoom the plan too (when two-finger pointer
+  events don't), and `+`/`−` buttons at the plan's top right.
+- **Dragging dropped**; the screw preview's panel and the bar's screw button too.
+- **The assembly row** (with the print's, and in the Plan): play, a slider, **Exploded**. A step
+  per shade on another (furthest out first): turned off its thread, one pitch a turn, then on by
+  a gap as long as the thread; the shades already off ride along. `assemblySteps` and
+  `assemblyMotion` in `web/js/parts.js`, node-tested; the Plan draws the shades moved too.
+
+**Open:** the steps take equal time, a long thread spins faster; no collision check while
+moving.
+
 ## 2026-11-10: a reload right after a change kept the change; the smoke test's settling
 
 **Why:** CI's smoke test failed on PR #20 ("offered again after updating"): the project is
