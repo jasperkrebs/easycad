@@ -21,7 +21,8 @@ its bar, wanted to be an animation like the print's, all the shades, ending in a
 - **Dragging dropped**; the screw preview's panel and the bar's screw button too.
 - **The assembly row** (with the print's, and in the Plan): play, a slider, **Exploded**. A step
   per shade on another (furthest out first): turned off its thread, one pitch a turn, then on by
-  a gap as long as the thread; the shades already off ride along. `assemblySteps` and
+  a gap as long as the thread; the shades already off ride along without turning (only the
+  shade coming off turns). `assemblySteps` and
   `assemblyMotion` in `web/js/parts.js`, node-tested; the Plan draws the shades moved too.
 
 - **PNG is what's shown:** in the Plan, the plan (`capturePlan`: the parts where they are,

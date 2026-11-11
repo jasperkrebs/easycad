@@ -216,9 +216,9 @@ export function assemblySteps(result) {
 /**
  * Where every part is at `u` of the way through taking the assembly apart (0: assembled, 1:
  * exploded): each step takes an equal share of the time, turning its part off its thread and
- * then moving it on. A part moves with everything it's mounted on (they all turn about the same
- * axis, so the turns and the moves just add up). By part name: `angle` in degrees
- * (counter-clockwise from above), `dz` in mm.
+ * then moving it on. Only the part coming off turns; once off, a part keeps the angle it came
+ * off at and only rides along (up or down) with what it was mounted on as that comes off in
+ * turn. By part name: `angle` in degrees (counter-clockwise from above), `dz` in mm.
  * @param {ReturnType<typeof assemblySteps>} steps
  * @param {number} u
  */
@@ -236,12 +236,12 @@ export function assemblyMotion(steps, u) {
   /** @type {Map<string, { angle: number, dz: number }>} */
   const out = new Map();
   for (const step of steps) {
-    let angle = 0;
+    // Its own turn only; the moves of everything under it, which it rides along with.
+    const angle = own.get(step.name)?.angle ?? 0;
     let dz = 0;
     const seen = new Set();
     for (let p = /** @type {string | null | undefined} */ (step.name); p && own.has(p) && !seen.has(p); p = parent.get(p)) {
       seen.add(p);
-      angle += own.get(p)?.angle ?? 0;
       dz += own.get(p)?.dz ?? 0;
     }
     out.set(step.name, { angle, dz });

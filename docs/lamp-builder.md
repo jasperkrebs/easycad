@@ -135,8 +135,8 @@ The lamp builder is a new template, **Lamp**.
   - **Taken apart:** the assembly row (under the print's, also in the Plan) plays the lamp
     apart a shade at a time, the furthest out first: each turns off its thread as a right-hand
     thread does (one pitch a turn, the pitch read from its toolpath) and then moves on, without
-    turning, by a gap as long as its thread was; whatever is already off rides along with the
-    shade it's on. **Exploded** jumps to the end; played from there it goes back together.
+    turning, by a gap as long as its thread was. Only the shade coming off turns: whatever is
+    already off keeps the angle it came off at and only rides along with the shade it was on. **Exploded** jumps to the end; played from there it goes back together.
     The Plan shows the shades where they are (no add buttons while it's apart). A view only.
     (Dragging a shade along its thread, 10 Nov, was dropped: on a phone it fought the pan.)
   - With no shade at all, one add button (up) puts the first on the socket.
