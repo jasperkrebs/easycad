@@ -5,6 +5,37 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-10: a reload right after a change kept the change; the smoke test's settling
+
+**Why:** CI's smoke test failed on PR #20 ("offered again after updating"): the project is
+saved on the device 300 ms after the last change, and the test reloads at once after a
+template update, so the update was lost and offered again. The same happened to anyone
+reloading or closing the tab within that moment. Separately, the plan's 40 px check sometimes
+measured the buttons of a drawing just replaced (0 px), a race in the test.
+
+**Landed:** the project is saved at once when the page goes (`pagehide`) if a save is waiting.
+The smoke test measures the add buttons once the plan has settled.
+
+## 2026-11-10: slide a shade along its thread; screw it off in 3D
+
+**Why:** the owner wanted to plan by hand: move a shade along the threaded section it sits on,
+and see the threading itself, turning a shade on and off.
+
+**Landed:**
+- **Drag** the selected shade in the Plan: along the straight section it's screwed onto, the
+  shades mounted on it with it, a pill reading how far along; letting go writes its `along`
+  (`threadOf` and `withMounted` in `web/js/parts.js`, node-tested). On the socket it doesn't
+  slide; where its straight start fills the section there's no room to (the tube on the
+  sphere's 20 mm end).
+- **Screw** (the bar's helix button): the 3D view with a slider of turns; the shade and what's
+  on it turn about the axis (a right-hand thread: counter-clockwise seen from where it advances)
+  and move out one pitch a turn, to "off" (its straight start plus how far along it sat). The
+  view turns and lifts the parts' objects (`viewport.setPartMotion`); nothing is evaluated.
+- The smoke test drags the shade inside the tube and screws it 4 turns (10 mm).
+
+**Open:** the screw preview doesn't check the turning shade against the others (the collision
+check is the engine's, for placed parts at rest).
+
 ## 2026-11-10: the Plan as the place to work, recipes that explain themselves, the G1's origin
 
 **Landed:**

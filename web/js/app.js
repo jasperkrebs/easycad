@@ -13,7 +13,7 @@ import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColor
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
-import { fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch } from './parts.js';
+import { fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch, threadOf, withMounted } from './parts.js';
 import { beadExtremes, renderBeads } from './beads.js';
 
 const TEMPLATES = [
@@ -652,6 +652,7 @@ function note(text) {
 
 /** Replaces the recipe (an agent edit), runs it at full quality and returns the result. */
 async function applyRecipe(text) {
+  endScrew(false);
   state.source = text;
   state.unsaved = true;
   setDirty(false);
@@ -851,17 +852,27 @@ async function updateToTemplate(id, text) {
 let saveTimer = 0;
 function autosave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveJSON(STORAGE_KEY, {
-      source: state.source,
-      openedValues: state.openedValues,
-      printer: state.printer,
-      unsaved: state.unsaved,
-      saveName: /** @type {HTMLInputElement} */ ($('saveName')).value,
-      template: state.template,
-    });
-  }, 300);
+  saveTimer = setTimeout(saveNow, 300);
 }
+
+/** Saves the project on the device now (what autosave does a moment after the last change). */
+function saveNow() {
+  clearTimeout(saveTimer);
+  saveTimer = 0;
+  saveJSON(STORAGE_KEY, {
+    source: state.source,
+    openedValues: state.openedValues,
+    printer: state.printer,
+    unsaved: state.unsaved,
+    saveName: /** @type {HTMLInputElement} */ ($('saveName')).value,
+    template: state.template,
+  });
+}
+
+// A reload, or the tab closed, within the moment autosave waits: saved now, not lost.
+window.addEventListener('pagehide', () => {
+  if (saveTimer) saveNow();
+});
 
 function restore() {
   const saved = loadJSON(STORAGE_KEY, null);
@@ -981,6 +992,7 @@ function renderPlanView(result) {
     onSet: (name, values) => setPartValues(name, values),
     onOpen: (name) => openPart(name),
     onRemove: (name) => removePart(name),
+    onScrew: (name) => startScrew(name),
   });
 }
 
@@ -1108,6 +1120,81 @@ async function setPartValues(name, values) {
   await applyValues(Object.fromEntries(Object.entries(values).map(([k, v]) => [`${name}.${k}`, v])));
 }
 
+// ---- The screw preview: a part (and what's mounted on it) turned off its thread in the 3D
+// view, a right-hand thread: a turn counter-clockwise (seen from where it advances) moves it one
+// pitch, out of the section it's screwed into. A view only: nothing in the recipe changes.
+
+/** @type {{ name: string, indices: number[], inward: number, pitch: number, travel: number } | null} */
+let screwing = null;
+
+/** The thread's pitch where a part prints: its toolpath's layer height (the most common one). */
+function pitchOf(result, index) {
+  const { starts, heights } = result.paths || {};
+  const owner = result.parts?.paths || [];
+  const seen = new Map();
+  for (let k = 0; heights && k + 1 < starts.length; k++) {
+    if (owner[k] !== index) continue;
+    for (let i = starts[k]; i < starts[k + 1]; i++) {
+      const h = Math.round(heights[i] * 100) / 100;
+      if (h > 0) seen.set(h, (seen.get(h) || 0) + 1);
+    }
+  }
+  return [...seen.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 0;
+}
+
+/** Starts the screw preview of a part (from the plan's bar): the 3D view, a slider of turns. */
+function startScrew(name) {
+  const result = state.last;
+  const info = result && threadOf(result, name);
+  if (!result || !info) return;
+  const prints = printsOf(result);
+  const index = prints.findIndex((p) => p.name === name);
+  const pitch = pitchOf(result, index);
+  if (index < 0 || !(pitch > 0)) return;
+  const indices = withMounted(result, name)
+    .map((n) => prints.findIndex((p) => p.name === n))
+    .filter((i) => i >= 0);
+  // It comes off once it has moved out by its straight start and how far along it sat.
+  const travel = info.along + info.hold;
+  screwing = { name, indices, inward: info.inward, pitch, travel };
+  // From the plan to the 3D view.
+  $('viewPlan').setAttribute('aria-pressed', 'false');
+  document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(/** @type {HTMLElement} */ (x).dataset.mode === 'both')));
+  viewport.setMode('both');
+  $('plan').hidden = true;
+  const range = /** @type {HTMLInputElement} */ ($('screwTurns'));
+  range.max = String(Math.ceil((travel / pitch + 0.5) * 2) / 2);
+  range.value = '0';
+  $('screwName').textContent = name;
+  $('screwPanel').hidden = false;
+  viewport.refit();
+  screwTo(0);
+}
+
+/** The part `turns` turns off its thread. */
+function screwTo(turns) {
+  if (!screwing) return;
+  const { indices, inward, pitch, travel } = screwing;
+  // Out of the section: against the way it runs from its end.
+  const out = -inward;
+  const motion = new Map(indices.map((i) => [i, { angle: out * 360 * turns, dz: out * pitch * turns }]));
+  viewport.setPartMotion(motion);
+  const moved = pitch * turns;
+  $('screwReadout').textContent = `${fmt(turns, 2)} turns · ${fmt(moved, 1)} mm${moved >= travel - 1e-6 ? ' · off' : ''}`;
+}
+
+/** Ends the screw preview: the parts back where they go, and back to the plan. */
+function endScrew(toPlan = true) {
+  if (!screwing) return;
+  screwing = null;
+  viewport.setPartMotion(new Map());
+  $('screwPanel').hidden = true;
+  if (toPlan && state.last) {
+    $('viewPlan').setAttribute('aria-pressed', 'true');
+    renderPlanView(state.last);
+  }
+}
+
 /** Removes a part (and, after asking, the parts mounted on it) with the engine's command. */
 async function removePart(name) {
   const result = state.last;
@@ -1164,8 +1251,12 @@ function wire() {
       if (state.last) renderPlanView(state.last);
     }),
   );
+  // The screw preview's slider and Done.
+  $('screwTurns').addEventListener('input', () => screwTo(Number(/** @type {HTMLInputElement} */ ($('screwTurns')).value)));
+  $('screwDone').addEventListener('click', () => endScrew());
   // The plan: the parts cut through their axis, over the 3D view.
   $('viewPlan').addEventListener('click', () => {
+    endScrew(false);
     const on = $('viewPlan').getAttribute('aria-pressed') !== 'true';
     $('viewPlan').setAttribute('aria-pressed', String(on));
     document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(!on && /** @type {HTMLElement} */ (x).dataset.mode === 'both')));

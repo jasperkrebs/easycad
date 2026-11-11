@@ -130,6 +130,16 @@ The lamp builder is a new template, **Lamp**.
     for the settings the old shape didn't use.
   - **Tap a mark** (start, fillet, shade, opening, height, straight end…): its shade is selected
     and the Settings tab opens at the setting, lit up.
+  - **Drag the selected shade** along the straight section it's screwed onto (on another
+    shade, not the socket): it and the shades mounted on it slide up or down with the pointer,
+    a pill reading how far along it sits, kept on the section (from its end to where its
+    straight start would leave it). Letting go writes `along` (whole millimetres) into its
+    line, like a slider; a drag elsewhere still pans. A tap that doesn't move still taps.
+  - **Screw** (the bar's helix button, for a shade on another shade): the 3D view, with a
+    slider of turns. The shade and the shades on it turn about the axis as a right-hand thread
+    does and move out of the section one pitch a turn (the pitch read from its toolpath's layer
+    height), to where it comes off (its straight start plus how far along it sat: "off").
+    A view only; Done goes back to the plan.
   - With no shade at all, one add button (up) puts the first on the socket.
 - A setting changed anywhere (the bar, a slider) writes only that setting into the part's line.
 - **3D view:** the whole assembly, each shade where it goes; the parts buttons show one shade.

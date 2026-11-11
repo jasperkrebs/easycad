@@ -1827,3 +1827,85 @@ body[data-plan] .view-legend {
     background: transparent;
   }
 }
+
+/* ---------- the plan: sliding a shade along its thread; the screw preview ---------- */
+.plan-part.slidable .plan-hit,
+.plan-part.slidable .plan-wall {
+  cursor: ns-resize;
+}
+
+.plan.sliding .plan-add,
+.plan.sliding .plan-stems,
+.plan.sliding .plan-mark {
+  visibility: hidden;
+}
+
+.plan-slide {
+  position: absolute;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.screw-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(94%, 520px);
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  font-size: 0.85rem;
+}
+
+.screw-panel[hidden] {
+  display: none;
+}
+
+.screw-name {
+  font-weight: 700;
+}
+
+.screw-readout {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 9em;
+}
+
+@media (max-width: 520px) {
+  .screw-panel {
+    grid-template-columns: auto 1fr auto;
+    gap: 4px 10px;
+    padding: 6px 10px;
+    bottom: 6px;
+  }
+
+  .screw-panel .screw-readout {
+    min-width: 0;
+    text-align: right;
+  }
+
+  .screw-panel input[type="range"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .screw-panel .btn {
+    padding: 4px 12px;
+    min-height: 0;
+  }
+}

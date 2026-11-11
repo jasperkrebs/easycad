@@ -488,7 +488,12 @@ async function saveFrom(page, selector) {
       // inside and outside), each with its arrow.
       const ways = await page.locator('#plan .plan-add-btn').evaluateAll((b) => b.map((x) => `${x.dataset.port}:${x.dataset.way}`).sort().join());
       if (ways !== 'main.end_in:down,main.end_in:up,main.end_out:down,main.end_out:up,main.start_out:down,main.start_out:up') failures.push(`${name}: the plan's add buttons: ${ways}`);
-      const small = await page.locator('#plan .plan-add-btn').evaluateAll((b) => b.filter((x) => x.getBoundingClientRect().width < 40 || x.getBoundingClientRect().height < 40).length);
+      // Measured once the plan has settled (it draws again when its size settles; the buttons of
+      // a drawing just replaced measure 0).
+      const tooSmall = () => [...document.querySelectorAll('#plan .plan-add-btn')].filter((x) => x.getBoundingClientRect().width < 40 || x.getBoundingClientRect().height < 40).length;
+      const settled = () => [...document.querySelectorAll('#plan .plan-add-btn')].every((x) => x.getBoundingClientRect().width >= 40 && x.getBoundingClientRect().height >= 40);
+      await page.waitForFunction(settled, null, { timeout: 5000, polling: 100 }).catch(() => {});
+      const small = await page.evaluate(tooSmall);
       if (small) failures.push(`${name}: ${small} add buttons are smaller than 40 px`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-plan.png`) });
       // The plan's marks lead to the settings that drive each piece (the shade's fillet), and
@@ -520,6 +525,27 @@ async function saveFrom(page, selector) {
       await ready();
       if (!(await barIs('cone'))) failures.push(`${name}: the flipped shade isn't selected (bar: ${await barFor()})`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-inside.png`) });
+      // Dragged down the tube's thread: further along it, written into its line.
+      const grip = await page.evaluate(() => {
+        const pl = /** @type {SVGPolylineElement} */ (document.querySelector('#plan .plan-part.slidable .plan-hit'));
+        const p = pl.points.getItem(Math.floor(pl.points.numberOfItems / 2));
+        const r = pl.ownerSVGElement.getBoundingClientRect();
+        return { x: r.left + p.x, y: r.top + p.y };
+      });
+      await page.mouse.move(grip.x, grip.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 6; i++) await page.mouse.move(grip.x, grip.y + i * 8);
+      await page.mouse.up();
+      if (!(await recipeHas(/^part cone = shade\(.*along: [1-9]\d* mm/m))) failures.push(`${name}: dragged along the thread: ${await partLines()}`);
+      await ready();
+      // Screwed off in the 3D view, and back to the plan.
+      await page.click('#plan .plan-bar .screw');
+      if (!(await page.isVisible('#screwPanel')) || !(await page.isHidden('#plan'))) failures.push(`${name}: the screw preview didn't open`);
+      await page.fill('#screwTurns', '4');
+      if (!/^4\.00 turns · 10\.0 mm/.test(await page.textContent('#screwReadout'))) failures.push(`${name}: the screw preview: ${await page.textContent('#screwReadout')}`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-screw.png`) });
+      await page.click('#screwDone');
+      if (!(await page.isVisible('#plan')) || !(await barIs('cone'))) failures.push(`${name}: back from the screw preview`);
       await page.click('#plan .plan-bar .remove');
       if (!(await recipeHas(/^part cone/m, false))) failures.push(`${name}: removed from the bar: ${await partLines()}`);
       await ready();
