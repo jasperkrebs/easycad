@@ -533,6 +533,9 @@ async function saveFrom(page, selector) {
       if ((await apart()) !== 'cone,tube' || (await page.getAttribute('#asmExplode', 'aria-pressed')) !== 'true') failures.push(`${name}: exploded, the plan moved: ${await apart()}`);
       if (await page.locator('#plan .plan-add-btn').count()) failures.push(`${name}: add buttons while it's apart`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-exploded.png`) });
+      // The picture is what's shown: here, the plan taken apart.
+      const planPicture = await saveFrom(page, '#viewSnap');
+      if (planPicture.data.subarray(1, 4).toString() !== 'PNG') failures.push(`${name}: the plan's picture: ${planPicture.name}`);
       await page.click('#asmPlay');
       await page.waitForFunction(() => document.getElementById('asmRange').value === '0', null, { timeout: 20000 }).catch(() => failures.push(`${name}: playing it back together didn't end together`));
       if (await apart()) failures.push(`${name}: back together, still apart: ${await apart()}`);

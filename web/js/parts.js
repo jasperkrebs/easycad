@@ -429,6 +429,51 @@ function wire(host) {
   }).observe(host);
 }
 
+/** The drawing styles a picture of the plan keeps (the page's CSS doesn't go with the SVG). */
+const DRAWN = ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'opacity', 'visibility', 'display', 'font-family', 'font-size', 'font-weight', 'text-anchor', 'dominant-baseline'];
+
+/**
+ * The plan as it's shown, as a PNG (a data URL), at `scale` times the screen: the parts where
+ * they are (taken apart too), their names, the axis; not the controls (add buttons, zoom, the
+ * bar) nor the marks.
+ * @param {HTMLElement} host
+ * @param {number} [scale]
+ * @returns {Promise<string>}
+ */
+export async function capturePlan(host, scale = 2) {
+  const [W, H] = [host.clientWidth, host.clientHeight];
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(W * scale);
+  canvas.height = Math.round(H * scale);
+  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+  ctx.fillStyle = getComputedStyle(host).backgroundColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const svg = host.querySelector(':scope > svg:not(.plan-stems)');
+  if (svg) {
+    const copy = /** @type {SVGSVGElement} */ (svg.cloneNode(true));
+    // Each element's look, from the page's styles, written onto the copy.
+    const from = [svg, ...svg.querySelectorAll('*')];
+    const to = [copy, ...copy.querySelectorAll('*')];
+    from.forEach((n, i) => {
+      const style = getComputedStyle(n);
+      const css = DRAWN.map((k) => `${k}:${style.getPropertyValue(k)}`).join(';');
+      to[i].setAttribute('style', css);
+    });
+    for (const n of copy.querySelectorAll('.plan-mark, .plan-hit, .plan-halo, title')) n.remove();
+    // Every part as plainly as the others, selected or not (one hidden from the 3D view stays
+    // faint, as it's shown).
+    for (const n of copy.querySelectorAll('.plan-part.dim:not(.off) .plan-wall')) /** @type {SVGElement} */ (n).style.opacity = '0.92';
+    copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    copy.setAttribute('width', String(W));
+    copy.setAttribute('height', String(H));
+    const img = new Image();
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(copy))}`;
+    await img.decode();
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  }
+  return canvas.toDataURL('image/png');
+}
+
 /** Zooms about the middle of the plan (the zoom buttons). */
 function zoomCentre(factor) {
   if (!drawn) return;

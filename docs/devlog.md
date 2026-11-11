@@ -24,6 +24,10 @@ its bar, wanted to be an animation like the print's, all the shades, ending in a
   a gap as long as the thread; the shades already off ride along. `assemblySteps` and
   `assemblyMotion` in `web/js/parts.js`, node-tested; the Plan draws the shades moved too.
 
+- **PNG is what's shown:** in the Plan, the plan (`capturePlan`: the parts where they are,
+  taken apart too, their names and the axis, without the controls, the marks or a selection's
+  halo); in 3D, the 3D view as it is (taken apart too).
+
 **Open:** the steps take equal time, a long thread spins faster; no collision check while
 moving.
 

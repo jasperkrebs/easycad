@@ -13,7 +13,7 @@ import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColor
 import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
-import { assemblyMotion, assemblySteps, fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch } from './parts.js';
+import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch } from './parts.js';
 import { beadExtremes, renderBeads } from './beads.js';
 
 const TEMPLATES = [
@@ -1255,8 +1255,10 @@ function wire() {
   // or on a phone a double-tap (touch doesn't make a dblclick everywhere).
   $('viewFit').addEventListener('click', () => (planOn() ? fitPlan() : viewport.focus()));
   // The view as a picture, sharper than the screen.
+  // What's shown: the plan when it's up, else the 3D view (taken apart, when it is).
   $('viewSnap').addEventListener('click', async () => {
-    const blob = await (await fetch(viewport.capture(2))).blob();
+    const url = $('plan').hidden ? viewport.capture(2) : await capturePlan($('plan'), 2);
+    const blob = await (await fetch(url)).blob();
     download(`${saveName()}.png`, blob, 'image/png');
   });
   $('view').addEventListener('dblclick', () => viewport.focus());
