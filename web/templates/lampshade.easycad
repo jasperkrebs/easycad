@@ -393,5 +393,9 @@ mark_cap_arc = polyline(point(cap_ar, 0, top_z - cap_az)) |> place(z: as_printed
 mark pick(is_closed, mark_cap, []) for closed, closed_layer "Closed end"
 mark pick(is_closed * greater(cap_f, 0), mark_cap_arc, []) for closed_fillet "Closed end's fillet"
 
+# ---- The shape for whoever slices it their own way: the wall a line thick, as it prints.
+wall_solid = thicken(wall, line)
+export wall_solid as "lampshade.step"
+
 show wall, path
 print path

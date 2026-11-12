@@ -27,7 +27,9 @@ become toolpaths, toolpaths become G-code for your printer.
 >   written the way EasyGCode writes it, speeds set as volumetric flow, golden-tested against
 >   EasyGCode's own output. The app knows the G1 from Ginger's wiki: its bed, nozzles, flow
 >   window, heater limits and material profiles ([docs/printers.md](docs/printers.md)).
->   **STL** for plain geometry.
+>   **STL** for plain geometry, and **STEP** for a manufacturer who slices the shape their own
+>   way: the printed wall as a solid (`thicken(wall, line)`), exact round faces for shapes of
+>   revolution (the lampshade and every shade of the lamp export one).
 > - **Templates** (all from EasyGCode): the lampshade (every shade, or your own), the bend
 >   stool (with foaming), the thread connector and the spiral disc as recipes with the same
 >   G-code as EasyGCode; its vessel (the bottom rounding into the wall, a non-planar star top)

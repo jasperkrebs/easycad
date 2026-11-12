@@ -437,6 +437,10 @@ component shade "Shade"
   mark pick(is_closed, mark_cap, []) for closed, closed_layer "Closed end"
   mark pick(is_closed * greater(cap_f, 0), mark_cap_arc, []) for closed_fillet "Closed end's fillet"
 
+  # ---- The shape for whoever slices it their own way: the wall a line thick, as it prints.
+  wall_solid = thicken(wall, line)
+  export wall_solid as "shade.step"
+
   show wall
   print shown
 end

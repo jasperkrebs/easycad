@@ -5,6 +5,35 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-13 (evening): STEP export, and `thicken` for the printed wall
+
+**Why:** the owner wants to send a manufacturer the shape to slice their own way, as STEP
+(better than STL for manufacturing, and for fits such as threads).
+
+**What landed:**
+- `export shape as "x.step"` (or `.stp`): ISO 10303-21, AP214 (`AUTOMOTIVE_DESIGN`, the schema
+  Open CASCADE-based CAD and slicers read most widely), mm, written by `crates/core/src/step.rs`
+  with no dependency, deterministic text. A surface of revolution is exact: each profile span is
+  one `ADVANCED_FACE` on a `PLANE`, `CYLINDRICAL_SURFACE` or `CONICAL_SURFACE`, bounded by true
+  `CIRCLE`s and a seam line. Anything else is its mesh, one planar triangle a face with shared
+  edges (at most 40 000 triangles, about 1 kB each). Closed shells are `MANIFOLD_SOLID_BREP`s;
+  open ones a `SHELL_BASED_SURFACE_MODEL`. The header lists the settings that apply
+  (`Socket: E27`, `Line width: 6 mm`, …): the socket thread is formed by the bead helix, so the
+  STEP wall is smooth and the pitch is read there.
+- `thicken(surface, thickness)`: the wall offset half the thickness each side, normal to it,
+  closed across the ends. Exact for a surface of revolution (its profile offset with mitres, cut
+  at the axis, a bend tighter than half the thickness refused); a loft is offset point by point.
+  Surfaces carry their revolution (profile and axis) through moves, turns, mirrors and uniform
+  scales; it is checked against the sections before it's trusted.
+- The lampshade exports `lampshade.step`, and every lamp shade `<part>-shade.step`
+  (`thicken(wall, line)`), placed where it goes. Their G-code is unchanged.
+- Checked with Open CASCADE 8.0 (`cadquery-ocp`, a scratch install, not in the repo): the
+  lampshade, the lamp's shades (open and closed), a cup, a capped cone, a placed and a squashed
+  wall, a thickened loft and the twisted vase all read as valid solids with the right volumes.
+
+**Still open:** a closed end's disc is thickened a line, not its own layer (`closed_layer`);
+lofts are faceted, not B-spline faces; the printed wall's ends are square across the wall
+rather than flat on the bed where the wall leans at the start.
 ## 2026-11-13 (later): the shade at its own layer height and line width
 
 **Why:** the owner: the thread needs the socket's pitch, but the shade, for looks, may want

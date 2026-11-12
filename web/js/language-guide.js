@@ -53,7 +53,7 @@ Components and parts (several of the same thing: the Lamp template's shades)
 Outputs
 - \`show a, b\` draws steps in the 3D view (otherwise the last step is drawn).
 - \`print path\` is the toolpath the printer prints: the app writes G-code for the chosen printer from it. Several parts from one window (a container and its lid): one \`print\` per part (\`print base\`, \`print lid\`), each its own G-code file, estimate and checks, all sharing the settings. Each part prints where the recipe puts it: leave them all on the bed's centre (each is its own file); the 3D view has a toggle per part that shows or hides it with the shown shapes only it is made from.
-- \`export shape as "name.stl"\` offers shapes (surfaces and solids, or a list of them) as an STL file; \`export path as "name.gcode"\` offers another toolpath as G-code. A recipe without \`print\` is plain geometry (show it and export an STL).
+- \`export shape as "name.stl"\` offers shapes (surfaces and solids, or a list of them) as an STL file, \`export shape as "name.step"\` as a STEP file (exact round faces for shapes of revolution; for a manufacturer who slices it their own way); \`export path as "name.gcode"\` offers another toolpath as G-code. For the printed wall rather than a surface of no thickness, export \`thicken(wall, line)\`. A recipe without \`print\` is plain geometry (show it and export an STL).
 
 Printing
 - Set print speed as volumetric flow: \`flow:\` in mm³/s on the toolpath steps (a \`param flow = 8 in 1..25 "Flow (mm³/s)"\` setting). Each move's speed then follows from its bead size (speed = flow ÷ bead area), so a thicker bead is printed slower. \`speed:\` in mm/s exists too, for when it's asked for.
