@@ -1198,6 +1198,9 @@ impl Profile {
     }
 }
 
+/// How far (mm) a profile may step down and still count as level: rounding, not a shape.
+const PROFILE_ROUNDING: f64 = 1e-9;
+
 /// Vase mode around the Z axis, following a profile of revolution: EasyGCode's lampshade
 /// (`generateLamp` in its gcode.js), whose arithmetic this follows. The profile's x is the
 /// radius and its z the height; it's printed from its lowest point up.
@@ -1242,8 +1245,16 @@ pub fn vase_revolve(
     if points.first().map(|p| p[1]) > points.last().map(|p| p[1]) {
         points.reverse();
     }
-    if points.windows(2).any(|w| w[1][1] < w[0][1]) {
-        return Err("the profile must rise all the way (its height may never go down)".into());
+    // A step down too small to be meant (rounding: 124.99999999999999 after 125) is level: lifted
+    // to the height before it. A real one is an error.
+    for i in 1..points.len() {
+        let below = points[i - 1][1] - points[i][1];
+        if below > PROFILE_ROUNDING {
+            return Err("the profile must rise all the way (its height may never go down)".into());
+        }
+        if below > 0.0 {
+            points[i][1] = points[i - 1][1];
+        }
     }
     if points.iter().any(|p| p[0] <= 0.0) {
         return Err("the profile's radius (its x) must be more than 0 everywhere".into());
@@ -1777,6 +1788,43 @@ mod tests {
     /// Along the surface: up a wall, a turn rises its whole step; out along a flat stretch, the
     /// turns are rings side by side at one height, each a step further out. Fields read z as
     /// the distance along the profile.
+    /// A profile that steps down by a rounding error (124.99999999999999 after 125, where a
+    /// straight start meets its fillet) is level, not an error; a real step down still is.
+    #[test]
+    fn vase_revolve_takes_a_rounding_step_down_as_level() {
+        let run = |dip: f64| {
+            let profile = Curve::new(
+                vec![
+                    [20.0, 0.0, 0.0],
+                    [20.0, 0.0, 125.0],
+                    [20.0, 0.0, 125.0 - dip],
+                    [30.0, 0.0, 140.0],
+                ],
+                false,
+            );
+            let rise = |_: P3| Ok(2.5);
+            let one = |_: P3| Ok(1.0);
+            let none = |_: P3| Ok(0.0);
+            let per_turn = PerTurn {
+                rise: &rise,
+                width: &one,
+                flow: &none,
+            };
+            let options = Revolve {
+                speed: 40.0,
+                bead_layer: 0.0,
+                tolerance: 1.0,
+                seam: 90.0,
+                flat_top: false,
+                steady_start: false,
+                along_surface: false,
+            };
+            vase_revolve(&profile, &per_turn, &options, MAX_PATH_POINTS)
+        };
+        assert!(run(1.4e-14).is_ok());
+        assert!(run(0.01).unwrap_err().contains("must rise"));
+    }
+
     #[test]
     fn vase_revolve_steps_along_the_surface() {
         // Straight up 10 mm at radius 20, then flat out to radius 40.

@@ -5,6 +5,19 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-12 (later still): a straight start of 122–126 mm "went down"
+
+**Why:** the owner's lamp failed with "the profile must rise all the way" for a straight start
+of 122 to 126 mm, and worked for any other length. Where the straight start meets its fillet
+the profile has two points at the same height, the second worked out the long way round
+(`z_start + (throat − z_start)`): for some lengths that rounds to 124.99999999999999 after 125,
+and `vase_revolve`'s check was strict.
+
+**Landed:** `vase_revolve` takes a step down under a nanometre (`PROFILE_ROUNDING`) as level and
+lifts it to the height before; a real step down is still an error. Profiles that rise are
+unchanged (golden tests). Regression tests: the owner's shade at 122–126 mm (failed before), and
+a profile with a 1.4e-14 mm dip.
+
 ## 2026-11-12 (later): a closed shade compensates its overhangs as every shade does
 
 **Why:** the closed end's wall was printed with the shaker's steps (flat layers, `contour` +
