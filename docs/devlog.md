@@ -5,6 +5,32 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-12 (night): the shade at its own layer height and line width
+
+**Why:** the owner: the thread needs the socket's pitch, but the shade, for looks, may want
+other layers; as the salt shaker's lid eases from its disc's bead into the skirt's through the
+fillet.
+
+**What landed:** `shade_layer` and `shade_line` (Print group, 0: the pitch and the line) in
+the lampshade and the lamp. The throat prints at the pitch and line, the shade at its own,
+through the fillet an S-curve of height (`smoothstep`) between them, at once with no fillet;
+read by the profile's height whatever the way up (wide edge down, closed) and along the
+surface. In the lamp a straight end is a thread too: through the end's fillet it eases back to
+the pitch; a tube is all thread; a closed end's disc takes the shade's layer (its "0") and
+line. The lampshade's lip keeps the shade's (it's no thread). Overhang compensation on the
+local values: `rise = layer × squeeze`, the bead the full local layer; `vase_revolve`'s
+`bead_layer` is now a number or a field read once per turn (a constant is byte-identical:
+every golden test unchanged). Numbers (cone at 44°, 30 mm fillet, pitch 2.5 → 1.5, line
+6 → 8): turns below z 20 rise 2.5 at 6 mm, then 2.49/6.02, 2.40/6.17, 2.25/6.41 … 1.11/8.00,
+from z 41 on 1.081 (1.5 × cos 44°) at 8 mm; at most 0.29 mm of line per turn. Tests:
+`a_shade_layer_as_the_threads_changes_nothing`, `the_shade_prints_at_its_own_layer_height_and_line_width`,
+`a_lamp_shade_eases_back_to_the_thread_at_its_straight_end`, the closed end's disc test with
+shade layers, every lampshade shape with a shade layer.
+
+**Still open:** the blend runs over the fillet only (not the flow ramp's own height); a bell or
+dome, which leaves the throat straight up with no fillet, changes at once at the throat's top.
+The settings are the project's, not each shade's.
+
 ## 2026-11-12 (evening): a closed end's disc runs straight into the wall
 
 **Why:** the owner's closed cone (opening 195 mm, closed fillet 18 mm) stepped 1.4 mm outward

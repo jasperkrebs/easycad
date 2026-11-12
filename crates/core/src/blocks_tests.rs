@@ -577,10 +577,13 @@ fn every_lampshade_shade_prints_both_ways_up() {
     use easycad_lang::{Literal, set_values};
     let template = include_str!("../../../web/templates/lampshade.easycad");
     for shape in ["cone", "bell", "dome", "sphere", "flat sphere", "own"] {
-        for (wide, lip, brim, comp) in [
-            (false, false, false, "width"),
-            (true, true, true, "layer height"),
-            (false, true, false, "off"),
+        // The last two with the shade's own layer height and line width.
+        for (wide, lip, brim, comp, shade_layer) in [
+            (false, false, false, "width", 0.0),
+            (true, true, true, "layer height", 0.0),
+            (false, true, false, "off", 0.0),
+            (false, true, true, "layer height", 1.5),
+            (true, false, false, "width", 1.2),
         ] {
             let values: Vec<(String, Literal)> = vec![
                 ("shape".into(), Literal::Text(shape.into())),
@@ -588,6 +591,8 @@ fn every_lampshade_shade_prints_both_ways_up() {
                 ("lip".into(), Literal::Bool(lip)),
                 ("brim".into(), Literal::Bool(brim)),
                 ("compensation".into(), Literal::Text(comp.into())),
+                ("shade_layer".into(), Literal::Number(shade_layer)),
+                ("shade_line".into(), Literal::Number(shade_layer * 5.0)),
             ];
             let recipe = set_values(template, &values).unwrap();
             let (e, v) = step_values(&recipe, Quality::Final);
@@ -672,7 +677,8 @@ fn vase_revolve_follows_the_profile_turn_by_turn() {
 path = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1)
 wide = vase_revolve(profile, layer: 2, width: 3 + greater(z, 10), tolerance: 0.1)
 squeezed = vase_revolve(profile, layer: 2 - greater(z, 10), width: 3, bead_layer: 2, tolerance: 0.1)
-open = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1, flat_top: false)"#,
+beads = vase_revolve(profile, layer: (2 - greater(z, 10)) / 2, width: 3, bead_layer: 2 - greater(z, 10), tolerance: 0.1)
+open =vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1, flat_top: false)"#,
     );
     let p = path(&v, "path");
     // 15 turns of 2 mm to 30 mm, then the closing turn; the first holds radius 20 at the back.
@@ -706,6 +712,12 @@ open = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1, flat_
     let s = path(&v, "squeezed");
     assert_eq!(s.layers, 5 + 20);
     assert!(s.parts.iter().all(|p| p.layer == 2.0));
+    // A field: each turn's bead for its own layer (2 mm, then 1 mm above 10 mm), each turn
+    // rising half of it.
+    let b = path(&v, "beads");
+    assert_eq!(b.layers, 10 + 40);
+    let layers: Vec<f64> = b.parts.iter().map(|p| p.layer).collect();
+    assert_eq!(layers, vec![2.0, 1.0]);
     assert!(
         error(
             "p = vase_revolve(polyline([[20, 0, 0], [20, 0, 10], [30, 0, 5]]), layer: 2, width: 3)"

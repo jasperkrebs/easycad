@@ -1483,9 +1483,9 @@ pub static NODES: &[Node] = &[
             ),
             opt(
                 "bead_layer",
-                "Length",
+                "Length | Field",
                 0.0,
-                "extrude every turn for this layer height instead of its rise (0: its rise)",
+                "extrude every turn for this layer height instead of its rise (0: its rise); a field is read once per turn, at its middle",
             ),
             opt(
                 "tolerance",
