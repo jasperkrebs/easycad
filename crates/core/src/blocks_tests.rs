@@ -587,11 +587,15 @@ fn every_lampshade_shade_prints_both_ways_up() {
         "cone in-out",
         "tube",
     ] {
-        for (wide, lip, brim, comp, closed) in [
-            (false, false, false, "width", false),
-            (true, true, true, "layer height", false),
-            (false, true, false, "off", false),
-            (false, false, false, "layer height", true),
+        // The last three with the shade's own layer height and line width.
+        for (wide, lip, brim, comp, closed, shade_layer) in [
+            (false, false, false, "width", false, 0.0),
+            (true, true, true, "layer height", false, 0.0),
+            (false, true, false, "off", false, 0.0),
+            (false, false, false, "layer height", true, 0.0),
+            (false, true, true, "layer height", false, 1.5),
+            (true, false, false, "width", false, 1.2),
+            (false, false, false, "layer height", true, 1.5),
         ] {
             let values: Vec<(String, Literal)> = vec![
                 ("shape".into(), Literal::Text(shape.into())),
@@ -600,6 +604,8 @@ fn every_lampshade_shade_prints_both_ways_up() {
                 ("brim".into(), Literal::Bool(brim)),
                 ("compensation".into(), Literal::Text(comp.into())),
                 ("closed".into(), Literal::Bool(closed)),
+                ("shade_layer".into(), Literal::Number(shade_layer)),
+                ("shade_line".into(), Literal::Number(shade_layer * 5.0)),
             ];
             let recipe = set_values(template, &values).unwrap();
             let (e, v) = step_values(&recipe, Quality::Final);
@@ -608,10 +614,16 @@ fn every_lampshade_shade_prints_both_ways_up() {
                 "{shape} {wide} {lip} {closed}: {:?}",
                 e.diagnostics
             );
-            // The profile always rises, from the bed (closed: from the disc's layer) to the top.
+            // The profile always rises, from the bed (closed: from the disc's layer, the shade's
+            // or else the pitch; a tube's is the pitch) to the top.
             let (pts, _) = curve_points(&v, "profile");
             assert!(pts.windows(2).all(|w| w[1][2] >= w[0][2] - 1e-9), "{shape}");
-            let floor = if closed { 2.5 } else { 0.0 };
+            let disc = if shade_layer > 0.0 && shape != "tube" {
+                shade_layer
+            } else {
+                2.5
+            };
+            let floor = if closed { disc } else { 0.0 };
             assert!(
                 (pts[0][2] - floor).abs() < 1e-9 && pts.iter().all(|p| p[0] > 0.0),
                 "{shape} {closed}"
@@ -621,7 +633,7 @@ fn every_lampshade_shade_prints_both_ways_up() {
             // Closed, the disc goes down first, at its layer, and fills the middle.
             if closed {
                 let first = p.path.points.iter().find(|q| q[2] > 0.0).unwrap();
-                assert!((first[2] - 2.5).abs() < 1e-9 && first[0].hypot(first[1]) < 1.0);
+                assert!((first[2] - disc).abs() < 1e-9 && first[0].hypot(first[1]) < 1.0);
             }
         }
     }
@@ -690,7 +702,8 @@ fn vase_revolve_follows_the_profile_turn_by_turn() {
 path = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1)
 wide = vase_revolve(profile, layer: 2, width: 3 + greater(z, 10), tolerance: 0.1)
 squeezed = vase_revolve(profile, layer: 2 - greater(z, 10), width: 3, bead_layer: 2, tolerance: 0.1)
-open = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1, flat_top: false)"#,
+beads = vase_revolve(profile, layer: (2 - greater(z, 10)) / 2, width: 3, bead_layer: 2 - greater(z, 10), tolerance: 0.1)
+open =vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1, flat_top: false)"#,
     );
     let p = path(&v, "path");
     // 15 turns of 2 mm to 30 mm, then the closing turn; the first holds radius 20 at the back.
@@ -724,6 +737,12 @@ open = vase_revolve(profile, layer: 2, width: 3, flow: 10, tolerance: 0.1, flat_
     let s = path(&v, "squeezed");
     assert_eq!(s.layers, 5 + 20);
     assert!(s.parts.iter().all(|p| p.layer == 2.0));
+    // A field: each turn's bead for its own layer (2 mm, then 1 mm above 10 mm), each turn
+    // rising half of it.
+    let b = path(&v, "beads");
+    assert_eq!(b.layers, 10 + 40);
+    let layers: Vec<f64> = b.parts.iter().map(|p| p.layer).collect();
+    assert_eq!(layers, vec![2.0, 1.0]);
     assert!(
         error(
             "p = vase_revolve(polyline([[20, 0, 0], [20, 0, 10], [30, 0, 5]]), layer: 2, width: 3)"

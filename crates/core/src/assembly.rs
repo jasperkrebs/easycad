@@ -50,7 +50,7 @@ fn beads(p: &Toolpath) -> Vec<Bead> {
         None => p.points[i],
     };
     (1..p.points.len())
-        .filter(|&i| !p.travel.get(i).copied().unwrap_or(false))
+        .filter(|&i| !p.travel.get(i).copied().unwrap_or(false) && !p.is_aid(i))
         .map(|i| {
             let (w, h) = p.bead_of(i);
             Bead {

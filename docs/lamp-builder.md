@@ -134,6 +134,8 @@ The lamp builder is a new template, **Lamp**.
     and the Settings tab opens at the setting, lit up.
   - **Zoom** with a pinch (Safari's own gesture too), the wheel, or the `+` and `−` buttons at
     the plan's top right. A press that wanders less than 12 px (5 px with a mouse) is a tap.
+  - **A brim** (`aid`) prints and shows in 3D, but isn't in the Plan: it's there to print safely,
+    so it takes no face and runs into nothing.
   - **Taken apart:** the assembly row (under the print's, also in the Plan) plays the lamp
     apart a shade at a time, the furthest out first: each turns off its thread as a right-hand
     thread does (one pitch a turn, the pitch read from its toolpath) and then moves on, without
@@ -143,13 +145,25 @@ The lamp builder is a new template, **Lamp**.
     (Dragging a shade along its thread, 10 Nov, was dropped: on a phone it fought the pan.)
   - With no shade at all, one add button (up) puts the first on the socket.
 - A setting changed anywhere (the bar, a slider) writes only that setting into the part's line.
+- **Shade layers** (12 Nov 2026; the Print group's `shade_layer` and `shade_line`, 0: the pitch
+  and the line): the threads print at the pitch and the line, the shades between them at their
+  own layer height and line width, for looks. Through the start's fillet the layer and line
+  ease along an S-curve of height (`smoothstep`) from the thread's to the shade's, and with a
+  straight end back again through the end's fillet, so the end prints at the pitch and other
+  shades screw onto it; with no fillet the change is at once, where the straight section ends
+  (or starts). A tube is all thread. Overhang compensation works on the local values: a
+  layer-height-compensated turn rises `layer × squeeze` and is extruded for the full local
+  layer (`vase_revolve`'s `bead_layer` as a field); width compensation widens the local line.
+  Along the surface the same, with heights read along the profile. The settings are the
+  project's (as the pitch, the line and the flows are), not each shade's: one lamp, one look.
+  Ports are unchanged: the threads they fit stay at the line.
 - **Closed end** (a shade's tick box, 12 Nov 2026): its end shut by a flat disc (its own layer
-  height, the pitch by default) rising through a fillet with its own radius into the wall,
+  height, the shade's layer by default, and the shade's line) rising through a fillet with its own radius into the wall,
   printed disc down: the disc as a spiral from the middle out, a line a turn, turned so it ends
   exactly on the wall's first point (no step out onto the fillet), then the shade
   as every shade prints (`vase_revolve`, overhang compensation and all), its profile from the
   disc's edge up the fillet (flat at first, so compensated the most) and the body to the
-  start's thread, a pitch a turn where it's straight; the step from the disc onto the wall is
+  start's thread, a pitch a turn on the thread; the step from the disc onto the wall is
   printed (`join(link: true)`), no hop. Shown where it threads; its closed end has no ports;
   the disc and its fillet are marks in the Plan.
 - **Prints** (next to Plan, for a project of several parts): every part laid as it prints, each

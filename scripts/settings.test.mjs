@@ -229,6 +229,24 @@ test('a new shade goes on a free face, further along where one already sits', ()
   );
 });
 
+test("a brim (a print aid) isn't in the plan, so it takes no face", () => {
+  // A tube (r 30, z 0..60) printed with a brim: rings at r 36 and 42 on the bed, marked as aids.
+  const result = planResult([{ name: 'tube', r: 30, z0: 0, z1: 60 }], [['tube', 'start_out', [36, 0, 1, 60, 0, 1]]]);
+  const n = result.paths.points.length / 3;
+  for (const r of [36, 42]) {
+    for (let a = 0; a < 12; a++) result.paths.points.push(r * Math.cos(a / 2), r * Math.sin(a / 2), 0.5);
+  }
+  result.paths.widths.push(...Array(24).fill(6));
+  result.paths.starts[1] = result.paths.points.length / 3;
+  result.paths.aids = new Uint8Array(result.paths.points.length / 3).fill(1, n);
+  const plan = sections(result);
+  assert.ok(plan.get('tube').points.every(([r]) => Math.abs(r - 30) < 1e-9), 'only the wall');
+  assert.equal(freePorts(result, plan)[0].along, 0, 'the start is free from its end');
+  // Without the marks the brim is drawn, and takes the face where it lies.
+  delete result.paths.aids;
+  assert.ok(freePorts(result, sections(result))[0].along > 0);
+});
+
 test("a shade's new shape brings its sizes for the settings it didn't use before", () => {
   const port = [30, 100, -1, 20, 0, 1];
   assert.deepEqual(shapeSwitch('cone', 'sphere', port), { sphere: 214 });

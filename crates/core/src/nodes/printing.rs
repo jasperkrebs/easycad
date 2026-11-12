@@ -202,6 +202,17 @@ pub(super) fn wait_temperature(ctx: &mut Ctx, a: &Args) -> Result<Value, String>
     event(ctx, a, EventKind::WaitHeat { temps, cool }, a.flag(6)?)
 }
 
+/// The toolpath marked as a print aid (a brim, a skirt): every one of its moves.
+pub(super) fn aid(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let path = a.toolpath(0)?;
+    ctx.spend(path.points.len())?;
+    let mut out = (**path).clone();
+    for s in &mut out.parts {
+        s.aid = true;
+    }
+    Ok(Value::Toolpath(Rc::new(out)))
+}
+
 pub(super) fn speed_override(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     event(ctx, a, EventKind::SpeedOverride(a.num(1)?), a.flag(2)?)
 }
