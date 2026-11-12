@@ -558,6 +558,22 @@ async function saveFrom(page, selector) {
       await page.click('#viewParts button:text("tube")');
       if (!(await page.locator('#plan .plan-part[data-part="tube"].off').count()) || (await page.locator('#plan .plan-add-btn[data-port^="tube."]').count())) failures.push(`${name}: the hidden tube in the plan`);
       await page.click('#viewParts button:text("tube")');
+      // The prints overview: a card per part, its G-code from there; the tube closed prints its
+      // disc down (no flip).
+      await page.click('#viewPrints');
+      if ((await page.locator('#printsStrip .print-card').count()) !== 2) failures.push(`${name}: the prints overview's cards: ${await page.locator('#printsStrip .print-card').allTextContents()}`);
+      const plate = await saveFrom(page, '#printsStrip .print-card:has-text("tube") .print-gcode');
+      if (!plate.name.endsWith('-tube.gcode') || !plate.data.toString('utf8').includes('G1 ')) failures.push(`${name}: the tube's G-code from its card: ${plate.name}`);
+      await page.click('#tab-settings');
+      await openGroups(page);
+      await page.check('[id="set-tube.closed"]');
+      if (!(await recipeHas(/^part tube = shade\(.*closed: true/m))) failures.push(`${name}: closing the tube: ${await partLines()}`);
+      await ready();
+      if (!(await page.locator('#printsStrip .print-card:has-text("tube") button:text("Disc down")').count())) failures.push(`${name}: the closed tube's card: ${await page.locator('#printsStrip').textContent()}`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-prints.png`) });
+      await page.uncheck('[id="set-tube.closed"]');
+      await ready();
+      await page.click('#viewPrints');
       // Custom colours: a colour and an opacity per shade, for simple renders.
       await page.selectOption('#viewColor', 'custom');
       if ((await page.locator('#viewColors input[type="color"]').count()) !== 2) failures.push(`${name}: custom colours for ${await page.locator('#viewColors input[type="color"]').count()} parts`);

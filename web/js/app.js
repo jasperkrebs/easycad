@@ -133,6 +133,7 @@ async function run(quality, how = {}) {
   renderLegend();
   renderPartToggles(result);
   applyAssembly(result);
+  renderPrintsView(result);
   renderCustomColors();
   renderPlanView(result);
 
@@ -1120,6 +1121,48 @@ async function setPartValues(name, values) {
   await applyValues(Object.fromEntries(Object.entries(values).map(([k, v]) => [`${name}.${k}`, v])));
 }
 
+// ---- The prints overview: every part laid as it prints, each on its own bed (like a slicer's
+// plates); per part, which way up it prints and its G-code.
+
+/** Shows the Prints button (for a project of several parts) and, while it's on, the plates. */
+function renderPrintsView(result) {
+  const prints = printsOf(result);
+  const button = $('viewPrints');
+  button.hidden = prints.length < 2;
+  const on = !button.hidden && button.getAttribute('aria-pressed') === 'true';
+  $('printsStrip').hidden = !on;
+  if (!on) return;
+  const value = (key) => result.params.find((p) => p.name === key)?.value;
+  const strip = $('printsStrip');
+  strip.replaceChildren(
+    ...prints.map((p, i) => {
+      const card = el('div', { className: 'print-card' }, [el('span', { className: 'print-name', text: p.name })]);
+      // Which way up: a shade's wide edge down, or (closed) its disc down, always.
+      if (value(`${p.name}.closed`) === true) {
+        card.append(el('button', { type: 'button', text: 'Disc down', disabled: true, title: 'A closed end prints its disc first' }));
+      } else if (typeof value(`${p.name}.wide_down`) === 'boolean') {
+        const down = value(`${p.name}.wide_down`) === true;
+        const flip = el('button', { type: 'button', text: '↕ Flip', 'aria-pressed': String(down), title: down ? 'Printed wide edge down: print it start down' : 'Printed start down: print it wide edge down' });
+        flip.addEventListener('click', () => setPartValues(p.name, { wide_down: !down }));
+        card.append(flip);
+      }
+      const several = prints.length > 1;
+      const file = `${slug(projectName())}${several ? `-${slug(p.name)}` : ''}.gcode`;
+      const gcode = el('button', { type: 'button', className: 'print-gcode', text: 'G-code', title: `G-code for the ${PRINTERS[state.printer].name}: ${p.name}` });
+      gcode.addEventListener('click', () => saveFile(i ? `print:${i}` : 'print', file, true));
+      card.append(gcode);
+      return card;
+    }),
+  );
+}
+
+/** Turns the prints overview on or off (off: the assembly as it was). */
+function showPrints(on) {
+  $('viewPrints').setAttribute('aria-pressed', String(on));
+  viewport.setLayout(on ? { bed: state.profile.bed, center: state.profile.center } : null);
+  if (state.last) renderPrintsView(state.last);
+}
+
 // ---- The assembly taken apart (the view's assembly row): a shade at a time, furthest out
 // first, each turned off its thread and moved on by a gap as long as the thread, the shades on it
 // riding along; at the end, the exploded view. A view only: nothing in the recipe changes.
@@ -1229,6 +1272,7 @@ function wire() {
     b.addEventListener('click', () => {
       document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
       $('viewPlan').setAttribute('aria-pressed', 'false');
+      if ($('viewPrints').getAttribute('aria-pressed') === 'true') showPrints(false);
       viewport.setMode(/** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.mode));
       if (state.last) renderPlanView(state.last);
     }),
@@ -1244,7 +1288,13 @@ function wire() {
     setAssembly(assembly.u >= 1 ? 0 : 1);
   });
   // The plan: the parts cut through their axis, over the 3D view.
+  $('viewPrints').addEventListener('click', () => {
+    const on = $('viewPrints').getAttribute('aria-pressed') !== 'true';
+    if (on && $('viewPlan').getAttribute('aria-pressed') === 'true') $('viewPlan').click();
+    showPrints(on);
+  });
   $('viewPlan').addEventListener('click', () => {
+    if ($('viewPrints').getAttribute('aria-pressed') === 'true') showPrints(false);
     const on = $('viewPlan').getAttribute('aria-pressed') !== 'true';
     $('viewPlan').setAttribute('aria-pressed', String(on));
     document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(!on && /** @type {HTMLElement} */ (x).dataset.mode === 'both')));

@@ -604,7 +604,7 @@ export function createViewport(canvas) {
       const begin = j > 0 ? Math.min(end, upTo[j - 1]) : 0;
       /** @type {THREE.Mesh} */ (mesh).geometry.setDrawRange(begin, end - begin);
     }
-    nozzle.visible = Boolean(last) && mode !== 'shape';
+    nozzle.visible = Boolean(last) && mode !== 'shape' && !layout;
     headLine.visible = headBead.visible = false;
     if (last) {
       const { data } = last;
@@ -724,21 +724,68 @@ export function createViewport(canvas) {
    * @type {Map<number, { angle: number, dz: number }>}
    */
   let motion = new Map();
+  /**
+   * The parts laid out as they print (the prints overview): each part's toolpath back where it
+   * prints (its placement undone), the parts side by side, each on its own bed. null: the
+   * assembly, as shown.
+   * @type {{ bed: number[], center: number[], gap: number } | null}
+   */
+  let layout = null;
+  const beds = new THREE.Group();
+  scene.add(beds);
+  /** Where part `k` goes along X in the prints overview (its bed's origin). */
+  const plateX = (k) => (layout ? k * (layout.bed[0] + layout.gap) : 0);
   function applyMotion() {
+    // Each part's placement, from its toolpath (the beads and shapes go by part).
+    const views = new Map();
+    for (const line of paths.children) if (line.userData.view && !views.has(line.userData.part)) views.set(line.userData.part, line.userData.view);
+    const order = [...new Set(paths.children.map((l) => l.userData.part))].sort((a, b) => a - b);
     for (const group of [shapes, paths, curves, beads]) {
       for (const child of group.children) {
-        const m = motion.get(child.userData.part);
+        const part = child.userData.part;
+        if (layout) {
+          // Undo the placement, then off to its plate.
+          const v = views.get(part);
+          const placed = new THREE.Matrix4();
+          if (v) placed.set(v[0], v[1], v[2], v[9], v[3], v[4], v[5], v[10], v[6], v[7], v[8], v[11], 0, 0, 0, 1);
+          const k = Math.max(0, order.indexOf(part));
+          child.matrixAutoUpdate = false;
+          child.matrix.makeTranslation(plateX(k), 0, 0).multiply(placed.invert());
+          child.matrixWorldNeedsUpdate = true;
+          continue;
+        }
+        child.matrixAutoUpdate = true;
+        const m = motion.get(part);
         child.rotation.set(0, 0, m ? THREE.MathUtils.degToRad(m.angle) : 0);
         child.position.set(0, 0, m ? m.dz : 0);
       }
     }
+    // The beds: an outline per part, the recipe's origin where the printer puts it.
+    for (const child of [...beds.children]) {
+      /** @type {any} */ (child).geometry.dispose();
+      beds.remove(child);
+    }
+    if (layout) {
+      const [bw, bd] = layout.bed;
+      const [cx, cy] = layout.center;
+      order.forEach((_, k) => {
+        const x0 = plateX(k) - cx;
+        const pts = [[x0, -cy], [x0 + bw, -cy], [x0 + bw, bd - cy], [x0, bd - cy], [x0, -cy]].map(([x, y]) => new THREE.Vector3(x, y, 0));
+        beds.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), bedMaterial));
+      });
+    }
+    shapes.visible = !layout && mode !== 'path';
+    curves.visible = !layout;
+    if (grid) grid.visible = !layout;
     requestRender();
   }
+  const bedMaterial = new THREE.LineBasicMaterial({ color: 0x8a94a6 });
 
   function applyMode() {
-    shapes.visible = mode !== 'path';
-    paths.visible = mode !== 'shape' && !showBeads;
-    beads.visible = mode !== 'shape' && showBeads;
+    // The prints overview shows the toolpaths, whatever the mode (the shapes are the assembly's).
+    shapes.visible = !layout && mode !== 'path';
+    paths.visible = (Boolean(layout) || mode !== 'shape') && !showBeads;
+    beads.visible = (Boolean(layout) || mode !== 'shape') && showBeads;
 
     // With both visible, the shape turns see-through so the toolpath on its surface shows.
     applyCustom();
@@ -919,7 +966,7 @@ export function createViewport(canvas) {
         curves.add(line);
       });
       clear(paths);
-      const { widths, heights, speeds, flows, simWidths, simHeights, simFlags, ups } = /** @type {any} */ (result.paths);
+      const { widths, heights, speeds, flows, simWidths, simHeights, simFlags, ups, views } = /** @type {any} */ (result.paths);
       totalPoints = 0;
       eachPolyline(result.paths, (points, i, from) => {
         const g = new LineGeometry();
@@ -937,6 +984,7 @@ export function createViewport(canvas) {
           simHeights: slice(simHeights),
           simFlags: slice(simFlags),
           ups: ups ? ups.subarray(3 * from, 3 * (from + n)) : undefined,
+          view: views ? views.subarray(12 * i, 12 * i + 12) : undefined,
           part: parts.paths[i] ?? -1,
           from: totalPoints,
         };
@@ -1206,6 +1254,23 @@ export function createViewport(canvas) {
      * preview: a thread turning on); an empty map puts them all back.
      * @param {Map<number, { angle: number, dz: number }>} next
      */
+    /**
+     * The prints overview: every part laid as it prints, side by side, each on a bed of `bed`
+     * (width, depth; mm) with the recipe's origin at `center`; null: the assembly again. Frames
+     * the plates.
+     * @param {{ bed: number[], center: number[] } | null} next
+     */
+    setLayout(next) {
+      layout = next ? { bed: next.bed, center: next.center, gap: Math.max(20, next.bed[0] * 0.08) } : null;
+      applyMotion();
+      applyMode();
+      if (layout) {
+        const n = new Set(paths.children.map((l) => l.userData.part)).size || 1;
+        const top = lastBounds ? lastBounds.max[2] - lastBounds.min[2] : 100;
+        fit({ min: [-layout.center[0], -layout.center[1], 0], max: [plateX(n - 1) + layout.bed[0] - layout.center[0], layout.bed[1] - layout.center[1], top] });
+      } else fit(lastBounds);
+    },
+
     setPartMotion(next) {
       motion = next;
       applyMotion();

@@ -39,6 +39,7 @@
           <canvas id="view"></canvas>
           <div class="view-message" id="viewMessage" hidden></div>
           <div class="plan" id="plan" hidden></div>
+          <div class="prints-strip" id="printsStrip" role="toolbar" aria-label="Prints" hidden></div>
         </div>
         <!-- The view's controls, pinned under it: nothing covers the model. -->
         <div class="view-tools">
@@ -48,6 +49,7 @@
               <button type="button" data-mode="path" aria-pressed="false">Toolpath</button>
               <button type="button" data-mode="both" aria-pressed="true">Both</button>
               <button type="button" id="viewPlan" aria-pressed="false" title="Plan: the cut through the axis" hidden>Plan</button>
+              <button type="button" id="viewPrints" aria-pressed="false" title="Every part as it prints, each on its own bed" hidden>Prints</button>
             </div>
             <div class="seg">
               <select id="viewColor" aria-label="Colour the toolpath by" title="Colour the toolpath by"></select>

@@ -239,6 +239,21 @@ fn to_js(source: &str, e: &Evaluation, wall: bool) -> Result<Object, JsError> {
         })
         .collect();
     let paths = polylines(shown.iter().map(|p| p.as_ref()))?;
+    // Each toolpath's placement (12 numbers: the matrix by rows, then the move; none: as it
+    // prints), so the view can lay the parts out as they print too.
+    let views: Vec<f32> = e
+        .drawing
+        .paths
+        .iter()
+        .flat_map(|p| {
+            p.view
+                .map_or([1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.], |x| {
+                    x.to_array()
+                })
+                .map(|c| c as f32)
+        })
+        .collect();
+    set(&paths, "views", &Float32Array::from(views.as_slice()))?;
     let [widths, heights, speeds, flows] = beads(&e.drawing);
     set(&paths, "widths", &widths)?;
     set(&paths, "heights", &heights)?;
