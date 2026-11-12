@@ -434,3 +434,64 @@ fn a_straight_start_of_any_length_meets_its_fillet() {
         assert!(e.errors().next().is_none(), "{start}: {:?}", e.diagnostics);
     }
 }
+
+/// The closed end's disc runs straight on into the wall: its spiral ends on the wall's first
+/// point (no step out onto the fillet), whatever the slicing or the compensation. The owner's
+/// shade (12 Nov 2026): a cone opening to 195 mm with an 18 mm closed fillet stepped 1.4 mm out
+/// from the disc's edge to the wall's first turn.
+#[test]
+fn a_closed_end_runs_from_its_disc_into_the_wall_without_a_step() {
+    use Literal::{Bool, Number, Text};
+    for (slicing, comp, layer) in [
+        ("height", "layer height", 0.0),
+        ("height", "width", 0.0),
+        ("height", "off", 1.5),
+        ("surface", "layer height", 0.0),
+    ] {
+        let src = set_values(
+            LAMP,
+            &[
+                ("main.shape".into(), Text("cone".into())),
+                ("main.opening".into(), Number(195.0)),
+                ("main.transition".into(), Number(107.0)),
+                ("main.fillet".into(), Number(20.0)),
+                ("main.closed".into(), Bool(true)),
+                ("main.closed_fillet".into(), Number(18.0)),
+                ("main.closed_layer".into(), Number(layer)),
+                ("slicing".into(), Text(slicing.into())),
+                ("compensation".into(), Text(comp.into())),
+            ],
+        )
+        .unwrap();
+        let e = run(&src);
+        assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+        let p = &e.prints[0].path;
+        let disc_z = p.points.iter().find(|q| q[2] > 0.0).unwrap()[2];
+        let r = |q: [f64; 3]| q[0].hypot(q[1]);
+        let ang = |q: [f64; 3]| q[1].atan2(q[0]);
+        // Every move on the disc (past its middle) steps out about as fast as its spiral does (a
+        // line a turn), the last one onto the wall's first point too.
+        let on_disc: Vec<usize> = (1..p.points.len())
+            .filter(|&i| p.points[i][2] == disc_z && p.points[i - 1][2] == disc_z)
+            .filter(|&i| r(p.points[i - 1]) > 12.0)
+            .collect();
+        assert!(on_disc.len() > 50);
+        for &i in &on_disc {
+            let (a, b) = (p.points[i - 1], p.points[i]);
+            let turned = (ang(b) - ang(a)).rem_euclid(std::f64::consts::TAU);
+            let allowed = 1.1 * 6.0 * turned / std::f64::consts::TAU + 0.05;
+            assert!(
+                (r(b) - r(a)).abs() <= allowed,
+                "{slicing} {comp}: a step out from r {} to {} at {a:?}",
+                r(a),
+                r(b)
+            );
+        }
+        // Then the wall rises from there, round the same circle.
+        let last = *on_disc.last().unwrap();
+        let next = p.points[last + 1];
+        assert!(next[2] > disc_z && (r(next) - r(p.points[last])).abs() < 1e-6);
+        // The disc fills the middle, a line apart.
+        assert!(p.points.iter().any(|q| q[2] == disc_z && r(*q) < 3.0));
+    }
+}
