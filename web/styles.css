@@ -1892,3 +1892,66 @@ body[data-plan] .view-legend {
 .plan-zoom button:last-child {
   border-radius: 2px 2px 10px 10px;
 }
+
+/* ---------- the prints overview: every part on its own bed, a card per part ---------- */
+.prints-strip {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.prints-strip[hidden] {
+  display: none;
+}
+
+.print-card {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  font-size: 0.85rem;
+}
+
+.print-card .print-name {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.print-card button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card2);
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.print-card button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.print-card button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.print-card .print-gcode {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}

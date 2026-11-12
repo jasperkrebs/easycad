@@ -5,6 +5,28 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-12: a closed end for a shade; the prints overview
+
+**Why:** the owner wanted a lamp's last shade closed at its far end (a flat disc through a
+fillet into the wall, printed disc first), and a view of every print laid out on its own bed,
+like a slicer's plates, where the way up and the G-code are chosen per part.
+
+**Landed:**
+- **Closed end** on the lamp's shade (`closed`, `closed_fillet`, `closed_layer`): the shaker's
+  way, from general steps (`rings` + `link_rings` for the disc, `contour` without pace +
+  `spiralize(ramp: false)` for the wall, `join`), so the thread keeps its pitch. The fillet is a
+  tangent arc from the floor to the wall's lean at the end (kept inside the disc). Placed like a
+  shade printed wide edge down, the disc's layer further. Tested: disc first on the bed, a pitch
+  a turn to the thread at 23 mm, shown with the disc at the top, no end ports.
+- **Prints** view (`viewport.setLayout`): each part's toolpath with its placement undone (the
+  engine sends each toolpath's `views`), the parts side by side on bed outlines; a card per part
+  with Flip (`wide_down`; "Disc down" for a closed one) and its G-code.
+- A test's "no part left" looked for "part " anywhere and found "apart (" in a comment: it
+  looks at lines now.
+
+**Open:** a closed shade gets no overhang compensation; the overview's colours are still by
+the assembly's height.
+
 ## 2026-11-11: the lamp taken apart (an animation and the exploded view); the Plan on a phone
 
 **Why:** on the owner's phone a mark tapped in the Plan didn't open its setting, the plan

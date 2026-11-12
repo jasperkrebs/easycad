@@ -141,6 +141,16 @@ The lamp builder is a new template, **Lamp**.
     (Dragging a shade along its thread, 10 Nov, was dropped: on a phone it fought the pan.)
   - With no shade at all, one add button (up) puts the first on the socket.
 - A setting changed anywhere (the bar, a slider) writes only that setting into the part's line.
+- **Closed end** (a shade's tick box, 12 Nov 2026): its end shut by a flat disc (its own layer
+  height, the pitch by default) rising through a fillet with its own radius into the wall,
+  printed disc down: the disc as rings linked into a spiral (the shaker's lid), then the wall
+  sliced flat a pitch apart (no pace, so the thread keeps its pitch) in one spiral from the disc
+  at full flow, the start's thread last. Shown where it threads; its closed end has no ports;
+  the disc and its fillet are marks in the Plan. No overhang compensation on a closed shade.
+- **Prints** (next to Plan, for a project of several parts): every part laid as it prints, each
+  on its own bed outline (the printer's bed, its origin where the printer puts it), side by
+  side, like a slicer's plates; a card per part: which way up (Flip: its wide edge down, or
+  start down; a closed one is "Disc down", always) and its G-code.
 - **3D view:** the whole assembly, each shade where it goes; the parts buttons show one shade.
 - **Print:** one G-code per shade, each on the bed's centre.
 

@@ -153,6 +153,15 @@ impl Xform {
         }
     }
 
+    /// The transform as 12 numbers: the matrix row by row, then the move.
+    pub fn to_array(&self) -> [f64; 12] {
+        let (m, t) = (&self.m, &self.t);
+        [
+            m[0][0], m[0][1], m[0][2], m[1][0], m[1][1], m[1][2], m[2][0], m[2][1], m[2][2], t[0],
+            t[1], t[2],
+        ]
+    }
+
     /// Applies only the linear part (rotation, scale, mirror) to a direction.
     pub fn apply_vector(&self, v: P3) -> P3 {
         let m = &self.m;
