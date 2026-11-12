@@ -272,5 +272,9 @@ mark mark_height for transition "Height"
 mark pick(lip_on * lip_long, mark_lip, []) for lip_length, lip "Lip"
 mark pick(lip_on * lip_arc, mark_lip_arc |> place(z: as_printed, flip: wide_down), []) for lip_fillet "Lip fillet"
 
+# ---- The shape for whoever slices it their own way: the wall a line thick, as it prints.
+wall_solid = thicken(wall, line)
+export wall_solid as "lampshade.step"
+
 show wall, path
 print path

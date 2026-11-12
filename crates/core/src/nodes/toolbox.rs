@@ -313,6 +313,7 @@ fn map_points(
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Value::Surface(Rc::new(Surface {
                 sections,
+                revolution: None,
                 ..s.as_ref().clone()
             })))
         }
@@ -462,6 +463,15 @@ pub(super) fn revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let n = ctx.samples(96, 192);
     ctx.spend(profile.points.len().saturating_mul(n))?;
     Ok(Value::Surface(Rc::new(Surface::revolve(profile, n)?)))
+}
+
+pub(super) fn thicken(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let s = a.surface(0)?;
+    let thickness = a.num(1)?;
+    // Twice the points (both sides), four times over for a smooth loft taken ring by ring.
+    let factor = if s.straight { 2 } else { 8 };
+    ctx.spend(s.point_count().saturating_mul(factor))?;
+    Ok(Value::Surface(Rc::new(s.thicken(thickness)?)))
 }
 
 pub(super) fn contour(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {

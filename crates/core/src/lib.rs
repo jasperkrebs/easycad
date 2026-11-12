@@ -5,7 +5,7 @@
 //! [`spiral`]), values that vary over space ([`field`]), lofted surfaces ([`surface`]) and
 //! toolpaths with EasyGCode's conventions and bead model ([`toolpath`], [`bead`]). The result is
 //! a drawing for the 3D view, print statistics, the settings window's contents and diagnostics.
-//! [`files`] turns it into files to save: G-code ([`gcode`]) and STL ([`stl`]).
+//! [`files`] turns it into files to save: G-code ([`gcode`]), STL ([`stl`]) and STEP ([`step`]).
 //!
 //! Rules (see `CLAUDE.md`): no UI, no I/O, no panics. Bad input of any kind becomes a message.
 
@@ -24,6 +24,7 @@ pub mod nodes;
 pub mod rings;
 pub mod scatter;
 pub mod spiral;
+pub mod step;
 pub mod stl;
 pub mod surface;
 pub mod toolpath;

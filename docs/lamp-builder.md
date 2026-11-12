@@ -75,6 +75,9 @@ writes a new `part` line; `removePart(name)` removes it and the parts mounted on
 - `place(path, z, flip)` puts a part where it goes in the assembly, for the view only: the
   G-code stays the part as printed, on the bed. Flipped is turned over about X (the same hand
   of thread, not a mirror image).
+- Each shade exports its wall as a STEP solid, `<part>-shade.step` (`thicken(wall, line)`),
+  where it goes in the lamp, for a manufacturer who slices it their own way. The thread is
+  printed by the bead, not modelled: the file's header lists the socket and settings.
 - The engine checks every pair of placed parts for beads that run into each other (closer than
   three quarters of the two beads' widths, at the same height), and warns with the parts'
   names and the height. Shades screwed together sit a line plus the fit apart, so they pass;

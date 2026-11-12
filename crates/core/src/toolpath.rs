@@ -588,6 +588,9 @@ pub fn vase_spiral(
             "needs a wall made of closed sections (circles, polygons, closed outlines)".into(),
         );
     }
+    if wall.looped {
+        return Err(crate::surface::LOOPED.into());
+    }
     let n = wall.sections.len();
     let m = wall.samples();
     if n < 2 || m < 3 {
@@ -2012,6 +2015,8 @@ mod tests {
             closed: true,
             capped: false,
             straight: false,
+            looped: false,
+            revolution: None,
         };
         assert!(
             vase_spiral(&flat, ok, true, MAX_PATH_POINTS)

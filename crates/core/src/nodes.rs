@@ -1368,6 +1368,25 @@ pub static NODES: &[Node] = &[
         run: Run::Op(toolbox::revolve),
     },
     Node {
+        name: "thicken",
+        group: "Surfaces",
+        inputs: &[
+            req(
+                "surface",
+                "Surface",
+                "a wall all the way round (closed sections), from loft or revolve",
+            ),
+            req(
+                "thickness",
+                "Length",
+                "the wall's thickness, centred on the surface: the line width for a printed wall",
+            ),
+        ],
+        output: "Solid",
+        doc: "The wall made solid: offset half the thickness to each side, normal to the surface, and closed across both ends, as the bead lies on a vase-mode path. A surface of revolution stays exact (its profile is offset, and a STEP file gets true round faces); a loft is offset point by point. For exports (`export solid as \"part.step\"`), not for slicing. A bend tighter than half the thickness is refused. (Grasshopper: Offset Surface, solid)",
+        run: Run::Op(toolbox::thicken),
+    },
+    Node {
         name: "contour",
         group: "Surfaces",
         inputs: &[

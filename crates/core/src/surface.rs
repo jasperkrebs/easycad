@@ -2,7 +2,11 @@
 
 use crate::curve::Curve;
 use crate::field::Field;
-use crate::geom::{P3, Xform, catmull_rom, dist3, lerp3, signed_area_xy};
+use crate::geom::{
+    P2, P3, Xform, add3, catmull_rom, cross3, dist3, dot3, lerp3, norm3, scale3, signed_area_xy,
+    sub3, unit3,
+};
+use std::rc::Rc;
 
 /// The most vertices one preview mesh may have; denser lofts get fewer rings.
 const MAX_MESH_VERTICES: usize = 600_000;
@@ -21,6 +25,106 @@ pub struct Surface {
     /// its sections are its profile's points, and a smooth curve through them would overshoot
     /// where a long straight span meets short ones). Only the 3D view's mesh reads it.
     pub straight: bool,
+    /// The last section joins back onto the first: a wall with a thickness (`thicken`), a solid
+    /// whose sections run up its outside and back down its inside.
+    pub looped: bool,
+    /// For a surface of revolution, its profile and axis, so a STEP file can carry its exact
+    /// round faces. Kept through moves, turns, mirrors and uniform scales; [`Surface::revolution`]
+    /// checks it against the sections, which stay the truth.
+    pub revolution: Option<Rc<Revolution>>,
+}
+
+/// A surface of revolution's exact shape: `profile` as (distance from the axis, height along
+/// it), revolved about the axis through `origin` along `axis`. Angle 0 is along `xdir`, the
+/// angle growing counter-clockwise seen from the axis' tip.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Revolution {
+    pub profile: Vec<P2>,
+    /// The profile is a closed loop, counter-clockwise in (r, z): it encloses a solid ring.
+    pub closed: bool,
+    pub origin: P3,
+    /// Unit length.
+    pub axis: P3,
+    /// Unit length, perpendicular to `axis`.
+    pub xdir: P3,
+}
+
+impl Revolution {
+    /// The point at distance `r` from the axis, height `z` along it, `angle` radians round.
+    pub fn point(&self, r: f64, z: f64, angle: f64) -> P3 {
+        let y = cross3(self.axis, self.xdir);
+        let (s, c) = angle.sin_cos();
+        add3(
+            add3(self.origin, scale3(self.axis, z)),
+            add3(scale3(self.xdir, r * c), scale3(y, r * s)),
+        )
+    }
+
+    /// The rings of the surface: one per profile point, `samples` points round.
+    fn rings(&self, samples: usize) -> Vec<Vec<P3>> {
+        self.profile
+            .iter()
+            .map(|&[r, z]| {
+                (0..samples)
+                    .map(|j| self.point(r, z, std::f64::consts::TAU * j as f64 / samples as f64))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Moved by `x`, if that keeps it a surface of revolution (a move, turn, mirror or uniform
+    /// scale). A mirror maps it onto itself turned the other way round, the same shape, so the
+    /// frame stays right-handed.
+    fn transformed(&self, x: &Xform) -> Option<Revolution> {
+        let y = cross3(self.axis, self.xdir);
+        let (a, xd, yd) = (
+            x.apply_vector(self.axis),
+            x.apply_vector(self.xdir),
+            x.apply_vector(y),
+        );
+        let s = norm3(a);
+        if !(s.is_finite() && s > 1e-12) {
+            return None;
+        }
+        let tol = 1e-9 * s;
+        let similar = (norm3(xd) - s).abs() <= tol
+            && (norm3(yd) - s).abs() <= tol
+            && dot3(a, xd).abs() <= tol * s
+            && dot3(a, yd).abs() <= tol * s
+            && dot3(xd, yd).abs() <= tol * s;
+        if !similar {
+            return None;
+        }
+        Some(Revolution {
+            profile: self.profile.iter().map(|p| [p[0] * s, p[1] * s]).collect(),
+            closed: self.closed,
+            origin: x.apply(self.origin),
+            axis: unit3(a)?,
+            xdir: unit3(xd)?,
+        })
+    }
+
+    /// Whether every point of `sections` lies on this revolution: section `i` at the profile's
+    /// point `i` (its distance from the axis and its height along it).
+    fn matches(&self, sections: &[Vec<P3>]) -> bool {
+        if sections.len() != self.profile.len() {
+            return false;
+        }
+        let size = self
+            .profile
+            .iter()
+            .fold(1.0f64, |m, p| m.max(p[0].abs()).max(p[1].abs()))
+            .max(norm3(self.origin));
+        let tol = 1e-6 * size;
+        sections.iter().zip(&self.profile).all(|(ring, &[r, z])| {
+            ring.iter().all(|p| {
+                let d = sub3(*p, self.origin);
+                let h = dot3(d, self.axis);
+                let radial = norm3(sub3(d, scale3(self.axis, h)));
+                (h - z).abs() <= tol && (radial - r).abs() <= tol
+            })
+        })
+    }
 }
 
 /// Triangle mesh for the 3D view: `positions` as x,y,z triples, `indices` as triangles.
@@ -74,6 +178,8 @@ impl Surface {
             closed,
             capped: false,
             straight: false,
+            looped: false,
+            revolution: None,
         })
     }
 
@@ -114,22 +220,128 @@ impl Surface {
         if points.len() < 2 {
             return Err("the profile needs at least 2 different points".into());
         }
-        let sections = points
-            .iter()
-            .map(|p| {
-                (0..n)
-                    .map(|j| {
-                        let a = std::f64::consts::TAU * j as f64 / n as f64;
-                        [p[0] * a.cos(), p[0] * a.sin(), p[2]]
-                    })
-                    .collect()
-            })
-            .collect();
+        let revolution = Revolution {
+            profile: points.iter().map(|p| [p[0], p[2]]).collect(),
+            closed: false,
+            origin: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            xdir: [1.0, 0.0, 0.0],
+        };
         Ok(Surface {
-            sections,
+            sections: revolution.rings(n),
             closed: true,
             capped: false,
             straight: true,
+            looped: false,
+            revolution: Some(Rc::new(revolution)),
+        })
+    }
+
+    /// The exact surface of revolution this is, if it is one (checked against the sections, so
+    /// a step that reshaped them can't leave a stale one behind).
+    pub fn revolution(&self) -> Option<&Revolution> {
+        self.revolution
+            .as_deref()
+            .filter(|r| r.matches(&self.sections))
+    }
+
+    /// The surface given a thickness: a wall `thickness` thick, centred on the surface (as a
+    /// printed bead is on its path), closed across its ends: a solid. A surface of revolution is
+    /// thickened exactly, its profile offset to both sides; any other tube is offset point by
+    /// point along the surface's normal.
+    pub fn thicken(&self, thickness: f64) -> Result<Surface, String> {
+        if !(thickness > 0.0 && thickness.is_finite()) {
+            return Err(format!("`thickness` must be more than 0, got {thickness}"));
+        }
+        if self.capped || self.looped {
+            return Err("is already a solid; thicken the surface it was made from".into());
+        }
+        if !self.closed {
+            return Err(
+                "needs a surface of closed sections (a wall all the way round, from loft or revolve)"
+                    .into(),
+            );
+        }
+        let m = self.samples();
+        if self.sections.len() < 2 || m < 3 {
+            return Err("needs a surface with at least 2 sections of 3 or more points".into());
+        }
+        if let Some(rev) = self.revolution().filter(|r| !r.closed) {
+            let revolution = Revolution {
+                profile: offset_profile(&rev.profile, thickness / 2.0)?,
+                closed: true,
+                ..rev.clone()
+            };
+            return Ok(Surface {
+                sections: revolution.rings(m),
+                closed: true,
+                capped: false,
+                straight: true,
+                looped: true,
+                revolution: Some(Rc::new(revolution)),
+            });
+        }
+        // Any other tube: each point moved half the thickness out and in along the normal, the
+        // smooth loft first taken at 4 rings a span (the solid is drawn straight between them).
+        let dense: Vec<Vec<P3>>;
+        let sections = if self.straight {
+            &self.sections
+        } else {
+            let n = self.sections.len();
+            let rings = (n - 1) * 4 + 1;
+            if rings.saturating_mul(m) > MAX_MESH_VERTICES {
+                return Err("the surface is too detailed to thicken".into());
+            }
+            dense = (0..rings)
+                .map(|r| {
+                    let v = r as f64 / 4.0;
+                    (0..m).map(|j| self.point_at(v, j)).collect()
+                })
+                .collect();
+            &dense
+        };
+        let n = sections.len();
+        let get = |i: usize, j: usize| {
+            sections
+                .get(i)
+                .and_then(|s| s.get(j % m))
+                .copied()
+                .unwrap_or([0.0; 3])
+        };
+        // Which side is out doesn't matter: both are offset, and the mesh faces out by volume.
+        let half = 0.5 * thickness;
+        let mut outer = Vec::with_capacity(2 * n);
+        let mut inner = Vec::with_capacity(n);
+        for i in 0..n {
+            let (lo, hi) = (i.saturating_sub(1), (i + 1).min(n - 1));
+            let mut out_ring = Vec::with_capacity(m);
+            let mut in_ring = Vec::with_capacity(m);
+            for j in 0..m {
+                let along = sub3(get(i, j + 1), get(i, j + m - 1));
+                let across = sub3(get(hi, j), get(lo, j));
+                let normal = unit3(cross3(along, across)).ok_or_else(|| {
+                    format!(
+                        "the surface has no direction at section {}, point {}",
+                        i + 1,
+                        j + 1
+                    )
+                })?;
+                let p = get(i, j);
+                out_ring.push(add3(p, scale3(normal, half)));
+                in_ring.push(sub3(p, scale3(normal, half)));
+            }
+            outer.push(out_ring);
+            inner.push(in_ring);
+        }
+        inner.reverse();
+        outer.extend(inner);
+        Ok(Surface {
+            sections: outer,
+            closed: true,
+            capped: false,
+            straight: true,
+            looped: true,
+            revolution: None,
         })
     }
 
@@ -149,6 +361,9 @@ impl Surface {
             && !(layer > 0.0 && layer.is_finite())
         {
             return Err(format!("`layer` must be more than 0, got {layer}"));
+        }
+        if self.looped {
+            return Err(LOOPED.into());
         }
         pace.check()?;
         let n = self.sections.len();
@@ -362,6 +577,12 @@ impl Surface {
             closed: self.closed,
             capped: self.capped,
             straight: self.straight,
+            looped: self.looped,
+            revolution: self
+                .revolution
+                .as_ref()
+                .and_then(|r| r.transformed(x))
+                .map(Rc::new),
         }
     }
 
@@ -398,9 +619,12 @@ impl Surface {
         }
         let at = |ring: usize, j: usize| (ring * m + j % m) as u32;
         let around = if self.closed { m } else { m - 1 };
-        for r in 0..rings - 1 {
+        // A looped solid also joins its last ring back onto its first.
+        let spans = if self.looped { rings } else { rings - 1 };
+        for r in 0..spans {
+            let next = (r + 1) % rings;
             for j in 0..around {
-                let (a, b, c, d) = (at(r, j), at(r, j + 1), at(r + 1, j + 1), at(r + 1, j));
+                let (a, b, c, d) = (at(r, j), at(r, j + 1), at(next, j + 1), at(next, j));
                 if outward {
                     mesh.indices.extend([a, b, c, a, c, d]);
                 } else {
@@ -438,8 +662,195 @@ impl Surface {
                 }
             }
         }
+        // A looped solid faces outward whichever way it was turned: its volume is positive.
+        if self.looped && signed_volume(&mesh) < 0.0 {
+            for t in mesh.indices.chunks_exact_mut(3) {
+                t.swap(1, 2);
+            }
+        }
         mesh
     }
+}
+
+/// What `contour` and `vase_spiral` say about a solid wall.
+pub const LOOPED: &str =
+    "is a solid wall (from thicken); slice the surface it was thickened from instead";
+
+/// The volume a closed mesh encloses: positive when its triangles face outward.
+pub fn signed_volume(mesh: &Mesh) -> f64 {
+    let p = |i: u32| -> P3 {
+        let k = i as usize * 3;
+        match mesh.positions.get(k..k + 3) {
+            Some(q) => [f64::from(q[0]), f64::from(q[1]), f64::from(q[2])],
+            None => [0.0; 3],
+        }
+    };
+    mesh.indices
+        .chunks_exact(3)
+        .map(|t| dot3(p(t[0]), cross3(p(t[1]), p(t[2]))) / 6.0)
+        .sum()
+}
+
+/// A profile (distance from the axis, height) given a thickness: offset `half` to each side,
+/// along its normals (mitred at its corners), closed straight across both ends, cut at the axis,
+/// and turned counter-clockwise. Refuses a thickness that would fold the wall over itself (a
+/// bend tighter than half the thickness).
+pub fn offset_profile(profile: &[P2], half: f64) -> Result<Vec<P2>, String> {
+    let mut p: Vec<P2> = Vec::with_capacity(profile.len());
+    for q in profile {
+        if !(q[0].is_finite() && q[1].is_finite()) {
+            return Err("the profile has a point that isn't a number".into());
+        }
+        if p.last()
+            .is_none_or(|l| (l[0] - q[0]).hypot(l[1] - q[1]) > 1e-9)
+        {
+            p.push(*q);
+        }
+    }
+    if p.len() < 2 {
+        return Err("the profile needs at least 2 different points".into());
+    }
+    // Each span's normal, to its right going along it.
+    let normals: Vec<P2> = p
+        .windows(2)
+        .map(|w| {
+            let (dr, dz) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+            let len = dr.hypot(dz).max(1e-300);
+            [dz / len, -dr / len]
+        })
+        .collect();
+    let last = p.len() - 1;
+    let side = |h: f64, out: &mut Vec<P2>, i: usize| {
+        let at = |n: P2, k: f64| [p[i][0] + n[0] * k, p[i][1] + n[1] * k];
+        if i == 0 || i == last {
+            out.push(at(normals[i.min(last - 1)], h));
+            return;
+        }
+        let (a, b) = (normals[i - 1], normals[i]);
+        let mid = [a[0] + b[0], a[1] + b[1]];
+        let len = mid[0].hypot(mid[1]);
+        let cos = if len > 1e-9 {
+            (mid[0] * b[0] + mid[1] * b[1]) / len
+        } else {
+            0.0
+        };
+        if cos > 0.25 {
+            out.push(at([mid[0] / len, mid[1] / len], h / cos));
+        } else {
+            // Nearly turning back on itself: a bevel instead of a mitre miles out.
+            out.push(at(a, h));
+            out.push(at(b, h));
+        }
+    };
+    let mut ring: Vec<P2> = Vec::with_capacity(2 * p.len() + 4);
+    for i in 0..p.len() {
+        side(half, &mut ring, i);
+    }
+    for i in (0..p.len()).rev() {
+        side(-half, &mut ring, i);
+    }
+    // Cut at the axis: nothing reaches past it.
+    let mut cut: Vec<P2> = Vec::with_capacity(ring.len() + 4);
+    for (k, a) in ring.iter().enumerate() {
+        let b = ring[(k + 1) % ring.len()];
+        if a[0] >= 0.0 {
+            cut.push(*a);
+        }
+        if (a[0] >= 0.0) != (b[0] >= 0.0) {
+            let t = a[0] / (a[0] - b[0]);
+            cut.push([0.0, a[1] + (b[1] - a[1]) * t]);
+        }
+    }
+    let mut out: Vec<P2> = Vec::with_capacity(cut.len());
+    for q in cut {
+        let q = [if q[0].abs() < 1e-9 { 0.0 } else { q[0] }, q[1]];
+        if out
+            .last()
+            .is_none_or(|l| (l[0] - q[0]).hypot(l[1] - q[1]) > 1e-9)
+        {
+            out.push(q);
+        }
+    }
+    while out.len() > 1
+        && out
+            .first()
+            .zip(out.last())
+            .is_some_and(|(a, b)| (a[0] - b[0]).hypot(a[1] - b[1]) <= 1e-9)
+    {
+        out.pop();
+    }
+    let area: f64 = (0..out.len())
+        .map(|k| {
+            let (a, b) = (out[k], out[(k + 1) % out.len()]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum::<f64>()
+        / 2.0;
+    if out.len() < 3 || area.abs() < 1e-9 {
+        return Err("the wall has no area left once cut at the axis".into());
+    }
+    if area < 0.0 {
+        out.reverse();
+    }
+    if let Some(k) = self_crossing(&out) {
+        let q = out[k];
+        return Err(format!(
+            "a wall this thick folds over itself near r = {}, z = {} (a bend tighter than half the thickness); make it thinner or round that bend more",
+            easycad_lang::format_number((q[0] * 10.0).round() / 10.0),
+            easycad_lang::format_number((q[1] * 10.0).round() / 10.0)
+        ));
+    }
+    Ok(out)
+}
+
+/// Where a closed polygon crosses itself (the index of a span that crosses another), if it does.
+/// Spans lying on the axis (r = 0) are left out: they make no surface.
+fn self_crossing(ring: &[P2]) -> Option<usize> {
+    let n = ring.len();
+    let span = |k: usize| (ring[k], ring[(k + 1) % n]);
+    let on_axis = |k: usize| {
+        let (a, b) = span(k);
+        a[0] == 0.0 && b[0] == 0.0
+    };
+    // Swept bottom to top: only spans whose heights overlap are compared.
+    let mut order: Vec<(f64, f64, usize)> = (0..n)
+        .map(|k| {
+            let (a, b) = span(k);
+            (a[1].min(b[1]), a[1].max(b[1]), k)
+        })
+        .collect();
+    order.sort_by(|x, y| x.0.total_cmp(&y.0));
+    let cross = |o: P2, a: P2, b: P2| (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    for (x, &(_, top, i)) in order.iter().enumerate() {
+        for &(bottom, _, j) in &order[x + 1..] {
+            if bottom > top {
+                break;
+            }
+            let adjacent = (i + 1) % n == j || (j + 1) % n == i;
+            if adjacent || i == j || (on_axis(i) && on_axis(j)) {
+                continue;
+            }
+            let ((a, b), (c, d)) = (span(i), span(j));
+            let scale = (b[0] - a[0]).hypot(b[1] - a[1]) * (d[0] - c[0]).hypot(d[1] - c[1]);
+            let eps = 1e-12 * scale.max(1e-12);
+            let (d1, d2) = (cross(a, b, c), cross(a, b, d));
+            let (d3, d4) = (cross(c, d, a), cross(c, d, b));
+            let crossing = ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps))
+                && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps));
+            // Or touching: an end of one lying on the other (overlapping ends of a U-turn).
+            let touch = 1e-9 * scale.max(1e-12);
+            let on = |p: P2, q0: P2, q1: P2, side: f64| {
+                let along = (p[0] - q0[0]) * (q1[0] - q0[0]) + (p[1] - q0[1]) * (q1[1] - q0[1]);
+                let len2 = (q1[0] - q0[0]).powi(2) + (q1[1] - q0[1]).powi(2);
+                side.abs() <= touch && (0.0..=len2).contains(&along)
+            };
+            if crossing || on(c, a, b, d1) || on(d, a, b, d2) || on(a, c, d, d3) || on(b, c, d, d4)
+            {
+                return Some(i.min(j));
+            }
+        }
+    }
+    None
 }
 
 /// `a` mirrored through `b`: the point as far past `b` as `a` is before it.

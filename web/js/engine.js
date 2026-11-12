@@ -9,7 +9,7 @@
  * @typedef {{ source: string, project: string | null, printer: string | null, notes: string[],
  *   params: any[], steps: any[], diagnostics: { line: number, col: number, severity: string, message: string }[],
  *   print: { stats: Record<string, any>, printer: string | null } | null,
- *   exports: { file: string, kind: 'stl' | 'gcode', line: number }[],
+ *   exports: { file: string, kind: 'stl' | 'step' | 'gcode', line: number }[],
  *   bounds: { min: number[], max: number[] } | null,
  *   mesh: { positions: Float32Array, indices: Uint32Array },
  *   curves: { points: Float32Array, starts: Uint32Array },

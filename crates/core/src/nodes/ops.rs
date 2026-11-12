@@ -257,6 +257,9 @@ pub(super) fn cap(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     if !s.closed {
         return Err("needs a surface made of closed sections".into());
     }
+    if s.looped {
+        return Err("is already a solid (from thicken)".into());
+    }
     ctx.spend(s.point_count())?;
     Ok(Value::Surface(Rc::new(Surface {
         capped: true,
@@ -418,6 +421,7 @@ pub(super) fn wave(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
             }
             Value::Surface(Rc::new(Surface {
                 sections,
+                revolution: None,
                 ..s.as_ref().clone()
             }))
         }
