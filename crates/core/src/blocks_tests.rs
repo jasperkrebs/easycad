@@ -576,11 +576,22 @@ none = stack(layer, 0)"#);
 fn every_lampshade_shade_prints_both_ways_up() {
     use easycad_lang::{Literal, set_values};
     let template = include_str!("../../../web/templates/lampshade.easycad");
-    for shape in ["cone", "bell", "dome", "sphere", "flat sphere", "own"] {
-        for (wide, lip, brim, comp) in [
-            (false, false, false, "width"),
-            (true, true, true, "layer height"),
-            (false, true, false, "off"),
+    for shape in [
+        "cone",
+        "bell",
+        "dome",
+        "sphere",
+        "flat sphere",
+        "own",
+        "bell in-out",
+        "cone in-out",
+        "tube",
+    ] {
+        for (wide, lip, brim, comp, closed) in [
+            (false, false, false, "width", false),
+            (true, true, true, "layer height", false),
+            (false, true, false, "off", false),
+            (false, false, false, "layer height", true),
         ] {
             let values: Vec<(String, Literal)> = vec![
                 ("shape".into(), Literal::Text(shape.into())),
@@ -588,23 +599,30 @@ fn every_lampshade_shade_prints_both_ways_up() {
                 ("lip".into(), Literal::Bool(lip)),
                 ("brim".into(), Literal::Bool(brim)),
                 ("compensation".into(), Literal::Text(comp.into())),
+                ("closed".into(), Literal::Bool(closed)),
             ];
             let recipe = set_values(template, &values).unwrap();
             let (e, v) = step_values(&recipe, Quality::Final);
             assert!(
-                e.errors().next().is_none(),
-                "{shape} {wide} {lip}: {:?}",
+                e.diagnostics.is_empty(),
+                "{shape} {wide} {lip} {closed}: {:?}",
                 e.diagnostics
             );
-            // The profile always rises, from the bed to the top.
+            // The profile always rises, from the bed (closed: from the disc's layer) to the top.
             let (pts, _) = curve_points(&v, "profile");
             assert!(pts.windows(2).all(|w| w[1][2] >= w[0][2] - 1e-9), "{shape}");
+            let floor = if closed { 2.5 } else { 0.0 };
             assert!(
-                pts[0][2].abs() < 1e-9 && pts.iter().all(|p| p[0] > 0.0),
-                "{shape}"
+                (pts[0][2] - floor).abs() < 1e-9 && pts.iter().all(|p| p[0] > 0.0),
+                "{shape} {closed}"
             );
             let p = e.print.as_ref().unwrap();
             assert!(p.path.points.len() > 100 && p.stats.layers > 10, "{shape}");
+            // Closed, the disc goes down first, at its layer, and fills the middle.
+            if closed {
+                let first = p.path.points.iter().find(|q| q[2] > 0.0).unwrap();
+                assert!((first[2] - 2.5).abs() < 1e-9 && first[0].hypot(first[1]) < 1.0);
+            }
         }
     }
 }

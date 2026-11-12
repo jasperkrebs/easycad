@@ -93,7 +93,9 @@ The lampshade's profile code, generalised:
 - ports: start inside, start outside, end inside, end outside (the start's inside is taken
   when the shade is on the socket; the end's only when there's a straight end).
 
-The single-shade lampshade template stays as it is (it's golden-tested against EasyGCode).
+The single-shade lampshade template has the same shade arithmetic (since 12 Nov 2026: every
+shape, a lip on any shape, the closed end), with its own setting names (`throat`, `lip`), and
+stays golden-tested against EasyGCode.
 The lamp builder is a new template, **Lamp**.
 
 ### 4. The app

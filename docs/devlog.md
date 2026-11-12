@@ -5,6 +5,24 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-12 (night): the single lampshade gets the lamp's shapes and the closed end
+
+**Why:** the owner wanted a closed lamp from the single lampshade too, with every shape the
+lamp's shades have.
+
+**What landed:** `lampshade.easycad` now runs the lamp's shade arithmetic (generated from the
+component, its own setting names kept: `throat`, `lip`, `lip_length`, `lip_fillet`): shapes bell
+in-out, cone in-out and tube; a lip on any shape (mirrored fillet for shapes opening out); the
+closed end (disc with its own layer height, its own fillet, printed disc down, spiral ending on
+the wall's first point); its marks in the Plan, drawn as it prints. Its four EasyGCode golden
+cases are unchanged. The closed end's fillet now meets a curved wall tangent (the meeting
+point's lean, found in two rounds, not the end's), in the lamp as well. Tests: every shape ×
+(plain, wide down with lip and brim, lip without compensation, closed), no warnings; the
+disc-into-wall test runs on both templates.
+
+**Still open:** the lampshade and the lamp's shade are two copies of the same steps; a change to
+one should go to the other (or the lampshade could become a one-part lamp).
+
 ## 2026-11-12 (evening): a closed end's disc runs straight into the wall
 
 **Why:** the owner's closed cone (opening 195 mm, closed fillet 18 mm) stepped 1.4 mm outward
