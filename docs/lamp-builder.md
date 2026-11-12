@@ -143,7 +143,8 @@ The lamp builder is a new template, **Lamp**.
 - A setting changed anywhere (the bar, a slider) writes only that setting into the part's line.
 - **Closed end** (a shade's tick box, 12 Nov 2026): its end shut by a flat disc (its own layer
   height, the pitch by default) rising through a fillet with its own radius into the wall,
-  printed disc down: the disc as rings linked into a spiral (the shaker's lid), then the shade
+  printed disc down: the disc as a spiral from the middle out, a line a turn, turned so it ends
+  exactly on the wall's first point (no step out onto the fillet), then the shade
   as every shade prints (`vase_revolve`, overhang compensation and all), its profile from the
   disc's edge up the fillet (flat at first, so compensated the most) and the body to the
   start's thread, a pitch a turn where it's straight; the step from the disc onto the wall is

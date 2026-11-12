@@ -317,10 +317,10 @@ component shade "Shade"
   # ---- A closed end: a flat disc where the shade ends, rising through a fillet into the wall;
   # printed disc down (upside down from the start), the start's thread last. The profile from
   # its end (as printed wide edge down), the fillet a tangent arc from the floor (lean 90°) to the
-  # wall's lean where they meet, the disc the floor inside it. The disc is rings linked into a
-  # spiral (the shaker's lid); then the shade, as any shade prints (overhang compensation and all),
-  # its profile from the disc's edge up the fillet (flat at first, so compensated the most) to
-  # the start's thread, its first turn starting on the disc as any first turn starts on the bed.
+  # wall's lean where they meet, the disc the floor inside it. The disc is a spiral; then the
+  # shade, as any shade prints (overhang compensation and all), its profile from the disc's edge
+  # up the fillet (flat at first, so compensated the most) to the start's thread, its first turn
+  # starting on the disc as any first turn starts on the bed.
   is_closed = pick(closed, 1, 0)
   cap_dl   = pick(closed_layer, closed_layer, pitch)
   cap_pr   = reverse(full_r)
@@ -340,8 +340,15 @@ component shade "Shade"
   cap_z    = flatten([cap_az, item(cap_pz, cap_tail)]) + cap_dl
   # Its wall's lean: the fillet's from flat (90°) to the wall's, then the shade's, turned over.
   cap_l    = flatten([-cap_th, item(-reverse(full_l), cap_tail)])
-  cap_unit = circle(1) |> rotate(90) |> resample(160)
-  cap_disc = link_rings(reverse(rings(cap_unit |> scale(cap_cr), line)), "spiral", line)
+  # The disc: a spiral from the middle out, a line apart, ending exactly where the wall's first
+  # turn starts (its radius a first rise up the fillet, as vase_revolve works it out, at the
+  # seam, 90°), turned to end there, so the nozzle runs on from the disc into the wall with no
+  # step.
+  cap_q0   = pick(surface, 0, cap_dl)
+  cap_dz   = sample(rise, [0, 0, cap_q0 + sample(rise, [0, 0, cap_q0]) / 2])
+  cap_r0   = max(line, pick(surface, graph(print_s, print_r, cap_dz), graph(print_z, print_r, cap_q0 + cap_dz)))
+  cap_t    = cap_r0 / line
+  cap_disc = spiral(spacing: line, turns: cap_t, tolerance: tolerance) |> rotate(90 - 360 * cap_t)
   cap_path = join([toolpath(cap_disc, width: line, layer: cap_dl, flow: flow), shade], link: true)
   path     = pick(is_closed, cap_path, open_path)
 

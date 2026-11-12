@@ -5,6 +5,24 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-12 (evening): a closed end's disc runs straight into the wall
+
+**Why:** the owner's closed cone (opening 195 mm, closed fillet 18 mm) stepped 1.4 mm outward
+where the disc met the wall. Not a turn out of line (both start at 90°): the disc's spiral ended
+on its outline (63.0 mm), while the wall's first turn runs where the fillet is a first rise up
+(64.4 mm; the fillet leaves the disc flat, so a fraction of a millimetre up is already that far
+out).
+
+**What landed:** the disc is now an exact spiral (`spiral(turns:)`, a line a turn from the
+middle) ending at the wall's first point, worked out in the recipe as `vase_revolve` works it
+(the rise there, by height or along the surface), and turned (`rotate`) so it ends at the seam.
+The nozzle runs on from the disc into the wall with no step. Test
+`a_closed_end_runs_from_its_disc_into_the_wall_without_a_step` (height with each compensation,
+and along the surface; fails on the old disc at the 63.0 → 64.4 mm step).
+
+**Still open:** the disc's radius copies `vase_revolve`'s first-turn arithmetic in the recipe
+(as the brim does); a change there needs the recipe to follow (the test would catch it).
+
 ## 2026-11-12 (later still): a straight start of 122–126 mm "went down"
 
 **Why:** the owner's lamp failed with "the profile must rise all the way" for a straight start
