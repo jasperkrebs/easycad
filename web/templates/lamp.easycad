@@ -325,7 +325,14 @@ component shade "Shade"
   cap_dl   = pick(closed_layer, closed_layer, pitch)
   cap_pr   = reverse(full_r)
   cap_pz   = top_z - reverse(full_z)
-  cap_a    = clamp(-item(full_l, count(full_l) - 1), -80, 80)
+  # The wall's lean where the fillet meets it: the end's lean moves the meeting point, and that
+  # point's lean the next; twice round settles it (a curved wall's fillet meets it tangent).
+  cap_lr   = -reverse(full_l)
+  cap_a0   = clamp(item(cap_lr, 0), -80, 80)
+  cap_z0   = max(0, min(closed_fillet, (item(reverse(full_r), 0) - 1.5 * line) / max(0.2, cos(cap_a0) + abs(tan(cap_a0)) * (1 - sin(cap_a0))))) * (1 - sin(cap_a0))
+  cap_a1   = clamp(graph(top_z - reverse(full_z), cap_lr, min(cap_z0, top_z)), -80, 80)
+  cap_z1   = max(0, min(closed_fillet, (item(reverse(full_r), 0) - 1.5 * line) / max(0.2, cos(cap_a1) + abs(tan(cap_a1)) * (1 - sin(cap_a1))))) * (1 - sin(cap_a1))
+  cap_a    = clamp(graph(top_z - reverse(full_z), cap_lr, min(cap_z1, top_z)), -80, 80)
   cap_re   = item(cap_pr, 0)
   cap_f    = max(0, min(closed_fillet, (cap_re - 1.5 * line) / max(0.2, cos(cap_a) + abs(tan(cap_a)) * (1 - sin(cap_a)))))
   cap_zj   = cap_f * (1 - sin(cap_a))

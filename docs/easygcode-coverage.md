@@ -78,6 +78,7 @@ on a custom thread, no compensation, a set ramp height, no start/end blocks.
 | Tangent fillet from the throat onto any shade (where the shade first reaches it), clamped when too big | list arithmetic: `index_of` on a mask finds the point, `bounds` the largest radius that fits |
 | Lip: the same blend mirrored, then a straight lip | `reverse` of the lists, the same blend |
 | Wide edge down | the lists turned over (`reverse`, `top - z`) |
+| EasyCAD's own (12 Nov 2026, as the lamp's shade): bell in-out, cone in-out, tube; a lip on any shape; a closed end (disc and its own fillet, printed disc down) | the lamp's shade arithmetic (`lamp.easycad`); a spiral disc `join`ed (`link: true`) into the wall |
 | Vase mode turn by turn: points per turn from the radius, radius from the profile, ramped first turn, flat closing turn | `vase_revolve(profile, …)` |
 | Overhang compensation, width mode: w × min(max, 1 + k(1/cos a − 1)) per turn | `width:` a field of `graph(heights, angles, z)` |
 | Overhang compensation, height mode: rise lh(1 − k(1 − cos a)), E at the full layer | `layer:` a field the same way, `bead_layer: pitch` |

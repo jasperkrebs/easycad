@@ -272,7 +272,10 @@ fn marks_lead_to_each_shades_own_settings() {
         e.marks.iter().all(|m| m.label.as_deref() != Some("Lip")),
         "no lip on a cone"
     );
-    let broken = lampshade.replace("mark mark_fillet for fillet", "mark mark_fillet for filet");
+    let broken = lampshade.replace(
+        "mark pick(not_tube, mark_fillet, []) for fillet",
+        "mark pick(not_tube, mark_fillet, []) for filet",
+    );
     let e = run(&broken);
     assert!(
         e.diagnostics
@@ -436,28 +439,35 @@ fn a_straight_start_of_any_length_meets_its_fillet() {
 }
 
 /// The closed end's disc runs straight on into the wall: its spiral ends on the wall's first
-/// point (no step out onto the fillet), whatever the slicing or the compensation. The owner's
+/// point (no step out onto the fillet), whatever the slicing or the compensation, in the lamp
+/// and in the single lampshade. The owner's
 /// shade (12 Nov 2026): a cone opening to 195 mm with an 18 mm closed fillet stepped 1.4 mm out
 /// from the disc's edge to the wall's first turn.
 #[test]
 fn a_closed_end_runs_from_its_disc_into_the_wall_without_a_step() {
     use Literal::{Bool, Number, Text};
-    for (slicing, comp, layer) in [
+    // The lamp's shade, and the single lampshade (the same arithmetic, its own names).
+    let lampshade = include_str!("../../../web/templates/lampshade.easycad");
+    for ((slicing, comp, layer), (template, part)) in [
         ("height", "layer height", 0.0),
         ("height", "width", 0.0),
         ("height", "off", 1.5),
         ("surface", "layer height", 0.0),
-    ] {
+    ]
+    .into_iter()
+    .flat_map(|c| [(c, (LAMP, "main.")), (c, (lampshade, ""))])
+    {
+        let own = |name: &str| format!("{part}{name}");
         let src = set_values(
-            LAMP,
+            template,
             &[
-                ("main.shape".into(), Text("cone".into())),
-                ("main.opening".into(), Number(195.0)),
-                ("main.transition".into(), Number(107.0)),
-                ("main.fillet".into(), Number(20.0)),
-                ("main.closed".into(), Bool(true)),
-                ("main.closed_fillet".into(), Number(18.0)),
-                ("main.closed_layer".into(), Number(layer)),
+                (own("shape"), Text("cone".into())),
+                (own("opening"), Number(195.0)),
+                (own("transition"), Number(107.0)),
+                (own("fillet"), Number(20.0)),
+                (own("closed"), Bool(true)),
+                (own("closed_fillet"), Number(18.0)),
+                (own("closed_layer"), Number(layer)),
                 ("slicing".into(), Text(slicing.into())),
                 ("compensation".into(), Text(comp.into())),
             ],
@@ -493,5 +503,44 @@ fn a_closed_end_runs_from_its_disc_into_the_wall_without_a_step() {
         assert!(next[2] > disc_z && (r(next) - r(p.points[last])).abs() < 1e-6);
         // The disc fills the middle, a line apart.
         assert!(p.points.iter().any(|q| q[2] == disc_z && r(*q) < 3.0));
+    }
+}
+
+/// A closed end's fillet meets a curved wall tangent: on a bell in-out (an S-curve where it
+/// ends), the profile's lean never jumps where the fillet ends, in the lamp or the lampshade.
+#[test]
+fn a_closed_ends_fillet_meets_a_curved_wall_tangent() {
+    use Literal::{Bool, Number, Text};
+    let lampshade = include_str!("../../../web/templates/lampshade.easycad");
+    for (template, part) in [(LAMP, "main."), (lampshade, "")] {
+        let own = |name: &str| format!("{part}{name}");
+        let src = set_values(
+            template,
+            &[
+                (own("shape"), Text("bell in-out".into())),
+                (own("end_d"), Number(120.0)),
+                (own("closed"), Bool(true)),
+                (own("closed_fillet"), Number(25.0)),
+            ],
+        )
+        .unwrap();
+        let (e, v) = crate::eval::step_values(&src, Quality::Final);
+        assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+        let Some(crate::value::Value::List(lean)) = v.get(&own("print_l")) else {
+            panic!("no lean list");
+        };
+        let lean: Vec<f64> = lean
+            .items
+            .iter()
+            .map(|x| match x {
+                crate::value::Value::Number(n) => *n,
+                _ => f64::NAN,
+            })
+            .collect();
+        let worst = lean
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f64::max);
+        assert!(worst < 12.0, "{part}: the lean jumps {worst}° ({lean:?})");
     }
 }

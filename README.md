@@ -41,8 +41,9 @@ become toolpaths, toolpaths become G-code for your printer.
 >   real size, or **simulated** as the plastic would lie on what's already printed; the nozzle
 >   upright or along the wall.
 > - **The lamp builder:** shades that screw into each other, planned on a cut-through view,
->   each its own print ([docs/lamp-builder.md](docs/lamp-builder.md)). The lampshade can also
->   be sliced **along its surface** (experimental, for a robot arm).
+>   each its own print ([docs/lamp-builder.md](docs/lamp-builder.md)). The lampshade has the same
+>   shapes (in-out, tube) and a **closed end**, and can also be sliced **along its surface**
+>   (experimental, for a robot arm).
 > - **Next:** the coat hanger as a template, skills for the agent, and 2D curve
 >   editors.
 >
