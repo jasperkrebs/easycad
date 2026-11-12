@@ -143,10 +143,12 @@ The lamp builder is a new template, **Lamp**.
 - A setting changed anywhere (the bar, a slider) writes only that setting into the part's line.
 - **Closed end** (a shade's tick box, 12 Nov 2026): its end shut by a flat disc (its own layer
   height, the pitch by default) rising through a fillet with its own radius into the wall,
-  printed disc down: the disc as rings linked into a spiral (the shaker's lid), then the wall
-  sliced flat a pitch apart (no pace, so the thread keeps its pitch) in one spiral from the disc
-  at full flow, the start's thread last. Shown where it threads; its closed end has no ports;
-  the disc and its fillet are marks in the Plan. No overhang compensation on a closed shade.
+  printed disc down: the disc as rings linked into a spiral (the shaker's lid), then the shade
+  as every shade prints (`vase_revolve`, overhang compensation and all), its profile from the
+  disc's edge up the fillet (flat at first, so compensated the most) and the body to the
+  start's thread, a pitch a turn where it's straight; the step from the disc onto the wall is
+  printed (`join(link: true)`), no hop. Shown where it threads; its closed end has no ports;
+  the disc and its fillet are marks in the Plan.
 - **Prints** (next to Plan, for a project of several parts): every part laid as it prints, each
   on its own bed outline (the printer's bed, its origin where the printer puts it), side by
   side, like a slicer's plates; a card per part: which way up (Flip: its wide edge down, or

@@ -317,8 +317,9 @@ fn a_shade_too_wide_for_its_height_says_so() {
 
 /// A closed end: the shade's end shut by a flat disc that rises through a fillet into the wall,
 /// printed disc down. Its print starts on the bed with the disc (rings in a spiral, out to where
-/// the fillet starts), then the wall carries on from there in one spiral to the start's thread,
-/// a pitch a turn all the way; shown where it goes (its disc at the top of a shade going up), its
+/// the fillet starts), then the shade as any shade prints, from there in one spiral to the
+/// start's thread, compensated where it leans (its fillet leaves the disc flat) and a pitch a turn
+/// where it's straight; shown where it goes (its disc at the top of a shade going up), its
 /// end with no ports. The same shade open prints as before.
 #[test]
 fn a_shade_with_a_closed_end_prints_its_disc_first() {
@@ -370,6 +371,19 @@ fn a_shade_with_a_closed_end_prints_its_disc_first() {
         "{} {}",
         top,
         a_turn_down[2]
+    );
+    // The fillet is compensated as every shade is (layer height, the default): where it leaves
+    // the disc, nearly flat, its turns rise far less than a pitch.
+    let starts: Vec<f64> = (0..p.points.len())
+        .filter(|&i| p.turn[i] >= 1.0 && p.turn[i].fract() == 0.0 && !p.travel[i])
+        .map(|i| p.points[i][2])
+        .collect();
+    // One travel, to the disc's start: from the disc into the wall it carries straight on.
+    assert_eq!(p.travel.iter().filter(|t| **t).count(), 1, "travels");
+    let first_rise = starts[1] - starts[0];
+    assert!(
+        first_rise < 1.0,
+        "the fillet's first turn rises {first_rise}"
     );
     // Shown going up from the socket: the disc at the top, the thread at the bottom.
     let x = p.view.unwrap();

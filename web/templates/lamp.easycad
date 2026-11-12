@@ -266,9 +266,10 @@ component shade "Shade"
 
   # Printed start down, or wide edge down (the profile turned over).
   top_z   = item(full_z, count(full_z) - 1)
-  print_r = pick(wide_down, reverse(full_r), full_r)
-  print_z = pick(wide_down, top_z - reverse(full_z), full_z)
-  print_l = pick(wide_down, -reverse(full_l), full_l)
+  # Closed, it prints from the disc's edge (below), up the fillet and the shade to the thread.
+  print_r = pick(is_closed, cap_r, pick(wide_down, reverse(full_r), full_r))
+  print_z = pick(is_closed, cap_z, pick(wide_down, top_z - reverse(full_z), full_z))
+  print_l = pick(is_closed, cap_l, pick(wide_down, -reverse(full_l), full_l))
   profile = polyline(point(print_r, 0, print_z))
 
   # ---- Slicing: by height (each turn rises a pitch), or along the surface (each turn steps along
@@ -295,7 +296,7 @@ component shade "Shade"
   # By height each turn rises a pitch (squeezed as above); along the surface it steps a pitch along
   # the wall, so each bead lies on the one before it, a layer further on, wherever the wall goes.
   rise    = pitch * squeeze
-  from_throat = pick(wide_down, top_z - z_here, z_here)
+  from_throat = pick(is_closed, top_z + cap_dl - z_here, pick(wide_down, top_z - z_here, z_here))
   ramp_h  = pick(flow_ramp, flow_ramp, fillet_top - throat)
   ramp    = pick(greater(ramp_h, 0.000000001), clamp((from_throat - throat) / max(ramp_h, 0.000000001), 0, 1), 1 - less(from_throat, throat))
   flow_sh = flow + ramp * (pick(shade_flow, shade_flow, flow) - flow)
@@ -317,8 +318,9 @@ component shade "Shade"
   # printed disc down (upside down from the start), the start's thread last. The profile from
   # its end (as printed wide edge down), the fillet a tangent arc from the floor (lean 90°) to the
   # wall's lean where they meet, the disc the floor inside it. The disc is rings linked into a
-  # spiral (the shaker's lid); the wall flat layers a pitch apart (so the thread keeps its pitch)
-  # in one spiral, carrying on from the disc at full flow.
+  # spiral (the shaker's lid); then the shade, as any shade prints (overhang compensation and all),
+  # its profile from the disc's edge up the fillet (flat at first, so compensated the most) to
+  # the start's thread, its first turn starting on the disc as any first turn starts on the bed.
   is_closed = pick(closed, 1, 0)
   cap_dl   = pick(closed_layer, closed_layer, pitch)
   cap_pr   = reverse(full_r)
@@ -336,11 +338,11 @@ component shade "Shade"
   cap_tail = series(min(cap_hit, count(cap_pr) - 1), 1, max(1, count(cap_pr) - cap_hit))
   cap_r    = flatten([cap_ar, item(cap_pr, cap_tail)])
   cap_z    = flatten([cap_az, item(cap_pz, cap_tail)]) + cap_dl
+  # Its wall's lean: the fillet's from flat (90°) to the wall's, then the shade's, turned over.
+  cap_l    = flatten([-cap_th, item(-reverse(full_l), cap_tail)])
   cap_unit = circle(1) |> rotate(90) |> resample(160)
-  cap_wall_surface = revolve(polyline(point(cap_r, 0, cap_z))) |> rotate(90)
-  cap_wall = spiralize(contour(cap_wall_surface, pitch), width: line, flow: pick(shade_flow, shade_flow, flow), flat_top: false, ramp: false) |> bead(layer: pitch)
   cap_disc = link_rings(reverse(rings(cap_unit |> scale(cap_cr), line)), "spiral", line)
-  cap_path = join([toolpath(cap_disc, width: line, layer: cap_dl, flow: flow), cap_wall])
+  cap_path = join([toolpath(cap_disc, width: line, layer: cap_dl, flow: flow), shade], link: true)
   path     = pick(is_closed, cap_path, open_path)
 
   # ---- Where it goes: its straight start along the mount's section (`along` further in), the

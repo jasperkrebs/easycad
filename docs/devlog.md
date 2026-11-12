@@ -5,6 +5,19 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-12 (later): a closed shade compensates its overhangs as every shade does
+
+**Why:** the closed end's wall was printed with the shaker's steps (flat layers, `contour` +
+`spiralize`), which don't do the lamp's overhang compensation; the owner wants the fillet into
+the disc compensated like everything else.
+
+**Landed:** a closed shade's print profile is the closed one (from the disc's edge up the
+fillet and the body to the thread, its lean from 90° at the disc down to the wall's), printed by
+the same `vase_revolve` as every shade, so compensation, slicing along the surface, the flow
+ramp and the exact pitch at the thread all apply; the disc first, the step onto the wall printed
+(`join(link: true)`: one travel, to the disc's start). Tested: the fillet's first turn rises
+under 1 mm (layer height compensation), the thread's turns a pitch apart.
+
 ## 2026-11-12: a closed end for a shade; the prints overview
 
 **Why:** the owner wanted a lamp's last shade closed at its far end (a flat disc through a
@@ -24,8 +37,8 @@ like a slicer's plates, where the way up and the G-code are chosen per part.
 - A test's "no part left" looked for "part " anywhere and found "apart (" in a comment: it
   looks at lines now.
 
-**Open:** a closed shade gets no overhang compensation; the overview's colours are still by
-the assembly's height.
+**Open:** the overview's colours are still by the assembly's height. (A closed shade's wall
+without compensation: fixed the same day.)
 
 ## 2026-11-11: the lamp taken apart (an animation and the exploded view); the Plan on a phone
 
