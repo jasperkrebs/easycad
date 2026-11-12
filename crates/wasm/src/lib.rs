@@ -259,6 +259,20 @@ fn to_js(source: &str, e: &Evaluation, wall: bool) -> Result<Object, JsError> {
     set(&paths, "heights", &heights)?;
     set(&paths, "speeds", &speeds)?;
     set(&paths, "flows", &flows)?;
+    // Which points are print aids (a brim: `aid`), 1 each; only when there are any.
+    if e.drawing
+        .paths
+        .iter()
+        .any(|p| p.parts.iter().any(|s| s.aid))
+    {
+        let aids: Vec<u8> = e
+            .drawing
+            .paths
+            .iter()
+            .flat_map(|p| (0..p.points.len()).map(|i| u8::from(p.is_aid(i))))
+            .collect();
+        set(&paths, "aids", &Uint8Array::from(aids.as_slice()))?;
+    }
     // Only when the view stands the nozzle along the wall: for a print of many rings it takes
     // several times as long as the recipe itself.
     if wall {

@@ -1782,6 +1782,14 @@ pub static NODES: &[Node] = &[
         run: Run::Op(printing::wait_temperature),
     },
     Node {
+        name: "aid",
+        group: "Toolpaths",
+        inputs: &[req("path", "Toolpath", "")],
+        output: "Toolpath",
+        doc: "Marks a toolpath as a print aid, there only to print safely (a brim, a skirt): it prints and shows as before, but it isn't part of the object, so the Plan leaves it out and the check for parts running into each other ignores it. `join([aid(brim), shade])`.",
+        run: Run::Op(printing::aid),
+    },
+    Node {
         name: "speed_override",
         group: "Toolpaths",
         inputs: &[

@@ -134,6 +134,8 @@ The lamp builder is a new template, **Lamp**.
     and the Settings tab opens at the setting, lit up.
   - **Zoom** with a pinch (Safari's own gesture too), the wheel, or the `+` and `−` buttons at
     the plan's top right. A press that wanders less than 12 px (5 px with a mouse) is a tap.
+  - **A brim** (`aid`) prints and shows in 3D, but isn't in the Plan: it's there to print safely,
+    so it takes no face and runs into nothing.
   - **Taken apart:** the assembly row (under the print's, also in the Plan) plays the lamp
     apart a shade at a time, the furthest out first: each turns off its thread as a right-hand
     thread does (one pitch a turn, the pitch read from its toolpath) and then moves on, without

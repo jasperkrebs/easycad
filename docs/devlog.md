@@ -5,6 +5,23 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-13: a brim is a print aid, not in the Plan
+
+**Why:** with the brim on, the Plan drew its rings round the shade's foot (it looked odd) and
+they took the throat's outside, so no shade could be added there, and a shade screwed on there
+counted as running into it. The brim is only there to print safely.
+
+**What landed:** a new step `aid(path)` marks a toolpath as a print aid (a flag on its
+settings): it prints and shows in 3D as before, the G-code is unchanged (golden tests green,
+EasyGCode's lampshade with a brim included), but the Plan leaves it out (the engine sends
+`paths.aids`) and the collision check ignores it. The lampshade and the Lamp's brims are
+`aid(…)`. Tests: `a_brim_is_a_print_aid_that_nothing_runs_into` (a tube round the throat over
+the brim: fine marked, a collision unmarked), and the Plan's free faces with and without the
+marks (`settings.test.mjs`).
+
+**Not a change:** several shades on one straight section already worked (the Plan offers the
+next free stretch along it once one sits there).
+
 ## 2026-11-12 (night): the single lampshade gets the lamp's shapes and the closed end
 
 **Why:** the owner wanted a closed lamp from the single lampshade too, with every shape the

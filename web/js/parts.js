@@ -41,13 +41,14 @@ export function collidingParts(diagnostics) {
 
 /**
  * Each printed part's toolpath as the plan draws it: (radius, height) where it's shown, thinned
- * out, with its bead width. Keyed by part (print) name.
+ * out, with its bead width; print aids (a brim) left out, as they aren't part of the object.
+ * Keyed by part (print) name.
  * @param {any} result the engine's result
  * @returns {Map<string, { points: number[][], width: number }>}
  */
 export function sections(result) {
   const out = new Map();
-  const { points, starts, widths } = result.paths;
+  const { points, starts, widths, aids } = result.paths;
   const owner = result.parts?.paths || [];
   for (let k = 0; k + 1 < starts.length; k++) {
     const print = result.prints[owner[k]];
@@ -58,6 +59,7 @@ export function sections(result) {
     let wsum = 0;
     let wn = 0;
     for (let i = a; i < b; i += step) {
+      if (aids && aids[i]) continue;
       entry.points.push([Math.hypot(points[3 * i], points[3 * i + 1]), points[3 * i + 2]]);
       if (widths && widths[i] > 0) {
         wsum += widths[i];

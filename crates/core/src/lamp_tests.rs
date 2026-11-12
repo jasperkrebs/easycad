@@ -544,3 +544,43 @@ fn a_closed_ends_fillet_meets_a_curved_wall_tangent() {
         assert!(worst < 12.0, "{part}: the lean jumps {worst}° ({lean:?})");
     }
 }
+
+/// A brim is a print aid (`aid`): it prints, but it isn't part of the shade, so a shade screwed
+/// onto the throat right where the brim lies on the bed (a short tube round it) doesn't run into
+/// it. Unmarked, it would.
+#[test]
+fn a_brim_is_a_print_aid_that_nothing_runs_into() {
+    use Literal::{Bool, Number, Text};
+    let with = |src: &str| {
+        let src = set_values(src, &[("brim".into(), Bool(true))]).unwrap();
+        with_part(
+            &src,
+            "cone",
+            &[
+                ("mount", Text("main.start_out".into())),
+                ("along", Number(0.0)),
+                ("shape", Text("tube".into())),
+                ("length", Number(15.0)),
+            ],
+        )
+    };
+    let e = run(&with(LAMP));
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    // The brim still prints, round the main shade's first turn, and only it is an aid.
+    let main = &e.prints.iter().find(|p| p.name == "main").unwrap().path;
+    let aids = (0..main.points.len()).filter(|&i| main.is_aid(i)).count();
+    assert!(aids > 100 && aids < main.points.len() / 2, "{aids}");
+    let unmarked = LAMP.replace(
+        "aid(toolpath(graft(brim_rings)",
+        "(toolpath(graft(brim_rings)",
+    );
+    assert_ne!(unmarked, LAMP);
+    let e = run(&with(&unmarked));
+    assert!(
+        e.diagnostics
+            .iter()
+            .any(|d| d.message.contains("run into each other")),
+        "{:?}",
+        e.diagnostics
+    );
+}

@@ -311,7 +311,7 @@ component shade "Shade"
   first_rise  = sample(rise, [0, 0, min(top_z, sample(rise, [0, 0, 0]) / 2)])
   r_first     = graph(print_z, print_r, min(top_z, first_rise))
   brim_rings  = circle(r_first + brim_width / 2 + line / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
-  brimmed     = join(flatten([toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed), [shade]]), clear: 2 * brim_layer)
+  brimmed     = join(flatten([aid(toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed)), [shade]]), clear: 2 * brim_layer)
   open_path   = pick(brim, brimmed, shade)
 
   # ---- A closed end: a flat disc where the shade ends, rising through a fillet into the wall;

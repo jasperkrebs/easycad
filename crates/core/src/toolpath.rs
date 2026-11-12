@@ -40,6 +40,9 @@ pub struct Settings {
     pub speed: f64,
     /// Volumetric flow in mm³/s. When set, each move's speed follows from it: flow ÷ bead area.
     pub flow: Option<f64>,
+    /// A print aid (a brim, a skirt): printed and shown like any move, but not part of the
+    /// object, so the Plan and the collision check leave it out (`aid`).
+    pub aid: bool,
 }
 
 impl Settings {
@@ -52,6 +55,7 @@ impl Settings {
             layer,
             speed,
             flow: None,
+            aid: false,
         })
     }
 
@@ -73,6 +77,7 @@ impl Settings {
             layer,
             speed,
             flow: Some(flow),
+            aid: false,
         })
     }
 
@@ -387,6 +392,12 @@ impl Toolpath {
         self.speed.get(i).copied().unwrap_or(1.0)
     }
 
+    /// Whether move `i` is a print aid (a brim, a skirt: `aid`).
+    pub fn is_aid(&self, i: usize) -> bool {
+        let part = self.part.get(i).copied().unwrap_or(0) as usize;
+        self.parts.get(part).is_some_and(|s| s.aid)
+    }
+
     /// The settings of the part that prints move `i`.
     pub fn settings(&self, i: usize) -> Settings {
         let part = self.part.get(i).copied().unwrap_or(0) as usize;
@@ -399,6 +410,7 @@ impl Toolpath {
                 layer: 0.2,
                 speed: 40.0,
                 flow: None,
+                aid: false,
             })
     }
 
@@ -487,6 +499,7 @@ impl Toolpath {
             layer: 0.0,
             speed: 0.0,
             flow: None,
+            aid: false,
         });
         ToolpathStats {
             layers: self.layers,
