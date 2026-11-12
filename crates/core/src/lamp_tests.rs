@@ -409,3 +409,28 @@ fn a_shade_with_a_closed_end_prints_its_disc_first() {
         "open, its straight end takes shades again"
     );
 }
+
+/// A straight start 122–126 mm long met its fillet a rounding error lower (124.99999999999999
+/// after 125), and vase_revolve took that for the profile going down. The owner's shade: a cone
+/// with a 125 mm start, a 20 mm fillet, opening 195 mm over 107 mm, a 53 mm straight end.
+#[test]
+fn a_straight_start_of_any_length_meets_its_fillet() {
+    use Literal::{Bool, Number, Text};
+    for start in [122.0, 123.0, 124.0, 125.0, 126.0] {
+        let src = set_values(
+            LAMP,
+            &[
+                ("main.shape".into(), Text("cone".into())),
+                ("main.start_len".into(), Number(start)),
+                ("main.fillet".into(), Number(20.0)),
+                ("main.opening".into(), Number(195.0)),
+                ("main.transition".into(), Number(107.0)),
+                ("main.end_straight".into(), Bool(true)),
+                ("main.end_len".into(), Number(53.0)),
+            ],
+        )
+        .unwrap();
+        let e = run(&src);
+        assert!(e.errors().next().is_none(), "{start}: {:?}", e.diagnostics);
+    }
+}
