@@ -114,7 +114,7 @@ fn shades_screw_onto_each_other() {
     }
     // Taking the sphere away takes everything mounted on it.
     let gone = easycad_lang::remove_part(&src, "main").unwrap();
-    assert!(!gone.contains("part "));
+    assert!(!gone.lines().any(|l| l.starts_with("part ")));
 }
 
 /// A cone on the outside of the throat, going up, would cut through the sphere: a warning names
@@ -313,4 +313,85 @@ fn a_shade_too_wide_for_its_height_says_so() {
     .unwrap();
     let e = run(&src);
     assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+}
+
+/// A closed end: the shade's end shut by a flat disc that rises through a fillet into the wall,
+/// printed disc down. Its print starts on the bed with the disc (rings in a spiral, out to where
+/// the fillet starts), then the wall carries on from there in one spiral to the start's thread,
+/// a pitch a turn all the way; shown where it goes (its disc at the top of a shade going up), its
+/// end with no ports. The same shade open prints as before.
+#[test]
+fn a_shade_with_a_closed_end_prints_its_disc_first() {
+    use Literal::{Bool, Number, Text};
+    let with = |cap: bool| {
+        set_values(
+            LAMP,
+            &[
+                ("main.shape".into(), Text("bell in-out".into())),
+                ("main.end_d".into(), Number(120.0)),
+                ("main.closed".into(), Bool(cap)),
+                ("main.closed_fillet".into(), Number(15.0)),
+            ],
+        )
+        .unwrap()
+    };
+    let e = run(&with(true));
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let p = &e.prints[0].path;
+    // On the bed first, at the disc's layer (the pitch), round the middle.
+    let first = p.points.iter().position(|q| q[2] > 0.0).unwrap();
+    assert!(
+        (p.points[first][2] - 2.5).abs() < 1e-6,
+        "{:?}",
+        p.points[first]
+    );
+    let r = |q: &[f64; 3]| q[0].hypot(q[1]);
+    let disc: Vec<f64> = p
+        .points
+        .iter()
+        .filter(|q| (q[2] - 2.5).abs() < 1e-6)
+        .map(r)
+        .collect();
+    assert!(
+        disc.iter().cloned().fold(f64::MAX, f64::min) < 10.0,
+        "the disc fills the middle"
+    );
+    // Up to the thread at the start's radius (23 mm on the E27), the last turns a pitch apart.
+    let last = p.points.len() - 1;
+    assert!(
+        (r(&p.points[last]) - 23.0).abs() < 0.5,
+        "{}",
+        r(&p.points[last])
+    );
+    let top = p.points[last][2];
+    let a_turn_down = p.points.iter().rev().find(|q| q[2] < top - 2.4).unwrap();
+    assert!(
+        (top - a_turn_down[2] - 2.5).abs() < 0.1,
+        "{} {}",
+        top,
+        a_turn_down[2]
+    );
+    // Shown going up from the socket: the disc at the top, the thread at the bottom.
+    let x = p.view.unwrap();
+    let shown_first = x.apply(p.points[first]);
+    let shown_last = x.apply(p.points[last]);
+    assert!(
+        shown_first[2] > shown_last[2] + 100.0,
+        "{shown_first:?} {shown_last:?}"
+    );
+    assert!(shown_last[2] < 25.0);
+    assert_eq!(
+        port(&e, "main.end_out")[3],
+        0.0,
+        "closed: nothing mounts on its end"
+    );
+    assert!(e.marks.iter().any(|m| m.settings == ["main.closed_fillet"]));
+    crate::gcode::write(p, &crate::gcode::Profile::default(), "Lamp").unwrap();
+    // Open, it's the vase as before.
+    let open = run(&with(false));
+    assert!(open.prints[0].path.points[1][2] < 2.5);
+    assert!(
+        port(&open, "main.end_out")[3] > 0.0,
+        "open, its straight end takes shades again"
+    );
 }

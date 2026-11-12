@@ -72,10 +72,13 @@ component shade "Shade"
   param flatness   = 0.5     in 0.05..1 step 0.05    "Flatness (height ÷ width)"  when shape = "flat sphere"
   param own_at     = 50 %    in 5..95                "Middle point's height"  when shape = "own"
   param own_r      = 50 mm   in 5..250               "Middle point's radius"  when shape = "own"
-  param end_straight = false                         "Straight end (more shades screw on there)"  when not shape = "tube"
+  param closed     = false                           "Closed end (a flat disc, printed first)"
+  param closed_fillet = 10 mm in 0..100 step 1       "Closed end's fillet"  when closed
+  param closed_layer = 0 mm  in 0..10 step 0.1       "Disc layer height (0: the pitch)"  when closed
+  param end_straight = false                         "Straight end (more shades screw on there)"  when not closed
   param end_len    = 20 mm   in 1..200 step 1        "Straight end length"  when end_straight
   param lip_fillet = 0 mm    in 0..100 step 1        "End fillet (0: the start's)"  when end_straight
-  param wide_down  = false                           "Printed wide edge down"
+  param wide_down  = false                           "Printed wide edge down"  when not closed
 
   # Where it's mounted, and its straight sections' lengths (the joint setting overrides both).
   m_r      = item(mount, 0)
@@ -83,7 +86,7 @@ component shade "Shade"
   m_in     = item(mount, 2)
   m_socket = item(mount, 4)
   start_eff = pick(joint, joint, start_len)
-  end_on   = pick(end_straight, 1 - is_tube, 0)
+  end_on   = pick(end_straight, 1 - is_tube, 0) * (1 - pick(closed, 1, 0))
   end_eff  = pick(joint, joint, end_len)
   r_t      = m_r
   throat   = start_eff
@@ -308,7 +311,37 @@ component shade "Shade"
   r_first     = graph(print_z, print_r, min(top_z, first_rise))
   brim_rings  = circle(r_first + brim_width / 2 + line / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
   brimmed     = join(flatten([toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed), [shade]]), clear: 2 * brim_layer)
-  path        = pick(brim, brimmed, shade)
+  open_path   = pick(brim, brimmed, shade)
+
+  # ---- A closed end: a flat disc where the shade ends, rising through a fillet into the wall;
+  # printed disc down (upside down from the start), the start's thread last. The profile from
+  # its end (as printed wide edge down), the fillet a tangent arc from the floor (lean 90°) to the
+  # wall's lean where they meet, the disc the floor inside it. The disc is rings linked into a
+  # spiral (the shaker's lid); the wall flat layers a pitch apart (so the thread keeps its pitch)
+  # in one spiral, carrying on from the disc at full flow.
+  is_closed = pick(closed, 1, 0)
+  cap_dl   = pick(closed_layer, closed_layer, pitch)
+  cap_pr   = reverse(full_r)
+  cap_pz   = top_z - reverse(full_z)
+  cap_a    = clamp(-item(full_l, count(full_l) - 1), -80, 80)
+  cap_re   = item(cap_pr, 0)
+  cap_f    = max(0, min(closed_fillet, (cap_re - 1.5 * line) / max(0.2, cos(cap_a) + abs(tan(cap_a)) * (1 - sin(cap_a)))))
+  cap_zj   = cap_f * (1 - sin(cap_a))
+  cap_rj   = graph(cap_pz, cap_pr, min(cap_zj, top_z))
+  cap_cr   = max(line, cap_rj - cap_f * cos(cap_a))
+  cap_th   = -90 + (90 - cap_a) * series(0, 1, 13) / 12
+  cap_ar   = cap_cr + cap_f * cos(cap_th)
+  cap_az   = cap_f + cap_f * sin(cap_th)
+  cap_hit  = index_of(flatten([greater(cap_pz, cap_zj + 0.000001), [1]]), 1)
+  cap_tail = series(min(cap_hit, count(cap_pr) - 1), 1, max(1, count(cap_pr) - cap_hit))
+  cap_r    = flatten([cap_ar, item(cap_pr, cap_tail)])
+  cap_z    = flatten([cap_az, item(cap_pz, cap_tail)]) + cap_dl
+  cap_unit = circle(1) |> rotate(90) |> resample(160)
+  cap_wall_surface = revolve(polyline(point(cap_r, 0, cap_z))) |> rotate(90)
+  cap_wall = spiralize(contour(cap_wall_surface, pitch), width: line, flow: pick(shade_flow, shade_flow, flow), flat_top: false, ramp: false) |> bead(layer: pitch)
+  cap_disc = link_rings(reverse(rings(cap_unit |> scale(cap_cr), line)), "spiral", line)
+  cap_path = join([toolpath(cap_disc, width: line, layer: cap_dl, flow: flow), cap_wall])
+  path     = pick(is_closed, cap_path, open_path)
 
   # ---- Where it goes: its straight start along the mount's section (`along` further in), the
   # rest going up or down from there. Its own z runs from its start; in the lamp, z0 + s · z.
@@ -318,15 +351,19 @@ component shade "Shade"
   up       = less(abs(index_of(["up", "down"], direction)), 0.5)
   s        = pick(up, 1, -1)
   z0       = pick(up, min(z_a, z_b), max(z_a, z_b))
-  # Printed wide edge down, the print is the other way round again.
-  turned   = greater(abs(1 - up - pick(wide_down, 1, 0)), 0.5)
-  shown    = place(path, z: pick(wide_down, z0 + s * top_z, z0), flip: turned)
-  wall     = revolve(polyline(point(full_r, 0, full_z))) |> place(z: z0, flip: 1 - up)
+  # Printed wide edge down (or closed: disc down), the print is the other way round again; a
+  # closed one's print starts the disc's layer below its end.
+  turned_over = pick(is_closed, 1, pick(wide_down, 1, 0))
+  turned   = greater(abs(1 - up - turned_over), 0.5)
+  shown    = place(path, z: pick(is_closed, z0 + s * (top_z + cap_dl), pick(wide_down, z0 + s * top_z, z0)), flip: turned)
+  open_wall = revolve(polyline(point(full_r, 0, full_z))) |> place(z: z0, flip: 1 - up)
+  cap_shape = revolve(polyline(point(flatten([[0], cap_r]), 0, flatten([[cap_dl / 2], cap_z])))) |> place(z: z0 + s * (top_z + cap_dl), flip: up)
+  wall     = pick(is_closed, cap_shape, open_wall)
 
   # ---- Ports: where more shades go. A shade outside runs a line plus the fit further out, one
   # inside as far in. The start's inside is the socket's; the end is there with a straight end.
   r_end    = item(full_r, count(full_r) - 1)
-  end_len_at = pick(is_tube, length, end_on * end_eff)
+  end_len_at = pick(is_closed, 0, pick(is_tube, length, end_on * end_eff))
   # The face it's mounted by is taken (by the socket, or the shade it screws onto), but along
   # a tube there's room further on.
   m_side   = item(mount, 5)
@@ -357,6 +394,12 @@ component shade "Shade"
   mark pick(not_tube, mark_height, []) for transition, inout_h "Height"
   mark pick(lip_on * lip_long, mark_end, []) for end_len, end_straight "Straight end"
   mark pick(lip_on * lip_arc, mark_end_arc, []) for lip_fillet, fillet "End fillet"
+  # The closed end, in the shade's own z (its print turned back over: z = its end + the disc's
+  # layer − the print's z).
+  mark_cap     = polyline(point([0, cap_cr], 0, [top_z + cap_dl / 2, top_z + cap_dl / 2])) |> place(z: z0, flip: 1 - up)
+  mark_cap_arc = polyline(point(cap_ar, 0, top_z - cap_az)) |> place(z: z0, flip: 1 - up)
+  mark pick(is_closed, mark_cap, []) for closed, closed_layer "Closed end"
+  mark pick(is_closed * greater(cap_f, 0), mark_cap_arc, []) for closed_fillet "Closed end's fillet"
 
   show wall
   print shown
