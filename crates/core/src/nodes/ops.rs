@@ -290,7 +290,7 @@ pub(super) fn vase_spiral(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 
 pub(super) fn vase_revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let profile = a.curve(0)?;
-    let (rise, width, flow) = (a.field(1)?, a.field(2)?, a.field(4)?);
+    let (rise, width, flow, bead) = (a.field(1)?, a.field(2)?, a.field(4)?, a.field(5)?);
     let read = |f: &Rc<Field>, what: &'static str| {
         let f = f.clone();
         move |p: P3| -> Result<f64, String> {
@@ -302,10 +302,11 @@ pub(super) fn vase_revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
             }
         }
     };
-    let (rise, width, flow) = (
+    let (rise, width, flow, bead) = (
         read(&rise, "layer"),
         read(&width, "width"),
         read(&flow, "flow"),
+        read(&bead, "bead_layer"),
     );
     let path = toolpath::vase_revolve(
         profile,
@@ -313,10 +314,10 @@ pub(super) fn vase_revolve(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
             rise: &rise,
             width: &width,
             flow: &flow,
+            bead_layer: &bead,
         },
         &toolpath::Revolve {
             speed: a.num(3)?,
-            bead_layer: a.num(5)?,
             tolerance: a.num(6)?,
             seam: a.num(7)?,
             flat_top: a.flag(8)?,

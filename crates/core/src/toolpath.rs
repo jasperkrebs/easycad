@@ -1091,11 +1091,14 @@ pub fn join(
 }
 
 /// What [`vase_revolve`] reads once per turn, at the point of the profile at the turn's middle:
-/// the turn's rise, its line width and its volumetric flow (0: by speed).
+/// the turn's rise, its line width, its volumetric flow (0: by speed) and the layer height its
+/// bead is extruded for (0: its rise).
 pub struct PerTurn<'a> {
     pub rise: &'a dyn Fn(P3) -> Result<f64, String>,
     pub width: &'a dyn Fn(P3) -> Result<f64, String>,
     pub flow: &'a dyn Fn(P3) -> Result<f64, String>,
+    /// Extrude the turn for this layer height instead of its rise (0: its rise).
+    pub bead_layer: &'a dyn Fn(P3) -> Result<f64, String>,
 }
 
 /// [`vase_revolve`]'s settings that hold for the whole spiral.
@@ -1103,8 +1106,6 @@ pub struct PerTurn<'a> {
 pub struct Revolve {
     /// Print speed in mm/s (when the flow is 0).
     pub speed: f64,
-    /// Extrude every turn for this layer height instead of its rise (0: its rise).
-    pub bead_layer: f64,
     /// How far a chord may stray from the true circle, in mm.
     pub tolerance: f64,
     /// Where each turn starts, in degrees from +X.
@@ -1229,7 +1230,8 @@ const PROFILE_ROUNDING: f64 = 1e-9;
 ///   it, the spiral stops at full flow as it reaches the top: an open rim).
 /// - Each turn is extruded for its own line width and, with `bead_layer` 0, its rise
 ///   (EasyGCode's width compensation), or for `bead_layer` (its layer-height compensation:
-///   a shorter rise, the full bead).
+///   a shorter rise, the full bead), read like the flow at the turn's middle, so the full
+///   bead can change from turn to turn (a shade printed at another layer than its thread).
 pub fn vase_revolve(
     profile: &Curve,
     per_turn: &PerTurn,
@@ -1238,7 +1240,6 @@ pub fn vase_revolve(
 ) -> Result<Toolpath, String> {
     let Revolve {
         speed,
-        bead_layer,
         tolerance,
         seam,
         flat_top,
@@ -1273,7 +1274,6 @@ pub fn vase_revolve(
         return Err("the profile's radius (its x) must be more than 0 everywhere".into());
     }
     check("tolerance", tolerance, 0.001, 10.0, " mm")?;
-    check("bead_layer", bead_layer, 0.0, 10.0, " mm")?;
     if !seam.is_finite() {
         return Err("`seam` must be a number".into());
     }
@@ -1371,6 +1371,8 @@ pub fn vase_revolve(
 
     // Each turn's settings, and the closing turn's (the last turn's bead at the top's flow).
     let settings = |width: f64, dz: f64, at: f64| -> Result<Settings, String> {
+        let bead_layer = (per_turn.bead_layer)(on_profile(at))?;
+        check("bead_layer", bead_layer, 0.0, 10.0, " mm")?;
         let layer = if bead_layer > 0.0 { bead_layer } else { dz };
         let flow = (per_turn.flow)(on_profile(at))?;
         if !flow.is_finite() || flow < 0.0 {
@@ -1822,10 +1824,10 @@ mod tests {
                 rise: &rise,
                 width: &one,
                 flow: &none,
+                bead_layer: &none,
             };
             let options = Revolve {
                 speed: 40.0,
-                bead_layer: 0.0,
                 tolerance: 1.0,
                 seam: 90.0,
                 flat_top: false,
@@ -1856,10 +1858,10 @@ mod tests {
             rise: &rise,
             width: &one,
             flow: &none,
+            bead_layer: &none,
         };
         let options = Revolve {
             speed: 40.0,
-            bead_layer: 0.0,
             tolerance: 1.0,
             seam: 90.0,
             flat_top: false,
@@ -1919,10 +1921,10 @@ mod tests {
             rise: &rise,
             width: &width,
             flow: &flow,
+            bead_layer: &flow,
         };
         let options = |flat_top| Revolve {
             speed: 40.0,
-            bead_layer: 0.0,
             tolerance: 1.0,
             seam: 90.0,
             flat_top,

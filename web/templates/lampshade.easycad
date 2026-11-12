@@ -4,7 +4,7 @@ printer "Ginger G1"
 note "EasyGCode's lampshade as a recipe: a threaded throat that screws onto an E27 or E14 lampholder's shade ring, a fillet, then the shade, printed as one vase-mode helix whose layer height is the thread's pitch. For the cone, bell, dome and sphere its G-code matches EasyGCode's command for command (the flat sphere is the same ellipsoid, sampled evenly)."
 note "Shades: a straight cone, a bell, a dome, a sphere, a flat sphere (UFO), your own shape (`own_shade`: move its points, add more, or ask the AI for a new one), a bell or cone that opens out and closes in again (in-out), or a tube. Every shade is a profile (radius against height); the rest of the recipe doesn't care which."
 note "Any shade can end in a straight lip (its own fillet into it), or be closed: a flat disc rising through its own fillet into the wall, printed disc down, the throat's thread last."
-note "Overhangs get wider beads (or squeezed layers), turn by turn, from the wall's angle. The flow can change from the throat to the shade over the fillet."
+note "Overhangs get wider beads (or squeezed layers), turn by turn, from the wall's angle. The flow can change from the throat to the shade over the fillet, and so can the layer height and line width (the throat stays at the thread's pitch): along an S-curve through the fillet, or at once without one; the lip keeps the shade's."
 note "Slicing along the surface (experimental): each turn steps one layer height along the wall instead of up it, so every bead lies on the one before it wherever the wall goes, even where it runs flat (a bell opened out to 90°). The bead stands along the wall, as a robot arm would print it, so the overhang compensation has its own strength there, 0 to start with."
 
 group "Socket"
@@ -29,7 +29,7 @@ param sphere     = 200 mm  in 20..500 step 1        "Sphere diameter (at its wid
 param flatness   = 0.5     in 0.05..1 step 0.05     "Flatness (flat sphere: height ÷ width)"  when shape = "flat sphere"
 param closed     = false                            "Closed end (a flat disc, printed first)"
 param closed_fillet = 10 mm in 0..100 step 1        "Closed end's fillet"  when closed
-param closed_layer = 0 mm  in 0..10 step 0.1        "Disc layer height (0: the pitch)"  when closed
+param closed_layer = 0 mm  in 0..10 step 0.1        "Disc layer height (0: the shade's)"  when closed
 param lip        = false                            "Straight lip at the opening"  when not closed
 param lip_length = 10 mm   in 0..100 step 1         "Lip length"  when lip
 param lip_fillet = 0 mm    in 0..100 step 1         "Lip fillet (0: the throat's)"  when lip
@@ -41,6 +41,8 @@ param own_r      = 50 mm   in 5..250                "Own shade: middle point's r
 
 group "Print"
 param line       = 6 mm    in 1..12 step 0.1        "Line width"
+param shade_layer = 0 mm   in 0..5 step 0.1         "Shade layer height (0: the pitch)"
+param shade_line = 0 mm    in 0..12 step 0.1        "Shade line width (0: as the line)"
 param flow       = 20      in 1..400                "Throat flow (mm³/s)"
 param shade_flow = 0       in 0..400                "Shade flow (mm³/s, 0: as the throat)"
 param flow_ramp  = 0 mm    in 0..200                "Flow ramp height (0: over the fillet)"
@@ -271,15 +273,26 @@ z_here   = pick(surface, graph(print_s, print_z, z), z)
 # Along the surface every bead is already a layer along the wall however it leans (the nozzle
 # turned with the wall makes up for the lean), so its own strength starts at 0.
 comp    = index_of(["width", "layer height", "off"], compensation)
+# The throat (the thread) prints at the pitch and the line, the shade at its own: through the
+# fillet an S-curve of height from one to the other (no fillet: at once, where the throat ends).
+# The lip isn't a thread: it keeps the shade's. A tube is all thread.
+from_throat = pick(is_closed, top_z + cap_dl - z_here, pick(wide_down, top_z - z_here, z_here))
+fil_h    = fillet_top - throat
+into_sh  = pick(greater(fil_h, 0.000000001), smoothstep(clamp((from_throat - throat) / max(fil_h, 0.000000001), 0, 1)), 1 - less(from_throat, throat))
+to_shade = (1 - is_tube) * into_sh
+sh_layer = pick(shade_layer, shade_layer, pitch)
+sh_line  = pick(shade_line, shade_line, line)
+layer_at = pitch + to_shade * (sh_layer - pitch)
+line_at  = line + to_shade * (sh_line - line)
 lean_at = pick(surface, graph(print_s, print_l, z), graph(print_z, print_l, z))
 c       = max(0.05, cos(abs(lean_at)))
 curve   = pick(surface, surface_strength, strength) * (min(abs(lean_at), 89) / pivot) ^ steep
-width   = pick(less(comp, 0.5), min(20, line * min(max_width, 1 + curve * (1 / c - 1))), line)
+width   = pick(less(comp, 0.5), min(20, line_at * min(max_width, 1 + curve * (1 / c - 1))), line_at)
 squeeze = pick(less(abs(comp - 1), 0.5), max(0.05, 1 - curve * (1 - c)), 1)
-# By height each turn rises a pitch (squeezed as above); along the surface it steps a pitch along
+# By height each turn rises a layer (squeezed as above); along the surface it steps a layer along
 # the wall, so each bead lies on the one before it, a layer further on, wherever the wall goes.
-rise    = pitch * squeeze
-from_throat = pick(is_closed, top_z + cap_dl - z_here, pick(wide_down, top_z - z_here, z_here))
+# Squeezed, each bead keeps its own layer's full cross-section.
+rise    = layer_at * squeeze
 ramp_h  = pick(flow_ramp, flow_ramp, fillet_top - throat)
 ramp    = pick(greater(ramp_h, 0.000000001), clamp((from_throat - throat) / max(ramp_h, 0.000000001), 0, 1), 1 - less(from_throat, throat))
 flow_sh = flow + ramp * (pick(shade_flow, shade_flow, flow) - flow)
@@ -288,12 +301,12 @@ flow_sh = flow + ramp * (pick(shade_flow, shade_flow, flow) - flow)
 flat_at = smoothstep(clamp((abs(lean_at) - 60) / 30, 0, 1))
 flow_at = pick(surface * greater(flat_flow, 0), flow_sh + flat_at * (flat_flow - flow_sh), flow_sh)
 
-shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(surface, pitch, pick(less(abs(comp - 1), 0.5), pitch, 0)), tolerance: tolerance, flat_top: flat_top, steady_start: steady, surface: surface)
+shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(surface, layer_at, pick(less(abs(comp - 1), 0.5), layer_at, 0)), tolerance: tolerance, flat_top: flat_top, steady_start: steady, surface: surface)
 
 # A brim around the first turn, outermost ring first, hopping between rings and into the shade.
 first_rise  = sample(rise, [0, 0, min(top_z, sample(rise, [0, 0, 0]) / 2)])
 r_first     = graph(print_z, print_r, min(top_z, first_rise))
-brim_rings  = circle(r_first + brim_width / 2 + line / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
+brim_rings  = circle(r_first + brim_width / 2 + sample(line_at, [0, 0, first_rise / 2]) / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
 brimmed     = join(flatten([aid(toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed)), [shade]]), clear: 2 * brim_layer)
 open_path   = pick(brim, brimmed, shade)
 
@@ -305,22 +318,24 @@ open_path   = pick(brim, brimmed, shade)
 # up the fillet (flat at first, so compensated the most) to the throat's thread, its first turn
 # starting on the disc as any first turn starts on the bed.
 is_closed = pick(closed, 1, 0)
-cap_dl   = pick(closed_layer, closed_layer, pitch)
+# The disc is the shade's end: its layer (0) and line are the shade's (a tube's: the thread's).
+cap_dl   = pick(closed_layer, closed_layer, pick(is_tube, pitch, sh_layer))
+cap_w    = pick(is_tube, line, sh_line)
 cap_pr   = reverse(full_r)
 cap_pz   = top_z - reverse(full_z)
 # The wall's lean where the fillet meets it: the end's lean moves the meeting point, and that
 # point's lean the next; twice round settles it (a curved wall's fillet meets it tangent).
 cap_lr   = -reverse(full_l)
 cap_a0   = clamp(item(cap_lr, 0), -80, 80)
-cap_z0   = max(0, min(closed_fillet, (item(reverse(full_r), 0) - 1.5 * line) / max(0.2, cos(cap_a0) + abs(tan(cap_a0)) * (1 - sin(cap_a0))))) * (1 - sin(cap_a0))
+cap_z0   = max(0, min(closed_fillet, (item(reverse(full_r), 0) - 1.5 * cap_w) / max(0.2, cos(cap_a0) + abs(tan(cap_a0)) * (1 - sin(cap_a0))))) * (1 - sin(cap_a0))
 cap_a1   = clamp(graph(top_z - reverse(full_z), cap_lr, min(cap_z0, top_z)), -80, 80)
-cap_z1   = max(0, min(closed_fillet, (item(reverse(full_r), 0) - 1.5 * line) / max(0.2, cos(cap_a1) + abs(tan(cap_a1)) * (1 - sin(cap_a1))))) * (1 - sin(cap_a1))
+cap_z1   = max(0, min(closed_fillet, (item(reverse(full_r), 0) - 1.5 * cap_w) / max(0.2, cos(cap_a1) + abs(tan(cap_a1)) * (1 - sin(cap_a1))))) * (1 - sin(cap_a1))
 cap_a    = clamp(graph(top_z - reverse(full_z), cap_lr, min(cap_z1, top_z)), -80, 80)
 cap_re   = item(cap_pr, 0)
-cap_f    = max(0, min(closed_fillet, (cap_re - 1.5 * line) / max(0.2, cos(cap_a) + abs(tan(cap_a)) * (1 - sin(cap_a)))))
+cap_f    = max(0, min(closed_fillet, (cap_re - 1.5 * cap_w) / max(0.2, cos(cap_a) + abs(tan(cap_a)) * (1 - sin(cap_a)))))
 cap_zj   = cap_f * (1 - sin(cap_a))
 cap_rj   = graph(cap_pz, cap_pr, min(cap_zj, top_z))
-cap_cr   = max(line, cap_rj - cap_f * cos(cap_a))
+cap_cr   = max(cap_w, cap_rj - cap_f * cos(cap_a))
 cap_th   = -90 + (90 - cap_a) * series(0, 1, 13) / 12
 cap_ar   = cap_cr + cap_f * cos(cap_th)
 cap_az   = cap_f + cap_f * sin(cap_th)
@@ -336,10 +351,10 @@ cap_l    = flatten([-cap_th, item(-reverse(full_l), cap_tail)])
 # step.
 cap_q0   = pick(surface, 0, cap_dl)
 cap_dz   = sample(rise, [0, 0, cap_q0 + sample(rise, [0, 0, cap_q0]) / 2])
-cap_r0   = max(line, pick(surface, graph(print_s, print_r, cap_dz), graph(print_z, print_r, cap_q0 + cap_dz)))
-cap_t    = cap_r0 / line
-cap_disc = spiral(spacing: line, turns: cap_t, tolerance: tolerance) |> rotate(90 - 360 * cap_t)
-cap_path = join([toolpath(cap_disc, width: line, layer: cap_dl, flow: flow), shade], link: true)
+cap_r0   = max(cap_w, pick(surface, graph(print_s, print_r, cap_dz), graph(print_z, print_r, cap_q0 + cap_dz)))
+cap_t    = cap_r0 / cap_w
+cap_disc = spiral(spacing: cap_w, turns: cap_t, tolerance: tolerance) |> rotate(90 - 360 * cap_t)
+cap_path = join([toolpath(cap_disc, width: cap_w, layer: cap_dl, flow: flow), shade], link: true)
 path     = pick(is_closed, cap_path, open_path)
 
 # ---- As printed: throat down, wide edge down, or (closed) disc down. The wall shown as it prints.

@@ -442,22 +442,28 @@ fn a_straight_start_of_any_length_meets_its_fillet() {
 /// point (no step out onto the fillet), whatever the slicing or the compensation, in the lamp
 /// and in the single lampshade. The owner's
 /// shade (12 Nov 2026): a cone opening to 195 mm with an 18 mm closed fillet stepped 1.4 mm out
-/// from the disc's edge to the wall's first turn.
+/// from the disc's edge to the wall's first turn. With the shade's own layer height and line
+/// width, the disc (at the shade's end) takes them.
 #[test]
 fn a_closed_end_runs_from_its_disc_into_the_wall_without_a_step() {
     use Literal::{Bool, Number, Text};
-    // The lamp's shade, and the single lampshade (the same arithmetic, its own names).
+    // The lamp's shade, and the single lampshade (the same arithmetic, its own names); the last
+    // rows with the shade's own layer height and line width.
     let lampshade = include_str!("../../../web/templates/lampshade.easycad");
-    for ((slicing, comp, layer), (template, part)) in [
-        ("height", "layer height", 0.0),
-        ("height", "width", 0.0),
-        ("height", "off", 1.5),
-        ("surface", "layer height", 0.0),
+    for ((slicing, comp, layer, shade_layer, shade_line), (template, part)) in [
+        ("height", "layer height", 0.0, 0.0, 0.0),
+        ("height", "width", 0.0, 0.0, 0.0),
+        ("height", "off", 1.5, 0.0, 0.0),
+        ("surface", "layer height", 0.0, 0.0, 0.0),
+        ("height", "layer height", 0.0, 1.5, 8.0),
+        ("height", "width", 0.0, 1.2, 7.0),
+        ("surface", "layer height", 0.0, 1.5, 8.0),
     ]
     .into_iter()
     .flat_map(|c| [(c, (LAMP, "main.")), (c, (lampshade, ""))])
     {
         let own = |name: &str| format!("{part}{name}");
+        let w = if shade_line > 0.0 { shade_line } else { 6.0 };
         let src = set_values(
             template,
             &[
@@ -470,6 +476,8 @@ fn a_closed_end_runs_from_its_disc_into_the_wall_without_a_step() {
                 (own("closed_layer"), Number(layer)),
                 ("slicing".into(), Text(slicing.into())),
                 ("compensation".into(), Text(comp.into())),
+                ("shade_layer".into(), Number(shade_layer)),
+                ("shade_line".into(), Number(shade_line)),
             ],
         )
         .unwrap();
@@ -477,6 +485,8 @@ fn a_closed_end_runs_from_its_disc_into_the_wall_without_a_step() {
         assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
         let p = &e.prints[0].path;
         let disc_z = p.points.iter().find(|q| q[2] > 0.0).unwrap()[2];
+        let disc_layer = [layer, shade_layer, 2.5].into_iter().find(|&l| l > 0.0);
+        assert!((disc_z - disc_layer.unwrap()).abs() < 1e-9, "{disc_z}");
         let r = |q: [f64; 3]| q[0].hypot(q[1]);
         let ang = |q: [f64; 3]| q[1].atan2(q[0]);
         // Every move on the disc (past its middle) steps out about as fast as its spiral does (a
@@ -489,7 +499,7 @@ fn a_closed_end_runs_from_its_disc_into_the_wall_without_a_step() {
         for &i in &on_disc {
             let (a, b) = (p.points[i - 1], p.points[i]);
             let turned = (ang(b) - ang(a)).rem_euclid(std::f64::consts::TAU);
-            let allowed = 1.1 * 6.0 * turned / std::f64::consts::TAU + 0.05;
+            let allowed = 1.1 * w * turned / std::f64::consts::TAU + 0.05;
             assert!(
                 (r(b) - r(a)).abs() <= allowed,
                 "{slicing} {comp}: a step out from r {} to {} at {a:?}",
@@ -583,4 +593,229 @@ fn a_brim_is_a_print_aid_that_nothing_runs_into() {
         "{:?}",
         e.diagnostics
     );
+}
+
+const LAMPSHADE: &str = include_str!("../../../web/templates/lampshade.easycad");
+
+/// One turn of a vase-mode spiral as printed: where it starts, how far the next one starts
+/// above it, its line width and the layer height its bead is extruded for.
+#[derive(Debug, Clone, Copy)]
+struct TurnAt {
+    z: f64,
+    rise: f64,
+    width: f64,
+    layer: f64,
+}
+
+/// The spiral's whole turns (from the second on: the first ramps up from the bed), in order.
+fn turns(p: &crate::toolpath::Toolpath) -> Vec<TurnAt> {
+    let starts: Vec<usize> = (0..p.points.len())
+        .filter(|&i| !p.travel[i] && p.turn[i] >= 1.0 && p.turn[i].fract() == 0.0)
+        .collect();
+    starts
+        .windows(2)
+        .map(|w| {
+            let part = p.parts[p.part[w[0] + 1] as usize];
+            TurnAt {
+                z: p.points[w[0]][2],
+                rise: p.points[w[1]][2] - p.points[w[0]][2],
+                width: part.width,
+                layer: part.layer,
+            }
+        })
+        .collect()
+}
+
+fn lampshade_with(values: &[(&str, Literal)]) -> Evaluation {
+    let values: Vec<(String, Literal)> = values
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect();
+    run(&set_values(LAMPSHADE, &values).unwrap())
+}
+
+/// The shade's own layer height and line width, 0 (as they ship) or set to the thread's pitch
+/// and line, print exactly what the thread's alone did: the same toolpath, whatever the
+/// slicing, the compensation or the way up.
+#[test]
+fn a_shade_layer_as_the_threads_changes_nothing() {
+    use Literal::{Bool, Number, Text};
+    for (slicing, comp, wide) in [
+        ("height", "layer height", false),
+        ("height", "width", true),
+        ("surface", "layer height", false),
+    ] {
+        let base = [
+            ("slicing", Text(slicing.into())),
+            ("compensation", Text(comp.into())),
+            ("wide_down", Bool(wide)),
+            ("shape", Text("bell".into())),
+            ("max_angle", Number(60.0)),
+            ("brim", Bool(true)),
+        ];
+        let as_shipped = lampshade_with(&base);
+        let mut same = base.to_vec();
+        same.push(("shade_layer", Number(2.5)));
+        same.push(("shade_line", Number(6.0)));
+        let set = lampshade_with(&same);
+        let (a, b) = (as_shipped.print.unwrap(), set.print.unwrap());
+        assert!(a.path == b.path, "{slicing} {comp} {wide}");
+        // The lamp's shade, closed or with a straight end, as well.
+        for closed in [false, true] {
+            let at = |layer: f64, line: f64| {
+                let src = set_values(
+                    LAMP,
+                    &[
+                        ("main.closed".into(), Bool(closed)),
+                        ("slicing".into(), Text(slicing.into())),
+                        ("compensation".into(), Text(comp.into())),
+                        ("shade_layer".into(), Number(layer)),
+                        ("shade_line".into(), Number(line)),
+                    ],
+                )
+                .unwrap();
+                run(&src).prints[0].path.clone()
+            };
+            assert!(
+                at(0.0, 0.0) == at(2.5, 6.0),
+                "lamp {slicing} {comp} {closed}"
+            );
+        }
+    }
+}
+
+/// The throat prints at the thread's pitch and line, the shade at its own: through the fillet
+/// an S-curve from one to the other, a little every turn; no fillet, at once. Squeezed on the
+/// overhang (layer-height compensation), each bead still has its own layer's cross-section.
+#[test]
+fn the_shade_prints_at_its_own_layer_height_and_line_width() {
+    use Literal::{Bool, Number, Text};
+    // A cone at 44°: the throat 20 mm, a 30 mm fillet rising to about z 41.
+    let e = lampshade_with(&[
+        ("fillet", Number(30.0)),
+        ("transition", Number(80.0)),
+        ("opening", Number(200.0)),
+        ("shade_layer", Number(1.5)),
+        ("shade_line", Number(8.0)),
+    ]);
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+    let t = turns(&e.print.as_ref().unwrap().path);
+    let throat: Vec<&TurnAt> = t.iter().filter(|t| t.z + t.rise < 20.0 - 1e-9).collect();
+    assert!(throat.len() >= 5);
+    for t in &throat {
+        assert!(
+            (t.rise - 2.5).abs() < 1e-9 && t.width == 6.0 && t.layer == 2.5,
+            "{t:?}"
+        );
+    }
+    // Well into the shade: 1.5 mm layers squeezed by the lean's cosine (100 %), 8 mm lines, full
+    // beads.
+    let shade: Vec<&TurnAt> = t.iter().filter(|t| t.z > 50.0).collect();
+    assert!(shade.len() > 10);
+    let lean = (100.0f64 - 23.0).atan2(80.0);
+    for t in &shade {
+        assert!(
+            (t.rise - 1.5 * lean.cos()).abs() < 1e-6 && t.width == 8.0 && t.layer == 1.5,
+            "{t:?}"
+        );
+    }
+    // Through the fillet: the bead's layer only falls and its line only widens, a little at a
+    // time.
+    for w in t.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        assert!(b.layer <= a.layer + 1e-12 && b.width >= a.width - 1e-12);
+        assert!(b.width - a.width <= 0.2 * 2.0, "{a:?} {b:?}");
+        assert!(a.layer - b.layer <= 0.2 * 1.0, "{a:?} {b:?}");
+    }
+    let between = t.iter().filter(|t| t.width > 6.0 && t.width < 8.0).count();
+    assert!(between >= 8, "{between} turns in the fillet");
+    // No fillet: the throat's last turn is the thread's, the next the shade's.
+    let e = lampshade_with(&[
+        ("fillet", Number(0.0)),
+        ("shade_layer", Number(1.5)),
+        ("shade_line", Number(8.0)),
+        ("compensation", Text("off".into())),
+    ]);
+    let t = turns(&e.print.as_ref().unwrap().path);
+    assert!(t.iter().all(|t| t.width == 6.0 || t.width == 8.0));
+    let first_shade = t.iter().position(|t| t.width == 8.0).unwrap();
+    assert!((t[first_shade - 1].rise - 2.5).abs() < 1e-9);
+    assert!((t[first_shade].z - 20.0).abs() < 2.5);
+    assert!((t[first_shade + 1].rise - 1.5).abs() < 1e-9);
+    // Width compensation scales the shade's own line; wide edge down and along the surface it
+    // prints too, without a word.
+    for (comp, wide, slicing) in [
+        ("width", false, "height"),
+        ("layer height", true, "height"),
+        ("layer height", false, "surface"),
+        ("width", true, "surface"),
+    ] {
+        let e = lampshade_with(&[
+            ("shade_layer", Number(1.5)),
+            ("shade_line", Number(8.0)),
+            ("compensation", Text(comp.into())),
+            ("wide_down", Bool(wide)),
+            ("slicing", Text(slicing.into())),
+        ]);
+        assert!(
+            e.diagnostics.is_empty(),
+            "{comp} {wide} {slicing}: {:?}",
+            e.diagnostics
+        );
+        let t = turns(&e.print.as_ref().unwrap().path);
+        assert!(t.iter().all(|t| t.width >= 6.0 - 1e-9));
+        if comp == "width" && slicing == "height" {
+            // The 45° cone's beads: 8 ÷ cos 45°.
+            assert!(t.iter().any(|t| (t.width - 8.0 * 2f64.sqrt()).abs() < 1e-6));
+        }
+        // The thread's end (on the bed, or at the top turned over) is at the pitch.
+        let thread = if wide { t[t.len() - 2] } else { t[1] };
+        assert!(thread.width == 6.0 && thread.layer == 2.5, "{thread:?}");
+    }
+}
+
+/// In the lamp a shade's straight end is a thread too: through the end's fillet it eases back to
+/// the pitch and the line, so shades screw onto it. A tube is all thread.
+#[test]
+fn a_lamp_shade_eases_back_to_the_thread_at_its_straight_end() {
+    use Literal::{Bool, Number, Text};
+    let src = set_values(
+        LAMP,
+        &[
+            ("shade_layer".into(), Number(1.5)),
+            ("shade_line".into(), Number(8.0)),
+        ],
+    )
+    .unwrap();
+    let e = run(&src);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let t = turns(&e.prints[0].path);
+    let top = t.last().map(|t| t.z + t.rise).unwrap();
+    // The sphere's straight end is the last 20 mm (as it ships): there, the thread's.
+    let end: Vec<&TurnAt> = t.iter().filter(|t| t.z > top - 19.0).collect();
+    assert!(end.len() >= 5);
+    for t in &end[..end.len() - 1] {
+        assert!(
+            (t.rise - 2.5).abs() < 1e-9 && t.width == 6.0 && t.layer == 2.5,
+            "{t:?}"
+        );
+    }
+    // The start's thread too, and the shade between them at its own.
+    assert!(t[1].width == 6.0 && t[1].layer == 2.5);
+    assert!(
+        t.iter()
+            .filter(|t| t.layer == 1.5 && t.width == 8.0)
+            .count()
+            > 20
+    );
+    // A tube on the socket: all thread, whatever the shade's settings.
+    let tube = set_values(&src, &[("main.shape".into(), Text("tube".into()))]).unwrap();
+    let t = turns(&run(&tube).prints[0].path);
+    assert!(t.iter().all(|t| t.width == 6.0 && t.layer == 2.5));
+    // Closed and printed wide edge down, it runs too.
+    for (key, on) in [("main.closed", true), ("main.wide_down", true)] {
+        let s = set_values(&src, &[(key.into(), Bool(on))]).unwrap();
+        let e = run(&s);
+        assert!(warnings(&e).is_empty(), "{key}: {:?}", e.diagnostics);
+    }
 }

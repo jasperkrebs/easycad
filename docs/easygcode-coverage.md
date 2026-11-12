@@ -86,6 +86,7 @@ on a custom thread, no compensation, a set ramp height, no start/end blocks.
 | Flow ramp from throat flow to shade flow across the fillet | `flow:` a field of z (`clamp`, `pick`) |
 | Brim around the first turn, hopping between rings | `circle(radii)`, `graft`, `toolpath`, `join(clear:)` |
 | Your own shade | any profile curve (`own_shade`); its wall angle from its neighbouring points |
+| (EasyCAD only) The shade's own layer height and line width, eased from the thread's along an S-curve through the fillet; 0 (as shipped) is EasyGCode's | the pitch and line as fields (`smoothstep`), `bead_layer:` the local layer (a field) |
 
 Not exact: EasyGCode samples the flat sphere adaptively (finer where its angle changes fast);
 the template samples it evenly (400 points). The shape is the same ellipsoid.
