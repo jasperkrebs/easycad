@@ -200,7 +200,9 @@ project with good settings, and "a bit taller" is just a slider.
 - Graph positions saved in the project file (a `layout` block); clusters (your own steps made
   from a group of components); full data trees.
 - Rhino `.3dm` import/export, SVG/DXF.
-- Solids and SolidWorks-style features (booleans, fillets, STEP).
+- Solids and SolidWorks-style features (booleans, fillets). STEP export works since 12 Nov
+  2026 (`export shape as "x.step"`: exact faces for shapes of revolution, the mesh otherwise;
+  `thicken` makes the printed wall solid); B-spline faces for lofts are later.
 - 3MF export for slicers (STL works since 1b).
 - Claude Desktop/MCP control.
 - Multi-threaded engine (needs cross-origin-isolation headers; see research §9).

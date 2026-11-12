@@ -62,7 +62,7 @@ impl Value {
             Value::Text(_) => "text",
             Value::List(_) => "a list",
             Value::Curve(_) => "a curve",
-            Value::Surface(s) if s.capped => "a solid",
+            Value::Surface(s) if s.capped || s.looped => "a solid",
             Value::Surface(_) => "a surface",
             Value::Toolpath(_) => "a toolpath",
             Value::Field(_) => "a field",
@@ -78,7 +78,7 @@ impl Value {
             Value::Text(_) => "texts",
             Value::List(_) => "lists",
             Value::Curve(_) => "curves",
-            Value::Surface(s) if s.capped => "solids",
+            Value::Surface(s) if s.capped || s.looped => "solids",
             Value::Surface(_) => "surfaces",
             Value::Toolpath(_) => "toolpaths",
             Value::Field(_) => "fields",
@@ -139,7 +139,11 @@ impl Value {
             }
             Value::Surface(s) => format!(
                 "{} · {} sections × {} points",
-                if s.capped { "solid" } else { "surface" },
+                if s.capped || s.looped {
+                    "solid"
+                } else {
+                    "surface"
+                },
                 s.sections.len(),
                 s.samples()
             ),

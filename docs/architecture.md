@@ -469,7 +469,7 @@ legend and stats).
 | SVG, DXF | export/import | 2D curves for laser cutting, plotting, references. |
 | **`.3dm` (Rhino)** | export/import | Via **rhino3dm.js** (MIT), loaded only when used. Curves and NURBS surfaces export as real NURBS; meshes as meshes. Import brings curves in as reference parameters. |
 | STL/3MF | import | As reference meshes or boolean inputs (manifold-rust's robust engine repairs messy meshes). |
-| STEP | later | Needs exact B-rep (`truck`, or an optional OpenCascade plugin on desktop). |
+| **STEP** | export | Since 12 Nov 2026: `export shape as "x.step"` (AP214, `crates/core/src/step.rs`, no dependency). Shapes of revolution as exact faces (planes, cylinders, cones bounded by circles), anything else as flat triangles; solids as `MANIFOLD_SOLID_BREP`. General B-rep (B-spline lofts, booleans) still needs a kernel (`truck`, or OpenCascade on desktop). |
 
 ---
 
@@ -567,7 +567,7 @@ stops at the build height. A failing toolpath gets a message instead of a file.
 |---|---|
 | The language design is the biggest decision | Keep v0 tiny. Version header in every file (`easycad 0.1`). Canonical formatter. Automatic migration when the syntax changes. |
 | `manifold-rust` is 0.x / new | Wrap them behind our own `geom` API, cover with golden tests, pin versions. Fallback for booleans: the C++ Manifold via its official WASM package. |
-| Mesh-only solids can't do true edge fillets or STEP yet | Fillet in the profiles (curve fillets) and round with distance fields for now. Exact B-rep is a later milestone (Phase 7). |
+| Mesh-only solids can't do true edge fillets, or exact STEP faces for lofts, yet | Fillet in the profiles (curve fillets) and round with distance fields for now. Exact B-rep is a later milestone (Phase 7). |
 | iOS can evict PWA storage | Explicit save/share of `.easycad` files, autosave plus "export backup", the desktop app. |
 | AI quality varies | AI is optional; locks, diffs, undo; a small eval set of real prompts run on every prompt change. |
 | Scope creep ("rocket ship") | The roadmap phases each end with something usable on the phone. Nothing starts before the previous phase is useful. |

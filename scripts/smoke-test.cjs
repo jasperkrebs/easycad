@@ -1,7 +1,7 @@
 // Smoke test for the web app: serves web/, opens it in headless Chromium at phone and desktop
 // sizes, waits for the Rust engine, then opens a settings fold-out and changes a setting, edits
 // and breaks the recipe, switches templates, opens a project file, reloads, and saves files: an
-// STL, and the spiral disc's G-code, which must match the
+// STL, the lampshade's STEP solid, and the spiral disc's G-code, which must match the
 // G-code EasyGCode itself writes (fixtures/easygcode/). Checks that nothing errored.
 //
 //   node scripts/smoke-test.cjs [screenshot-dir]
@@ -256,6 +256,14 @@ async function saveFrom(page, selector) {
           failures.push(
             `${name}: ${id} G-code ${file.name} differs from EasyGCode's: ${ours.length} vs ${expected.length} commands, first difference at ${at}: "${ours[at]}" vs "${expected[at]}"`,
           );
+        }
+        // The lampshade's wall also saves as a STEP solid, for a manufacturer who slices it.
+        if (id === 'lampshade') {
+          const step = await saveFrom(page, '#exportButtons button:text("lampshade.step")');
+          const text = step.data.toString('utf8');
+          if (step.name !== 'lampshade.step' || !text.startsWith('ISO-10303-21;') || !/MANIFOLD_SOLID_BREP/.test(text) || !/CONICAL_SURFACE/.test(text)) {
+            failures.push(`${name}: lampshade STEP ${step.name} (${step.data.length} bytes) isn't a solid: ${text.slice(0, 60)}`);
+          }
         }
       }
 

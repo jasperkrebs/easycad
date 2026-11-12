@@ -224,6 +224,8 @@ pub enum ExportKind {
     Stl,
     /// Printer G-code for a toolpath.
     Gcode,
+    /// A STEP model of surfaces and solids (exact for surfaces of revolution).
+    Step,
 }
 
 /// A file the recipe offers to save.
@@ -232,7 +234,7 @@ pub struct Export {
     pub file: String,
     pub kind: ExportKind,
     pub line: u32,
-    /// What to write: surfaces/solids for STL, a toolpath for G-code.
+    /// What to write: surfaces/solids for STL and STEP, a toolpath for G-code.
     #[serde(skip)]
     pub value: Value,
 }
@@ -1128,9 +1130,11 @@ impl<'a> Runner<'a> {
             ExportKind::Stl
         } else if lower.ends_with(".gcode") {
             ExportKind::Gcode
+        } else if lower.ends_with(".step") || lower.ends_with(".stp") {
+            ExportKind::Step
         } else {
             let msg = format!(
-                "can't export \"{file}\" yet: name the file .stl (for shapes) or .gcode (for a toolpath)"
+                "can't export \"{file}\" yet: name the file .stl or .step (for shapes) or .gcode (for a toolpath)"
             );
             self.diag(span, Severity::Warning, msg);
             return;
@@ -1144,7 +1148,7 @@ impl<'a> Runner<'a> {
             Err(Fail::Skipped) => return,
         };
         let (fits, wanted) = match kind {
-            ExportKind::Stl => (has_surface(&value), "surfaces or solids"),
+            ExportKind::Stl | ExportKind::Step => (has_surface(&value), "surfaces or solids"),
             ExportKind::Gcode => (matches!(value, Value::Toolpath(_)), "a toolpath"),
         };
         if !fits {

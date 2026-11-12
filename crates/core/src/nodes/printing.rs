@@ -109,6 +109,9 @@ pub(super) fn lean(_: &mut Ctx, a: &Args) -> Result<Value, String> {
     if !s.closed {
         return Err("needs a wall of closed sections".into());
     }
+    if s.looped {
+        return Err(crate::surface::LOOPED.into());
+    }
     Ok(Value::Field(Rc::new(Field::lean(&s.sections)?)))
 }
 

@@ -51,7 +51,9 @@ The engine only grows when a genuinely new *kind* of step is needed, and then th
 written to be reused.
 
 The same goes for plain geometry: `export shape as "name.stl"` saves any surface or solid for a
-slicer or CAD program. Booleans, extrusions and fillets are the next geometry steps.
+slicer or CAD program, and `export shape as "name.step"` saves it as STEP for a manufacturer
+who slices it their own way (`thicken(wall, line)` first, so it's the printed wall, not a
+surface of no thickness). Booleans, extrusions and fillets are the next geometry steps.
 
 ---
 
