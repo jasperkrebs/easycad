@@ -5,6 +5,36 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-14 (later): a cone in-out with a band and filleted corners
+
+**Why:** the owner wanted the cone in-out to do what the bell in-out does, with more control: a
+straight band at the widest, the corners into it rounded, and the start's fillet where the
+shade's own (wider) lines can ease in (the bell leaves the throat straight up, so it has no
+fillet there and the lines change at once).
+
+**What landed:** `widest_len` now for both in-out shapes; `widest_fillet` ("Fillet at the
+widest", cone in-out): a tangent arc at each corner of the band (or the one corner without a
+band), as big as fits with each line keeping about half its length for its fillets, the wall's
+lean turning along it in steps of the usual 2.3°. 0 keeps the sharp corners, each still there
+with both lines' leans (no kink where a fillet meets a line). Lamp and Lampshade. Test
+`a_cone_in_out_can_run_straight_at_its_widest_with_filleted_corners` (open, closed, straight
+end, no band; both templates).
+
+**Still open:** the bell in-out's lines still change at once at the throat (no fillet there).
+
+## 2026-11-14: a bell in-out can run straight at its widest
+
+**Why:** the owner likes the bell in-out and wanted a straight section before it moves in again.
+
+**What landed:** `widest_len` ("Straight at the widest (0: none)", bell in-out only) in the Lamp
+and the Lampshade: out along its S-curve, straight down a band of that length at the widest
+diameter, then in along the other; the two curves share the rest of the height (`widest_at` of
+it below the band), level where they meet the band, so the wall's lean never jumps. The Widest
+mark sits at the band's middle and leads to the setting too. Each curve is now 49 points of its
+own (it was 97 over the whole height; the same curves). Test
+`a_bell_in_out_can_run_straight_at_its_widest` (both templates; open, closed, with a straight
+end; 0: no band).
+
 ## 2026-11-13 (later still): a cone in-out's fillets meet its lines without a kink
 
 **Why:** the owner's cone in-out had a small kink where each fillet met a straight line. Its

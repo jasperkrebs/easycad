@@ -19,7 +19,7 @@ its own, without asking the AI.
 | What connects | A shade's straight start and straight end, inside and outside. A long tube can hold several shades, each sitting further along it. |
 | Assembly order | Not checked. Only collisions are. |
 | Printing | Each shade is its own G-code file, printed alone in the middle of the bed. |
-| New shapes | Tube, bell in-out (opens and closes again), cone in-out (straight lines out and in). |
+| New shapes | Tube, bell in-out (opens and closes again; optionally straight for a while at its widest, `widest_len`), cone in-out (straight lines out and in; the same straight band, and its corners at the widest rounded, `widest_fillet`). |
 
 ## How it fits the thread
 

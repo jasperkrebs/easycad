@@ -67,6 +67,8 @@ component shade "Shade"
   param opening    = 150 mm  in 10..400 step 1       "Opening diameter"  when shape = ["cone", "bell", "dome", "sphere", "flat sphere", "own"]
   param widest     = 200 mm  in 10..600 step 1       "Widest diameter"  when shape = ["bell in-out", "cone in-out"]
   param widest_at  = 50 %    in 5..95                "Widest at (of the height)"  when shape = ["bell in-out", "cone in-out"]
+  param widest_len = 0 mm    in 0..1000 step 1       "Straight at the widest (0: none)"  when shape = ["bell in-out", "cone in-out"]
+  param widest_fillet = 0 mm in 0..200 step 1  "Fillet at the widest"  when shape = "cone in-out"
   param end_d      = 0 mm    in 0..600 step 1        "End diameter (0: as the start)"  when shape = ["bell in-out", "cone in-out"]
   param transition = 52 mm   in 1..400 step 1        "Height"  when shape = ["cone", "bell", "dome", "sphere", "flat sphere", "own"]
   param inout_h    = 220 mm  in 10..1000 step 1      "Height"  when shape = ["bell in-out", "cone in-out"]
@@ -164,20 +166,56 @@ component shade "Shade"
   r_w      = widest / 2
   r_e      = pick(end_d, end_d / 2, r_t)
   w_at     = clamp(widest_at, 0.05, 0.95)
-  bio_t    = series(0, 1, 97) / 96
-  bio_up   = clamp(bio_t / w_at, 0, 1)
-  bio_dn   = clamp((bio_t - w_at) / (1 - w_at), 0, 1)
-  bio_r    = r_t + (r_w - r_t) * smoothstep(bio_up) + (r_e - r_w) * smoothstep(bio_dn)
-  bio_z    = h * bio_t
-  bio_l    = atan((r_w - r_t) * 6 * bio_up * (1 - bio_up) / (h * w_at) + (r_e - r_w) * 6 * bio_dn * (1 - bio_dn) / (h * (1 - w_at)))
-  # Cone in-out: straight out to the widest diameter, straight in to the end. The widest point
-  # is there twice, once with each line's lean, so a fillet anywhere along a line reads that
-  # line's own lean (and meets it without a kink).
-  coi_a1   = atan2(r_w - r_t, h * w_at)
-  coi_a2   = atan2(r_e - r_w, h * (1 - w_at))
-  coi_r    = [r_t, r_w, r_w, r_e]
-  coi_z    = [0, h * w_at, h * w_at, h]
-  coi_l    = [coi_a1, coi_a1, coi_a2, coi_a2]
+  # With a straight band at the widest (`widest_len`): out, straight down the band, then in;
+  # the curves share the rest of the height, `widest_at` of it below the band.
+  bio_band = clamp(widest_len, 0, 0.9 * h)
+  bio_on   = greater(bio_band, 0.000000001)
+  bio_hc   = h - bio_band
+  bio_hu   = bio_hc * w_at
+  bio_hd   = bio_hc * (1 - w_at)
+  bio_u    = series(0, 1, 49) / 48
+  bio_d    = pick(bio_on, series(0, 1, 49), series(1, 1, 48)) / 48
+  bio_r    = flatten([r_t + (r_w - r_t) * smoothstep(bio_u), r_w + (r_e - r_w) * smoothstep(bio_d)])
+  bio_z    = flatten([bio_hu * bio_u, bio_hu + bio_band + bio_hd * bio_d])
+  bio_l    = flatten([atan((r_w - r_t) * 6 * bio_u * (1 - bio_u) / bio_hu), atan((r_e - r_w) * 6 * bio_d * (1 - bio_d) / bio_hd)])
+  # Cone in-out: straight out to the widest diameter, straight down the band there (`widest_len`,
+  # as the bell's), straight in to the end. Each corner at the widest (or the one corner, with no
+  # band) is rounded by a tangent arc of radius `widest_fillet` (as big as fits: each line keeps
+  # about half its length for the fillets at its ends). Along an arc the wall's lean runs from one
+  # line's to the next; from its start S, at lean φ: S + R·s·(cos φ − cos a, sin a − sin φ), where a
+  # is the lean coming in and s which way it turns (+1 to a smaller lean). With no fillet the arc
+  # is the corner itself, there with each line's lean, so a fillet from the throat or to a straight
+  # end meets each line's own lean.
+  coi_hu   = bio_hu
+  coi_hd   = bio_hd
+  coi_a1   = atan2(r_w - r_t, coi_hu)
+  coi_a2   = atan2(r_e - r_w, coi_hd)
+  coi_l1   = sqrt((r_w - r_t) ^ 2 + coi_hu ^ 2)
+  coi_l2   = sqrt((r_e - r_w) ^ 2 + coi_hd ^ 2)
+  # The corner where the line out ends: into the band (lean 0), or with no band into the line in.
+  cA_out   = pick(bio_on, 0, coi_a2)
+  cA_th    = abs(coi_a1 - cA_out)
+  cA_s     = pick(greater(coi_a1, cA_out), 1, -1)
+  cA_room  = 0.45 * pick(bio_on, min(coi_l1, bio_band * 10 / 9), min(coi_l1, coi_l2))
+  cA_rad   = max(0, min(widest_fillet, cA_room / max(0.000000001, tan(cA_th / 2))))
+  cA_t     = cA_rad * tan(cA_th / 2)
+  cA_n     = max(4, ceil(cA_th / flare_step))
+  cA_phi   = coi_a1 + (cA_out - coi_a1) * series(0, 1, cA_n + 1) / cA_n
+  cA_r     = r_w - cA_t * sin(coi_a1) + cA_rad * cA_s * (cos(cA_phi) - cos(coi_a1))
+  cA_z     = coi_hu - cA_t * cos(coi_a1) + cA_rad * cA_s * (sin(coi_a1) - sin(cA_phi))
+  # The corner where the band ends (with a band): from straight down (lean 0) into the line in.
+  cB_th    = abs(coi_a2)
+  cB_s     = pick(greater(0, coi_a2), 1, -1)
+  cB_room  = 0.45 * min(bio_band * 10 / 9, coi_l2)
+  cB_rad   = max(0, min(widest_fillet, cB_room / max(0.000000001, tan(cB_th / 2))))
+  cB_t     = cB_rad * tan(cB_th / 2)
+  cB_n     = max(4, ceil(cB_th / flare_step))
+  cB_phi   = coi_a2 * series(0, 1, cB_n + 1) / cB_n
+  cB_r     = r_w + cB_rad * cB_s * (cos(cB_phi) - 1)
+  cB_z     = coi_hu + bio_band - cB_t - cB_rad * cB_s * sin(cB_phi)
+  coi_r    = flatten([[r_t], cA_r, pick(bio_on, cB_r, []), [r_e]])
+  coi_z    = flatten([[0], cA_z, pick(bio_on, cB_z, []), [h]])
+  coi_l    = flatten([[coi_a1], cA_phi, pick(bio_on, cB_phi, []), [coi_a2]])
 
   # The chosen shade (a tube is the cone's arithmetic, replaced below by a straight wall).
   k_shape = index_of(["cone", "bell", "dome", "sphere", "flat sphere", "own", "bell in-out", "cone in-out", "tube"], shape)
@@ -420,15 +458,16 @@ component shade "Shade"
   mark_fillet  = pick(blended, polyline(point(arc_r, 0, arc_z + shift)), polyline(point([r_t, r_t + 0.001], 0, [throat, throat]))) |> place(z: z0, flip: 1 - up)
   mark_shade   = polyline(point(cur_r, 0, cur_z + shift)) |> place(z: z0, flip: 1 - up)
   mark_opening = polyline(point([0, r_open], 0, [shade_top, shade_top])) |> place(z: z0, flip: 1 - up)
-  mark_widest  = polyline(point([0, r_w], 0, [h * w_at + shift, h * w_at + shift])) |> place(z: z0, flip: 1 - up)
+  w_mid        = bio_hu + bio_band / 2
+  mark_widest  = polyline(point([0, r_w], 0, [w_mid + shift, w_mid + shift])) |> place(z: z0, flip: 1 - up)
   mark_height  = polyline(point([side_x, side_x], 0, [shift, shade_top])) |> place(z: z0, flip: 1 - up)
   mark_end     = polyline(point([r_end, r_end], 0, [top_z - end_eff, top_z])) |> place(z: z0, flip: 1 - up)
   mark_end_arc = polyline(point(arc2_r, 0, cur_top - arc2_z + shift)) |> place(z: z0, flip: 1 - up)
   mark mark_start for start_len, length, mount, direction, along "Start"
   mark pick(not_tube, mark_fillet, []) for fillet "Fillet"
-  mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, end_d, max_angle, sphere, flatness, own_at, own_r "Shade"
+  mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, widest_len, widest_fillet, end_d, max_angle, sphere, flatness, own_at, own_r "Shade"
   mark pick(not_tube, mark_opening, []) for opening, end_d "Opening"
-  mark pick(inout, mark_widest, []) for widest, widest_at "Widest"
+  mark pick(inout, mark_widest, []) for widest, widest_at, widest_len, widest_fillet "Widest"
   mark pick(not_tube, mark_height, []) for transition, inout_h "Height"
   mark pick(lip_on * lip_long, mark_end, []) for end_len, end_straight "Straight end"
   mark pick(lip_on * lip_arc, mark_end_arc, []) for lip_fillet, fillet "End fillet"
