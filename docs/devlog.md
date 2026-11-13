@@ -5,6 +5,23 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-14 (evening): an open top's last turn keeps the pitch
+
+**Why:** the owner's sphere, printed wide edge down with 5 mm shade layers, seemed to run down
+at the end of its throat (the thread, on top). What was left below the top after the last whole
+turn (0.68 mm) was printed, as EasyGCode does, as a whole turn rising only that much: under a
+flat closing turn that's levelled, but with an open top it was one turn far flatter than the
+thread's 2.5 mm.
+
+**What landed** (`vase_revolve`, `crates/core/src/toolpath.rs`): with `flat_top: false` the last
+bit goes on at the turn's own pitch and stops part way round where it reaches the top (its bead
+a whole turn's; any bit, not only over a quarter of a rise). With a flat closing turn nothing
+changed: EasyGCode's four lampshade fixtures still match command for command. The open-top
+golden test now checks every command up to the last turn against EasyGCode's, and the last turn
+move by move (from EasyGCode's start, at the turn before's pitch, ending on its top and radius,
+at full flow). Tests `an_open_tops_last_turn_keeps_the_pitch` (the owner's sphere); the surface
+slicing test reads the rim where the spiral ends.
+
 ## 2026-11-14 (later): a cone in-out with a band and filleted corners
 
 **Why:** the owner wanted the cone in-out to do what the bell in-out does, with more control: a

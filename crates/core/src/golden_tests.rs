@@ -997,10 +997,14 @@ fn the_lamps_first_shade_prints_the_lampshades_gcode() {
     );
 }
 
-/// The lampshade with an open top (`flat_top: false`) prints exactly EasyGCode's lampshade
-/// without its closing turn: the spiral stops on the rim at full flow, and the end block follows.
-/// As it ships (width compensation, volumetric flow) and the capped bell (layer-height
-/// compensation, a brim, a set feed).
+/// The lampshade with an open top (`flat_top: false`) prints EasyGCode's lampshade without its
+/// closing turn, up to its last turn exactly; that last turn, what's left below the top (less
+/// than a whole turn's rise), EasyGCode prints as a whole turn rising only that much (under its
+/// closing turn, which levels it); an open top goes on at the turn before's pitch and stops part
+/// way round where it reaches the top, at full flow (13 Nov 2026: a whole flat turn at the top
+/// of a thread looked like the spiral ran down). Checked here move by move against the turn
+/// EasyGCode would print. As it ships (width compensation, volumetric flow) and the capped bell
+/// (layer-height compensation, a brim, a set feed).
 #[test]
 fn an_open_lampshade_is_easygcodes_without_the_closing_turn() {
     use Literal::{Bool, Number, Text};
@@ -1045,30 +1049,74 @@ fn an_open_lampshade_is_easygcodes_without_the_closing_turn() {
             e.print.unwrap().path
         };
         let (flat, open) = (run(true), run(false));
-        let cap = flat.points.len() - open.points.len();
+        // The last turn's moves (turn values past the one before), the closing turn's after it.
+        let last_turn = |p: &crate::toolpath::Toolpath, layers: usize| {
+            (0..p.points.len())
+                .filter(|&i| {
+                    p.turn[i] > (layers - 1) as f64 + 1e-9 && p.turn[i] <= layers as f64 + 1e-9
+                })
+                .collect::<Vec<usize>>()
+        };
+        assert_eq!(flat.layers, open.layers);
+        let (ef, eo) = (last_turn(&flat, flat.layers), last_turn(&open, open.layers));
+        let cap = flat.points.len() - 1 - ef[ef.len() - 1];
         assert!(cap >= 24, "the closing turn has at least 24 points");
-        // EasyGCode's G-code without the closing turn: the last `cap` moves before the end block.
-        let lines: Vec<&str> = fixture.lines().collect();
-        let end = lines
-            .iter()
-            .position(|l| l.starts_with("; --- end G-code"))
-            .unwrap();
-        let mut dropped = 0;
-        let mut kept: Vec<&str> = Vec::new();
-        for (i, l) in lines.iter().enumerate().rev() {
-            if i < end && dropped < cap && l.starts_with("G1 ") {
-                dropped += 1;
-            } else {
-                kept.push(l);
+        assert_eq!(
+            eo[eo.len() - 1],
+            open.points.len() - 1,
+            "the open top ends on its last turn"
+        );
+        // EasyGCode's G-code without the closing turn and the last turn; ours without its last
+        // turn: the same, command for command.
+        let drop_last = |text: &str, n: usize| -> String {
+            let lines: Vec<&str> = text.lines().collect();
+            let end = lines
+                .iter()
+                .position(|l| l.starts_with("; --- end G-code"))
+                .unwrap();
+            let mut dropped = 0;
+            let mut kept: Vec<&str> = Vec::new();
+            for (i, l) in lines.iter().enumerate().rev() {
+                if i < end && dropped < n && l.starts_with("G1 ") {
+                    dropped += 1;
+                } else {
+                    kept.push(l);
+                }
             }
-        }
-        assert_eq!(dropped, cap);
-        kept.reverse();
-        let expected: String = kept.iter().map(|l| format!("{l}\n")).collect();
+            assert_eq!(dropped, n);
+            kept.reverse();
+            kept.iter().map(|l| format!("{l}\n")).collect()
+        };
         let ours = gcode::write(&open, &Profile::default(), "Golden")
             .unwrap()
             .text;
-        assert_matches(&ours, &expected);
+        assert_matches(
+            &drop_last(&ours, eo.len()),
+            &drop_last(fixture, cap + ef.len()),
+        );
+        // The last turn: from where EasyGCode's starts, rising at the turn before's pitch, round
+        // only as far as it takes to reach EasyGCode's top, on its radius there.
+        let start = flat.points[ef[0] - 1];
+        assert!(crate::geom::dist3(open.points[eo[0] - 1], start) < 1e-9);
+        let (top, end) = (flat.points[ef[ef.len() - 1]], open.points[eo[eo.len() - 1]]);
+        assert!(
+            (end[2] - top[2]).abs() < 1e-9
+                && (end[0].hypot(end[1]) - top[0].hypot(top[1])).abs() < 1e-6
+        );
+        let round = open.turn[eo[eo.len() - 1]] - (open.layers - 1) as f64;
+        assert!(round > 0.0 && round < 1.0, "part of a turn: {round}");
+        let before = start[2] - flat.points[last_turn(&flat, flat.layers - 1)[0] - 1][2];
+        let pitch = (end[2] - start[2]) / round;
+        assert!(
+            (pitch - before).abs() < 0.1 * before,
+            "pitch {pitch} after {before}"
+        );
+        for &i in &eo {
+            let u = open.turn[i] - (open.layers - 1) as f64;
+            let q = open.points[i];
+            assert!((q[2] - (start[2] + pitch * u)).abs() < 1e-6, "rises evenly");
+            assert!(open.flow[i] == 1.0 && !open.travel[i], "at full flow");
+        }
     }
 }
 
