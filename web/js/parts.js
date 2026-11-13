@@ -188,7 +188,10 @@ export function pitchOf(result, index) {
  * furthest out first, then inwards, so every part comes off a part still in place. Each turns
  * off its thread (`travel`: how far along it sat plus its straight start, at `pitch` a turn,
  * `out`: the way off, against the way the section runs) and then moves on without turning by
- * `gap` (its straight start: as long as the thread was), so the exploded parts stand apart.
+ * `gap`: far enough that the whole part, and whatever already came off it, stands clear of every
+ * part it would overlap (round the axis and in height), with a space as long as its thread
+ * between them (at least that far, where nothing's in the way). So the exploded parts stand
+ * apart, not only their threads.
  * @param {any} result
  * @returns {{ name: string, parent: string | null, out: number, travel: number, gap: number, pitch: number }[]}
  */
@@ -212,6 +215,47 @@ export function assemblySteps(result) {
     steps.push({ name, parent: parentOf(name), out: -info.inward, travel: info.along + info.hold, gap: info.hold, pitch, depth: depth(name), at: names.indexOf(name) });
   }
   steps.sort((a, b) => b.depth - a.depth || b.at - a.at);
+  // Each part's extent where it's shown, assembled: radius and height ranges (its bead's width
+  // round the radius).
+  const box = new Map();
+  for (const [name, { points, width }] of result.paths?.points ? sections(result) : []) {
+    if (!points.length) continue;
+    const rs = points.map((p) => p[0]);
+    const zs = points.map((p) => p[1]);
+    box.set(name, { r0: Math.min(...rs) - width / 2, r1: Math.max(...rs) + width / 2, z0: Math.min(...zs), z1: Math.max(...zs) });
+  }
+  // Taken apart in order, each part's whole move so far (riding along with what it's on).
+  const off = new Map(names.map((n) => [n, 0]));
+  for (const step of steps) {
+    const group = withMounted(result, step.name).filter((n) => box.has(n));
+    const others = names.filter((n) => box.has(n) && !group.includes(n));
+    const space = step.gap;
+    let move = step.travel + space;
+    // Further on while any of it overlaps another part (both round the axis and in height, with
+    // the space between): past that part, then check again.
+    for (let round = 0; round < 4 * names.length + 4; round++) {
+      let need = move;
+      for (const g of group) {
+        const a = box.get(g);
+        const az0 = a.z0 + off.get(g) + step.out * move;
+        const az1 = a.z1 + off.get(g) + step.out * move;
+        for (const o of others) {
+          const b = box.get(o);
+          if (a.r1 <= b.r0 || b.r1 <= a.r0) continue;
+          const bz0 = b.z0 + off.get(o);
+          const bz1 = b.z1 + off.get(o);
+          if (az1 + space <= bz0 + 1e-6 || bz1 + space <= az0 + 1e-6) continue;
+          // Past it: its far end plus the space, measured the way it moves.
+          const past = step.out > 0 ? bz1 + space - az0 : az1 - (bz0 - space);
+          need = Math.max(need, move + past);
+        }
+      }
+      if (need <= move + 1e-6) break;
+      move = need;
+    }
+    step.gap = move - step.travel;
+    for (const g of group) off.set(g, off.get(g) + step.out * move);
+  }
   return steps.map(({ name, parent, out, travel, gap, pitch }) => ({ name, parent, out, travel, gap, pitch }));
 }
 

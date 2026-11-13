@@ -5,6 +5,21 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-13 (night): exploded, whole shades stand apart
+
+**Why:** in the owner's lamp (a closed base with a long straight start, three cones on it, two
+going down around the base), exploded shades still sat inside each other: each moved on only by
+its thread's length, so only the threads stood apart.
+
+**What landed:** `assemblySteps` (web/js/parts.js) works out each shade's move in the order they
+come off: after its thread, on until the whole shade, with whatever already came off it, is
+clear of every shade it would overlap (radius ranges that meet, heights within the space), with a
+space as long as its thread; checked again after each move, so it passes a row of shades. The
+animation and the Plan use it as before. Test: a base, a cone around its start going down past
+the base's body, one going up (`settings.test.mjs`); checked in the browser with the owner's file.
+
+**Still open:** the 3D view doesn't refit when the lamp comes apart (Fit does).
+
 ## 2026-11-13 (evening): STEP export, and `thicken` for the printed wall
 
 **Why:** the owner wants to send a manufacturer the shape to slice their own way, as STEP
