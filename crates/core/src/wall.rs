@@ -2,7 +2,8 @@
 //! earlier on a spiral, else the nearest point of the layer before) to this one, square to the
 //! direction of travel. A preview tilts the nozzle and the beads' cross-sections along it, as a
 //! robot arm would hold the nozzle along the wall; printing never uses it (a Cartesian printer's
-//! nozzle stays upright).
+//! nozzle stays upright). On the bed it stays upright, whatever lies flat there (a closed shade's
+//! disc) too: it leans along the wall only as the wall leaves the bed.
 
 use crate::geom::{P3, add3, dot3, lerp3, scale3, sub3, unit3};
 use crate::toolpath::Toolpath;
@@ -11,7 +12,10 @@ use std::collections::HashMap;
 const UP: P3 = [0.0, 0.0, 1.0];
 
 /// One unit vector per point of `path`: up the wall there. Straight up where there's nothing
-/// underneath (the first layer or turn, travel ends) or where it can't tell.
+/// underneath (the first layer or turn, travel ends) or where it can't tell, and on the bed:
+/// within two of the widest beads above the lowest printed point, it eases from upright to along
+/// the wall (an S-curve), so a flat bottom prints flat and the nozzle only leans once the wall
+/// has left the bed.
 pub fn up_the_wall(path: &Toolpath) -> Vec<P3> {
     let n = path.points.len();
     let mut below: Vec<Option<P3>> = vec![None; n];
@@ -37,6 +41,23 @@ pub fn up_the_wall(path: &Toolpath) -> Vec<P3> {
             last = v;
         }
         out.push(last);
+    }
+    // Upright on the bed, along the wall once clear of it.
+    let printed = || (0..n).filter(|&i| !path.travel.get(i).copied().unwrap_or(true));
+    let floor = printed()
+        .map(|i| path.points[i][2])
+        .fold(f64::INFINITY, f64::min);
+    let ease = 2.0 * printed().map(|i| path.bead_of(i).0).fold(0.0, f64::max);
+    if floor.is_finite() && ease > 0.0 {
+        for (i, v) in out.iter_mut().enumerate() {
+            let t = ((path.points[i][2] - floor) / ease).clamp(0.0, 1.0);
+            let t = t * t * (3.0 - 2.0 * t);
+            if t < 1.0
+                && let Some(u) = unit3(add3(scale3(UP, 1.0 - t), scale3(*v, t)))
+            {
+                *v = u;
+            }
+        }
     }
     out
 }
@@ -79,7 +100,11 @@ fn under_on_spirals(path: &Toolpath, below: &mut [Option<P3>]) {
         } else {
             0.0
         };
-        below[i] = Some(lerp3(path.points[j], path.points[j + 1], u));
+        // Only a bead lower down is underneath: a flat spiral (a disc) has its last turn beside it.
+        let q = lerp3(path.points[j], path.points[j + 1], u);
+        if q[2] < path.points[i][2] - 1e-3 {
+            below[i] = Some(q);
+        }
     }
 }
 
@@ -212,5 +237,38 @@ mod tests {
         let leaning = up[second..].iter().filter(|v| v[2] < 0.999).count();
         assert!(leaning > 0, "its legs lean");
         assert!(up.iter().all(|v| v[2] > 0.0), "never downwards");
+    }
+
+    /// The owner's closed cone (13 Nov 2026): its disc lies flat on the bed, so the nozzle stands
+    /// upright over all of it (a disc's spiral has its last turn beside it, not underneath), and
+    /// on the fillet it leans out only as the wall leaves the bed, along the wall well clear of it.
+    #[test]
+    fn a_flat_bottom_prints_upright_and_the_wall_leans_once_off_the_bed() {
+        let p = lampshade(&[
+            ("opening", Literal::Number(350.0)),
+            ("transition", Literal::Number(151.0)),
+            ("throat", Literal::Number(40.0)),
+            ("fillet", Literal::Number(40.0)),
+            ("closed", Literal::Bool(true)),
+            ("closed_fillet", Literal::Number(30.0)),
+        ]);
+        let up = up_the_wall(&p);
+        let disc = p.points.iter().find(|q| q[2] > 0.0).unwrap()[2];
+        let on_disc: Vec<usize> = (0..p.points.len())
+            .filter(|&i| !p.travel[i] && p.points[i][2] == disc)
+            .collect();
+        assert!(on_disc.len() > 100);
+        assert!(on_disc.iter().all(|&i| up[i] == UP), "the disc: upright");
+        // Every point's lean grows with its height off the bed: under a bead's width, nearly
+        // upright; well clear of it, along the cone's wall (it leans about 46° there).
+        for (i, q) in p.points.iter().enumerate() {
+            let lean = up[i][2].clamp(-1.0, 1.0).acos().to_degrees();
+            if q[2] - disc < 1.0 {
+                assert!(lean < 5.0, "{i} at {:.2}: {lean:.1}°", q[2]);
+            }
+            if q[2] > 60.0 && q[2] < 120.0 && !p.travel[i] {
+                assert!((lean - 46.0).abs() < 8.0, "{i} at {:.2}: {lean:.1}°", q[2]);
+            }
+        }
     }
 }
