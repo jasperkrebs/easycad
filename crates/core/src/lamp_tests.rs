@@ -999,3 +999,52 @@ fn a_cone_in_out_can_run_straight_at_its_widest_with_filleted_corners() {
         }
     }
 }
+
+/// An open top ends at the thread's pitch: the owner's sphere (13 Nov 2026), printed wide edge
+/// down with 5 mm shade layers, its throat (the thread, 2.5 mm a turn) on top. What was left
+/// below the top (0.68 mm) was a whole turn rising only that much, so the spiral looked to run
+/// down at the end; now the last turn rises at the pitch and stops part way round on the top.
+#[test]
+fn an_open_tops_last_turn_keeps_the_pitch() {
+    use Literal::{Bool, Number, Text};
+    let lampshade = include_str!("../../../web/templates/lampshade.easycad");
+    let src = set_values(
+        lampshade,
+        &[
+            ("shape".into(), Text("sphere".into())),
+            ("throat".into(), Number(35.0)),
+            ("fillet".into(), Number(60.0)),
+            ("opening".into(), Number(178.0)),
+            ("transition".into(), Number(80.0)),
+            ("sphere".into(), Number(300.0)),
+            ("lip".into(), Bool(true)),
+            ("lip_length".into(), Number(0.0)),
+            ("lip_fillet".into(), Number(32.0)),
+            ("wide_down".into(), Bool(true)),
+            ("shade_layer".into(), Number(5.0)),
+            ("shade_line".into(), Number(10.0)),
+            ("strength".into(), Number(60.0)),
+            ("steep".into(), Number(0.4)),
+        ],
+    )
+    .unwrap();
+    let e = run(&src);
+    assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+    let p = &e.prints[0].path;
+    let n = p.points.len() - 1;
+    let last = p.turn[n];
+    let whole = last.floor();
+    assert!(
+        last - whole > 0.05 && last - whole < 0.95,
+        "part of a turn: {last}"
+    );
+    // Where each of the last turns starts, and where the spiral ends: a pitch a turn throughout.
+    let z_at = |k: f64| {
+        let i = (0..=n).find(|&i| p.turn[i] >= k - 1e-9).unwrap();
+        p.points[i][2]
+    };
+    let rise = z_at(whole) - z_at(whole - 1.0);
+    assert!((rise - 2.5).abs() < 1e-6, "{rise}");
+    let pitch = (p.points[n][2] - z_at(whole)) / (last - whole);
+    assert!((pitch - 2.5).abs() < 1e-6, "the last turn's pitch: {pitch}");
+}

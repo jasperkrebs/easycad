@@ -1073,7 +1073,9 @@ fn the_lampshade_slices_along_the_surface_on_request() {
         "{}",
         widest_step(&surface)
     );
-    assert!(widest_step(&height) > 12.0, "{}", widest_step(&height));
+    // By height the turns spread far apart where the bell runs flat (here 7.3 mm, about three
+    // layers; an open top's last turn rises at the pitch, no longer a whole flat turn further).
+    assert!(widest_step(&height) > 6.0, "{}", widest_step(&height));
     // Along the surface every bead is the line's 6 mm; by height the rim's are widened.
     let widest_bead = |p: &Toolpath| {
         (1..p.points.len())
@@ -1111,9 +1113,12 @@ fn the_lampshade_slices_along_the_surface_on_request() {
         surface.layers
     );
     assert!(widest_step(&squeezed) < 2.5 + 1e-6);
-    // Both reach the rim (75 mm round at 72 mm): by height exactly; along the surface within a
-    // quarter of a step (a last bit shorter than that is left off, as by height).
-    let rim = |p: &Toolpath| *turn_starts(p).last().unwrap();
+    // Both reach the rim (75 mm round at 72 mm), where the spiral ends (an open top's last turn
+    // stops part way round): by height exactly; along the surface within a quarter of a step.
+    let rim = |p: &Toolpath| {
+        let q = p.points[p.points.len() - 1];
+        (p.turn[p.points.len() - 1], q[0].hypot(q[1]), q[2])
+    };
     let (s, h) = (rim(&surface), rim(&height));
     assert!(
         (h.1 - 75.0).abs() < 1e-6 && (h.2 - 72.0).abs() < 1e-6,

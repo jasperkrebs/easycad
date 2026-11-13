@@ -1131,6 +1131,9 @@ struct Turn {
     z: f64,
     dz: f64,
     width: f64,
+    /// How much of a whole turn it goes round: 1, or less for an open top's last turn, which
+    /// rises at the same pitch as the others and stops where it reaches the top.
+    frac: f64,
 }
 
 /// A profile of revolution: radius against height, for [`vase_revolve`].
@@ -1332,10 +1335,21 @@ pub fn vase_revolve(
         if zc + dz > top {
             dz = top - zc;
         }
-        if dz < rise * 0.25 {
+        // What's left at the top, less than a turn's rise: with a flat closing turn, a whole
+        // turn that rises only that much (or nothing, under a quarter of a rise: EasyGCode's
+        // whole layers); with an open top, part of a turn at the same pitch as the rest, so the
+        // spiral doesn't flatten out in its last turn (not the opening turn, which ramps).
+        let partial = !flat_top && !turns.is_empty() && dz < rise - 1e-9;
+        if dz < rise * 0.25 && !(partial && dz > 1e-6) {
             break;
         }
-        turns.push(Turn { z: zc, dz, width });
+        let frac = if partial { dz / rise } else { 1.0 };
+        turns.push(Turn {
+            z: zc,
+            dz,
+            width,
+            frac,
+        });
         zc += dz;
         too_many(turns.len(), max_points / 24, "use a larger layer height")?;
     }
@@ -1357,11 +1371,16 @@ pub fn vase_revolve(
         .iter()
         .enumerate()
         .map(|(i, t)| {
-            steps_for(if i == 0 {
+            let whole = steps_for(if i == 0 {
                 r_first
             } else {
                 pos(t.z)[0].max(pos(t.z + t.dz)[0])
-            })
+            });
+            if t.frac < 1.0 {
+                ((whole as f64 * t.frac).ceil() as usize).max(2)
+            } else {
+                whole
+            }
         })
         .collect();
     let cap = if flat_top { steps_for(r_top) } else { 0 };
@@ -1402,10 +1421,16 @@ pub fn vase_revolve(
     )?;
     path.push(at(r_first, 0.0, z_start), true, 0.0, 0.0, start_part);
     for (i, (t, &steps)) in turns.iter().zip(&counts).enumerate() {
-        let part = part_of(&mut path, settings(t.width, t.dz, t.z + t.dz / 2.0)?)?;
+        // A part turn's bead is a whole turn's (it rises at the same pitch).
+        let part = part_of(
+            &mut path,
+            settings(t.width, t.dz / t.frac, t.z + t.dz / 2.0)?,
+        )?;
         let n = steps as f64;
         for s in 1..=steps {
             let u = s as f64 / n;
+            // Round as far as the turn goes (a part turn stops short of the seam).
+            let ua = u * t.frac;
             let qp = t.z + t.dz * u;
             let (r, zp, ramp) = if i == 0 {
                 // The ramp turn rises at the radius the next one starts at (by height: exactly
@@ -1420,7 +1445,7 @@ pub fn vase_revolve(
                 let [r, z] = pos(qp);
                 (r, z, 1.0)
             };
-            path.push(at(r, u, zp), false, ramp, i as f64 + u, part);
+            path.push(at(r, ua, zp), false, ramp, i as f64 + ua, part);
         }
         if i == 0 {
             // The fan comes on after the ramp turn.

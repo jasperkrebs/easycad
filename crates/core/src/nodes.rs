@@ -1538,7 +1538,7 @@ pub static NODES: &[Node] = &[
             ),
         ],
         output: "Toolpath",
-        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. With `surface: true` the turns step along the wall instead of up it (slicing along the surface), so a shade that opens out flat prints as rings side by side, arc-overhang style. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed (with `steady_start`, at a steady flow: faster where the bead is thin), a flat closing turn ramps it down (or, with `flat_top: false`, the spiral stops at full flow as it reaches the top: an open rim).",
+        doc: "Vase mode around the Z axis following a profile, turn by turn: EasyGCode's lampshade. With `surface: true` the turns step along the wall instead of up it (slicing along the surface), so a shade that opens out flat prints as rings side by side, arc-overhang style. Each turn has as many points as its size needs and reads the radius from the profile at each point; the rise, width and flow can change from turn to turn (fields of height, e.g. from `graph`), which is how overhang compensation and flow ramps work. The first turn ramps extrusion up on the bed (with `steady_start`, at a steady flow: faster where the bead is thin), a flat closing turn ramps it down (or, with `flat_top: false`, the spiral stops at full flow as it reaches the top, its last turn at the same pitch as the rest and part way round: an open rim).",
         run: Run::Op(vase_revolve),
     },
     Node {
