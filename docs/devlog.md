@@ -5,6 +5,18 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-13 (later still): a cone in-out's fillets meet its lines without a kink
+
+**Why:** the owner's cone in-out had a small kink where each fillet met a straight line. Its
+profile was three points (start, widest, end) with the widest point's lean the average of the
+two lines', so a fillet that met a line read a lean between the line's and that average: 45°
+on a 53° line, an 8° kink.
+
+**What landed:** the widest point is there twice, once with each line's lean, so a fillet reads
+its line's own lean (Lamp and Lampshade). Test
+`a_cone_in_outs_fillets_meet_its_lines_without_a_kink` (both templates; it failed before). A
+saved project keeps its own copy of the recipe: it gets the fix from a fresh template.
+
 ## 2026-11-13 (late): along the wall, a flat bottom stays flat
 
 **Why:** with the nozzle tilted or along the wall, a closed shade's bottom looked wrong: its
