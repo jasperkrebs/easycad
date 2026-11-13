@@ -247,6 +247,66 @@ test("a brim (a print aid) isn't in the plan, so it takes no face", () => {
   assert.ok(freePorts(result, sections(result))[0].along > 0);
 });
 
+test('exploded, every shade stands clear of the ones it was inside or around, not only its thread', () => {
+  // The owner's lamp (13 Nov): a base shade on the socket with a long straight start (r 29, z
+  // 0..122) and a body below it (r 30..100, z -100..0); a cone screwed on 86 mm along its start,
+  // going down (its own start r 35, z 86..106, its body r 35..175 down to z -40); a small cone
+  // further up the start going up (r 35..80, z 106..126 then up to 180).
+  const param = (name, value) => ({ name, value, kind: 'number' });
+  const parts = {
+    main: [[29, 122], [29, 0], [60, -50], [100, -100]],
+    cone: [[35, 106], [35, 86], [100, 40], [175, -40]],
+    top: [[35, 0], [35, 20], [80, 74]],
+  };
+  const points = [];
+  const starts = [0];
+  for (const pts of Object.values(parts)) {
+    for (const [r, z] of pts) points.push(r, 0, z);
+    starts.push(points.length / 3);
+  }
+  const result = {
+    partList: Object.keys(parts).map((name) => ({ name })),
+    prints: Object.keys(parts).map((name) => ({ name })),
+    params: [
+      param('joint', 0),
+      param('main.mount', 'on_socket'),
+      param('main.along', 0),
+      param('cone.mount', 'main.start_out'),
+      param('cone.along', 86),
+      param('cone.start_len', 20),
+      param('top.mount', 'main.start_out'),
+      param('top.along', 0),
+      param('top.start_len', 20),
+    ],
+    ports: [
+      { name: 'on_socket', part: '', value: [23, 0, 1, 100000, 1, 1] },
+      { name: 'main.start_out', part: 'main', value: [35, 0, 1, 122, 0, 1] },
+    ],
+    paths: { points: new Float32Array(points), starts, widths: new Float32Array(points.length / 3).fill(6), heights: new Float32Array(points.length / 3).fill(2.5) },
+    parts: { paths: [0, 1, 2] },
+  };
+  // Make "top" sit as the drawing has it: at the start's end, going up (shown z 106..180).
+  result.paths.points.forEach((v, i) => {
+    if (i % 3 === 2 && i / 3 >= starts[2]) result.paths.points[i] = v + 106;
+  });
+  const steps = assemblySteps(result);
+  const end = assemblyMotion(steps, 1);
+  const box = (name) => {
+    const zs = parts[name].map(([, z]) => z + (name === 'top' ? 106 : 0) + (end.get(name)?.dz ?? 0));
+    return [Math.min(...zs), Math.max(...zs)];
+  };
+  // The cone goes off the start's end (down: the start runs up from its end at z 0): past the
+  // whole base, a thread's length (20 mm) below it.
+  const [cz0, cz1] = box('cone');
+  const [mz0, mz1] = box('main');
+  assert.ok(cz1 <= mz0 - 20 + 1e-6, `cone ${cz0}..${cz1} clear below main ${mz0}..${mz1}`);
+  // The one at the top still comes off by its thread and a thread's length at least.
+  const top = steps.find((s) => s.name === 'top');
+  assert.ok(top.gap >= 20 - 1e-6);
+  const [tz0] = box('top');
+  assert.ok(tz0 >= mz1 + 20 - 1e-6 || box('top')[1] <= mz0 - 20, `top ${box('top')} clear of main ${mz0}..${mz1}`);
+});
+
 test("a shade's new shape brings its sizes for the settings it didn't use before", () => {
   const port = [30, 100, -1, 20, 0, 1];
   assert.deepEqual(shapeSwitch('cone', 'sphere', port), { sphere: 214 });
