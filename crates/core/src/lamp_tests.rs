@@ -859,3 +859,66 @@ fn a_cone_in_outs_fillets_meet_its_lines_without_a_kink() {
         );
     }
 }
+
+/// A bell in-out with a straight band at its widest (`widest_len`): out, straight down the band
+/// at the widest radius, then in, the wall's lean never jumping (level where the curves meet the
+/// band), in the lamp and the lampshade, open, closed or with a straight end. 0: no band.
+#[test]
+fn a_bell_in_out_can_run_straight_at_its_widest() {
+    use Literal::{Bool, Number, Text};
+    let nums = |v: Option<&crate::value::Value>| match v {
+        Some(crate::value::Value::List(l)) => l
+            .items
+            .iter()
+            .map(|x| match x {
+                crate::value::Value::Number(n) => *n,
+                _ => f64::NAN,
+            })
+            .collect::<Vec<f64>>(),
+        other => panic!("{other:?}"),
+    };
+    let lampshade = include_str!("../../../web/templates/lampshade.easycad");
+    for (template, part, end) in [(LAMP, "main.", "end_straight"), (lampshade, "", "lip")] {
+        let own = |name: &str| format!("{part}{name}");
+        for (band, extra) in [(60.0, ""), (0.0, ""), (60.0, "closed"), (60.0, "end")] {
+            let mut values = vec![
+                (own("shape"), Text("bell in-out".into())),
+                (own("widest"), Number(240.0)),
+                (own("inout_h"), Number(220.0)),
+                (own("widest_len"), Number(band)),
+            ];
+            match extra {
+                "closed" => values.push((own("closed"), Bool(true))),
+                "end" => values.push((own(end), Bool(true))),
+                _ => {}
+            }
+            let src = set_values(template, &values).unwrap();
+            let (e, v) = crate::eval::step_values(&src, Quality::Final);
+            assert!(
+                e.diagnostics.is_empty(),
+                "{part} {band} {extra}: {:?}",
+                e.diagnostics
+            );
+            let (r, z, l) = (
+                nums(v.get(&own("bio_r"))),
+                nums(v.get(&own("bio_z"))),
+                nums(v.get(&own("bio_l"))),
+            );
+            // At the widest radius (120) it runs straight for the band's length (a point at
+            // each end of it with no band: one point there).
+            let at: Vec<f64> = (0..r.len())
+                .filter(|&i| (r[i] - 120.0).abs() < 1e-9)
+                .map(|i| z[i])
+                .collect();
+            assert_eq!(at.len(), if band > 0.0 { 2 } else { 1 }, "{part} {band}");
+            assert!((at[at.len() - 1] - at[0] - band).abs() < 1e-9);
+            assert!(z.windows(2).all(|w| w[1] >= w[0]), "rises");
+            let jump = l
+                .windows(2)
+                .map(|w| (w[1] - w[0]).abs())
+                .fold(0.0, f64::max);
+            assert!(jump < 10.0, "{part} {band}: the lean jumps {jump}°");
+            assert!(!e.prints.is_empty() || e.print.is_some());
+        }
+    }
+}

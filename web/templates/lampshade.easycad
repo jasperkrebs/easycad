@@ -21,6 +21,7 @@ param fillet     = 10 mm   in 0..100 step 1         "Fillet radius"  when not sh
 param opening    = 150 mm  in 10..400 step 1        "Bottom opening diameter"  when shape = ["cone", "bell", "dome", "sphere", "flat sphere", "own"]
 param widest     = 200 mm  in 10..600 step 1        "Widest diameter"  when shape = ["bell in-out", "cone in-out"]
 param widest_at  = 50 %    in 5..95                 "Widest at (of the height)"  when shape = ["bell in-out", "cone in-out"]
+param widest_len = 0 mm    in 0..1000 step 1        "Straight at the widest (0: none)"  when shape = "bell in-out"
 param end_d      = 0 mm    in 0..600 step 1         "End diameter (0: as the throat)"  when shape = ["bell in-out", "cone in-out"]
 param transition = 52 mm   in 1..400 step 1         "Transition height"  when shape = ["cone", "bell", "dome", "sphere", "flat sphere", "own"]
 param inout_h    = 220 mm  in 10..1000 step 1       "Height"  when shape = ["bell in-out", "cone in-out"]
@@ -146,12 +147,18 @@ own_l     = atan2(item(own_rr, own_next) - item(own_rr, own_prev), item(own_zz, 
 r_w      = widest / 2
 r_e      = pick(end_d, end_d / 2, r_t)
 w_at     = clamp(widest_at, 0.05, 0.95)
-bio_t    = series(0, 1, 97) / 96
-bio_up   = clamp(bio_t / w_at, 0, 1)
-bio_dn   = clamp((bio_t - w_at) / (1 - w_at), 0, 1)
-bio_r    = r_t + (r_w - r_t) * smoothstep(bio_up) + (r_e - r_w) * smoothstep(bio_dn)
-bio_z    = h * bio_t
-bio_l    = atan((r_w - r_t) * 6 * bio_up * (1 - bio_up) / (h * w_at) + (r_e - r_w) * 6 * bio_dn * (1 - bio_dn) / (h * (1 - w_at)))
+# With a straight band at the widest (`widest_len`): out, straight down the band, then in;
+# the curves share the rest of the height, `widest_at` of it below the band.
+bio_band = clamp(widest_len, 0, 0.9 * h)
+bio_on   = greater(bio_band, 0.000000001)
+bio_hc   = h - bio_band
+bio_hu   = bio_hc * w_at
+bio_hd   = bio_hc * (1 - w_at)
+bio_u    = series(0, 1, 49) / 48
+bio_d    = pick(bio_on, series(0, 1, 49), series(1, 1, 48)) / 48
+bio_r    = flatten([r_t + (r_w - r_t) * smoothstep(bio_u), r_w + (r_e - r_w) * smoothstep(bio_d)])
+bio_z    = flatten([bio_hu * bio_u, bio_hu + bio_band + bio_hd * bio_d])
+bio_l    = flatten([atan((r_w - r_t) * 6 * bio_u * (1 - bio_u) / bio_hu), atan((r_e - r_w) * 6 * bio_d * (1 - bio_d) / bio_hd)])
 # Cone in-out: straight out to the widest diameter, straight in to the end. The widest point
 # is there twice, once with each line's lean, so a fillet anywhere along a line reads that
 # line's own lean (and meets it without a kink).
@@ -376,15 +383,16 @@ mark_start   = polyline(point([r_t, r_t], 0, [0, pick(is_tube, length, throat)])
 mark_fillet  = pick(blended, polyline(point(arc_r, 0, arc_z + shift)), polyline(point([r_t, r_t + 0.001], 0, [throat, throat]))) |> place(z: as_printed, flip: turned)
 mark_shade   = polyline(point(cur_r, 0, cur_z + shift)) |> place(z: as_printed, flip: turned)
 mark_opening = polyline(point([0, r_open], 0, [shade_top, shade_top])) |> place(z: as_printed, flip: turned)
-mark_widest  = polyline(point([0, r_w], 0, [h * w_at + shift, h * w_at + shift])) |> place(z: as_printed, flip: turned)
+w_mid        = pick(less(abs(k_shape - 6), 0.5), bio_hu + bio_band / 2, h * w_at)
+mark_widest  = polyline(point([0, r_w], 0, [w_mid + shift, w_mid + shift])) |> place(z: as_printed, flip: turned)
 mark_height  = polyline(point([side_x, side_x], 0, [shift, shade_top])) |> place(z: as_printed, flip: turned)
 mark_end     = polyline(point([r_end, r_end], 0, [top_z - end_eff, top_z])) |> place(z: as_printed, flip: turned)
 mark_end_arc = polyline(point(arc2_r, 0, cur_top - arc2_z + shift)) |> place(z: as_printed, flip: turned)
 mark mark_start for throat, socket, fit, length "Throat"
 mark pick(not_tube, mark_fillet, []) for fillet "Fillet"
-mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, end_d, max_angle, sphere, flatness, own_at, own_r "Shade"
+mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, widest_len, end_d, max_angle, sphere, flatness, own_at, own_r "Shade"
 mark pick(not_tube, mark_opening, []) for opening, end_d "Opening"
-mark pick(inout, mark_widest, []) for widest, widest_at "Widest"
+mark pick(inout, mark_widest, []) for widest, widest_at, widest_len "Widest"
 mark pick(not_tube, mark_height, []) for transition, inout_h "Height"
 mark pick(lip_on * lip_long, mark_end, []) for lip_length, lip "Lip"
 mark pick(lip_on * lip_arc, mark_end_arc, []) for lip_fillet, fillet "Lip fillet"

@@ -5,6 +5,19 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-14: a bell in-out can run straight at its widest
+
+**Why:** the owner likes the bell in-out and wanted a straight section before it moves in again.
+
+**What landed:** `widest_len` ("Straight at the widest (0: none)", bell in-out only) in the Lamp
+and the Lampshade: out along its S-curve, straight down a band of that length at the widest
+diameter, then in along the other; the two curves share the rest of the height (`widest_at` of
+it below the band), level where they meet the band, so the wall's lean never jumps. The Widest
+mark sits at the band's middle and leads to the setting too. Each curve is now 49 points of its
+own (it was 97 over the whole height; the same curves). Test
+`a_bell_in_out_can_run_straight_at_its_widest` (both templates; open, closed, with a straight
+end; 0: no band).
+
 ## 2026-11-13 (later still): a cone in-out's fillets meet its lines without a kink
 
 **Why:** the owner's cone in-out had a small kink where each fillet met a straight line. Its
