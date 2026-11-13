@@ -5,6 +5,31 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-13 (later still): a cone in-out's fillets meet its lines without a kink
+
+**Why:** the owner's cone in-out had a small kink where each fillet met a straight line. Its
+profile was three points (start, widest, end) with the widest point's lean the average of the
+two lines', so a fillet that met a line read a lean between the line's and that average: 45°
+on a 53° line, an 8° kink.
+
+**What landed:** the widest point is there twice, once with each line's lean, so a fillet reads
+its line's own lean (Lamp and Lampshade). Test
+`a_cone_in_outs_fillets_meet_its_lines_without_a_kink` (both templates; it failed before). A
+saved project keeps its own copy of the recipe: it gets the fix from a fresh template.
+
+## 2026-11-13 (late): along the wall, a flat bottom stays flat
+
+**Why:** with the nozzle tilted or along the wall, a closed shade's bottom looked wrong: its
+disc's spiral had its last turn beside each point, not underneath, so the nozzle lay flat across
+the disc, and the wall's first turns on it leant over as far.
+
+**What landed** (`crates/core/src/wall.rs`): one turn earlier only counts as the bead underneath
+when it's lower, so a flat spiral stands upright; and within two of the widest beads above the
+lowest printed point the direction eases (an S-curve) from upright to along the wall, so the
+nozzle leans only once the wall has left the bed. A view only; the G-code is unchanged. Test
+`a_flat_bottom_prints_upright_and_the_wall_leans_once_off_the_bed` (the owner's closed cone; it
+failed before).
+
 ## 2026-11-13 (night): exploded, whole shades stand apart
 
 **Why:** in the owner's lamp (a closed base with a long straight start, three cones on it, two

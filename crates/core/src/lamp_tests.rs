@@ -819,3 +819,43 @@ fn a_lamp_shade_eases_back_to_the_thread_at_its_straight_end() {
         assert!(warnings(&e).is_empty(), "{key}: {:?}", e.diagnostics);
     }
 }
+
+/// A cone in-out's fillets meet its straight lines tangent: the start's fillet ends at the
+/// outward line's lean, the straight end's at the inward line's (the owner's lamp, 13 Nov 2026:
+/// both ended 8° short, at the average of the two lines' leans, a kink where they met).
+#[test]
+fn a_cone_in_outs_fillets_meet_its_lines_without_a_kink() {
+    use Literal::{Bool, Number, Text};
+    let num = |v: Option<&crate::value::Value>| match v {
+        Some(crate::value::Value::Number(n)) => *n,
+        other => panic!("{other:?}"),
+    };
+    let lampshade = include_str!("../../../web/templates/lampshade.easycad");
+    for (template, part, end) in [(LAMP, "main.", "end_straight"), (lampshade, "", "lip")] {
+        let own = |name: &str| format!("{part}{name}");
+        let src = set_values(
+            template,
+            &[
+                (own("shape"), Text("cone in-out".into())),
+                (own("fillet"), Number(41.0)),
+                (own("widest"), Number(330.0)),
+                (own("inout_h"), Number(137.0)),
+                (own(end), Bool(true)),
+            ],
+        )
+        .unwrap();
+        let (e, v) = crate::eval::step_values(&src, Quality::Final);
+        assert!(e.diagnostics.is_empty(), "{part}: {:?}", e.diagnostics);
+        let (a1, a2) = (num(v.get(&own("coi_a1"))), num(v.get(&own("coi_a2"))));
+        assert!(a1 > 40.0 && a2 < -40.0, "{a1} {a2}");
+        assert!(num(v.get(&own("blended"))) == 1.0 && num(v.get(&own("lip_arc"))) == 1.0);
+        assert!(
+            (num(v.get(&own("p_l"))) - a1).abs() < 1e-9,
+            "{part}: the start's fillet"
+        );
+        assert!(
+            (num(v.get(&own("q_l"))) + a2).abs() < 1e-9,
+            "{part}: the end's fillet"
+        );
+    }
+}

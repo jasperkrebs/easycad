@@ -170,12 +170,14 @@ component shade "Shade"
   bio_r    = r_t + (r_w - r_t) * smoothstep(bio_up) + (r_e - r_w) * smoothstep(bio_dn)
   bio_z    = h * bio_t
   bio_l    = atan((r_w - r_t) * 6 * bio_up * (1 - bio_up) / (h * w_at) + (r_e - r_w) * 6 * bio_dn * (1 - bio_dn) / (h * (1 - w_at)))
-  # Cone in-out: straight out to the widest diameter, straight in to the end.
+  # Cone in-out: straight out to the widest diameter, straight in to the end. The widest point
+  # is there twice, once with each line's lean, so a fillet anywhere along a line reads that
+  # line's own lean (and meets it without a kink).
   coi_a1   = atan2(r_w - r_t, h * w_at)
   coi_a2   = atan2(r_e - r_w, h * (1 - w_at))
-  coi_r    = [r_t, r_w, r_e]
-  coi_z    = [0, h * w_at, h]
-  coi_l    = [coi_a1, (coi_a1 + coi_a2) / 2, coi_a2]
+  coi_r    = [r_t, r_w, r_w, r_e]
+  coi_z    = [0, h * w_at, h * w_at, h]
+  coi_l    = [coi_a1, coi_a1, coi_a2, coi_a2]
 
   # The chosen shade (a tube is the cone's arithmetic, replaced below by a straight wall).
   k_shape = index_of(["cone", "bell", "dome", "sphere", "flat sphere", "own", "bell in-out", "cone in-out", "tube"], shape)
