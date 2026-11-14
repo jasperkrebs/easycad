@@ -95,7 +95,9 @@ The lampshade's profile code, generalised:
 - where it sits: on a port, going up or down, and how far along the straight section it sits
   (0: flush with its end);
 - ports: start inside, start outside, end inside, end outside (the start's inside is taken
-  when the shade is on the socket; the end's only when there's a straight end).
+  when the shade is on the socket; the end's only when there's a straight end); a tube with
+  wings also wings outside or inside, where its full wings take a thread
+  ([tube-with-wings.md](tube-with-wings.md)).
 
 The single-shade lampshade template has the same shade arithmetic (since 12 Nov 2026: every
 shape, a lip on any shape, the closed end), with its own setting names (`throat`, `lip`), and

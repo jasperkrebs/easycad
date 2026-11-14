@@ -1183,3 +1183,94 @@ fn a_tube_with_wings_is_a_shade_too() {
         radius(&cone.points[5])
     );
 }
+
+/// Along a tube with wings a face takes a thread only where it rises exactly a pitch a turn: the
+/// tube wall's free face when it rises along the tube wall; the deepest wings' innermost (or
+/// outermost) wall when it rises along the wings, at a whole 100 % (or 200 %) of full turns; and
+/// only along the full wings (not while they fade). Rising along the whole layer, no face does:
+/// no port, so nothing can be screwed on there.
+#[test]
+fn wings_take_a_thread_only_where_they_rise_a_pitch_a_turn() {
+    use Literal::Text;
+    // The first shade, on a custom 80 mm thread (room for more walls inside), a 200 mm tube with
+    // wings from its 20 mm start, fading in over 60 mm, full to the top: full wings from 60 mm
+    // above the start (80 mm up) to the top, 120 mm.
+    let tube = |settings: &str| {
+        LAMP.replace(
+            "param socket       = \"E27\"",
+            "param socket       = \"custom\"",
+        )
+        .replace("param thread_d     = 40 mm", "param thread_d     = 80 mm")
+        .replace(
+            "part main = shade(shape: \"sphere\", end_straight: true)",
+            &format!("part main = shade(shape: \"tube with wings\", {settings})"),
+        )
+    };
+    // The tube's own radius: half a line outside the 80 mm thread.
+    let r = 43.0;
+    let ports = |settings: &str| {
+        let e = run(&tube(settings));
+        assert!(warnings(&e).is_empty(), "{settings}: {:?}", e.diagnostics);
+        (
+            port(&e, "main.wings_out").to_vec(),
+            port(&e, "main.wings_in").to_vec(),
+        )
+    };
+    // Along the whole layer: nothing, inside or out.
+    for side in ["inside", "outside"] {
+        let (out, inn) = ports(&format!("wings: 100, wing_side: \"{side}\""));
+        assert_eq!((out[3], inn[3]), (0.0, 0.0), "{side}");
+    }
+    // Along the tube wall: its free face, a line plus the fit off it, all of the full wings.
+    let (out, inn) = ports("wings: 100, wing_rise: \"tube wall\"");
+    assert!(
+        close(out[0], r + 6.0) && close(out[3], 120.0) && inn[3] == 0.0,
+        "{out:?}"
+    );
+    assert!(close(out[1], 20.0 + 60.0) && out[2] == 1.0, "{out:?}");
+    let (out, inn) = ports("wings: 100, wing_side: \"outside\", wing_rise: \"tube wall\"");
+    assert!(
+        close(inn[0], r - 6.0) && close(inn[3], 120.0) && out[3] == 0.0,
+        "{inn:?}"
+    );
+    // Fading out over 40 mm, only up to where the fade starts.
+    let (out, _) = ports("wings: 100, wing_rise: \"tube wall\", wing_out: 40");
+    assert!(close(out[3], 80.0), "{out:?}");
+    // Along the wings: the deepest wings' far wall, at 100 % or 200 %, not 150 %.
+    let (out, inn) = ports("wings: 100, wing_rise: \"wings\"");
+    assert!(
+        close(inn[0], r - 12.0 - 6.0) && close(inn[3], 120.0) && out[3] == 0.0,
+        "{inn:?}"
+    );
+    let (out, inn) = ports("wings: 100, wing_side: \"outside\", wing_rise: \"wings\"");
+    assert!(
+        close(out[0], r + 12.0 + 6.0) && close(out[3], 120.0) && inn[3] == 0.0,
+        "{out:?}"
+    );
+    let (_, inn) = ports("wings: 200, wing_rise: \"wings\"");
+    assert!(
+        close(inn[0], r - 24.0 - 6.0) && close(inn[3], 120.0),
+        "{inn:?}"
+    );
+    let (out, inn) = ports("wings: 150, wing_rise: \"wings\"");
+    assert_eq!((out[3], inn[3]), (0.0, 0.0));
+    // A tube screwed onto the wall's free face sits a line outside it, along the full wings,
+    // and nothing runs into anything.
+    let src = with_part(
+        &tube("wings: 100, wing_rise: \"tube wall\""),
+        "sleeve",
+        &[
+            ("mount", Text("main.wings_out".into())),
+            ("shape", Text("tube".into())),
+            ("along", Literal::Number(30.0)),
+            ("length", Literal::Number(60.0)),
+        ],
+    );
+    let e = run(&src);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let sleeve = &e.prints[1].path;
+    assert!(close(
+        sleeve.points[5][0].hypot(sleeve.points[5][1]),
+        r + 6.0
+    ));
+}

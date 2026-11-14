@@ -106,6 +106,24 @@ The Lamp's shade has the same shape and settings (the "Wings" group), with these
 - the end ports are at the end's radius: wider, when the tube widens to keep the layer length;
 - it always prints start down (no wide edge down, no closed end) and never starts on the bed.
 
+### Where it takes a thread
+
+A face takes a thread only where it's a true helix: a wall that rises exactly a pitch a turn, at
+one radius, all the way round. So a tube with wings offers ports (and the Plan offers add
+buttons) only there:
+
+| Where | Faces with a port | Why |
+|---|---|---|
+| Straight start | outside, inside ("Start") | the vase spiral |
+| Straight end | outside, inside ("End") | the wings have stopped: plain turns a pitch apart |
+| Full wings, rising along the **whole layer** | none | no wall rises a pitch a turn |
+| Full wings, rising along the **tube wall** | the wall's free face ("Wings, outside" with the wings inside, "Wings, inside" with them outside), a line plus the fit off it | the tube wall is a helix |
+| Full wings, rising along the **wings** | the deepest wings' far wall (inside: its inner face; outside: its outer face), only at a whole 100 %, 200 % or 300 % with full turns | that wall is a helix, with a one-line slot at each tip; at 150 % the deepest wings only go half way round |
+| While the wings fade in or out | none | the rise is blending, and the tube may be widening |
+
+The wings ports run along the full wings: from the end of the fade-in to the start of the fade-out
+(or the straight end, or the top), radius and length as above, length 0 (no port) otherwise.
+
 ## How the recipe does it
 
 General steps only (no new engine step). Per layer and wing level, the wing's size, the turns'

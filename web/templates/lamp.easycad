@@ -543,7 +543,8 @@ component shade "Shade"
   # Can the deepest wings, at full, reach their full depth, or do they stay dents (seams too close
   # together for their turns)?
   w_lastB  = r_t - w_sig * 2 * w_s * (w_J - 1)
-  w_c      = graph(w_gz, g_c, w_zl) |> require(1 - winged * greater(wings, 0) * less(clamp(wings - w_J + 1, 0, 1) * (w_d / 2 - asin(clamp(w_s / max(0.001, w_lastB - 1.5 * w_sig * w_s), 0, 1))), asin(clamp(w_s / max(0.001, w_lastB - 0.5 * w_sig * w_s), 0, 1))), "These wings stay dents, never full turns: more wings, fewer seams, a wider tube or a narrower line", warn: true)
+  w_dent   = less(clamp(wings - w_J + 1, 0, 1) * (w_d / 2 - asin(clamp(w_s / max(0.001, w_lastB - 1.5 * w_sig * w_s), 0, 1))), asin(clamp(w_s / max(0.001, w_lastB - 0.5 * w_sig * w_s), 0, 1)))
+  w_c      = graph(w_gz, g_c, w_zl) |> require(1 - winged * greater(wings, 0) * w_dent, "These wings stay dents, never full turns: more wings, fewer seams, a wider tube or a narrower line", warn: true)
   w_R      = graph(w_gz, g_R, w_zl)
 
   # Per layer and wing level (`q`: layer k, level j; level j's tube wall is j wall pairs in): a wing
@@ -750,6 +751,20 @@ component shade "Shade"
   port start_in  = [r_t - line - joint_fit, z0, s, pick(m_socket, 0, pick(greater(m_side, 0) * (1 - plain), 0, start_at)), 0, -1] "Start, inside"
   port end_out   = [r_end + line + joint_fit, z0 + s * top_z, -s, end_len_at, 0, 1] "End, outside"
   port end_in    = [r_end - line - joint_fit, z0 + s * top_z, -s, end_len_at, 0, -1] "End, inside"
+  # A tube with wings, along its full wings (between the fade-in and the fade-out): a face takes
+  # a thread only where it rises exactly a pitch a turn. Rising along the tube wall, the wall's
+  # free face (outside, with the wings inside; inside, with them outside); rising along the
+  # wings, the deepest wings' innermost (or outermost) wall, when they're whole (100, 200 or
+  # 300 %) and their turns full (a one-line slot at each tip). Rising along the whole layer no
+  # wall is a helix, and while the wings fade neither is: no port.
+  th_lo    = min(w_in, w_Hend)
+  th_hi    = max(th_lo, w_Hend - wing_out)
+  th_wing  = less(abs(w_rise - 2), 0.5) * less(abs(wings - w_J), 0.000001) * (1 - w_dent)
+  th_len   = wing_on * greater(wings, 0) * (w_bywall + th_wing) * (th_hi - th_lo)
+  th_face  = pick(w_bywall, w_sig, -w_sig)
+  th_r     = pick(w_bywall, r_t, r_t - w_sig * 2 * w_J * w_s)
+  port wings_out = [th_r + line + joint_fit, z0 + s * (z_w + th_lo), s, th_len * greater(th_face, 0), 0, 1] "Wings, outside"
+  port wings_in  = [th_r - line - joint_fit, z0 + s * (z_w + th_lo), s, th_len * less(th_face, 0), 0, -1] "Wings, inside"
 
   # ---- The Plan's marks: each piece of the profile leads to the settings that drive it, placed
   # where the shade goes.
