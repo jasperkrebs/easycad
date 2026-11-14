@@ -19,7 +19,7 @@ its own, without asking the AI.
 | What connects | A shade's straight start and straight end, inside and outside. A long tube can hold several shades, each sitting further along it. |
 | Assembly order | Not checked. Only collisions are. |
 | Printing | Each shade is its own G-code file, printed alone in the middle of the bed. |
-| New shapes | Tube, bell in-out (opens and closes again; optionally straight for a while at its widest, `widest_len`), cone in-out (straight lines out and in; the same straight band, and its corners at the widest rounded, `widest_fillet`). |
+| New shapes | Tube, bell in-out (opens and closes again; optionally straight for a while at its widest, `widest_len`), cone in-out (straight lines out and in; the same straight band, and its corners at the widest rounded, `widest_fillet`). Tube with wings (15 Nov 2026, [tube-with-wings.md](tube-with-wings.md)): its straight start screws on, the wings stop at its straight end. |
 
 ## How it fits the thread
 
@@ -88,13 +88,16 @@ writes a new `part` line; `removePart(name)` removes it and the parts mounted on
 The lampshade's profile code, generalised:
 - the start is a straight holder at the mount's radius (the throat on the socket), its length
   the shade's start length or the global joint length;
-- shapes: tube, cone, bell, dome, sphere, flat sphere, bell in-out, cone in-out, own;
+- shapes: tube, cone, bell, dome, sphere, flat sphere, bell in-out, cone in-out, own, tube with
+  wings;
 - an optional straight end for every shape (the spheres' lip, for all), its length the shade's
   end length or the global joint length;
 - where it sits: on a port, going up or down, and how far along the straight section it sits
   (0: flush with its end);
 - ports: start inside, start outside, end inside, end outside (the start's inside is taken
-  when the shade is on the socket; the end's only when there's a straight end).
+  when the shade is on the socket; the end's only when there's a straight end); a tube with
+  wings also wings outside or inside, where its full wings take a thread
+  ([tube-with-wings.md](tube-with-wings.md)).
 
 The single-shade lampshade template has the same shade arithmetic (since 12 Nov 2026: every
 shape, a lip on any shape, the closed end), with its own setting names (`throat`, `lip`), and

@@ -1114,3 +1114,163 @@ fn the_brim_has_its_own_extrusion() {
         assert!(brim > 20 && rest > brim, "{brim} brim moves, {rest} others");
     }
 }
+
+/// A tube with wings as a shade (`docs/tube-with-wings.md`): its straight start screws on (the
+/// start ports only that long), the wings above it stop where a straight end starts, and more
+/// shades screw onto that end, at its radius (wider when the tube widens as the wings fade out).
+#[test]
+fn a_tube_with_wings_is_a_shade_too() {
+    use Literal::{Number, Text};
+    // The first shade, on the socket, a tube with wings with these settings.
+    let wings = |settings: &str| {
+        LAMP.replace(
+            "part main = shade(shape: \"sphere\", end_straight: true)",
+            &format!("part main = shade(shape: \"tube with wings\", {settings})"),
+        )
+    };
+    let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
+    // On the socket: 100 % inside, a 30 mm straight end, the wings fading out over 40 mm.
+    let src = wings("wings: 100, wing_out: 40, end_straight: true, end_len: 30");
+    assert!(src.contains("tube with wings"));
+    let e = run(&src);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let path = &e.prints[0].path;
+    assert!(path.travel.iter().skip(1).all(|t| !t));
+    // The tube's own radius: half a line outside the socket's 40 mm thread.
+    let r = 23.0;
+    // Its start screws on only as far as the straight start; the end, 30 mm, a line outside.
+    assert_eq!(port(&e, "main.start_out")[3], 20.0);
+    let end = port(&e, "main.end_out");
+    assert!(close(end[0], r + 6.0) && end[3] == 30.0, "{end:?}");
+    // Up there the wings have stopped: one plain circle a layer.
+    let top = end[1];
+    let in_end: Vec<_> = path.points.iter().filter(|p| p[2] > top - 27.0).collect();
+    assert!(in_end.len() > 50 && in_end.iter().all(|p| (radius(p) - r).abs() < 1e-6));
+    // Further down, full wings (two walls in).
+    let deepest = path
+        .points
+        .iter()
+        .filter(|p| p[2] > 100.0 && p[2] < 120.0)
+        .map(radius)
+        .fold(f64::MAX, f64::min);
+    assert!(close(deepest, r - 12.0), "{deepest}");
+    // Without a straight end there's no end port.
+    let open = run(&wings("wings: 100"));
+    assert!(warnings(&open).is_empty(), "{:?}", open.diagnostics);
+    assert_eq!(port(&open, "main.end_out")[3], 0.0);
+
+    // Widening as they fade out, the end is wider: a shade screwed onto it runs a line outside
+    // that, and nothing runs into anything.
+    let wide = wings(
+        "wings: 100, wing_out: 60, wing_widen: \"same layer length\", end_straight: true, end_len: 30",
+    );
+    let wide = with_part(
+        &wide,
+        "cone",
+        &[
+            ("mount", Text("main.end_out".into())),
+            ("opening", Number(250.0)),
+        ],
+    );
+    let e = run(&wide);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let end = port(&e, "main.end_out").to_vec();
+    assert!(end[0] > r + 6.0 + 10.0, "{end:?}");
+    let cone = &e.prints[1].path;
+    assert!(
+        close(radius(&cone.points[5]), end[0]),
+        "{}",
+        radius(&cone.points[5])
+    );
+}
+
+/// Along a tube with wings a face takes a thread only where it rises exactly a pitch a turn: the
+/// tube wall's free face when it rises along the tube wall; the deepest wings' innermost (or
+/// outermost) wall when it rises along the wings, at a whole 100 % (or 200 %) of full turns; and
+/// only along the full wings (not while they fade). Rising along the whole layer, no face does:
+/// no port, so nothing can be screwed on there.
+#[test]
+fn wings_take_a_thread_only_where_they_rise_a_pitch_a_turn() {
+    use Literal::Text;
+    // The first shade, on a custom 80 mm thread (room for more walls inside), a 200 mm tube with
+    // wings from its 20 mm start, fading in over 60 mm, full to the top: full wings from 60 mm
+    // above the start (80 mm up) to the top, 120 mm.
+    let tube = |settings: &str| {
+        LAMP.replace(
+            "param socket       = \"E27\"",
+            "param socket       = \"custom\"",
+        )
+        .replace("param thread_d     = 40 mm", "param thread_d     = 80 mm")
+        .replace(
+            "part main = shade(shape: \"sphere\", end_straight: true)",
+            &format!("part main = shade(shape: \"tube with wings\", {settings})"),
+        )
+    };
+    // The tube's own radius: half a line outside the 80 mm thread.
+    let r = 43.0;
+    let ports = |settings: &str| {
+        let e = run(&tube(settings));
+        assert!(warnings(&e).is_empty(), "{settings}: {:?}", e.diagnostics);
+        (
+            port(&e, "main.wings_out").to_vec(),
+            port(&e, "main.wings_in").to_vec(),
+        )
+    };
+    // Along the whole layer: nothing, inside or out.
+    for side in ["inside", "outside"] {
+        let (out, inn) = ports(&format!("wings: 100, wing_side: \"{side}\""));
+        assert_eq!((out[3], inn[3]), (0.0, 0.0), "{side}");
+    }
+    // Along the tube wall: its free face, a line plus the fit off it, all of the full wings.
+    let (out, inn) = ports("wings: 100, wing_rise: \"tube wall\"");
+    assert!(
+        close(out[0], r + 6.0) && close(out[3], 120.0) && inn[3] == 0.0,
+        "{out:?}"
+    );
+    assert!(close(out[1], 20.0 + 60.0) && out[2] == 1.0, "{out:?}");
+    let (out, inn) = ports("wings: 100, wing_side: \"outside\", wing_rise: \"tube wall\"");
+    assert!(
+        close(inn[0], r - 6.0) && close(inn[3], 120.0) && out[3] == 0.0,
+        "{inn:?}"
+    );
+    // Fading out over 40 mm, only up to where the fade starts.
+    let (out, _) = ports("wings: 100, wing_rise: \"tube wall\", wing_out: 40");
+    assert!(close(out[3], 80.0), "{out:?}");
+    // Along the wings: the deepest wings' far wall, at 100 % or 200 %, not 150 %.
+    let (out, inn) = ports("wings: 100, wing_rise: \"wings\"");
+    assert!(
+        close(inn[0], r - 12.0 - 6.0) && close(inn[3], 120.0) && out[3] == 0.0,
+        "{inn:?}"
+    );
+    let (out, inn) = ports("wings: 100, wing_side: \"outside\", wing_rise: \"wings\"");
+    assert!(
+        close(out[0], r + 12.0 + 6.0) && close(out[3], 120.0) && inn[3] == 0.0,
+        "{out:?}"
+    );
+    let (_, inn) = ports("wings: 200, wing_rise: \"wings\"");
+    assert!(
+        close(inn[0], r - 24.0 - 6.0) && close(inn[3], 120.0),
+        "{inn:?}"
+    );
+    let (out, inn) = ports("wings: 150, wing_rise: \"wings\"");
+    assert_eq!((out[3], inn[3]), (0.0, 0.0));
+    // A tube screwed onto the wall's free face sits a line outside it, along the full wings,
+    // and nothing runs into anything.
+    let src = with_part(
+        &tube("wings: 100, wing_rise: \"tube wall\""),
+        "sleeve",
+        &[
+            ("mount", Text("main.wings_out".into())),
+            ("shape", Text("tube".into())),
+            ("along", Literal::Number(30.0)),
+            ("length", Literal::Number(60.0)),
+        ],
+    );
+    let e = run(&src);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let sleeve = &e.prints[1].path;
+    assert!(close(
+        sleeve.points[5][0].hypot(sleeve.points[5][1]),
+        r + 6.0
+    ));
+}

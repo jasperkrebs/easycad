@@ -1,8 +1,8 @@
 # Tube with wings (Lampshade)
 
 *The owner's idea (14 Nov 2026), from a sketch; built in the Lampshade template as the shape
-"tube with wings". Later it may become a shade in the Lamp too, so it can thread into another
-shade.*
+"tube with wings", and since 15 Nov a shade in the Lamp too (below), so it threads into the
+others.*
 
 ## Why
 
@@ -38,12 +38,14 @@ at the seam are a line apart too, closing the tube's wall with a small notch bet
 
 ## How a wing starts
 
-A wing starts as a **shallow dent**: the line follows the tube's wall, turns in a few degrees at
-the seam and straight back out, and carries on. As it grows, its four turns go further round
-(the dent deepens, its sides steepen to straight in and out at 90°), until they're half
-circles; only then do the wings run back along the middle wall. The turns start where the half
-circles will be, far enough apart that the two sides of the dent never come closer than a line.
-A deeper wing (past 100 %) starts the same way, as a dent in the inner wall at the seam.
+A wing starts where the tube's wall **parts at the seam**: at first the line only dips in (or
+out) a little at a single point and carries straight on, so from outside the wall seems to open
+a crease there. As it grows, its four turns go further round (the dent deepens, its sides
+steepen), and the two sides move apart only as far as they must not to cross, so the gap
+opens smoothly, never wider than it ends up: by the time the turns are a quarter round they're
+as far apart as the finished turns at the seam (±g, below), and they stay there. Once the turns
+are half circles the wings run back along the middle wall. A deeper wing (past 100 %) starts the
+same way, on the inner wall at the seam.
 
 "Two pieces a line apart" is exact: two turns facing each other (half circles a spacing `s`
 across, their centres on a circle of radius ρ) just touch when their centres are `2s` apart,
@@ -66,6 +68,14 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
 - **Diameter as the wings fade out:** the same, or the **same layer length**: the tube widens
   as the wings go, so each layer stays as long as at full wings (with no wings left it's a
   plain tube about three times as wide, for one seam at 100 %). The fade-in keeps the diameter.
+- **Overhangs:** where the tube widens its wall leans out, and the Overhangs setting "layer
+  height" applies as to any shade: layers come closer where it leans (each still extruded for a
+  whole layer), by the lean's (1 − cos) scaled by strength and (lean / pivot)^steep. (Width
+  compensation isn't used for the wings, and isn't kept up any more.) The fade, the widening and
+  the lean are worked out on a fine grid of heights (every half layer) and the layers are laid
+  along it, each its own rise, so the shape stays where it is and only the layers move; where it
+  doesn't lean every layer is exactly a pitch (the thread's), and the top ends on the nearest whole
+  layer.
 
 ## How it rises (`wing_rise`)
 
@@ -84,6 +94,36 @@ While the wings fade in (and out) the rise blends from "whole layer" into the ch
 step with the wings' size, so the first wing layers never jump and every bead stays close to a
 layer above the one below (2.3–2.5 mm at a 2.5 mm pitch, in the tests).
 
+## In the Lamp
+
+The Lamp's shade has the same shape and settings (the "Wings" group), with these differences:
+- the straight start is the shade's own (`start_len`, or the joint length): its start ports are
+  that long, not the whole tube's;
+- the wings stop where a **straight end** starts (more shades screw on there), fading out over
+  `wing_out` up to it (0: they stop at once, which prints fine: the tube's wall carries on below
+  the end); full wings fill whatever is between the fade-in and the fade-out, so there's no
+  "full wings for";
+- the end ports are at the end's radius: wider, when the tube widens to keep the layer length;
+- it always prints start down (no wide edge down, no closed end) and never starts on the bed.
+
+### Where it takes a thread
+
+A face takes a thread only where it's a true helix: a wall that rises exactly a pitch a turn, at
+one radius, all the way round. So a tube with wings offers ports (and the Plan offers add
+buttons) only there:
+
+| Where | Faces with a port | Why |
+|---|---|---|
+| Straight start | outside, inside ("Start") | the vase spiral |
+| Straight end | outside, inside ("End") | the wings have stopped: plain turns a pitch apart |
+| Full wings, rising along the **whole layer** | none | no wall rises a pitch a turn |
+| Full wings, rising along the **tube wall** | the wall's free face ("Wings, outside" with the wings inside, "Wings, inside" with them outside), a line plus the fit off it | the tube wall is a helix |
+| Full wings, rising along the **wings** | the deepest wings' far wall (inside: its inner face; outside: its outer face), only at a whole 100 %, 200 % or 300 % with full turns | that wall is a helix, with a one-line slot at each tip; at 150 % the deepest wings only go half way round |
+| While the wings fade in or out | none | the rise is blending, and the tube may be widening |
+
+The wings ports run along the full wings: from the end of the fade-in to the start of the fade-out
+(or the straight end, or the top), radius and length as above, length 0 (no port) otherwise.
+
 ## How the recipe does it
 
 General steps only (no new engine step). Per layer and wing level, the wing's size, the turns'
@@ -99,15 +139,15 @@ shape) run for one layer only.
 
 ## Limits and what's open
 
-- **Speed:** about 60 ms per evaluation natively for the template as it ships (9,000 points),
-  150–220 ms with 8 seams, 300 % or a wide tube (the other shapes: 4–7 ms).
-- **Length and size:** the engine's geometry budget (4 million numbers per evaluation) runs out
-  on very big ones (8 seams at 300 % on a 100 mm thread); it says so.
+- **Speed:** about 26 ms per evaluation natively for the template as it ships (9,000 points);
+  100–280 ms for a long, wide one (the owner's 533 mm tube with two seams outside, widening:
+  55,000–124,000 points). The other shapes: 4–7 ms.
+- **Size:** the engine's geometry budget (4 million numbers per evaluation) runs out only on very
+  big ones (that 533 mm tube at 300 %); it says so. The points are made one short `series` per
+  piece (a single `series` stops at 100,000 numbers).
 - **Inside the tube** there must be room for every wall: the E27 tube holds 100 %, not 150 %
   (it says so: a wider socket, outside wings, or a narrower line).
-- **The dent** is printed with the full bead where its sides are closer than a line (only in the
-  first few layers of each wing, where it is shallow): worth watching in the first print.
-- **Wide edge down** still shows for this shape but does nothing (it always prints throat down,
-  open at the top).
-- The app's layer count says 17 (16 turns of the straight start + 1 for the wings); the G-code
-  is right.
+- **The crease** at the very start of a wing is printed with the full bead where its sides are
+  closer than a line: worth watching in the first print.
+- **"Same layer length"** is worked out from the turns' lengths in closed form: within 4 % of the
+  full wings' layer (the last fading layers come out a little short).

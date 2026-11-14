@@ -27,6 +27,66 @@ Tests: `a_when_can_join_conditions_with_and` (lang), `layer_counts_for_hand_buil
 (core), the `and` case in `settings.test.mjs`; the open-top golden test finds the last turn by
 its turn number (with a brim the layer count is now one less). Golden G-code unchanged.
 
+## 2026-11-15 (late night): a winged tube takes a thread only where it rises a pitch a turn (recipe-developer)
+
+**Why:** the owner: shades must only be added where they can actually thread on, and that
+depends on how the wings rise.
+
+**What landed** (Lamp): two more ports on a tube with wings, "Wings, outside" and "Wings, inside",
+along its full wings (between the fade-in and the fade-out). Rising along the tube wall: the
+wall's free face; rising along the wings: the deepest wings' far wall, only at a whole 100 / 200 /
+300 % with full turns; rising along the whole layer, or while the wings fade: no port (length 0),
+so the Plan offers no add button and the settings no such mount. The straight start and end keep
+theirs. Test `wings_take_a_thread_only_where_they_rise_a_pitch_a_turn`; the table is in
+[tube-with-wings.md](tube-with-wings.md).
+
+## 2026-11-15 (night): the tube with wings in the Lamp; layer height compensation only (recipe-developer)
+
+**Why:** the owner wants to plan winged tubes in the Lamp, threaded onto and into other shades;
+and uses only layer-height overhang compensation.
+
+**What landed:** the Lamp's shade has the shape "tube with wings", with the Lampshade's wing
+steps and a "Wings" group: its own straight start screws on (its start ports only that long),
+the wings fade out up to a straight end (or stop there), and shades screw onto that end at its
+radius, wider when it widened. Test `a_tube_with_wings_is_a_shade_too` (`lamp_tests.rs`): the
+ports, plain circles in the straight end, full wings below, a cone on the widened end with no
+collision. Width compensation is gone from the wings (both templates; "width" prints them at the
+line width) and won't be kept up; the shades' "width" option stays for EasyGCode's golden tests.
+
+**Open:** the Lampshade and the Lamp now share the wing steps as two copies too.
+
+## 2026-11-15 (evening): overhang compensation where the winged tube widens (recipe-developer)
+
+**Why:** with "same layer length" the tube widens as the wings fade out, and its wall leans out:
+an overhang, which the owner wanted compensated as the shades' are.
+
+**What landed** (Lampshade, tube with wings): the Overhangs settings apply: "layer height" brings
+layers closer where the wall leans (each still a whole layer's bead). The fade, the widening and the lean are now worked out on a fine grid of heights,
+and the layers are laid along it by their own rise, so the shape doesn't move and every layer
+that doesn't lean is exactly a pitch; the top ends on the nearest whole layer. As it ships (no
+widening) the path is unchanged to the last digit. Test `a_widening_tubes_overhang_is_compensated`.
+
+## 2026-11-15 (later): wings that part at the seam; long tubes past 100 % (recipe-developer)
+
+**Why:** the owner's renders: a wing started as a wide hole that the lines then grew back across
+(its turns sat at the finished seam gap from the first layer), where it should start at the seam
+and open smoothly; and their 533 mm tube with two seams outside failed past 100 % ("series:
+count must be between 0 and 100000").
+
+**What landed** (Lampshade): the turns now start together on the seam and move apart only as far
+as the two sides need not to cross, reaching the finished seam gap by a quarter turn, so the
+wall parts at a point and the gap opens (never wider than it ends up). The points are made one
+short `series` per piece, in print order from the table of arcs, about 12 list steps a point
+instead of 30: the template as it ships evaluates in 26 ms (was 50), and the owner's tube prints
+at 150 % and 200 % (112,000–124,000 points). The wing settings have a group of their own
+("Wings"), and with `when … and …` (general-manager) the settings that do nothing for a shape are
+hidden: Wide edge down for the wings, the straight start and fade-in when starting from the bed,
+the fade-out's settings unless there's a fade-out. `toolpath(layers:)` gives the app the real
+layer count (213 for the owner's tube, not 17). Tests: the crease starts within 3° of the seam
+and opens; the owner's tube past 100 %.
+
+**Open:** the first print; "same layer length" is within 4 % (closed form).
+
 ## 2026-11-15: wings that start as a dent, outside, past 100 %, from the bed (recipe-developer)
 
 **Why:** the owner's corrections and additions to the tube with wings: a small wing made four
