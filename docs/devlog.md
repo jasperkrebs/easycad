@@ -5,6 +5,18 @@ next session (human or agent) picks up.
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
 
+## 2026-11-14 (night): the brim's own extrusion again
+
+**Why:** the owner needed an extrusion multiplier for the brim only (a first layer that wants
+more or less plastic than the walls).
+
+**What landed:** "Brim extrusion" (`brim_extrusion`, 10–300 %, 100 % by default) in every template
+with a brim: the Lampshade, the Lamp, the bend stool and the thread connector. The brim's toolpath
+goes through `adjust(extrude: …)`; at 100 % it's left as it was, so the default G-code is
+unchanged (golden tests green, EasyGCode's lampshade and bend stool with their brims included).
+Test `the_brim_has_its_own_extrusion`: at 150 % every brim move extrudes 1.5×, every other move
+as before, in all four templates.
+
 ## 2026-11-14 (evening): an open top's last turn keeps the pitch
 
 **Why:** the owner's sphere, printed wide edge down with 5 mm shade layers, seemed to run down

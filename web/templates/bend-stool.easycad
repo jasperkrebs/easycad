@@ -38,6 +38,7 @@ param brim_lines = 3 in 1..20 step 1 "Brim lines"  when brim
 param brim_width = 6 mm in 0.4..20 "Brim line width"  when brim
 param brim_layer = 2 mm in 0.1..10 "Brim layer height"  when brim
 param brim_speed = 20 in 1..200 "Brim speed (mm/s)"  when brim
+param brim_extrusion = 100 % in 10..300 "Brim extrusion"  when brim
 
 group "Foaming"
 param foam = true "Foaming (pellet printer, 3 layers or more)"
@@ -131,7 +132,9 @@ first = toolpath(polyline(pick(brim, inward, flatten([[lead_in], inward]))), wid
 top_outline = leg_rings(n, line, directions, leg_rings: pairs, tip: tip, fillet: leg_fillet, seam: pick(zipper, "zipper", "staircase"), spread: 1, spread_gap: gap, spread_at: spread_at, spread_r1: spread_r1, spread_r2: spread_r2, drop: drop * greater(layers, 1), tolerance: tolerance, outline: true) |> scale(z: 0)
 brim_base = pick(brim_top, pick(greater(pairs, 0), top_outline, outline), outline)
 brim_rings = offset(brim_base |> rotate(15) |> move(x: shift_x, y: shift_y), brim_width / 2 + line / 2 + (series(brim_lines, -1, brim_lines) - 1) * brim_width, mitre: false, trim: brim_top)
-brim_path = toolpath(brim_rings, width: brim_width, layer: brim_layer, speed: brim_speed)
+brim_raw = toolpath(brim_rings, width: brim_width, layer: brim_layer, speed: brim_speed)
+# The brim's own extrusion (100 %: as the bead's), for a first layer that needs more or less.
+brim_path = pick(greater(abs(brim_extrusion - 1), 0.000001), adjust(brim_raw, extrude: brim_extrusion), brim_raw)
 start = pick(brim, join([brim_path, first], clear: 2 * brim_layer), first)
 
 # Without foaming: every layer after the first wipes across to its start and down.

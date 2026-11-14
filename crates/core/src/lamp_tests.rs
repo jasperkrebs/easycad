@@ -580,10 +580,7 @@ fn a_brim_is_a_print_aid_that_nothing_runs_into() {
     let main = &e.prints.iter().find(|p| p.name == "main").unwrap().path;
     let aids = (0..main.points.len()).filter(|&i| main.is_aid(i)).count();
     assert!(aids > 100 && aids < main.points.len() / 2, "{aids}");
-    let unmarked = LAMP.replace(
-        "aid(toolpath(graft(brim_rings)",
-        "(toolpath(graft(brim_rings)",
-    );
+    let unmarked = LAMP.replace("aid(brim_path)", "(brim_path)");
     assert_ne!(unmarked, LAMP);
     let e = run(&with(&unmarked));
     assert!(
@@ -1047,4 +1044,73 @@ fn an_open_tops_last_turn_keeps_the_pitch() {
     assert!((rise - 2.5).abs() < 1e-6, "{rise}");
     let pitch = (p.points[n][2] - z_at(whole)) / (last - whole);
     assert!((pitch - 2.5).abs() < 1e-6, "the last turn's pitch: {pitch}");
+}
+
+/// The brim's own extrusion (`brim_extrusion`): at 150 % every brim move puts out half as much
+/// again, every other move as before; at 100 % (the default) the brim is untouched. In each
+/// template with a brim.
+#[test]
+fn the_brim_has_its_own_extrusion() {
+    use crate::gcode::{self, Profile};
+    use Literal::{Bool, Number};
+    let templates = [
+        include_str!("../../../web/templates/lampshade.easycad"),
+        LAMP,
+        include_str!("../../../web/templates/bend-stool.easycad"),
+        include_str!("../../../web/templates/thread-connector.easycad"),
+    ];
+    for template in templates {
+        let moves = |pct: f64| -> Vec<(String, f64)> {
+            let src = set_values(
+                template,
+                &[
+                    ("brim".into(), Bool(true)),
+                    ("brim_extrusion".into(), Number(pct)),
+                ],
+            )
+            .unwrap();
+            let e = run(&src);
+            assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+            let path = &e.prints[0].path;
+            let text = gcode::write(
+                path,
+                &Profile {
+                    center: [500.0, 500.0],
+                    ..Profile::default()
+                },
+                "Brim",
+            )
+            .unwrap()
+            .text;
+            text.lines()
+                .filter(|l| l.starts_with("G1 ") && l.contains(" E"))
+                .map(|l| {
+                    let e: f64 = l
+                        .split_whitespace()
+                        .find_map(|w| w.strip_prefix('E'))
+                        .and_then(|v| v.parse().ok())
+                        .unwrap();
+                    let at: String = l
+                        .split_whitespace()
+                        .filter(|w| !w.starts_with('E') && !w.starts_with('F'))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    (at, e)
+                })
+                .collect()
+        };
+        let (base, more) = (moves(1.0), moves(1.5));
+        assert_eq!(base.len(), more.len());
+        let (mut brim, mut rest) = (0, 0);
+        for ((a, ea), (b, eb)) in base.iter().zip(&more) {
+            assert_eq!(a, b, "the same moves");
+            if (eb - ea).abs() < 1e-9 {
+                rest += 1;
+            } else {
+                assert!((eb / ea - 1.5).abs() < 0.01, "{a}: {ea} → {eb}");
+                brim += 1;
+            }
+        }
+        assert!(brim > 20 && rest > brim, "{brim} brim moves, {rest} others");
+    }
 }
