@@ -62,9 +62,10 @@ so the recipe developer knows.
 
 The owner merges pull requests, one at a time; CI runs on each.
 
-## The dev log
+## The roadmap and the dev log
 
-Both write `docs/devlog.md`, newest first. Start each entry's heading with the date and end it
+`docs/roadmap.md` has one **Open** list with a part per agent: add what you find missing to your
+part, delete what you finish. Both write `docs/devlog.md`, newest first. Start each entry's heading with the date and end it
 with the branch: `## 2026-11-14: the brim's own extrusion (general-manager)`. On a conflict there,
 keep both entries, the newer first.
 

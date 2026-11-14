@@ -5,51 +5,21 @@
 *parametric recipe* with its own settings window → you tune it → shapes become curves, curves
 become toolpaths, toolpaths become G-code for your printer.
 
-> **Status (9 Nov 2026):** every EasyGCode project is a template, plus the shaker and the lamp
-> builder; the work now is large pellet prints on the Ginger G1, the **bend stool** and the
-> **lampshade** first. Try it: https://jasperkrebs.github.io/easycad/
-> - **Projects are recipes:** small `.easycad` text files. Each one opens with its own
->   settings window, generated from the recipe (sliders, toggles, dropdowns, and tables for
->   list settings like radii at heights). One project can print several parts (a container
->   and its lid), each its own G-code file. The Rust engine runs in the browser as
->   WebAssembly, shows the shape and its toolpath, and gives a live print estimate.
-> - **Settings** fold out by group (Shape, Print, Overhangs…), so a big project stays tidy.
-> - **About 100 steps**, named after Grasshopper's components where one exists: points,
->   planes, tweens, transforms by fields (per point), surfaces, vase mode through tilted
->   layers. Plus EasyGCode's techniques as general steps: ring fills, helices, zone speeds,
->   fan levels, dwells, spikes and overhang pacing.
-> - **Chat tab:** Claude writes and edits recipes in the app, with your own key (behind your
->   own password, or stored on your device; see [docs/api-key.md](docs/api-key.md)). It can
->   switch printers and change printer settings too. When the steps can't do something, it
->   asks for the missing step. Claude Code builds it in GitHub Actions, and the chat carries on
->   when it's live ([docs/feature-requests.md](docs/feature-requests.md)).
-> - **G-code** for the Bambu P1P and the **Ginger Additive G1** pellet printer (Klipper),
->   written the way EasyGCode writes it, speeds set as volumetric flow, golden-tested against
->   EasyGCode's own output. The app knows the G1 from Ginger's wiki: its bed, nozzles, flow
->   window, heater limits and material profiles ([docs/printers.md](docs/printers.md)).
->   **STL** for plain geometry, and **STEP** for a manufacturer who slices the shape their own
->   way: the printed wall as a solid (`thicken(wall, line)`), exact round faces for shapes of
->   revolution (the lampshade and every shade of the lamp export one).
-> - **Templates** (all from EasyGCode): the lampshade (every shade, or your own), the bend
->   stool (with foaming), the thread connector and the spiral disc as recipes with the same
->   G-code as EasyGCode; its vessel (the bottom rounding into the wall, a non-planar star top)
->   and container (as a salt & pepper shaker: a lid with holes that threads onto it, two
->   prints) from general steps. Every EasyGCode project can be built from the steps
->   ([docs/easygcode-coverage.md](docs/easygcode-coverage.md)).
-> - **Machine control** as steps: temperatures and waits, speed and extrusion overrides, fan
->   levels, pauses (EasyGCode's foaming is built from them).
-> - **The print before it's printed:** the toolpath coloured by height, speed, flow or bead
->   size; played back at the print's own pace with the nozzle on it; the beads drawn at their
->   real size, or **simulated** as the plastic would lie on what's already printed; the nozzle
->   upright or along the wall.
-> - **The lamp builder:** shades that screw into each other, planned on a cut-through view,
->   each its own print ([docs/lamp-builder.md](docs/lamp-builder.md)). The lampshade has the same
->   shapes (in-out, tube) and a **closed end**, and can also be sliced **along its surface**
->   (experimental, for a robot arm).
-> - **Next:** the coat hanger as a template, skills for the agent, and 2D curve
->   editors.
+> **Status (14 Nov 2026): live and in daily use** at https://jasperkrebs.github.io/easycad/, for
+> large pellet prints on the Ginger G1 and filament prints on the Bambu P1P.
+> - **Projects are recipes:** small `.easycad` text files that reopen with their own settings
+>   window; one project can print several parts. The Rust engine runs in the browser.
+> - **Templates:** every EasyGCode project (the lampshade, bend stool, thread connector and
+>   spiral disc with EasyGCode's exact G-code; the vessel), the salt & pepper shaker, and the
+>   **Lamp**: shades that screw into each other ([docs/lamp-builder.md](docs/lamp-builder.md)).
+> - **G-code** for the G1 and the P1P, speeds as volumetric flow, golden-tested against
+>   EasyGCode ([docs/printers.md](docs/printers.md)); **STL** and **STEP** exports.
+> - **The views:** shape and toolpath, the Plan (tap a part to reach its settings), the prints
+>   overview, playback, beads as they'd lie, the nozzle along the wall.
+> - **Chat tab:** Claude writes and edits recipes with your own key; when the steps can't do
+>   something it asks for the missing step ([docs/feature-requests.md](docs/feature-requests.md)).
 >
-> See the [roadmap](docs/roadmap.md).
+> What's open and what's next: the [roadmap](docs/roadmap.md).
 
 ---
 

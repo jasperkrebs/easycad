@@ -12,37 +12,25 @@ EasyCAD is "EasyGCode without fixed tabs": a lightweight, agent-first parametric
 - The Rust engine turns shapes into curves, curves into toolpaths, and toolpaths into G-code
   (Bambu P1P filament; the Ginger Additive G1, a Klipper pellet printer, `docs/printers.md`).
 
-**Current phase:** decisions answered (14–15 Oct 2026, see `docs/roadmap.md`). **Phase 0, 1a
-(recipes as files), 1b (real G-code, golden-tested; EasyGCode's spiral disc as a recipe; STL),
-1c (the Grasshopper toolbox, `spiralize`), 1d (every EasyGCode project from
-general steps; thread and spoon golden, `docs/easygcode-coverage.md`), most of 1e (bend stool
-with foaming and lampshade golden, vessel from general steps) and 1f (the container as a salt &
-pepper shaker: several parts per project, list settings, a smooth `graph`) are done, and so is
-the Chat tab (the agent with the user's key, behind a password proxy; it can switch printers),
-and feature requests (the agent asks for missing steps; Claude Code builds them in Actions;
-`docs/feature-requests.md`). 1 Nov 2026, streamlined for a presentation: the Graph tab is gone
-(and its engine commands), the templates are EasyGCode's projects plus the shaker, settings
-groups fold out, and the app carries no explanatory text. 8 Nov 2026: the lamp builder
-(components and parts in the language, the Lamp template, the Plan view;
-`docs/lamp-builder.md`). Next: the coat hanger as a template.** Hosting: public repo + GitHub Pages, deployed from `main`. Priorities:
-- custom toolpaths and G-code;
+**Where we are (14 Nov 2026):** live and in daily use, deployed from `main` to GitHub Pages
+(public repo, all rights reserved). Work follows the owner's prints, not a phase plan: what's
+open, split between the two agents, is on the roadmap (`docs/roadmap.md`, "Open"). Priorities:
+- custom toolpaths and G-code that print well on the owner's printers;
 - project files that reopen with their settings window;
 - the agent with the user's own API key.
-
-Slicers, 3MF and solids are "later".
 
 ## Read in this order
 
 1. `README.md`: the idea
    - `docs/working-together.md`: the two agents, their branches, who owns what
-2. `docs/roadmap.md`: current phase, decisions, what's next
+2. `docs/roadmap.md`: what it does today, the decisions that stand, what's open (by owner)
 3. `docs/toolpaths-and-skills.md`: the core workflow (shapes → curves → toolpaths → G-code,
    skills, project files)
 4. `docs/architecture.md`: how it's built and why
 5. `docs/definition-language.md`: the project file / recipe language (§2: what works today)
    - `docs/easygcode-coverage.md`: which steps build each EasyGCode project, and what's missing
    - `docs/printers.md`: the printers (the Ginger G1 from its wiki), their limits and checks
-6. `docs/devlog.md`: what landed recently, what's open
+6. `docs/devlog.md`: what landed recently (older months in its archives)
 7. `docs/research.md`: background and sources, when you need the "why"
 
 ## Build and run
