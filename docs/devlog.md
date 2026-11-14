@@ -27,6 +27,27 @@ Tests: `a_when_can_join_conditions_with_and` (lang), `layer_counts_for_hand_buil
 (core), the `and` case in `settings.test.mjs`; the open-top golden test finds the last turn by
 its turn number (with a brim the layer count is now one less). Golden G-code unchanged.
 
+## 2026-11-15 (later): wings that part at the seam; long tubes past 100 % (recipe-developer)
+
+**Why:** the owner's renders: a wing started as a wide hole that the lines then grew back across
+(its turns sat at the finished seam gap from the first layer), where it should start at the seam
+and open smoothly; and their 533 mm tube with two seams outside failed past 100 % ("series:
+count must be between 0 and 100000").
+
+**What landed** (Lampshade): the turns now start together on the seam and move apart only as far
+as the two sides need not to cross, reaching the finished seam gap by a quarter turn, so the
+wall parts at a point and the gap opens (never wider than it ends up). The points are made one
+short `series` per piece, in print order from the table of arcs, about 12 list steps a point
+instead of 30: the template as it ships evaluates in 26 ms (was 50), and the owner's tube prints
+at 150 % and 200 % (112,000–124,000 points). The wing settings have a group of their own
+("Wings"), and with `when … and …` (general-manager) the settings that do nothing for a shape are
+hidden: Wide edge down for the wings, the straight start and fade-in when starting from the bed,
+the fade-out's settings unless there's a fade-out. `toolpath(layers:)` gives the app the real
+layer count (213 for the owner's tube, not 17). Tests: the crease starts within 3° of the seam
+and opens; the owner's tube past 100 %.
+
+**Open:** the first print; "same layer length" is within 4 % (closed form).
+
 ## 2026-11-15: wings that start as a dent, outside, past 100 %, from the bed (recipe-developer)
 
 **Why:** the owner's corrections and additions to the tube with wings: a small wing made four

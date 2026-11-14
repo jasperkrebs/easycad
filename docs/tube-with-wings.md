@@ -38,12 +38,14 @@ at the seam are a line apart too, closing the tube's wall with a small notch bet
 
 ## How a wing starts
 
-A wing starts as a **shallow dent**: the line follows the tube's wall, turns in a few degrees at
-the seam and straight back out, and carries on. As it grows, its four turns go further round
-(the dent deepens, its sides steepen to straight in and out at 90°), until they're half
-circles; only then do the wings run back along the middle wall. The turns start where the half
-circles will be, far enough apart that the two sides of the dent never come closer than a line.
-A deeper wing (past 100 %) starts the same way, as a dent in the inner wall at the seam.
+A wing starts where the tube's wall **parts at the seam**: at first the line only dips in (or
+out) a little at a single point and carries straight on, so from outside the wall seems to open
+a crease there. As it grows, its four turns go further round (the dent deepens, its sides
+steepen), and the two sides move apart only as far as they must not to cross, so the gap
+opens smoothly, never wider than it ends up: by the time the turns are a quarter round they're
+as far apart as the finished turns at the seam (±g, below), and they stay there. Once the turns
+are half circles the wings run back along the middle wall. A deeper wing (past 100 %) starts the
+same way, on the inner wall at the seam.
 
 "Two pieces a line apart" is exact: two turns facing each other (half circles a spacing `s`
 across, their centres on a circle of radius ρ) just touch when their centres are `2s` apart,
@@ -99,15 +101,15 @@ shape) run for one layer only.
 
 ## Limits and what's open
 
-- **Speed:** about 60 ms per evaluation natively for the template as it ships (9,000 points),
-  150–220 ms with 8 seams, 300 % or a wide tube (the other shapes: 4–7 ms).
-- **Length and size:** the engine's geometry budget (4 million numbers per evaluation) runs out
-  on very big ones (8 seams at 300 % on a 100 mm thread); it says so.
+- **Speed:** about 26 ms per evaluation natively for the template as it ships (9,000 points);
+  100–280 ms for a long, wide one (the owner's 533 mm tube with two seams outside, widening:
+  55,000–124,000 points). The other shapes: 4–7 ms.
+- **Size:** the engine's geometry budget (4 million numbers per evaluation) runs out only on very
+  big ones (that 533 mm tube at 300 %); it says so. The points are made one short `series` per
+  piece (a single `series` stops at 100,000 numbers).
 - **Inside the tube** there must be room for every wall: the E27 tube holds 100 %, not 150 %
   (it says so: a wider socket, outside wings, or a narrower line).
-- **The dent** is printed with the full bead where its sides are closer than a line (only in the
-  first few layers of each wing, where it is shallow): worth watching in the first print.
-- **Wide edge down** still shows for this shape but does nothing (it always prints throat down,
-  open at the top).
-- The app's layer count says 17 (16 turns of the straight start + 1 for the wings); the G-code
-  is right.
+- **The crease** at the very start of a wing is printed with the full bead where its sides are
+  closer than a line: worth watching in the first print.
+- **"Same layer length"** is worked out from the turns' lengths in closed form: within 4 % of the
+  full wings' layer (the last fading layers come out a little short).
