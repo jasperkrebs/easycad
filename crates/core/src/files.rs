@@ -108,8 +108,8 @@ fn collect_surfaces<'a>(value: &'a Value, out: &mut Vec<&'a Surface>) {
 /// by the bead rather than modelled, so whoever slices the shape needs to read it here.
 fn settings(params: &[ParamInfo]) -> Vec<String> {
     let value_of = |name: &str| params.iter().find(|p| p.name == name).map(|p| &p.value);
-    let applies = |p: &ParamInfo| {
-        let Some(c) = &p.when else { return true };
+    // Each condition (the first, and every one after `and`) must hold.
+    let holds = |c: &easycad_lang::Condition| {
         let Some(v) = value_of(&c.name) else {
             return true;
         };
@@ -125,6 +125,7 @@ fn settings(params: &[ParamInfo]) -> Vec<String> {
         };
         hit != c.not
     };
+    let applies = |p: &ParamInfo| p.when.as_ref().is_none_or(|c| c.parts().all(holds));
     params
         .iter()
         .filter(|p| applies(p))

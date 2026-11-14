@@ -505,6 +505,37 @@ fn set_printer_writes_the_printer_line() {
     assert!(set_printer("x = (", "P").is_err());
 }
 
+/// `when A and B`: both must hold; each part as a plain condition, `not` and values included.
+#[test]
+fn a_when_can_join_conditions_with_and() {
+    let src = "param shape = \"cone\" of [\"cone\", \"wings\"] \"Shape\"\n\
+               param wing_out = false when shape = \"wings\"\n\
+               param n = 2 when shape = \"wings\" and wing_out \"Wings\"\n\
+               param m = 1 when not shape = \"cone\" and n = [1, 2] and not wing_out\n";
+    let p = parse(src).unwrap();
+    let n = p.params[2].when.clone().unwrap();
+    assert_eq!(n.name, "shape");
+    assert_eq!(n.also.len(), 1);
+    assert_eq!(
+        (n.also[0].name.as_str(), n.also[0].not),
+        ("wing_out", false)
+    );
+    assert_eq!(p.params[2].label.as_deref(), Some("Wings"));
+    let m = p.params[3].when.clone().unwrap();
+    assert!(m.not && m.also.len() == 2 && m.also[0].values.len() == 2 && m.also[1].not);
+    assert_eq!(m.parts().count(), 3);
+    assert!(parse("param x = 1 when a and\n").is_err());
+    // In a part, each condition's own names become the part's.
+    let comp = "component c\n  param a = true\n  param b = 1 when a and shared\nend\nparam shared = true\npart p = c()\n";
+    let e = crate::expand(&parse(comp).unwrap());
+    let b = e.program.params.iter().find(|q| q.name == "p.b").unwrap();
+    let w = b.when.clone().unwrap();
+    assert_eq!(
+        (w.name.as_str(), w.also[0].name.as_str()),
+        ("p.a", "shared")
+    );
+}
+
 #[test]
 fn settings_can_apply_only_when_another_has_a_value() {
     let src = "param shape = \"cone\" of [\"cone\", \"own\"] \"Shape\"\n\

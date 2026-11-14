@@ -1057,8 +1057,11 @@ fn an_open_lampshade_is_easygcodes_without_the_closing_turn() {
                 })
                 .collect::<Vec<usize>>()
         };
+        // The spiral's turns (a brim, a print aid, isn't counted among the layers): the open
+        // top's last turn number, rounded up.
+        let n = open.turn.iter().copied().fold(0.0, f64::max).ceil() as usize;
         assert_eq!(flat.layers, open.layers);
-        let (ef, eo) = (last_turn(&flat, flat.layers), last_turn(&open, open.layers));
+        let (ef, eo) = (last_turn(&flat, n), last_turn(&open, n));
         let cap = flat.points.len() - 1 - ef[ef.len() - 1];
         assert!(cap >= 24, "the closing turn has at least 24 points");
         assert_eq!(
@@ -1103,16 +1106,16 @@ fn an_open_lampshade_is_easygcodes_without_the_closing_turn() {
             (end[2] - top[2]).abs() < 1e-9
                 && (end[0].hypot(end[1]) - top[0].hypot(top[1])).abs() < 1e-6
         );
-        let round = open.turn[eo[eo.len() - 1]] - (open.layers - 1) as f64;
+        let round = open.turn[eo[eo.len() - 1]] - (n - 1) as f64;
         assert!(round > 0.0 && round < 1.0, "part of a turn: {round}");
-        let before = start[2] - flat.points[last_turn(&flat, flat.layers - 1)[0] - 1][2];
+        let before = start[2] - flat.points[last_turn(&flat, n - 1)[0] - 1][2];
         let pitch = (end[2] - start[2]) / round;
         assert!(
             (pitch - before).abs() < 0.1 * before,
             "pitch {pitch} after {before}"
         );
         for &i in &eo {
-            let u = open.turn[i] - (open.layers - 1) as f64;
+            let u = open.turn[i] - (n - 1) as f64;
             let q = open.points[i];
             assert!((q[2] - (start[2] + pitch * u)).abs() < 1e-6, "rises evenly");
             assert!(open.flow[i] == 1.0 && !open.travel[i], "at full flow");

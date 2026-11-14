@@ -720,3 +720,37 @@ part b = ring(mount: a.out)
     let e = evaluate(&recipe(6.0), Quality::Final);
     assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
 }
+
+/// The layer count: a hand-built spiral (one long curve climbing ten layers) says how many with
+/// `toolpath(…, layers:)`; without it, one per curve. A brim joined in front (a print aid,
+/// `aid`) isn't counted. And `when … and …` warns for each setting it names that isn't there.
+#[test]
+fn layer_counts_for_hand_built_spirals_and_brims() {
+    let src = "turns = series(0, 1, 401) / 40\n\
+               coil = polyline(point(20 * cos(360 * turns), 20 * sin(360 * turns), 1 + 2 * turns))\n\
+               counted = toolpath([coil], width: 4, layer: 2, flow: 10, layers: 10)\n\
+               plain = toolpath([coil], width: 4, layer: 2, flow: 10)\n\
+               brim = aid(toolpath(graft(circle([30, 35])), width: 4, layer: 2, speed: 15))\n\
+               both = join(flatten([brim, [counted]]), clear: 4)\n\
+               print both\n";
+    let e = run(src);
+    assert!(diags(&e, Severity::Error).is_empty(), "{:?}", e.diagnostics);
+    assert_eq!(
+        e.print.as_ref().unwrap().stats.layers,
+        10,
+        "the brim adds none"
+    );
+    let plain = run(&src.replace("print both", "print plain"));
+    assert_eq!(plain.print.as_ref().unwrap().stats.layers, 1);
+    let bad = run(&src.replace(
+        "print both",
+        "print plain\nparam a = true\nparam b = 1 when a and nothere",
+    ));
+    assert!(
+        diags(&bad, Severity::Warning)
+            .iter()
+            .any(|d| d.2.contains("there's no setting `nothere`")),
+        "{:?}",
+        bad.diagnostics
+    );
+}

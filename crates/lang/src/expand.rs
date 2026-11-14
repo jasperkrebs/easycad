@@ -148,13 +148,17 @@ fn expand_part(part: &Part, c: &Component, out: &mut Expanded) {
         let mut param = q.clone();
         param.name = full(&q.name);
         param.part = Some(part.name.clone());
-        param.when = q.when.as_ref().map(|w| Condition {
+        let named = |w: &Condition| Condition {
             name: if own.contains(&w.name) {
                 full(&w.name)
             } else {
                 w.name.clone()
             },
             ..w.clone()
+        };
+        param.when = q.when.as_ref().map(|w| Condition {
+            also: w.also.iter().map(named).collect(),
+            ..named(w)
         });
         if let Some(a) = arg(&q.name) {
             match &a.value {

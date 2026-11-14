@@ -201,20 +201,22 @@ const on = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'number' ? v !
 
 /**
  * Whether a setting applies now: its `when` holds (the setting it names has one of its values,
- * or is on), and that setting applies itself.
+ * or is on, and so does each one after `and`), and every setting it names applies itself.
  * @param {any} p the engine's ParamInfo
  * @param {any[]} params
  * @param {Record<string, any>} values
  * @param {number} [depth]
  */
 export function applies(p, params, values, depth = 0) {
-  const w = p.when;
-  if (!w || depth > 20) return true;
-  const other = params.find((q) => q.name === w.name);
-  if (!other) return true;
-  const v = values[w.name] ?? other.value;
-  const holds = w.values.length ? w.values.some((x) => String(x) === String(v)) : on(v);
-  return (w.not ? !holds : holds) && applies(other, params, values, depth + 1);
+  const when = p.when;
+  if (!when || depth > 20) return true;
+  return [when, ...(when.also || [])].every((w) => {
+    const other = params.find((q) => q.name === w.name);
+    if (!other) return true;
+    const v = values[w.name] ?? other.value;
+    const holds = w.values.length ? w.values.some((x) => String(x) === String(v)) : on(v);
+    return (w.not ? !holds : holds) && applies(other, params, values, depth + 1);
+  });
 }
 
 /** Which settings groups are open, by name (remembered on this device). */

@@ -195,7 +195,8 @@ pub struct Param {
 
 /// When a setting applies: `when legs` (while `legs` is on, or not 0 or empty), `when shape =
 /// "own"`, `when shape = ["sphere", "flat sphere"]` (one of these), each with `not` to turn it
-/// round (`when not zipper`, `when not compensation = "off"`).
+/// round (`when not zipper`, `when not compensation = "off"`). Several joined by `and` must all
+/// hold (`when shape = "tube with wings" and wing_out`): the first here, the rest in `also`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Condition {
     /// The setting it depends on.
@@ -203,6 +204,15 @@ pub struct Condition {
     /// The values that make it apply; empty: any value that's on (true, not 0, not empty).
     pub values: Vec<Literal>,
     pub not: bool,
+    /// More conditions after `and`, each one setting's (their own `also` empty).
+    pub also: Vec<Condition>,
+}
+
+impl Condition {
+    /// This condition and every one after `and`, each on its own.
+    pub fn parts(&self) -> impl Iterator<Item = &Condition> {
+        std::iter::once(self).chain(self.also.iter())
+    }
 }
 
 /// A named step: `name = expression`.
