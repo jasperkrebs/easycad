@@ -137,6 +137,23 @@ test('a setting with `when` applies only while the setting it names has one of i
   assert.equal(at({ shape: 'own', lip: false, comp: 'width' }).own_r, true);
 });
 
+test('a `when` with `and` applies only while every condition holds', () => {
+  // `wing_n` shows `when shape = "wings" and wing_out`; `wing_out` itself only for the wings.
+  const params = [
+    { name: 'shape', value: 'cone' },
+    { name: 'wing_out', value: true, when: { name: 'shape', values: ['wings'], not: false, also: [] } },
+    { name: 'wing_n', value: 2, when: { name: 'shape', values: ['wings'], not: false, also: [{ name: 'wing_out', values: [], not: false, also: [] }] } },
+    { name: 'plain', value: 1, when: { name: 'shape', values: ['cone'], not: false, also: [{ name: 'wing_out', values: [], not: true, also: [] }] } },
+  ];
+  const at = (values) => Object.fromEntries(params.map((p) => [p.name, applies(p, params, values)]));
+  assert.deepEqual(at({ shape: 'wings', wing_out: true }), { shape: true, wing_out: true, wing_n: true, plain: false });
+  assert.equal(at({ shape: 'wings', wing_out: false }).wing_n, false, 'the second condition fails');
+  // Not wings: wing_n hides, even with wing_out still on (it no longer applies itself).
+  assert.equal(at({ shape: 'cone', wing_out: true }).wing_n, false);
+  // As with one condition, every setting named must apply itself: `wing_out` doesn't for a cone.
+  assert.equal(at({ shape: 'cone', wing_out: false }).plain, false);
+});
+
 test('stored settings never throw, with storage or without', async () => {
   const { load, save, loadJSON, saveJSON } = await import('../web/js/dom.js');
   const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');

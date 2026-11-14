@@ -568,7 +568,12 @@ impl Parser<'_> {
                         return Err(self.error("a setting takes one `when`"));
                     }
                     self.pos += 1;
-                    param.when = Some(self.condition()?);
+                    let mut when = self.condition()?;
+                    while matches!(self.peek(), Tok::Ident(w) if w == "and") {
+                        self.pos += 1;
+                        when.also.push(self.condition()?);
+                    }
+                    param.when = Some(when);
                 }
                 Tok::Str(label) => {
                     self.pos += 1;
@@ -658,7 +663,7 @@ impl Parser<'_> {
         Ok(out)
     }
 
-    /// `[not] NAME [= value | = [values]]` after `when`.
+    /// `[not] NAME [= value | = [values]]` after `when` (or after `and`).
     fn condition(&mut self) -> R<Condition> {
         let not = matches!(self.peek(), Tok::Ident(w) if w == "not");
         if not {
@@ -698,7 +703,12 @@ impl Parser<'_> {
                 self.pos += 1;
             }
         }
-        Ok(Condition { name, values, not })
+        Ok(Condition {
+            name,
+            values,
+            not,
+            also: Vec::new(),
+        })
     }
 
     fn choices(&mut self) -> R<Vec<Literal>> {

@@ -1080,7 +1080,13 @@ pub fn join(
             }
         });
         out.parts.extend(path.parts.iter().copied());
-        out.layers += path.layers - usize::from(merge && path.layers > 0);
+        // A print aid (a brim, `aid`) isn't a layer of the object.
+        let layers = if !path.parts.is_empty() && path.parts.iter().all(|s| s.aid) {
+            0
+        } else {
+            path.layers
+        };
+        out.layers += layers - usize::from(merge && layers > 0);
     }
     if out.layer_starts.is_empty() && !out.points.is_empty() {
         out.layer_starts.push(0);

@@ -270,7 +270,11 @@ pub(super) fn cap(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 pub(super) fn toolpath(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let curves = curves_of(a.items(0)?, "item")?;
     let settings = Settings::from_inputs(a.num(1)?, a.num(2)?, a.num(3)?, flow(a, 4)?)?;
-    let path = toolpath::from_curves(&curves, settings, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let mut path = toolpath::from_curves(&curves, settings, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let layers = a.count(5, 0, 1_000_000)?;
+    if layers > 0 {
+        path.layers = layers;
+    }
     ctx.spend(path.points.len())?;
     Ok(Value::Toolpath(Rc::new(path)))
 }

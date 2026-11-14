@@ -1434,9 +1434,15 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "volumetric flow in mm³/s; when set, it sets the speed (flow ÷ bead area)",
             ),
+            opt(
+                "layers",
+                "Count",
+                0.0,
+                "how many layers it prints, for the count shown (0: one per curve)",
+            ),
         ],
         output: "Toolpath",
-        doc: "Prints curves exactly as drawn, in order, with a travel move to the start of each. A curve drawn at z = 0 prints on the bed (the nozzle one layer up).",
+        doc: "Prints curves exactly as drawn, in order, with a travel move to the start of each. A curve drawn at z = 0 prints on the bed (the nozzle one layer up). Its layers are counted one per curve; a hand-built spiral (one long curve climbing many layers) says how many with `layers:`.",
         run: Run::Op(toolpath),
     },
     Node {

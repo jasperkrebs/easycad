@@ -507,17 +507,17 @@ impl<'a> Runner<'a> {
             });
         }
         for p in &program.params {
-            if let Some(w) = &p.when
-                && !program.params.iter().any(|q| q.name == w.name)
-            {
-                self.diag(
-                    p.span,
-                    Severity::Warning,
-                    format!(
-                        "`{}` shows `when {}`, but there's no setting `{}`",
-                        p.name, w.name, w.name
-                    ),
-                );
+            for w in p.when.iter().flat_map(|w| w.parts()) {
+                if !program.params.iter().any(|q| q.name == w.name) {
+                    self.diag(
+                        p.span,
+                        Severity::Warning,
+                        format!(
+                            "`{}` shows `when {}`, but there's no setting `{}`",
+                            p.name, w.name, w.name
+                        ),
+                    );
+                }
             }
         }
 

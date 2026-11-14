@@ -7,6 +7,26 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15: `when … and …`, a hand-built spiral's layer count (general-manager)
+
+**Why:** the recipe developer's "Needs from the app" for the tube with wings: settings that hang
+off a hidden one stay shown, and the app counted the wings (one long curve) as one layer; and a
+Wings group of its own would have failed the smoke test.
+
+**What landed:**
+- `when A and B and …` on a `param` line: every condition must hold (each may have `not` and
+  values), and every setting named must apply itself, as before. Parsed into `Condition.also`;
+  the settings window, the engine's "no setting" warning, parts (names made the part's) and the
+  STEP header's list of settings that apply all read it. Docs and the AI's guide updated.
+- `toolpath(…, layers: n)`: how many layers a toolpath prints, for the count (0: one per curve).
+- `join` doesn't count a print aid's layers (`aid`, a brim): the count is the object's.
+- The smoke test checks the settings groups that show for the cone it opens with, so a shape's
+  own group (hidden for a cone) can be added freely.
+
+Tests: `a_when_can_join_conditions_with_and` (lang), `layer_counts_for_hand_built_spirals_and_brims`
+(core), the `and` case in `settings.test.mjs`; the open-top golden test finds the last turn by
+its turn number (with a brim the layer count is now one less). Golden G-code unchanged.
+
 ## 2026-11-15: wings that start as a dent, outside, past 100 %, from the bed (recipe-developer)
 
 **Why:** the owner's corrections and additions to the tube with wings: a small wing made four

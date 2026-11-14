@@ -78,8 +78,12 @@ async function saveFrom(page, selector) {
       // The lampshade opens first. Its settings are fold-outs, one per group: the first open,
       // the others closed until tapped (and remembered).
       await page.waitForFunction(() => document.getElementById('projectName').textContent === 'Lampshade', null, { timeout: 15000 });
-      const groupNames = await page.locator('#settings details.group summary .group-name').allTextContents();
-      if (groupNames.join() !== 'Socket,Shade,Own shade,Print,Overhangs,Brim') failures.push(`${name}: settings groups: ${groupNames.join()}`);
+      // The groups that show for the cone it opens with (a shape's own group, like "Own shade",
+      // shows only for that shape, so the template can add such groups freely).
+      const groupNames = await page.evaluate(() =>
+        [...document.querySelectorAll('#settings details.group')].filter((d) => d.offsetParent !== null).map((d) => d.querySelector('summary .group-name')?.textContent ?? ''),
+      );
+      if (groupNames.join() !== 'Socket,Shade,Print,Overhangs,Brim') failures.push(`${name}: settings groups: ${groupNames.join()}`);
       const openNow = await page.locator('#settings details.group[open] .group-name').allTextContents();
       if (openNow.join() !== 'Socket') failures.push(`${name}: open at first: ${openNow.join()}`);
       if (await page.isVisible('#set-opening')) failures.push(`${name}: a closed group's setting is visible`);

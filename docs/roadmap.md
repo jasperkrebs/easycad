@@ -55,8 +55,7 @@ so in the dev log); when something new comes up, add it here, not only in the de
   add buttons check the new shade's straight start, not its body (a shade that runs into another
   shows red once added).
 - **Prints overview:** its colours follow the assembly's height, not each print's.
-- **Playback:** the progress slider steps by points, not by time; the HUD counts primer lines as
-  layers (the stool shows 14 for 11).
+- **Playback:** the progress slider steps by points, not by time.
 - **A first-turn helper:** the closed end's disc works out `vase_revolve`'s first turn in the recipe
   (as the brim does); a step that gives a toolpath's first point would remove the copy.
 - **The agent:** not tried on the Lamp yet; still to do: the chat box as a command line, skills,
@@ -75,6 +74,10 @@ so in the dev log); when something new comes up, add it here, not only in the de
   renamed; a hanging lamp is the plan turned over; very thin shade layers (under ~0.4 mm, heavily
   squeezed) can stop with an error; `shade_layer`/`shade_line` have no Plan marks.
 - **Marks** (tap in the Plan, jump to the setting): only the Lamp and the Lampshade have them.
+- **Ready to use** (from the app, 15 Nov): `when … and …`, so the wings' settings can hang off
+  the shape and each other; `toolpath(…, layers: n)` for the wings' layer count; a group of its
+  own for the wings (the smoke test no longer lists every group). The bend stool's primer lines
+  still count as layers (the stool shows 14 for 11): mark them `aid(…)` and they won't.
 - **The coat hanger** as a template.
 - **Tube with wings** ([tube-with-wings.md](tube-with-wings.md)): print it; then maybe a shade in
   the Lamp. Its settings could get a group of their own; it's slow-ish (about 60 ms) and stops at
