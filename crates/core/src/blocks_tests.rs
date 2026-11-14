@@ -586,6 +586,7 @@ fn every_lampshade_shade_prints_both_ways_up() {
         "bell in-out",
         "cone in-out",
         "tube",
+        "tube with wings",
     ] {
         // The last three with the shade's own layer height and line width.
         for (wide, lip, brim, comp, closed, shade_layer) in [
@@ -623,7 +624,12 @@ fn every_lampshade_shade_prints_both_ways_up() {
             } else {
                 2.5
             };
-            let floor = if closed { disc } else { 0.0 };
+            // A tube with wings is never closed.
+            let floor = if closed && shape != "tube with wings" {
+                disc
+            } else {
+                0.0
+            };
             assert!(
                 (pts[0][2] - floor).abs() < 1e-9 && pts.iter().all(|p| p[0] > 0.0),
                 "{shape} {closed}"
@@ -631,7 +637,7 @@ fn every_lampshade_shade_prints_both_ways_up() {
             let p = e.print.as_ref().unwrap();
             assert!(p.path.points.len() > 100 && p.stats.layers > 10, "{shape}");
             // Closed, the disc goes down first, at its layer, and fills the middle.
-            if closed {
+            if closed && shape != "tube with wings" {
                 let first = p.path.points.iter().find(|q| q[2] > 0.0).unwrap();
                 assert!((first[2] - disc).abs() < 1e-9 && first[0].hypot(first[1]) < 1.0);
             }
@@ -1128,5 +1134,235 @@ fn the_lampshade_slices_along_the_surface_on_request() {
     let z_at_turn = |p: &Toolpath, k: f64| turn_starts(p).iter().find(|t| t.0 == k).unwrap().2;
     for p in [&surface, &height] {
         assert!((z_at_turn(p, 4.0) - z_at_turn(p, 3.0) - 2.5).abs() < 1e-6);
+    }
+}
+
+/// The Lampshade's tube with wings: its straight start (the thread) as a tube's, then each layer
+/// turns back on itself at its seams onto a middle and an inner wall, growing from a bump at the
+/// seam into wings, every bead a layer above the one below it.
+mod wings {
+    use crate::eval::{Evaluation, Quality, Severity, evaluate};
+    use crate::geom::P3;
+    use easycad_lang::{Literal, set_values};
+
+    const TEMPLATE: &str = include_str!("../../../web/templates/lampshade.easycad");
+    /// The E27 tube's nozzle radius: (40 mm thread + a 6 mm line) / 2.
+    const R: f64 = 23.0;
+    const PITCH: f64 = 2.5;
+
+    fn wings(values: &[(&str, Literal)]) -> Evaluation {
+        let mut all = vec![("shape".to_string(), Literal::Text("tube with wings".into()))];
+        all.extend(values.iter().map(|(k, v)| (k.to_string(), v.clone())));
+        evaluate(&set_values(TEMPLATE, &all).unwrap(), Quality::Final)
+    }
+    fn num(v: f64) -> Literal {
+        Literal::Number(v)
+    }
+    fn text(v: &str) -> Literal {
+        Literal::Text(v.into())
+    }
+    fn clean(e: &Evaluation) -> Vec<P3> {
+        assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+        let p = &e.prints[0].path;
+        // One line from start to end: no travels after the first move, never going down.
+        assert!(p.travel.iter().skip(1).all(|t| !t));
+        assert!(p.points.windows(2).all(|w| w[1][2] >= w[0][2] - 1e-9));
+        p.points.clone()
+    }
+    fn radius(p: &P3) -> f64 {
+        p[0].hypot(p[1])
+    }
+    /// The extruded points of wing layer k (counting from where the wings start).
+    fn layer(points: &[P3], z_w: f64, k: usize) -> Vec<P3> {
+        points
+            .iter()
+            .filter(|p| ((p[2] - z_w) / PITCH - 1e-9).floor() == k as f64 && p[2] > z_w)
+            .copied()
+            .collect()
+    }
+    /// Points every 0.25 mm along a path, with how far along it each one is.
+    fn dense(points: &[P3]) -> Vec<([f64; 2], f64)> {
+        let mut out = Vec::new();
+        let mut along = 0.0;
+        for w in points.windows(2) {
+            let d = (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]);
+            let n = (d / 0.25).ceil().max(1.0) as usize;
+            for i in 0..n {
+                let t = i as f64 / n as f64;
+                let q = [
+                    w[0][0] + (w[1][0] - w[0][0]) * t,
+                    w[0][1] + (w[1][1] - w[0][1]) * t,
+                ];
+                out.push((q, along + d * t));
+            }
+            along += d;
+        }
+        out
+    }
+    /// The closest two pieces of a layer come to each other (seen from above), leaving out pairs
+    /// close along the path (a turn's own two ends are a spacing apart, half a circle along; the
+    /// layer's end runs on into the next layer's start).
+    fn closest_apart(points: &[P3], spacing: f64) -> f64 {
+        let d = dense(points);
+        let total = d.last().map_or(0.0, |p| p.1);
+        let mut best = f64::INFINITY;
+        for i in 0..d.len() {
+            for j in i + 1..d.len() {
+                let apart = d[j].1 - d[i].1;
+                if apart.min(total - apart) > 1.65 * spacing {
+                    best = best.min((d[i].0[0] - d[j].0[0]).hypot(d[i].0[1] - d[j].0[1]));
+                }
+            }
+        }
+        best
+    }
+    /// How many times a layer leaves the outer wall for a wing.
+    fn excursions(points: &[P3], r: f64, spacing: f64) -> usize {
+        let inside: Vec<bool> = points
+            .iter()
+            .map(|p| radius(p) < r - spacing / 2.0)
+            .collect();
+        inside.windows(2).filter(|w| !w[0] && w[1]).count()
+    }
+
+    #[test]
+    fn the_tube_grows_wings_above_its_straight_start() {
+        // As it ships: 50 % wings from 40 mm up, faded in over 60 mm, to the top (200 mm).
+        let e = wings(&[]);
+        let pts = clean(&e);
+        // The straight start ends on the seam at 40 mm, where the wings carry straight on.
+        let z_w = 40.0;
+        let at = pts.iter().position(|p| (p[2] - z_w).abs() < 1e-9).unwrap();
+        assert!(pts[at][0].abs() < 1e-9 && (pts[at][1] - R).abs() < 1e-9);
+        assert!((pts.last().unwrap()[2] - 200.0).abs() < 1e-9);
+        // Never outside the tube.
+        assert!(pts.iter().all(|p| radius(p) < R + 1e-9));
+        // Each layer reaches a little further in than the one below (a bump first), and
+        // longer, until the wings are full: then the inner wall, two spacings in.
+        let deepest: Vec<f64> = (0..64)
+            .map(|k| layer(&pts, z_w, k).iter().map(radius).fold(R, f64::min))
+            .collect();
+        assert!(deepest[0] > R - 0.1, "{}", deepest[0]);
+        assert!(deepest.windows(2).take(23).all(|w| w[1] <= w[0] + 1e-9));
+        assert!(deepest[30..].iter().all(|d| (d - (R - 12.0)).abs() < 1e-6));
+        // At full wings no two pieces of a layer come closer than a line width.
+        let top = layer(&pts, z_w, 60);
+        // (Less the chord tolerance: the walls are drawn as chords, 0.1 mm inside the circle.)
+        let gap = closest_apart(&top, 6.0);
+        assert!(gap > 6.0 - 0.15, "{gap}");
+        // It writes G-code that passes the printer's checks: one line from start to top.
+        let profile = crate::gcode::Profile::default();
+        let gcode = crate::gcode::write(&e.prints[0].path, &profile, "Lampshade").unwrap();
+        let moves = gcode.text.lines().filter(|l| l.starts_with("G1 X")).count();
+        assert!(moves > 7000, "{moves}");
+    }
+
+    #[test]
+    fn at_100_percent_the_tips_meet_a_line_apart() {
+        for seams in [1.0, 2.0, 3.0] {
+            let e = wings(&[
+                ("wings", num(100.0)),
+                ("wing_seams", num(seams)),
+                ("socket", text("custom")),
+                ("thread_d", num(80.0)),
+            ]);
+            let pts = clean(&e);
+            let top = layer(&pts, 40.0, 60);
+            // One wing per seam; the pieces just touch: the tips, the seam's turns, the walls.
+            assert_eq!(excursions(&top, 43.0, 6.0), seams as usize);
+            let gap = closest_apart(&top, 6.0);
+            assert!((gap - 6.0).abs() < 0.15, "{seams}: {gap}");
+        }
+        // With a gap between the walls, everything stays that much further apart.
+        let e = wings(&[("wings", num(100.0)), ("wing_gap", num(2.0))]);
+        let top = layer(&clean(&e), 40.0, 60);
+        let gap = closest_apart(&top, 8.0);
+        assert!((gap - 8.0).abs() < 0.15, "{gap}");
+    }
+
+    #[test]
+    fn rising_along_the_outer_wall_keeps_it_a_thread() {
+        let e = wings(&[("wing_rise", text("outer wall")), ("wings", num(80.0))]);
+        let pts = clean(&e);
+        // Every point on the outer wall is where the thread's helix is: a pitch a turn round
+        // from the seam at the back.
+        let mut on_wall = 0;
+        for p in pts
+            .iter()
+            .filter(|p| p[2] > 40.0 && (radius(p) - R).abs() < 1e-6)
+        {
+            let turns = (p[1].atan2(p[0]).to_degrees() - 90.0).rem_euclid(360.0) / 360.0;
+            let off = ((p[2] - 40.0) / PITCH - turns).rem_euclid(1.0);
+            assert!(off.min(1.0 - off) < 1e-6, "{p:?} {off}");
+            on_wall += 1;
+        }
+        assert!(on_wall > 1000);
+        // Inside, the wings are level.
+        let top = layer(&pts, 40.0, 60);
+        let inner: Vec<f64> = top
+            .iter()
+            .filter(|p| radius(p) < R - 9.0)
+            .map(|p| p[2])
+            .collect();
+        assert!(inner.iter().all(|z| (z - inner[0]).abs() < 1e-9) && inner.len() > 10);
+    }
+
+    #[test]
+    fn fading_out_the_tube_can_widen_to_keep_each_layer_as_long() {
+        let base = [
+            ("wings", num(100.0)),
+            ("wing_in", num(20.0)),
+            ("wing_hold", num(20.0)),
+            ("wing_out", num(60.0)),
+            ("wing_out_curve", text("linear")),
+            ("length", num(200.0)),
+        ];
+        // A layer's length: every move that ends in it.
+        let lengths = |pts: &[P3], k: usize| {
+            pts.windows(2)
+                .filter(|w| layer(&w[1..], 40.0, k).len() == 1)
+                .map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]))
+                .sum::<f64>()
+        };
+        let same = clean(&wings(&base));
+        let mut wide = base.to_vec();
+        wide.push(("wing_widen", text("same layer length")));
+        let widened = clean(&wings(&wide));
+        // The same diameter: the wings go, the layers shorten back to a circle's.
+        assert!(same.iter().all(|p| radius(p) < R + 1e-9));
+        let full = lengths(&same, 12);
+        let circle = lengths(&same, 60);
+        assert!((circle - std::f64::consts::TAU * R).abs() < 1.0, "{circle}");
+        // The same layer length: the tube widens as they go, every layer about as long, and
+        // straight on at that width to the top.
+        for k in 12..62 {
+            let l = lengths(&widened, k);
+            assert!((l / full - 1.0).abs() < 0.03, "{k}: {l} {full}");
+        }
+        let top = layer(&widened, 40.0, 60);
+        assert!(
+            top.iter()
+                .all(|p| (radius(p) - full / std::f64::consts::TAU).abs() < 0.5)
+        );
+    }
+
+    #[test]
+    fn wings_that_cannot_fit_say_so() {
+        let narrow = wings(&[("socket", text("E14")), ("line", num(7.0))]);
+        assert!(
+            narrow
+                .diagnostics
+                .iter()
+                .any(|d| d.severity == Severity::Error
+                    && d.message.contains("too narrow for three walls"))
+        );
+        let bumps = wings(&[("wing_seams", num(4.0))]);
+        assert!(
+            bumps
+                .diagnostics
+                .iter()
+                .any(|d| d.severity == Severity::Warning && d.message.contains("small bumps"))
+        );
+        assert!(!bumps.prints.is_empty());
     }
 }
