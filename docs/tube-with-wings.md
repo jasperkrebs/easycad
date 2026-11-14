@@ -68,6 +68,13 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
 - **Diameter as the wings fade out:** the same, or the **same layer length**: the tube widens
   as the wings go, so each layer stays as long as at full wings (with no wings left it's a
   plain tube about three times as wide, for one seam at 100 %). The fade-in keeps the diameter.
+- **Overhangs:** where the tube widens its wall leans out, and the Lampshade's Overhangs settings
+  apply as to any shade: with "layer height", layers come closer where it leans (each still
+  extruded for a whole layer), by the lean's (1 − cos) scaled by strength and (lean / pivot)^steep;
+  with "width", wider beads there, up to the max width. The fade, the widening and the lean are
+  worked out on a fine grid of heights (every half layer) and the layers are laid along it, each
+  its own rise, so the shape stays where it is and only the layers move; where it doesn't lean
+  every layer is exactly a pitch (the thread's), and the top ends on the nearest whole layer.
 
 ## How it rises (`wing_rise`)
 

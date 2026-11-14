@@ -27,6 +27,18 @@ Tests: `a_when_can_join_conditions_with_and` (lang), `layer_counts_for_hand_buil
 (core), the `and` case in `settings.test.mjs`; the open-top golden test finds the last turn by
 its turn number (with a brim the layer count is now one less). Golden G-code unchanged.
 
+## 2026-11-15 (evening): overhang compensation where the winged tube widens (recipe-developer)
+
+**Why:** with "same layer length" the tube widens as the wings fade out, and its wall leans out:
+an overhang, which the owner wanted compensated as the shades' are.
+
+**What landed** (Lampshade, tube with wings): the Overhangs settings apply: "layer height" brings
+layers closer where the wall leans (each still a whole layer's bead), "width" makes the beads
+wider there. The fade, the widening and the lean are now worked out on a fine grid of heights,
+and the layers are laid along it by their own rise, so the shape doesn't move and every layer
+that doesn't lean is exactly a pitch; the top ends on the nearest whole layer. As it ships (no
+widening) the path is unchanged to the last digit. Test `a_widening_tubes_overhang_is_compensated`.
+
 ## 2026-11-15 (later): wings that part at the seam; long tubes past 100 % (recipe-developer)
 
 **Why:** the owner's renders: a wing started as a wide hole that the lines then grew back across

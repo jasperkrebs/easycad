@@ -1366,7 +1366,8 @@ mod wings {
         ]);
         let pts = clean(&e);
         assert!(pts.len() > 100_000, "{}", pts.len());
-        assert_eq!(e.prints[0].path.layers, 16 + 197);
+        // (197 layers of wings at the pitch; more where layers come closer as it widens.)
+        assert!(e.prints[0].path.layers > 16 + 197);
     }
 
     #[test]
@@ -1463,6 +1464,8 @@ mod wings {
             ("wing_out", num(60.0)),
             ("wing_out_curve", text("linear")),
             ("length", num(200.0)),
+            // (Every layer a pitch: overhang compensation is tested on its own.)
+            ("compensation", text("off")),
         ];
         // A layer's length: every move that ends in it.
         let lengths = |pts: &[P3], k: usize| {
@@ -1491,6 +1494,60 @@ mod wings {
             top.iter()
                 .all(|p| (radius(p) - full / std::f64::consts::TAU).abs() < 0.5)
         );
+    }
+
+    #[test]
+    fn a_widening_tubes_overhang_is_compensated() {
+        let with = |comp: &str| {
+            wings(&[
+                ("wings", num(100.0)),
+                ("wing_in", num(20.0)),
+                ("wing_hold", num(20.0)),
+                ("wing_out", num(60.0)),
+                ("wing_widen", text("same layer length")),
+                ("compensation", text(comp)),
+            ])
+        };
+        let (squeezed, wider, off) = (with("layer height"), with("width"), with("off"));
+        for e in [&squeezed, &wider, &off] {
+            clean(e);
+        }
+        let layers = |e: &Evaluation| e.prints[0].path.layers;
+        // Closer layers where it leans out: more of them over the same height, the top on the
+        // nearest whole layer; where it doesn't lean, every layer a pitch above the one below
+        // (the same points, a pitch apart: the thread's pitch).
+        assert_eq!(layers(&off), 16 + 64);
+        assert!(
+            layers(&squeezed) > layers(&off) + 1,
+            "{}",
+            layers(&squeezed)
+        );
+        let pts = &squeezed.prints[0].path.points;
+        let top = pts.last().unwrap()[2];
+        assert!((top - 200.0).abs() < PITCH / 2.0, "{top}");
+        let held: Vec<&P3> = pts.iter().filter(|p| p[2] > 65.0 && p[2] < 80.0).collect();
+        let mut pairs = 0;
+        for a in &held {
+            for b in &held {
+                if (a[0] - b[0]).abs() < 1e-9
+                    && (a[1] - b[1]).abs() < 1e-9
+                    && b[2] > a[2] + 0.1
+                    && b[2] < a[2] + 1.5 * PITCH
+                {
+                    assert!((b[2] - a[2] - PITCH).abs() < 1e-5, "{a:?} {b:?}");
+                    pairs += 1;
+                }
+            }
+        }
+        assert!(pairs > 100, "{pairs}");
+        // Wider beads where it leans out, never past the max; none elsewhere.
+        let p = &wider.prints[0].path;
+        let widths: Vec<f64> = p.width.iter().copied().filter(|w| *w > 0.0).collect();
+        assert!(!widths.is_empty());
+        assert!(widths.iter().all(|w| (6.0..=6.0 * 2.5 + 1e-9).contains(w)));
+        assert!(widths.iter().any(|w| *w > 7.0));
+        assert_eq!(layers(&wider), layers(&off));
+        assert!(off.prints[0].path.width.iter().all(|w| *w == 0.0));
     }
 
     #[test]
