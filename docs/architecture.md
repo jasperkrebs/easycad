@@ -1,13 +1,13 @@
 # EasyCAD architecture
 
-*Status (9 Nov 2026): this began as the proposal of 14 Oct 2026 and still reads as one in
+*Status (14 Nov 2026): this began as the proposal of 14 Oct 2026 and still reads as one in
 places. **What's built:** the three crates of §3 ("Start small"), the web app, the Chat tab's
-agent and feature requests, G-code for two printers; the phases are in
-[roadmap.md](roadmap.md), what landed in [devlog.md](devlog.md). **Still a plan, not code:**
-the ten-crate split and the command registry with undo (§3, §7), incremental evaluation and
-caching (§6.4: a run evaluates the whole recipe, a few milliseconds for most templates),
-solids, 3MF, SVG/DXF and Rhino files (§10, §11.1), handles in the viewport and direct
-modelling (§9.2, §9.3), the desktop app, MCP and sending to printers (§8.1, §11.3, §12). The
+agent and feature requests, G-code for two printers, the Plan and STEP export; what's open is
+in [roadmap.md](roadmap.md), what landed in [devlog.md](devlog.md) and its archives. **Still a
+plan, not code:** the ten-crate split and the command registry with undo (§3, §7), incremental
+evaluation and caching (§6.4: a run evaluates the whole recipe, a few milliseconds for most
+templates), solids beyond a thickened wall's STEP, 3MF, SVG/DXF and Rhino files (§10, §11.1),
+handles in the viewport and direct modelling (§9.2, §9.3), the desktop app, MCP and sending to printers (§8.1, §11.3, §12). The
 owner's priority is **custom toolpaths and G-code**, lately large pellet prints on the Ginger
 G1 ([printers.md](printers.md)); the printing workflow is in
 [toolpaths-and-skills.md](toolpaths-and-skills.md), reasoning and sources in

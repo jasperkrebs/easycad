@@ -197,14 +197,5 @@ All built 8 Nov 2026:
 
 ## Still open
 
-- `along` (how far along a section a shade sits) has a fixed range; it could follow the
-  section's length.
-- Renaming a part (the commands add and remove; a part's name comes from its shape, and only a
-  shade just added is renamed when its shape changes).
-- A tube's start and end are the same section, offered from both ends: four pairs of add
-  buttons round a selected tube, crowded on a phone until zoomed in.
-- The add buttons don't check the new shade's body, only its straight start: a shade that runs
-  into another shows red once added (the bar removes it again).
-- Selection is the plan's only: the 3D view doesn't highlight the selected shade.
-- The agent hasn't been tried on the lamp yet (its guide describes parts).
-- Up is as printed (the socket at the bottom); a hanging lamp is the plan turned over.
+On the roadmap's "Open" list ([roadmap.md](roadmap.md)): the Plan and the lamp's views under
+"The app", the shade's own under "Recipes and projects".
