@@ -127,6 +127,7 @@ export vase as "twisted-vase.stl"
 | [docs/feature-requests.md](docs/feature-requests.md) | When the AI can't build something: it asks, Claude Code builds the step, the chat carries on |
 | [docs/grasshopper.md](docs/grasshopper.md) | Research: toolpaths and recipes in Grasshopper, Grasshopper files in EasyCAD, building without the AI |
 | [docs/devlog.md](docs/devlog.md) | What landed, what's open |
+| [docs/working-together.md](docs/working-together.md) | Who works on what: the owner, the general-manager and recipe-developer agents, their branches |
 | [CLAUDE.md](CLAUDE.md) | Guidance for AI agents (and humans) working in this repo |
 
 ## Develop
@@ -148,6 +149,10 @@ template with each setting at both ends of its range, with timings
 Templates live in `web/templates/*.easycad`; the engine's tests run every one of them, and the
 test-only recipes in `fixtures/recipes/` (the example above, EasyGCode's spoon).
 `fixtures/easygcode/` holds G-code written by EasyGCode itself, for the golden tests.
+
+Two Claude Code agents work on the repo, each on its own branch: `general-manager` (the app and
+its architecture) and `recipe-developer` (templates and projects). Both start every task by
+merging the newest `main` ([docs/working-together.md](docs/working-together.md)).
 
 ## Relationship to EasyGCode
 

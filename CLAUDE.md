@@ -34,6 +34,7 @@ Slicers, 3MF and solids are "later".
 ## Read in this order
 
 1. `README.md`: the idea
+   - `docs/working-together.md`: the two agents, their branches, who owns what
 2. `docs/roadmap.md`: current phase, decisions, what's next
 3. `docs/toolpaths-and-skills.md`: the core workflow (shapes → curves → toolpaths → G-code,
    skills, project files)
@@ -128,9 +129,22 @@ can do what the user asked. The Feature builder workflow runs Claude Code on it,
 
 ## Collaboration workflow
 
-As in EasyGCode:
-- `main` is the live app: every push to it deploys to GitHub Pages. Work on a branch, open a
-  PR, and the owner merges it into `main`.
-- Sync `main` before starting and before opening a PR.
-- Keep branches short-lived and PRs small.
-- Resolve conflicts by keeping the non-overlapping changes from both sides.
+Two agents work on EasyCAD, each on its own long-lived branch, each with its own kind of work
+(`docs/working-together.md` has who owns which files):
+- **`general-manager`**: the app and its architecture: engine, language, app UI, G-code safety,
+  build, CI, docs on how it all fits. General changes, never one project's.
+- **`recipe-developer`**: recipes and projects: templates, the owner's project files, tuning
+  and test prints. Needs a step the app doesn't have? It writes down what's needed ("Needs from
+  the app" in its pull request and the dev log) and the general manager builds it.
+
+Know which one you are from your branch, and stay in your area: ask, don't edit, the other's.
+
+Every task, on either branch:
+- `main` is the live app (every push deploys to GitHub Pages) and moves while you work.
+  **Before starting, `git fetch origin` and `git merge origin/main`**; again before opening a pull
+  request. Merge, never rebase or force-push.
+- Work on your branch, open a pull request into `main`; the owner merges it. Keep pull requests
+  small, one topic each.
+- Resolve conflicts by keeping both sides' changes; in the other agent's files take theirs and
+  re-apply only what yours needs. Run the checks after.
+- Dev log entries end with the branch: `## 2026-11-14: … (general-manager)`.

@@ -1,9 +1,20 @@
 # Dev log
 
 Newest first. Each entry: what landed, numbers, what's still open. Keep it short; it's how the
-next session (human or agent) picks up.
+next session (human or agent) picks up. Headings end with the branch that wrote them
+(`general-manager` or `recipe-developer`, `docs/working-together.md`).
 
 October 2026 (from the first commit to 29 Oct) is in [devlog-2026-10.md](devlog-2026-10.md).
+
+## 2026-11-14 (night): two agents, two branches (general-manager)
+
+**What changed:** the owner split the work between two agents on long-lived branches:
+`general-manager` (the app and its architecture: engine, language, app UI, G-code safety, build,
+CI) and `recipe-developer` (templates, the owner's projects, tuning and test prints). The old
+session branch is gone. Written down in `docs/working-together.md` (who owns which files, how a
+recipe asks for a new step, merging `origin/main` before every task and every pull request,
+conflicts, dev log entries ending with the branch), `CLAUDE.md` (collaboration workflow, read
+order) and the README.
 
 ## 2026-11-14 (night): the brim's own extrusion again
 
