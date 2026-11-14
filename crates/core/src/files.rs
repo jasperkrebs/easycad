@@ -301,23 +301,10 @@ mod tests {
         );
     }
 
-    /// The signed volume of a binary STL's triangles: positive when they face outward.
-    fn stl_volume(stl: &[u8]) -> f64 {
-        triangles(stl)
-            .iter()
-            .map(|t| {
-                let [a, b, c] = t.map(|p| p.map(f64::from));
-                (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
-                    + a[2] * (b[0] * c[1] - b[1] * c[0]))
-                    / 6.0
-            })
-            .sum()
-    }
-
-    /// The lampshade's wall, a line thick, as an exact STEP solid of cones, cylinders and
-    /// planes; its header says what it was made with (the socket gives the thread's pitch).
+    /// The lampshade's wall as an exact STEP surface (no thickness: an open shell of cones and
+    /// cylinders); its header says what it was made with (the socket gives the thread's pitch).
     #[test]
-    fn the_lampshade_exports_its_wall_as_a_step_solid() {
+    fn the_lampshade_exports_its_wall_as_a_step_surface() {
         let src = include_str!("../../../web/templates/lampshade.easycad");
         let e = evaluate(src, Quality::Final);
         let i = e
@@ -331,27 +318,27 @@ mod tests {
         let text = String::from_utf8(file.bytes).unwrap();
         assert!(text.starts_with("ISO-10303-21;"));
         let counts = crate::step::tests::check(&text);
-        assert_eq!(counts["MANIFOLD_SOLID_BREP"], 1);
-        assert_eq!(counts["CLOSED_SHELL"], 1);
-        assert!(counts["CONICAL_SURFACE"] > 10, "{counts:?}");
-        assert!(counts["CYLINDRICAL_SURFACE"] >= 2, "{counts:?}");
-        assert!(!counts.contains_key("OPEN_SHELL"));
+        // The surface itself, no thickness: an open shell of exact faces, no solid.
+        assert_eq!(counts["SHELL_BASED_SURFACE_MODEL"], 1, "{counts:?}");
+        assert_eq!(counts["OPEN_SHELL"], 1, "{counts:?}");
+        assert!(!counts.contains_key("MANIFOLD_SOLID_BREP"));
+        assert!(counts["CONICAL_SURFACE"] > 5, "{counts:?}");
+        assert!(counts["CYLINDRICAL_SURFACE"] >= 1, "{counts:?}");
         assert!(text.contains("'EasyCAD: Lampshade'"));
         assert!(text.contains("'Socket: E27'"), "{}", &text[..2000]);
         assert!(text.contains("'Line width: 6 mm'"));
         // The custom pitch only applies to a custom socket: left out.
         assert!(!text.contains("Custom thread pitch"));
-        // The same solid as STL: closed, facing out, about the wall's volume.
+        // The same surface as STL: its triangles.
         let as_stl = evaluate(
             &src.replace("\"lampshade.step\"", "\"lampshade.stl\""),
             Quality::Final,
         );
         let stl = make(&as_stl, Which::Export(i), &p1p()).unwrap();
-        let volume = stl_volume(&stl.bytes);
-        assert!(volume > 50_000.0, "{volume}");
+        assert!(stl.bytes.len() > 84 + 50 * 100);
         // The G-code doesn't change for it: the export is a side branch.
         let without = evaluate(
-            &src.replace("export wall_solid as \"lampshade.step\"\n", ""),
+            &src.replace("export wall as \"lampshade.step\"\n", ""),
             Quality::Final,
         );
         assert!(without.exports.is_empty());
@@ -384,9 +371,10 @@ mod tests {
             assert_eq!(file.name, name);
             let text = String::from_utf8(file.bytes).unwrap();
             let counts = crate::step::tests::check(&text);
-            assert_eq!(counts["MANIFOLD_SOLID_BREP"], 1, "{name}");
+            assert_eq!(counts["SHELL_BASED_SURFACE_MODEL"], 1, "{name}");
+            assert!(!counts.contains_key("MANIFOLD_SOLID_BREP"), "{name}");
         }
-        // Closed at the end: the disc reaches the axis, still one solid.
+        // Closed at the end: the disc reaches the axis, still one surface.
         let closed = easycad_lang::set_values(
             lamp,
             &[("main.closed".into(), easycad_lang::Literal::Bool(true))],
@@ -399,7 +387,10 @@ mod tests {
             .position(|x| x.kind == ExportKind::Step)
             .unwrap();
         let text = String::from_utf8(make(&e, Which::Export(i), &p1p()).unwrap().bytes).unwrap();
-        assert_eq!(crate::step::tests::check(&text)["MANIFOLD_SOLID_BREP"], 1);
+        assert_eq!(
+            crate::step::tests::check(&text)["SHELL_BASED_SURFACE_MODEL"],
+            1
+        );
     }
 
     #[test]

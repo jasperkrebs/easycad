@@ -265,7 +265,7 @@ async function saveFrom(page, selector) {
         if (id === 'lampshade') {
           const step = await saveFrom(page, '#exportButtons button:text("lampshade.step")');
           const text = step.data.toString('utf8');
-          if (step.name !== 'lampshade.step' || !text.startsWith('ISO-10303-21;') || !/MANIFOLD_SOLID_BREP/.test(text) || !/CONICAL_SURFACE/.test(text)) {
+          if (step.name !== 'lampshade.step' || !text.startsWith('ISO-10303-21;') || !/SHELL_BASED_SURFACE_MODEL/.test(text) || !/CONICAL_SURFACE/.test(text)) {
             failures.push(`${name}: lampshade STEP ${step.name} (${step.data.length} bytes) isn't a solid: ${text.slice(0, 60)}`);
           }
         }

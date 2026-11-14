@@ -52,8 +52,8 @@ written to be reused.
 
 The same goes for plain geometry: `export shape as "name.stl"` saves any surface or solid for a
 slicer or CAD program, and `export shape as "name.step"` saves it as STEP for a manufacturer
-who slices it their own way (`thicken(wall, line)` first, so it's the printed wall, not a
-surface of no thickness). Booleans, extrusions and fillets are the next geometry steps.
+who works on it their own way: a surface goes in as a surface (an open shell, no thickness;
+`thicken(wall, line)` first for the printed wall as a solid). Booleans, extrusions and fillets are the next geometry steps.
 
 ---
 

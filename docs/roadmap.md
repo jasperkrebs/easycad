@@ -45,9 +45,7 @@ so in the dev log); when something new comes up, add it here, not only in the de
 
 ### The app (general-manager)
 
-- **STEP export:** a closed end's disc is thickened by the line width, not its own layer height
-  (thicker than printed); a shade's own line width (`shade_line`) isn't the wall's thickness yet;
-  lofts are written as triangles, not B-spline faces.
+- **STEP export:** lofts are written as triangles, not B-spline faces.
 - **The lamp in the views:** the 3D view doesn't refit when the lamp comes apart (Fit does); the
   3D view doesn't highlight the shade selected in the Plan; while taking it apart each step takes
   the same time (a long thread spins faster), and turning shades aren't checked against the others.
@@ -83,6 +81,8 @@ so in the dev log); when something new comes up, add it here, not only in the de
   print it (the crease where a wing starts; "same layer length" within 4 %).
 - **Overhang compensation: layer height only.** The owner uses only "layer height"; width
   compensation is no longer kept up (it stays where EasyGCode's golden tests need it, unchanged).
+- **Tube with wings, STEP:** its shown wall (`wall`) is the plain tube, so its STEP export has no
+  wings; show (and export) a surface with the wings if one is wanted.
 - **Not printed yet:** two shades screwed together; a closed shade.
 
 ## Later, when wanted
