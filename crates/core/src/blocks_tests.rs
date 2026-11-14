@@ -1137,9 +1137,10 @@ fn the_lampshade_slices_along_the_surface_on_request() {
     }
 }
 
-/// The Lampshade's tube with wings: its straight start (the thread) as a tube's, then each layer
-/// turns back on itself at its seams onto a middle and an inner wall, growing from a bump at the
-/// seam into wings, every bead a layer above the one below it.
+/// The Lampshade's tube with wings (`docs/tube-with-wings.md`): its straight start (the thread) as
+/// a tube's, then each layer turns back on itself at its seams onto a middle and an inner wall
+/// (or outside the tube), the turns growing from a shallow dent into half circles, every bead a
+/// layer above the one below it.
 mod wings {
     use crate::eval::{Evaluation, Quality, Severity, evaluate};
     use crate::geom::P3;
@@ -1171,6 +1172,10 @@ mod wings {
     }
     fn radius(p: &P3) -> f64 {
         p[0].hypot(p[1])
+    }
+    /// Degrees round from the seam at the back (+Y), 0..360.
+    fn round_from_seam(p: &P3) -> f64 {
+        (p[1].atan2(p[0]).to_degrees() - 90.0).rem_euclid(360.0)
     }
     /// The extruded points of wing layer k (counting from where the wings start).
     fn layer(points: &[P3], z_w: f64, k: usize) -> Vec<P3> {
@@ -1216,13 +1221,20 @@ mod wings {
         }
         best
     }
-    /// How many times a layer leaves the outer wall for a wing.
+    /// How many times a layer leaves the tube's wall (radius r) for a wing, in or out.
     fn excursions(points: &[P3], r: f64, spacing: f64) -> usize {
-        let inside: Vec<bool> = points
+        let away: Vec<bool> = points
             .iter()
-            .map(|p| radius(p) < r - spacing / 2.0)
+            .map(|p| (radius(p) - r).abs() > spacing / 2.0)
             .collect();
-        inside.windows(2).filter(|w| !w[0] && w[1]).count()
+        away.windows(2).filter(|w| !w[0] && w[1]).count()
+    }
+    /// Whether every move of a layer goes forward round the tube (no turn back yet).
+    fn only_forward(points: &[P3]) -> bool {
+        points.windows(2).all(|w| {
+            let step = (round_from_seam(&w[1]) - round_from_seam(&w[0]) + 540.0).rem_euclid(360.0);
+            step > 180.0 - 1e-9
+        })
     }
 
     #[test]
@@ -1237,19 +1249,24 @@ mod wings {
         assert!((pts.last().unwrap()[2] - 200.0).abs() < 1e-9);
         // Never outside the tube.
         assert!(pts.iter().all(|p| radius(p) < R + 1e-9));
-        // Each layer reaches a little further in than the one below (a bump first), and
-        // longer, until the wings are full: then the inner wall, two spacings in.
+        // A dent first: the line only dips in at the seam and carries on forward, never turning
+        // back, until its turns have grown past a quarter; then it runs back along the wings.
+        assert!((0..4).all(|k| only_forward(&layer(&pts, z_w, k))));
+        assert!(!only_forward(&layer(&pts, z_w, 12)));
+        // Each layer reaches a little further in than the one below, until the wings are full:
+        // then the inner wall, two spacings in.
         let deepest: Vec<f64> = (0..64)
             .map(|k| layer(&pts, z_w, k).iter().map(radius).fold(R, f64::min))
             .collect();
         assert!(deepest[0] > R - 0.1, "{}", deepest[0]);
         assert!(deepest.windows(2).take(23).all(|w| w[1] <= w[0] + 1e-9));
         assert!(deepest[30..].iter().all(|d| (d - (R - 12.0)).abs() < 1e-6));
-        // At full wings no two pieces of a layer come closer than a line width.
-        let top = layer(&pts, z_w, 60);
-        // (Less the chord tolerance: the walls are drawn as chords, 0.1 mm inside the circle.)
-        let gap = closest_apart(&top, 6.0);
-        assert!(gap > 6.0 - 0.15, "{gap}");
+        // No two pieces of a layer come closer than a line width, as they grow and at full
+        // (less the chord tolerance: the walls are drawn as chords, 0.1 mm inside the circle).
+        for k in [2, 4, 6, 8, 12, 60] {
+            let gap = closest_apart(&layer(&pts, z_w, k), 6.0);
+            assert!(gap > 6.0 - 0.15, "{k}: {gap}");
+        }
         // It writes G-code that passes the printer's checks: one line from start to top.
         let profile = crate::gcode::Profile::default();
         let gcode = crate::gcode::write(&e.prints[0].path, &profile, "Lampshade").unwrap();
@@ -1259,19 +1276,32 @@ mod wings {
 
     #[test]
     fn at_100_percent_the_tips_meet_a_line_apart() {
-        for seams in [1.0, 2.0, 3.0] {
-            let e = wings(&[
-                ("wings", num(100.0)),
-                ("wing_seams", num(seams)),
-                ("socket", text("custom")),
-                ("thread_d", num(80.0)),
-            ]);
-            let pts = clean(&e);
-            let top = layer(&pts, 40.0, 60);
-            // One wing per seam; the pieces just touch: the tips, the seam's turns, the walls.
-            assert_eq!(excursions(&top, 43.0, 6.0), seams as usize);
-            let gap = closest_apart(&top, 6.0);
-            assert!((gap - 6.0).abs() < 0.15, "{seams}: {gap}");
+        for side in ["inside", "outside"] {
+            for seams in [1.0, 2.0, 3.0] {
+                let e = wings(&[
+                    ("wings", num(100.0)),
+                    ("wing_side", text(side)),
+                    ("wing_seams", num(seams)),
+                    ("socket", text("custom")),
+                    ("thread_d", num(80.0)),
+                ]);
+                let pts = clean(&e);
+                let top = layer(&pts, 40.0, 60);
+                // One wing per seam; the pieces just touch: the tips, the seam's turns, the walls.
+                assert_eq!(excursions(&top, 43.0, 6.0), seams as usize, "{side}");
+                let gap = closest_apart(&top, 6.0);
+                assert!((gap - 6.0).abs() < 0.15, "{side} {seams}: {gap}");
+                // Inside, two walls in; outside, two walls out.
+                let (lo, hi) = top
+                    .iter()
+                    .map(radius)
+                    .fold((f64::INFINITY, 0.0f64), |(a, b), r| (a.min(r), b.max(r)));
+                if side == "inside" {
+                    assert!((lo - 31.0).abs() < 1e-6 && hi < 43.0 + 1e-6, "{lo} {hi}");
+                } else {
+                    assert!(lo > 43.0 - 0.1 && (hi - 55.0).abs() < 1e-6, "{lo} {hi}");
+                }
+            }
         }
         // With a gap between the walls, everything stays that much further apart.
         let e = wings(&[("wings", num(100.0)), ("wing_gap", num(2.0))]);
@@ -1281,22 +1311,43 @@ mod wings {
     }
 
     #[test]
-    fn rising_along_the_outer_wall_keeps_it_a_thread() {
-        let e = wings(&[("wing_rise", text("outer wall")), ("wings", num(80.0))]);
+    fn past_100_percent_more_wings_grow_inside_the_first() {
+        let e = wings(&[
+            ("wings", num(200.0)),
+            ("socket", text("custom")),
+            ("thread_d", num(80.0)),
+            ("wing_in", num(100.0)),
+            ("length", num(240.0)),
+        ]);
         let pts = clean(&e);
-        // Every point on the outer wall is where the thread's helix is: a pitch a turn round
-        // from the seam at the back.
-        let mut on_wall = 0;
-        for p in pts
-            .iter()
-            .filter(|p| p[2] > 40.0 && (radius(p) - R).abs() < 1e-6)
-        {
-            let turns = (p[1].atan2(p[0]).to_degrees() - 90.0).rem_euclid(360.0) / 360.0;
-            let off = ((p[2] - 40.0) / PITCH - turns).rem_euclid(1.0);
-            assert!(off.min(1.0 - off) < 1e-6, "{p:?} {off}");
-            on_wall += 1;
+        // 150 % (as far up the fade-in as the S-curve takes it): the first wings full, the
+        // second half way; at 200 % four walls in, the second wings' tips a line apart too.
+        let deepest = |k| layer(&pts, 40.0, k).iter().map(radius).fold(43.0, f64::min);
+        assert!((deepest(30) - 31.0).abs() > 1.0 && deepest(30) < 31.0);
+        let top = layer(&pts, 40.0, 70);
+        assert!((deepest(70) - 19.0).abs() < 1e-6, "{}", deepest(70));
+        let gap = closest_apart(&top, 6.0);
+        assert!((gap - 6.0).abs() < 0.15, "{gap}");
+        for k in (24..40).step_by(3) {
+            let gap = closest_apart(&layer(&pts, 40.0, k), 6.0);
+            assert!(gap > 6.0 - 0.15, "{k}: {gap}");
         }
-        assert!(on_wall > 1000);
+    }
+
+    #[test]
+    fn rising_along_the_tube_wall_keeps_it_a_thread() {
+        let e = wings(&[("wing_rise", text("tube wall")), ("wings", num(80.0))]);
+        let pts = clean(&e);
+        // At full wings every point on the tube's wall is on a helix a pitch a turn (as far
+        // round as it is from the seam, give or take the same offset every layer).
+        let offs: Vec<f64> = pts
+            .iter()
+            .filter(|p| p[2] > 110.0 && (radius(p) - R).abs() < 1e-6)
+            .map(|p| ((p[2] - 40.0) / PITCH - round_from_seam(p) / 360.0).rem_euclid(1.0))
+            .collect();
+        assert!(offs.len() > 500);
+        let spread = offs.iter().fold(0.0f64, |m, o| m.max((o - offs[0]).abs()));
+        assert!(spread < 1e-6, "{spread}");
         // Inside, the wings are level.
         let top = layer(&pts, 40.0, 60);
         let inner: Vec<f64> = top
@@ -1305,6 +1356,67 @@ mod wings {
             .map(|p| p[2])
             .collect();
         assert!(inner.iter().all(|z| (z - inner[0]).abs() < 1e-9) && inner.len() > 10);
+    }
+
+    #[test]
+    fn rising_along_the_wings_puts_the_thread_inside() {
+        let e = wings(&[("wing_rise", text("wings")), ("wings", num(100.0))]);
+        let pts = clean(&e);
+        // At full wings the inner wall (two walls in) is on a helix a pitch a turn.
+        let offs: Vec<f64> = pts
+            .iter()
+            .filter(|p| p[2] > 110.0 && (radius(p) - (R - 12.0)).abs() < 1e-6)
+            .map(|p| ((p[2] - 40.0) / PITCH - round_from_seam(p) / 360.0).rem_euclid(1.0))
+            .collect();
+        assert!(offs.len() > 100);
+        let spread = offs.iter().fold(0.0f64, |m, o| m.max((o - offs[0]).abs()));
+        assert!(spread < 1e-4, "{spread}");
+        // The tube's wall is level, layer by layer.
+        let wall: Vec<f64> = layer(&pts, 40.0, 60)
+            .iter()
+            .filter(|p| (radius(p) - R).abs() < 1e-6)
+            .map(|p| p[2])
+            .collect();
+        assert!(wall.len() > 10 && wall.iter().all(|z| (z - wall[0]).abs() < 1e-9));
+    }
+
+    #[test]
+    fn full_wings_can_start_on_the_bed() {
+        let e = wings(&[
+            ("wing_bed", Literal::Bool(true)),
+            ("wings", num(100.0)),
+            ("wing_side", text("outside")),
+        ]);
+        let pts = clean(&e);
+        let p = &e.prints[0].path;
+        // No straight start: the first layer has the wings already, rising off the bed, each
+        // move extruded for the gap under it.
+        assert!(pts[0][2].abs() < 1e-9);
+        let first = layer(&pts, 0.0, 0);
+        assert_eq!(excursions(&first, R, 6.0), 1);
+        let heights: Vec<f64> = (1..p.points.len())
+            .filter(|&i| p.points[i][2] < PITCH / 2.0)
+            .map(|i| p.height[i])
+            .collect();
+        assert!(
+            heights.iter().all(|&h| h > 0.0 && h < PITCH / 2.0 + 0.1),
+            "{heights:?}"
+        );
+        assert!((pts.last().unwrap()[2] - 200.0).abs() < 1e-9);
+        // A brim goes round the outermost wall.
+        let mut with_brim = vec![
+            ("wing_bed", Literal::Bool(true)),
+            ("wings", num(100.0)),
+            ("wing_side", text("outside")),
+        ];
+        with_brim.push(("brim", Literal::Bool(true)));
+        let b = wings(&with_brim);
+        assert!(b.diagnostics.is_empty(), "{:?}", b.diagnostics);
+        let brim_r = b.prints[0].path.points[1..40]
+            .iter()
+            .map(radius)
+            .fold(f64::INFINITY, f64::min);
+        assert!(brim_r > 35.0 + 3.0, "{brim_r}");
     }
 
     #[test]
@@ -1354,15 +1466,22 @@ mod wings {
                 .diagnostics
                 .iter()
                 .any(|d| d.severity == Severity::Error
-                    && d.message.contains("too narrow for three walls"))
+                    && d.message.contains("too narrow for this many walls"))
         );
-        let bumps = wings(&[("wing_seams", num(4.0))]);
+        let deep = wings(&[("wings", num(200.0))]);
         assert!(
-            bumps
+            deep.diagnostics
+                .iter()
+                .any(|d| d.severity == Severity::Error
+                    && d.message.contains("too narrow for this many walls"))
+        );
+        let dents = wings(&[("wing_seams", num(8.0))]);
+        assert!(
+            dents
                 .diagnostics
                 .iter()
-                .any(|d| d.severity == Severity::Warning && d.message.contains("small bumps"))
+                .any(|d| d.severity == Severity::Warning && d.message.contains("stay dents"))
         );
-        assert!(!bumps.prints.is_empty());
+        assert!(!dents.prints.is_empty());
     }
 }

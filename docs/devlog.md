@@ -7,6 +7,28 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15: wings that start as a dent, outside, past 100 %, from the bed (recipe-developer)
+
+**Why:** the owner's corrections and additions to the tube with wings: a small wing made four
+tiny half circles (the whole shape scaled down), where it should only dip in at the seam and
+turn back; and wings outside (a thread inside), a rise in the wings only (inside wings with a
+thread inside), more than 100 %, and full wings from the bed.
+
+**What landed** (Lampshade, [tube-with-wings.md](tube-with-wings.md)): a wing now starts as a
+shallow dent whose turns grow from a few degrees to half circles before the wings run back;
+`wing_side` (inside, outside); `wing_rise` "whole layer", "tube wall" (was "outer wall"), "wings"
+(the innermost wings' inner wall a helix, the tube's wall level), blended in as the wings fade
+in; `wings` up to 300 % (a second wing, then a third, grows on the inner wall at the seam);
+`wing_bed` (full wings from the first layer, which rises off the bed through `bead`; a brim goes
+round the outermost wall). The recipe is now one table of arcs per layer, seam and level, and
+each piece's share of the rise comes from its arc, so it's as fast as before (about 60 ms as it
+ships). Tests (`blocks_tests.rs`, `wings`): only forward moves while the dent is shallow; no two
+pieces closer than a line as the wings grow, at 100 % inside and outside for 1–3 seams, and at
+150–200 %; the tube wall's helix ("tube wall") and the inner wall's ("wings"); from the bed; the
+errors and warning.
+
+**Open:** as before (the first print; "Wide edge down" shows; the app's layer count).
+
 ## 2026-11-14 (late night): the Lampshade's tube with wings (recipe-developer)
 
 **Why:** the owner's idea, from a sketch: a narrow tube's layers are too short to cool. Wings make

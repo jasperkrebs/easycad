@@ -36,10 +36,12 @@ param lip        = false                            "Straight lip at the opening
 param lip_length = 10 mm   in 0..100 step 1         "Lip length"  when lip
 param lip_fillet = 0 mm    in 0..100 step 1         "Lip fillet (0: the throat's)"  when lip
 param wide_down  = false                            "Wide edge down"  when not closed
-param wings      = 50 %    in 0..100                "Wings (100 %: the tips meet)"  when shape = "tube with wings"
+param wings      = 50 %    in 0..300                "Wings (100 %: the tips meet; past it, more walls)"  when shape = "tube with wings"
+param wing_side  = "inside" of ["inside", "outside"] "Wings on the"  when shape = "tube with wings"
 param wing_seams = 1       in 1..8 step 1           "Seams"  when shape = "tube with wings"
 param wing_gap   = 0 mm    in 0..10 step 0.1        "Gap between the walls"  when shape = "tube with wings"
-param wing_rise  = "whole layer" of ["whole layer", "outer wall"] "Rise along"  when shape = "tube with wings"
+param wing_rise  = "whole layer" of ["whole layer", "tube wall", "wings"] "Rise along"  when shape = "tube with wings"
+param wing_bed   = false                            "Start with full wings (no straight start)"  when shape = "tube with wings"
 param wing_start = 40 mm   in 0..1000 step 1        "Straight start"  when shape = "tube with wings"
 param wing_in    = 60 mm   in 0..1000 step 1        "Fade in over"  when shape = "tube with wings"
 param wing_in_curve = "smooth" of ["linear", "smooth"] "Fade-in curve"  when shape = "tube with wings"
@@ -299,7 +301,7 @@ fillet_top = pick(blended, item(arc_z, arc_n) + shift, throat)
 
 # A tube: one straight wall, its whole length (with wings: up to where they start, below).
 full_r  = pick(is_tube, [r_t, r_t], prof_r)
-full_z  = pick(is_tube, [0, pick(wing_on, z_w, length)], prof_z)
+full_z  = pick(is_tube, [0, pick(wing_on, max(pitch, z_w), length)], prof_z)
 full_l  = pick(is_tube, [0, 0], prof_l)
 
 # Printed throat down, or wide edge down (the profile turned over; a tube with wings prints
@@ -361,7 +363,7 @@ shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_lay
 # A brim around the first turn, outermost ring first, hopping between rings and into the shade.
 first_rise  = sample(rise, [0, 0, min(top_z, sample(rise, [0, 0, 0]) / 2)])
 r_first     = graph(print_z, print_r, min(top_z, first_rise))
-brim_rings  = circle(r_first + brim_width / 2 + sample(line_at, [0, 0, first_rise / 2]) / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
+brim_rings  = circle(pick(w_bed, r_t + less(w_sig, 0) * 2 * w_J * w_s, r_first) + brim_width / 2 + sample(line_at, [0, 0, first_rise / 2]) / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
 # The brim's own extrusion (100 %: as the bead's), for a first layer that needs more or less.
 brim_raw    = toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed)
 brim_path   = pick(greater(abs(brim_extrusion - 1), 0.000001), adjust(brim_raw, extrude: brim_extrusion), brim_raw)
@@ -413,211 +415,261 @@ cap_r0   = max(cap_w, pick(surface, graph(print_s, print_r, cap_dz), graph(print
 cap_t    = cap_r0 / cap_w
 cap_disc = spiral(spacing: cap_w, turns: cap_t, tolerance: tolerance) |> rotate(90 - 360 * cap_t)
 cap_path = join([toolpath(cap_disc, width: cap_w, layer: cap_dl, flow: flow), shade], link: true)
-path     = pick(is_closed, cap_path, pick(wing_on, join([open_path, wing_path]), open_path))
+# A tube with wings: its straight start, then the wings; or the wings from the bed (any brim
+# round them).
+wings_bed = pick(brim, join(flatten([aid(brim_path), [wing_path]]), clear: 2 * brim_layer), wing_path)
+path     = pick(is_closed, cap_path, pick(wing_on, pick(w_bed, wings_bed, join([open_path, wing_path])), open_path))
 
-# ---- Tube with wings: above a straight start (the thread), each layer turns back on itself at
-# its seams, so it's longer (more time to cool) while the tube stays as wide. At each seam the
-# line turns 180° inward onto a middle wall, runs back against the print direction, turns
-# inward again onto an inner wall, runs forward past the seam as far again, turns out onto the
-# middle wall, back to the seam, and out onto the outer wall: two wings, mirrored about the seam.
-# `wings` is how far they reach: 100 % to one wall's spacing from the next seam's wings (with one
-# seam: from each other, a triple wall all round). Small wings are the whole shape scaled down
-# about the seam, so they start as a small bump and grow. Each turn is a half circle between
-# two walls; the walls are a line plus the gap apart; at the seam, the two turns between the
-# outer and middle walls are one spacing apart, closing the outer wall.
+# ---- Tube with wings (docs/tube-with-wings.md): above a straight start (the thread), each layer
+# turns back on itself at its seams, so it's longer (more time to cool) while the tube stays as
+# wide. At each seam the line turns 180° in (or out: `wing_side`) onto a middle wall, runs back
+# against the print direction, turns in again onto an inner wall, runs forward past the seam as
+# far again, turns out onto the middle wall, back to the seam, and out onto the tube's wall: two
+# wings, mirrored about the seam. `wings` is how far they reach: 100 % to a line from the next
+# seam's wings (one seam: from each other, a triple wall all round). Past 100 % a second wing
+# grows the same way on the inner wall, at the seam (200 %: five walls), and a third past 200 %.
+# A wing starts as a shallow dent: its four turns grow from a few degrees to half circles, and
+# only then do the wings run back. The walls are a line plus the gap apart; at the seam the two
+# turns onto and off the tube's wall are a line apart, closing it.
 winged   = greater(k_shape, 8.5)
+w_bed    = pick(wing_bed, 1, 0) * winged
 w_n      = pick(winged, round(clamp(wing_seams, 1, 8)), 1)
-z_w      = max(1, round(wing_start / pitch)) * pitch
+# Inside (1) or outside (-1): which way from the tube's wall the wings go.
+w_sig    = 1 - 2 * less(abs(index_of(["inside", "outside"], wing_side) - 1), 0.5)
+w_J      = pick(winged, clamp(ceil(wings - 0.000001), 1, 3), 1)
+z_w      = (1 - w_bed) * max(1, round(wing_start / pitch)) * pitch
 w_layers = pick(winged, max(0, round((length - z_w) / pitch)), 0)
 wing_on  = greater(w_layers, 0.5)
 # Computed for one layer when there are none (never printed).
 w_lc     = max(1, w_layers)
-# The tube must be wide enough for three walls.
-w_s      = line + wing_gap |> require(1 - winged * less(r_t - 2.5 * (line + wing_gap), 0.5), "The tube is too narrow for three walls: a wider socket, a narrower line or a smaller gap")
+# Room inside the tube for every wall (inside wings).
+w_s      = line + wing_gap |> require(1 - winged * greater(w_sig, 0) * less(r_t - (2 * w_J + 0.5) * (line + wing_gap), 0.5), "The tube is too narrow for this many walls: fewer wings past 100 %, a wider socket, a narrower line or a smaller gap")
+rho      = w_s / 2
 w_d      = 360 / w_n
 deg      = 180 / pi
 
-# Per layer: how far the wings reach (0..1), from the layer's middle height above the straight
-# start: up over `wing_in`, held, down over `wing_out` (0: never), each straight or an S-curve
-# that starts and ends gently.
+# Per layer: how far the wings reach (0..3: 1 is 100 %), from the layer's middle height above the
+# straight start: up over `wing_in` (from the bed: full at once), held, down over `wing_out` (0:
+# never), each straight or an S-curve that starts and ends gently.
 w_k      = series(0, 1, w_lc)
 w_zl     = (w_k + 0.5) * pitch
-w_tin    = clamp(w_zl / max(wing_in, 0.000001), 0, 1)
+w_in     = (1 - w_bed) * wing_in
+w_tin    = clamp(w_zl / max(w_in, 0.000001), 0, 1)
 w_up     = pick(less(index_of(["linear", "smooth"], wing_in_curve), 0.5), w_tin, smoothstep(w_tin))
-w_tout   = clamp((w_zl - wing_in - wing_hold) / max(wing_out, 0.000001), 0, 1)
+w_tout   = clamp((w_zl - w_in - wing_hold) / max(wing_out, 0.000001), 0, 1)
 w_down   = greater(wing_out, 0) * pick(less(index_of(["linear", "smooth"], wing_out_curve), 0.5), w_tout, smoothstep(w_tout))
-# Do the wings, at full, reach their full depth (three walls), or stay small bumps (seams too
-# close together for the turns)?
-w_c      = wings * w_up * (1 - w_down) |> require(1 - winged * greater(wings, 0) * less(wings * (w_d / 2 - asin(clamp(w_s / max(0.001, r_t - 1.5 * w_s), 0, 1))), asin(clamp(w_s / max(0.001, r_t - 0.5 * w_s), 0, 1))), "These wings stay small bumps, never three walls deep: more wings, fewer seams, a wider tube or a narrower line", warn: true)
+# Can the deepest wings, at full, reach their full depth, or do they stay dents (seams too close
+# together for their turns)?
+w_lastB  = r_t - w_sig * 2 * w_s * (w_J - 1)
+w_c      = wings * w_up * (1 - w_down) |> require(1 - winged * greater(wings, 0) * less(clamp(wings - w_J + 1, 0, 1) * (w_d / 2 - asin(clamp(w_s / max(0.001, w_lastB - 1.5 * w_sig * w_s), 0, 1))), asin(clamp(w_s / max(0.001, w_lastB - 0.5 * w_sig * w_s), 0, 1))), "These wings stay dents, never full turns: more wings, fewer seams, a wider tube or a narrower line", warn: true)
 
-# The wing's shape on a tube of radius R reaching c: the tips `w_a` (degrees from the seam,
-# where the turns onto the inner wall are), the seam's turns `w_g` either side of it, the walls'
-# spacing `w_se` (scaled down with a small wing), and the layer's length (all its seams). Two
-# turns facing each other (half circles s across), their centres at ±b on a circle of radius ρ,
-# come s close (a line, or a line and the gap: just touching) when their centres are 2s apart,
-# b = asin(s / ρ): the seam's turns, and at 100 % each tip and the next seam's.
-# Fading out with "same layer length", the tube widens as the wings shrink so each layer stays
-# as long as at full wings: R found by three Newton steps from the tube's radius.
-wl_amax  = w_d / 2 - asin(clamp(w_s / max(0.001, r_t - 1.5 * w_s), 0, 1))
-wl_gam   = asin(clamp(w_s / max(0.001, r_t - 0.5 * w_s), 0, 1))
-wl_a     = wings * wl_amax
-wl_se    = w_s * clamp(wl_a / wl_gam, 0, 1)
-wl_g     = asin(clamp(wl_se / max(0.001, r_t - 0.5 * wl_se), 0, 1))
-wl_al    = max(wl_a, wl_g)
-w_hold_l = w_n * ((w_d - 2 * wl_g) * r_t + 2 * (wl_al - wl_g) * (r_t - wl_se) + 2 * wl_al * (r_t - 2 * wl_se)) / deg + w_n * 2 * pi * wl_se
-widen    = less(abs(index_of(["same diameter", "same layer length"], wing_widen) - 1), 0.5) * greater(wing_out, 0) * greater(w_zl, wing_in + wing_hold)
-w_r0     = r_t + 0 * w_c
-w1_amax  = w_d / 2 - asin(clamp(w_s / max(0.001, w_r0 - 1.5 * w_s), 0, 1))
-w1_gam   = asin(clamp(w_s / max(0.001, w_r0 - 0.5 * w_s), 0, 1))
-w1_a     = w_c * w1_amax
-w1_se    = w_s * clamp(w1_a / w1_gam, 0, 1)
-w1_g     = asin(clamp(w1_se / max(0.001, w_r0 - 0.5 * w1_se), 0, 1))
-w1_al    = max(w1_a, w1_g)
-w1_len   = w_n * ((w_d - 2 * w1_g) * w_r0 + 2 * (w1_al - w1_g) * (w_r0 - w1_se) + 2 * w1_al * (w_r0 - 2 * w1_se)) / deg + w_n * 2 * pi * w1_se
-w_r1     = w_r0 + widen * (w_hold_l - w1_len) / (w_n * (w_d - 4 * w1_g + 4 * w1_al) / deg)
-w2_amax  = w_d / 2 - asin(clamp(w_s / max(0.001, w_r1 - 1.5 * w_s), 0, 1))
-w2_gam   = asin(clamp(w_s / max(0.001, w_r1 - 0.5 * w_s), 0, 1))
-w2_a     = w_c * w2_amax
-w2_se    = w_s * clamp(w2_a / w2_gam, 0, 1)
-w2_g     = asin(clamp(w2_se / max(0.001, w_r1 - 0.5 * w2_se), 0, 1))
-w2_al    = max(w2_a, w2_g)
-w2_len   = w_n * ((w_d - 2 * w2_g) * w_r1 + 2 * (w2_al - w2_g) * (w_r1 - w2_se) + 2 * w2_al * (w_r1 - 2 * w2_se)) / deg + w_n * 2 * pi * w2_se
-w_r2     = w_r1 + widen * (w_hold_l - w2_len) / (w_n * (w_d - 4 * w2_g + 4 * w2_al) / deg)
-w3_amax  = w_d / 2 - asin(clamp(w_s / max(0.001, w_r2 - 1.5 * w_s), 0, 1))
-w3_gam   = asin(clamp(w_s / max(0.001, w_r2 - 0.5 * w_s), 0, 1))
-w3_a     = w_c * w3_amax
-w3_se    = w_s * clamp(w3_a / w3_gam, 0, 1)
-w3_g     = asin(clamp(w3_se / max(0.001, w_r2 - 0.5 * w3_se), 0, 1))
-w3_al    = max(w3_a, w3_g)
-w3_len   = w_n * ((w_d - 2 * w3_g) * w_r2 + 2 * (w3_al - w3_g) * (w_r2 - w3_se) + 2 * w3_al * (w_r2 - 2 * w3_se)) / deg + w_n * 2 * pi * w3_se
-w_R      = w_r2 + widen * (w_hold_l - w3_len) / (w_n * (w_d - 4 * w3_g + 4 * w3_al) / deg)
-w_amax   = w_d / 2 - asin(clamp(w_s / max(0.001, w_R - 1.5 * w_s), 0, 1))
-w_gam    = asin(clamp(w_s / max(0.001, w_R - 0.5 * w_s), 0, 1))
-w_a      = w_c * w_amax
-w_se     = w_s * clamp(w_a / w_gam, 0, 1)
-w_g      = asin(clamp(w_se / max(0.001, w_R - 0.5 * w_se), 0, 1))
-w_al     = max(w_a, w_g)
+# Per layer and wing level (`q`: layer k, level j; level j's tube wall is j walls pairs in): a wing
+# on a wall of radius B reaching c. Two turns facing each other (half circles a spacing s across,
+# their centres at ±b on a circle of radius ρ) come s close when their centres are 2s apart,
+# b = asin(s / ρ): the seam's turns `g`, and at 100 % each tip and the next seam's (`am`, the
+# farthest the tips go).
+w_q      = series(0, 1, w_lc * w_J)
+w_kq     = floor(w_q / w_J)
+w_jq     = w_q - w_kq * w_J
+w_cq     = clamp(item(w_c, w_kq) - w_jq, 0, 1)
+w_ks     = series(0, w_J, w_lc)
+w_two    = greater(w_J, 1.5)
+w_three  = greater(w_J, 2.5)
+# Fading out with "same layer length", the tube widens as the wings shrink so each layer stays as
+# long as the longest (at full wings): R from three Newton steps on the layer's length (its turns
+# half circles, `f` of them while they form).
+widen    = less(abs(index_of(["same diameter", "same layer length"], wing_widen) - 1), 0.5) * greater(wing_out, 0) * greater(w_zl, w_in + wing_hold)
+v0_B     = r_t - w_sig * 2 * w_s * w_jq
+v0_g     = asin(clamp(w_s / max(0.001, v0_B - 0.5 * w_sig * w_s), 0, 1))
+v0_al    = max(v0_g, w_cq * (w_d / 2 - asin(clamp(w_s / max(0.001, v0_B - 1.5 * w_sig * w_s), 0, 1))))
+v0_f     = clamp(w_cq * (w_d / 2 - asin(clamp(w_s / max(0.001, v0_B - 1.5 * w_sig * w_s), 0, 1))) / max(0.000001, v0_g), 0, 1)
+v0_ex    = v0_f * (2 * pi * w_s + (2 * (v0_al - v0_g) * (v0_B - w_sig * w_s) + 2 * v0_al * (v0_B - 2 * w_sig * w_s) - 2 * v0_g * v0_B) / deg)
+v0_dx    = v0_f * (4 * v0_al - 4 * v0_g) / deg
+v0_len   = 2 * pi * r_t + w_n * (item(v0_ex, w_ks) + w_two * item(v0_ex, w_ks + 1) + w_three * item(v0_ex, w_ks + 2))
+w_hold_l = item(bounds(v0_len), 1)
+w_r1     = r_t + widen * (w_hold_l - v0_len) / (2 * pi + w_n * (item(v0_dx, w_ks) + w_two * item(v0_dx, w_ks + 1) + w_three * item(v0_dx, w_ks + 2)))
+v1_B     = item(w_r1, w_kq) - w_sig * 2 * w_s * w_jq
+v1_g     = asin(clamp(w_s / max(0.001, v1_B - 0.5 * w_sig * w_s), 0, 1))
+v1_am    = w_d / 2 - asin(clamp(w_s / max(0.001, v1_B - 1.5 * w_sig * w_s), 0, 1))
+v1_al    = max(v1_g, w_cq * v1_am)
+v1_f     = clamp(w_cq * v1_am / max(0.000001, v1_g), 0, 1)
+v1_ex    = v1_f * (2 * pi * w_s + (2 * (v1_al - v1_g) * (v1_B - w_sig * w_s) + 2 * v1_al * (v1_B - 2 * w_sig * w_s) - 2 * v1_g * v1_B) / deg)
+v1_dx    = v1_f * (4 * v1_al - 4 * v1_g) / deg
+v1_len   = 2 * pi * w_r1 + w_n * (item(v1_ex, w_ks) + w_two * item(v1_ex, w_ks + 1) + w_three * item(v1_ex, w_ks + 2))
+w_r2     = w_r1 + widen * (w_hold_l - v1_len) / (2 * pi + w_n * (item(v1_dx, w_ks) + w_two * item(v1_dx, w_ks + 1) + w_three * item(v1_dx, w_ks + 2)))
+v2_B     = item(w_r2, w_kq) - w_sig * 2 * w_s * w_jq
+v2_g     = asin(clamp(w_s / max(0.001, v2_B - 0.5 * w_sig * w_s), 0, 1))
+v2_am    = w_d / 2 - asin(clamp(w_s / max(0.001, v2_B - 1.5 * w_sig * w_s), 0, 1))
+v2_al    = max(v2_g, w_cq * v2_am)
+v2_f     = clamp(w_cq * v2_am / max(0.000001, v2_g), 0, 1)
+v2_ex    = v2_f * (2 * pi * w_s + (2 * (v2_al - v2_g) * (v2_B - w_sig * w_s) + 2 * v2_al * (v2_B - 2 * w_sig * w_s) - 2 * v2_g * v2_B) / deg)
+v2_dx    = v2_f * (4 * v2_al - 4 * v2_g) / deg
+v2_len   = 2 * pi * w_r2 + w_n * (item(v2_ex, w_ks) + w_two * item(v2_ex, w_ks + 1) + w_three * item(v2_ex, w_ks + 2))
+w_R      = w_r2 + widen * (w_hold_l - v2_len) / (2 * pi + w_n * (item(v2_dx, w_ks) + w_two * item(v2_dx, w_ks + 1) + w_three * item(v2_dx, w_ks + 2)))
 
-# Every layer, seam by seam: the outer wall up to the next seam's turn, then that seam's
-# wing, in eight pieces (outer wall, turn in, middle back, turn in, inner forward, turn out,
-# middle back, turn out), a fixed number of points each, so every layer has the same count.
-# Each kind of piece is worked out for all its points at once (`o_` the outer wall, `h_` the
-# four turns, `m_` the two middle pieces, `i_` the inner one), then put in print order.
-# (As many as the chord tolerance needs on the widest layer, as the spiral has.)
-w_rmax   = item(bounds(w_R), 1)
-w_no     = max(8, ceil(w_d / (2 * acos(clamp(1 - tolerance / max(0.001, w_rmax), 0, 0.9999)))))
-w_nh     = 2 * max(2, ceil(90 / (2 * acos(clamp(1 - tolerance / max(0.001, w_s / 2), 0, 0.9999)))))
-w_nm     = max(3, ceil(w_d / 2 / (2 * acos(clamp(1 - tolerance / max(0.001, w_rmax - w_s), 0, 0.9999)))))
-w_ni     = max(4, ceil(w_d / (2 * acos(clamp(1 - tolerance / max(0.001, w_rmax - 2 * w_s), 0, 0.9999)))))
-w_cnt    = [w_no, w_nh, w_nm, w_nh, w_ni, w_nh, w_nm, w_nh]
-w_from   = accumulate([0, w_no, w_nh, w_nm, w_nh, w_ni, w_nh, w_nm])
-w_ps     = sum(w_cnt)
-w_secs   = w_lc * w_n
+# The wings as they are, level by level. While a wing forms its turns go `phi` round (0 to 180):
+# the first from the wall (`e1`, where it ends, in the turn's frame: d in from the wall, t along
+# it), the second about `c2` back to running along the wall, ending at `e2`, `gam` round from its
+# frame (worked out in three steps), where the inner wall starts; the turns sit `x` either side
+# of the seam, far enough apart that the two halves never meet. Formed (180°), the turns are half
+# circles: onto the middle wall at the seam's `g`, onto the inner wall at the tips `al`. A level
+# that hasn't started sits on the inner wall of the one that's growing, at the seam.
+q_B0     = item(w_R, w_kq) - w_sig * 2 * w_s * w_jq
+q_g      = asin(clamp(w_s / max(0.001, q_B0 - 0.5 * w_sig * w_s), 0, 1))
+q_am     = w_d / 2 - asin(clamp(w_s / max(0.001, q_B0 - 1.5 * w_sig * w_s), 0, 1))
+q_phi    = 180 * clamp(w_cq * q_am / max(0.000001, q_g), 0, 1)
+q_full   = greater(q_phi, 179.9999)
+q_al     = max(q_g, w_cq * q_am)
+q_e1d    = rho * (1 - cos(q_phi))
+q_e1t    = rho * sin(q_phi)
+q_c2d    = rho - 2 * rho * cos(q_phi)
+q_c2t    = 2 * rho * sin(q_phi)
+q_th1    = w_sig * atan2(q_c2t, q_B0 - w_sig * (q_c2d + rho))
+q_th2    = w_sig * atan2(q_c2t - rho * sin(q_th1), q_B0 - w_sig * (q_c2d + rho * cos(q_th1)))
+q_th     = w_sig * atan2(q_c2t - rho * sin(q_th2), q_B0 - w_sig * (q_c2d + rho * cos(q_th2)))
+q_e2d    = q_c2d + rho * cos(q_th)
+q_e2t    = q_c2t - rho * sin(q_th)
+q_gam    = atan2(q_e2t, q_B0 - w_sig * q_e2d)
+q_x      = max(q_g, q_gam + rho * (1 + sin(q_phi)) / max(0.001, q_B0) * deg)
+q_live   = 1 - less(w_cq, 0.000000001) * greater(w_jq, 0.5)
+q_a1     = q_live * (q_full * q_g + (1 - q_full) * q_x)
+q_a2     = q_live * (q_full * q_al + (1 - q_full) * q_x)
+q_rI0    = sqrt((q_B0 - w_sig * q_e2d) ^ 2 + q_e2t ^ 2)
+w_m      = min(w_J - 1, floor(w_c))
+q_idle   = greater(w_jq, item(w_m, w_kq) + 0.5)
+q_B      = q_B0 + q_idle * (item(q_rI0, w_kq * w_J + item(w_m, w_kq)) - q_B0)
+q_rI     = q_rI0 + q_idle * (q_B - q_rI0)
+# Where the next level in starts (the inner wall runs up to it); none after the last.
+q_an     = (1 - greater(w_jq, w_J - 1.5)) * item(q_a1, w_q + 1)
 
-# Rising, layer by layer from where the straight start's spiral ends (its open top, on the
-# seam): by the length along the whole layer, so every bead is a layer above the one below it;
-# or by the angle round the outer wall only, the wings level (an outer wall at the thread's
-# pitch), the turn back onto the outer wall rising across the seam. Each piece's length per
-# layer (`w_` + o, h, m, i), and where it starts along its sector.
-by_len   = less(index_of(["whole layer", "outer wall"], wing_rise), 0.5)
-w_olen   = (w_d - 2 * w_g) * w_R / deg
-w_hlen   = pi * w_se / 2
-w_mlen   = (w_al - w_g) * (w_R - w_se) / deg
-w_ilen   = 2 * w_al * (w_R - 2 * w_se) / deg
-w_sclen  = w_olen + 4 * w_hlen + 2 * w_mlen + w_ilen
-w_llen   = max(0.000001, w_n * w_sclen)
-# A point's height (as the curve is drawn: a layer below the nozzle, which `toolpath` lifts):
-# along its layer by `len` (mm from the layer's start) or by `ref` (degrees round from the seam).
-# (Written out for each piece below.)
+# Every piece is an arc: about a centre `rc` from the axis at angle `ac`, radius `rr`, from angle
+# `a0` round `da` (degrees). Per layer, level and seam (`u`), the seam at angle `p_s`: the tube's
+# wall to the next seam (level 0's entries; it starts where the layer before ended), the first
+# turn, the middle wall back, the second turn, the inner wall to the seam; then the same mirrored
+# about the seam, backwards.
+w_u      = series(0, 1, w_lc * w_J * w_n)
+u_q      = floor(w_u / w_n)
+u_sec    = w_u - u_q * w_n
+u_k      = floor(u_q / w_J)
+p_s      = 90 + w_d * (u_sec + 1)
+p_B      = item(q_B, u_q)
+p_a1     = item(q_a1, u_q)
+p_a2     = item(q_a2, u_q)
+p_phi    = item(q_phi, u_q)
+p_e1d    = item(q_e1d, u_q)
+p_e1t    = item(q_e1t, u_q)
+p_c2d    = item(q_c2d, u_q)
+p_c2t    = item(q_c2t, u_q)
+p_th     = item(q_th, u_q)
+p_gam    = item(q_gam, u_q)
+w_a10    = item(q_a1, w_ks)
+p_a1s    = less(u_sec, 0.5) * item(flatten([[0], w_a10]), u_k) + greater(u_sec, 0.5) * p_a1
+o_rr     = item(w_R, u_k)
+o_a0     = p_s - w_d + p_a1s
+o_da     = w_d - p_a1s - p_a1
+h1_rc    = p_B - w_sig * rho
+h1_ac    = p_s - p_a1
+h1_a0    = p_s - p_a1 + 90 * (1 - w_sig)
+h1_da    = w_sig * p_phi
+m1_rr    = sqrt((p_B - w_sig * p_e1d) ^ 2 + p_e1t ^ 2)
+m1_a0    = p_s - p_a1 + atan2(p_e1t, p_B - w_sig * p_e1d)
+m1_da    = p_a1 - p_a2
+h2_rc    = sqrt((p_B - w_sig * p_c2d) ^ 2 + p_c2t ^ 2)
+h2_ac    = p_s - p_a2 + atan2(p_c2t, p_B - w_sig * p_c2d)
+h2_a0    = p_s - p_a2 + 90 * (1 + w_sig) + w_sig * p_phi
+h2_da    = w_sig * (p_th - p_phi)
+ia_rr    = item(q_rI, u_q)
+ia_a0    = p_s - p_a2 + p_gam
+ia_da    = p_a2 - p_gam - item(q_an, u_q)
+zero     = 0 * w_u
+# The table: [tube wall, turn, middle, turn, inner, inner (mirrored), turn, middle, turn], each a
+# list over (layer, level, seam).
+t_rc     = flatten([zero, h1_rc, zero, h2_rc, zero, zero, h2_rc, zero, h1_rc])
+t_ac     = flatten([zero, h1_ac, zero, h2_ac, zero, zero, 2 * p_s - h2_ac, zero, 2 * p_s - h1_ac])
+t_rr     = flatten([o_rr, rho + zero, m1_rr, rho + zero, ia_rr, ia_rr, rho + zero, m1_rr, rho + zero])
+t_a0     = flatten([o_a0, h1_a0, m1_a0, h2_a0, ia_a0, 2 * p_s - ia_a0 - ia_da, 2 * p_s - h2_a0 - h2_da, 2 * p_s - m1_a0 - m1_da, 2 * p_s - h1_a0 - h1_da])
+t_da     = flatten([o_da, h1_da, m1_da, h2_da, ia_da, ia_da, h2_da, m1_da, h1_da])
 
-# The outer wall, from one seam's turn to the next's: a layer's first piece from where the
-# layer before ended (its last turn; the first layer from the seam, where the straight start
-# ends), so the line runs on without a step.
-o_q      = series(0, 1, w_secs * w_no)
-o_b      = floor(o_q / w_no)
-o_k      = floor(o_b / w_n)
-o_sec    = o_b - o_k * w_n
-o_t      = (o_q - o_b * w_no) / w_no
-o_g      = item(w_g, o_k)
-o_g0     = greater(o_sec, 0.5) * o_g + less(o_sec, 0.5) * item(flatten([[0], w_g]), o_k)
-o_ref    = w_d * o_sec + o_g0 + (w_d - o_g0 - o_g) * o_t
-o_r      = item(w_R, o_k)
-o_len    = o_sec * item(w_sclen, o_k) + o_t * item(w_olen, o_k)
-o_z      = z_w + pitch * (o_k - 1 + pick(by_len, o_len / item(w_llen, o_k), o_ref / 360))
-# The turns (in, in, out, out): half circles about a point between two walls, out from it
-# (across the walls) and along (round the tube), each bulging away from the piece it leaves.
-h_q      = series(0, 1, w_secs * 4 * w_nh)
-h_b      = floor(h_q / (4 * w_nh))
-h_k      = floor(h_b / w_n)
-h_sec    = h_b - h_k * w_n
-h_h      = floor((h_q - h_b * 4 * w_nh) / w_nh)
-h_t      = (h_q - h_b * 4 * w_nh - h_h * w_nh) / w_nh
-h_seam   = 90 + w_d * (h_sec + 1)
-h_se     = item(w_se, h_k)
-h_g      = item(w_g, h_k)
-h_al     = item(w_al, h_k)
-h_first  = less(h_h, 0.5)
-h_mid    = less(abs(h_h - 1.5), 1)
-h_last   = greater(h_h, 2.5)
-h_ang    = h_seam - h_first * h_g - less(abs(h_h - 1), 0.5) * h_al + less(abs(h_h - 2), 0.5) * h_al + h_last * h_g
-h_rad    = item(w_R, h_k) - h_se / 2 - h_mid * h_se + (1 - 2 * greater(h_h, 1.5)) * h_se / 2 * cos(180 * h_t)
-h_along  = (1 - 2 * less(abs(h_h - 1), 0.5) - 2 * h_last) * h_se / 2 * sin(180 * h_t)
-h_ref    = w_d * (h_sec + 1) - h_g + h_last * 2 * h_g * h_t
-h_len    = h_sec * item(w_sclen, h_k) + item(w_olen, h_k) + (h_h + h_t) * item(w_hlen, h_k) + (1 - h_first) * item(w_mlen, h_k) + greater(h_h, 1.5) * item(w_ilen, h_k) + h_last * item(w_mlen, h_k)
-h_z      = z_w + pitch * (h_k - 1 + pick(by_len, h_len / item(w_llen, h_k), h_ref / 360))
-# The middle wall: back from the seam to the tips, then (after the inner wall) from the other
-# tips back to the seam.
-m_q      = series(0, 1, w_secs * 2 * w_nm)
-m_b      = floor(m_q / (2 * w_nm))
-m_k      = floor(m_b / w_n)
-m_sec    = m_b - m_k * w_n
-m_w      = floor((m_q - m_b * 2 * w_nm) / w_nm)
-m_t      = (m_q - m_b * 2 * w_nm - m_w * w_nm) / w_nm
-m_g      = item(w_g, m_k)
-m_al     = item(w_al, m_k)
-m_ang    = 90 + w_d * (m_sec + 1) + m_w * m_al - (1 - m_w) * m_g - (m_al - m_g) * m_t
-m_rad    = item(w_R, m_k) - item(w_se, m_k)
-m_ref    = w_d * (m_sec + 1) - m_g
-m_len    = m_sec * item(w_sclen, m_k) + item(w_olen, m_k) + (1 + 2 * m_w) * item(w_hlen, m_k) + (m_w + m_t) * item(w_mlen, m_k) + m_w * item(w_ilen, m_k)
-m_z      = z_w + pitch * (m_k - 1 + pick(by_len, m_len / item(w_llen, m_k), m_ref / 360))
-# The inner wall: from one tip, through the seam, to the other.
-i_q      = series(0, 1, w_secs * w_ni)
-i_b      = floor(i_q / w_ni)
-i_k      = floor(i_b / w_n)
-i_sec    = i_b - i_k * w_n
-i_t      = (i_q - i_b * w_ni) / w_ni
-i_al     = item(w_al, i_k)
-i_ang    = 90 + w_d * (i_sec + 1) - i_al + 2 * i_al * i_t
-i_rad    = item(w_R, i_k) - 2 * item(w_se, i_k)
-i_ref    = w_d * (i_sec + 1) - item(w_g, i_k)
-i_len    = i_sec * item(w_sclen, i_k) + item(w_olen, i_k) + 2 * item(w_hlen, i_k) + item(w_mlen, i_k) + i_t * item(w_ilen, i_k)
-i_z      = z_w + pitch * (i_k - 1 + pick(by_len, i_len / item(w_llen, i_k), i_ref / 360))
-
-# Print order: point j of a sector's pattern comes from its piece's list, at the sector's place
-# in it (`w_poff` where sector 0's is, `w_pstep` how far on each next sector's is).
-w_pj     = series(0, 1, w_ps)
-w_pseg   = greater(w_pj, item(w_from, 1) - 0.5) + greater(w_pj, item(w_from, 2) - 0.5) + greater(w_pj, item(w_from, 3) - 0.5) + greater(w_pj, item(w_from, 4) - 0.5) + greater(w_pj, item(w_from, 5) - 0.5) + greater(w_pj, item(w_from, 6) - 0.5) + greater(w_pj, item(w_from, 7) - 0.5)
-w_pin    = w_pj - item(w_from, w_pseg)
-w_podd   = mod(w_pseg, 2)
-w_pmid   = less(abs(w_pseg - 2), 0.5) + less(abs(w_pseg - 6), 0.5)
-w_pinr   = less(abs(w_pseg - 4), 0.5)
-w_hblk   = w_secs * w_no
-w_mblk   = w_hblk + w_secs * 4 * w_nh
-w_iblk   = w_mblk + w_secs * 2 * w_nm
-w_poff   = w_pin + w_podd * (w_hblk + (w_pseg - 1) / 2 * w_nh) + w_pmid * (w_mblk + (w_pseg - 2) / 4 * w_nm) + w_pinr * w_iblk
-w_pstep  = less(w_pseg, 0.5) * w_no + w_podd * 4 * w_nh + w_pmid * 2 * w_nm + w_pinr * w_ni
-w_i      = series(0, 1, w_secs * w_ps)
+# Points: a fixed number per kind of piece (as many as the chord tolerance needs on the widest
+# wall, as the spiral has), so every layer has the same count. A seam's pieces in print order
+# (`w_pk`): the tube's wall; for each level in, turn, middle, turn, inner; for each level back
+# out, inner, turn, middle, turn.
+w_rmax   = item(bounds(w_R), 1) + less(w_sig, 0) * 2 * w_J * w_s
+w_rmin   = max(0.001, item(bounds(w_R), 0) - greater(w_sig, 0) * 2 * w_J * w_s)
+w_no     = max(8, ceil(w_d / (2 * acos(clamp(1 - tolerance / w_rmax, 0, 0.9999)))))
+w_nh     = 2 * max(2, ceil(90 / (2 * acos(clamp(1 - tolerance / max(0.001, rho), 0, 0.9999)))))
+w_nm     = max(3, ceil(w_d / 2 / (2 * acos(clamp(1 - tolerance / w_rmax, 0, 0.9999)))))
+w_ni     = max(3, ceil(w_d / 2 / (2 * acos(clamp(1 - tolerance / w_rmax, 0, 0.9999)))))
+w_tcount = [w_no, w_nh, w_nm, w_nh, w_ni, w_ni, w_nh, w_nm, w_nh]
+w_pk     = series(0, 1, 1 + 8 * w_J)
+w_back   = greater(w_pk, 4 * w_J + 0.5)
+w_ptype  = greater(w_pk, 0.5) * (1 + mod(w_pk - 1, 4) + 4 * w_back)
+w_plev   = greater(w_pk, 0.5) * ((1 - w_back) * floor((w_pk - 1) / 4) + w_back * (w_J - 1 - floor((w_pk - 4 * w_J - 1) / 4)))
+w_pn     = item(w_tcount, w_ptype)
+w_pat_t  = flatten(series(0, 1, w_pn) / w_pn)
+w_pat_ty = flatten(series(w_ptype, 0, w_pn))
+w_pat_lv = flatten(series(w_plev, 0, w_pn))
+w_ps     = count(w_pat_t)
+w_LJN    = w_lc * w_J * w_n
+w_i      = series(0, 1, w_lc * w_n * w_ps)
 w_blk    = floor(w_i / w_ps)
-w_perm   = item(w_poff, w_i - w_blk * w_ps) + w_blk * item(w_pstep, w_i - w_blk * w_ps)
-# The layers' points in print order, and the last layer's end (where a next one would start).
-w_end_a  = 450 + item(w_g, w_lc - 1)
-w_x      = flatten([item(flatten([o_r * cos(90 + o_ref), h_rad * cos(h_ang) - h_along * sin(h_ang), m_rad * cos(m_ang), i_rad * cos(i_ang)]), w_perm), [item(w_R, w_lc - 1) * cos(w_end_a)]])
-w_y      = flatten([item(flatten([o_r * sin(90 + o_ref), h_rad * sin(h_ang) + h_along * cos(h_ang), m_rad * sin(m_ang), i_rad * sin(i_ang)]), w_perm), [item(w_R, w_lc - 1) * sin(w_end_a)]])
-w_z      = flatten([item(flatten([o_z, h_z, m_z, i_z]), w_perm), [z_w + pitch * (w_lc - 1 + pick(by_len, 0, item(w_g, w_lc - 1) / 360))]])
+w_pj     = w_i - w_blk * w_ps
+w_ty     = item(w_pat_ty, w_pj)
+w_lv     = item(w_pat_lv, w_pj)
+w_bk     = floor(w_blk / w_n)
+w_ix     = w_ty * w_LJN + (w_bk * w_J + w_lv) * w_n + w_blk - w_bk * w_n
+w_rc     = item(t_rc, w_ix)
+w_ac     = item(t_ac, w_ix)
+w_rr     = item(t_rr, w_ix)
+w_da     = item(t_da, w_ix)
+w_ang    = item(t_a0, w_ix) + w_da * item(w_pat_t, w_pj)
+# Rising, a pitch a layer: along the whole layer by length (every bead a layer above the one
+# below it); or by angle round the tube's wall only (a thread on it), the wings level, the turn
+# back onto it at the seam rising what's left; or by angle round the innermost wings' inner wall
+# (a thread there: inside wings, a thread inside), the tube's wall level, the other wing pieces
+# rising what's left by length. As the wings fade in (and out), blended from the first (`w_lam`).
+# Each piece's share of its layer's rise per point (`t_wt`), from its arc's length or angle, so
+# the heights are a running total of the points' shares: the layers' sum to one each.
+w_rise   = index_of(["whole layer", "tube wall", "wings"], wing_rise)
+w_bywall = less(abs(w_rise - 1), 0.5)
+u_j      = u_q - u_k * w_J
+u_o      = less(u_j, 0.5)
+u_deep   = less(abs(u_j - item(w_m, u_k)), 0.5)
+l_o      = u_o * o_rr * abs(o_da) / deg
+l_h1     = rho * abs(h1_da) / deg
+l_m      = m1_rr * abs(m1_da) / deg
+l_h2     = rho * abs(h2_da) / deg
+l_i      = ia_rr * abs(ia_da) / deg
+w_eL     = l_o + 2 * (l_h1 + l_m + l_h2 + l_i)
+w_eA     = w_bywall * u_o * abs(o_da) + (1 - w_bywall) * u_deep * 2 * abs(ia_da)
+w_eF     = w_bywall * u_o * l_h1 + (1 - w_bywall) * (2 * (l_h1 + l_m + l_h2) + (1 - u_deep) * 2 * l_i)
+w_grp    = series(0, w_J * w_n, w_lc)
+w_totL   = item(flatten([[0], accumulate(w_eL)]), w_grp + w_J * w_n) - item(flatten([[0], accumulate(w_eL)]), w_grp)
+w_totA   = item(flatten([[0], accumulate(w_eA)]), w_grp + w_J * w_n) - item(flatten([[0], accumulate(w_eA)]), w_grp)
+w_totF   = item(flatten([[0], accumulate(w_eF)]), w_grp + w_J * w_n) - item(flatten([[0], accumulate(w_eF)]), w_grp)
+w_lam    = greater(w_rise, 0.5) * greater(item(w_totF, w_k), 0.000001) * clamp(w_c / max(0.000001, wings), 0, 1)
+w_ca     = item((1 - w_lam) / max(0.000001, w_totL), u_k)
+w_cb     = item(w_lam / 360, u_k)
+w_cc     = item(w_lam * max(0, 360 - w_totA) / (360 * max(0.000001, w_totF)), u_k)
+w_fillw  = w_bywall * u_o
+w_fillo  = 1 - w_bywall
+t_wt     = flatten([abs(o_da) / w_no * (o_rr / deg * w_ca + w_bywall * w_cb), abs(h1_da) / w_nh * rho / deg * (w_ca + w_fillo * w_cc), abs(m1_da) / w_nm * m1_rr / deg * (w_ca + w_fillo * w_cc), abs(h2_da) / w_nh * rho / deg * (w_ca + w_fillo * w_cc), abs(ia_da) / w_ni * (ia_rr / deg * (w_ca + w_fillo * (1 - u_deep) * w_cc) + w_fillo * u_deep * w_cb), abs(ia_da) / w_ni * (ia_rr / deg * (w_ca + w_fillo * (1 - u_deep) * w_cc) + w_fillo * u_deep * w_cb), abs(h2_da) / w_nh * rho / deg * (w_ca + w_fillo * w_cc), abs(m1_da) / w_nm * m1_rr / deg * (w_ca + w_fillo * w_cc), abs(h1_da) / w_nh * rho / deg * (w_ca + (w_fillo + w_fillw) * w_cc)])
+w_wt     = item(t_wt, w_ix)
+
+# The layers' points in print order, with the last layer's end (where a next one would start).
+# Nozzle heights from where the straight start's spiral ends (its open top, on the seam), or
+# from the bed; the curve is drawn a layer lower (a toolpath prints a layer above its curve).
+w_end_a  = 450 + item(w_a10, w_lc - 1)
+w_x      = flatten([w_rc * cos(w_ac) + w_rr * cos(w_ang), [item(w_R, w_lc - 1) * cos(w_end_a)]])
+w_y      = flatten([w_rc * sin(w_ac) + w_rr * sin(w_ang), [item(w_R, w_lc - 1) * sin(w_end_a)]])
+w_z      = z_w + pitch * (flatten([accumulate(w_wt) - w_wt, [w_lc]]) - 1)
 w_curve  = polyline(point(w_x, w_y, w_z))
 w_flow   = pick(shade_flow, shade_flow, flow)
-wing_path = toolpath([w_curve], width: line, layer: pitch, flow: w_flow)
-# The wall as shown: the straight start, then the outer wall layer by layer.
+wing_tp  = toolpath([w_curve], width: line, layer: pitch, flow: w_flow)
+# From the bed, the first layer rises off it, each move extruded for the gap under it (as the
+# spiral's first turn ramps).
+wing_path = pick(w_bed, bead(wing_tp, layer: max(0.05, min(pitch, z))), wing_tp)
+# The wall as shown: the straight start, then the tube's wall layer by layer.
 wing_wall = revolve(polyline(point(flatten([[r_t, r_t], w_R]), 0, flatten([[0, z_w], z_w + (w_k + 1) * pitch]))))
 
 # ---- As printed: throat down, wide edge down, or (closed) disc down. The wall shown as it prints.
@@ -644,7 +696,7 @@ mark_end     = polyline(point([r_end, r_end], 0, [top_z - end_eff, top_z])) |> p
 mark_end_arc = polyline(point(arc2_r, 0, cur_top - arc2_z + shift)) |> place(z: as_printed, flip: turned)
 mark mark_start for throat, socket, fit, length "Throat"
 mark_wings   = polyline(point([r_t, r_t], 0, [z_w, z_w + w_layers * pitch]))
-mark pick(wing_on, mark_wings, []) for wings, wing_seams, wing_gap, wing_rise, wing_start, wing_in, wing_in_curve, wing_out, wing_hold, wing_out_curve, wing_widen, length "Wings"
+mark pick(wing_on, mark_wings, []) for wings, wing_side, wing_seams, wing_gap, wing_rise, wing_bed, wing_start, wing_in, wing_in_curve, wing_out, wing_hold, wing_out_curve, wing_widen, length "Wings"
 mark pick(not_tube, mark_fillet, []) for fillet "Fillet"
 mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, widest_len, widest_fillet, end_d, max_angle, sphere, flatness, own_at, own_r "Shade"
 mark pick(not_tube, mark_opening, []) for opening, end_d "Opening"
