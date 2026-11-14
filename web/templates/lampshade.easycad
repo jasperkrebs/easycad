@@ -68,6 +68,7 @@ param brim_lines = 4       in 1..20 step 1          "Brim lines"  when brim
 param brim_width = 6 mm    in 0.5..12 step 0.1      "Brim line width"  when brim
 param brim_layer = 2.5 mm  in 0.1..5 step 0.05      "Brim layer height"  when brim
 param brim_speed = 15      in 1..100                "Brim speed (mm/s)"  when brim
+param brim_extrusion = 100 % in 10..300           "Brim extrusion"  when brim
 
 # The socket's thread: its pitch is the layer height, so each turn of the helix lays down one
 # turn of thread. The wall's inner face sits on the thread; the nozzle runs half a line outside.
@@ -347,7 +348,10 @@ shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_lay
 first_rise  = sample(rise, [0, 0, min(top_z, sample(rise, [0, 0, 0]) / 2)])
 r_first     = graph(print_z, print_r, min(top_z, first_rise))
 brim_rings  = circle(r_first + brim_width / 2 + sample(line_at, [0, 0, first_rise / 2]) / 2 + series(brim_lines - 1, -1, brim_lines) * brim_width, tolerance: tolerance) |> rotate(90)
-brimmed     = join(flatten([aid(toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed)), [shade]]), clear: 2 * brim_layer)
+# The brim's own extrusion (100 %: as the bead's), for a first layer that needs more or less.
+brim_raw    = toolpath(graft(brim_rings), width: brim_width, layer: brim_layer, speed: brim_speed)
+brim_path   = pick(greater(abs(brim_extrusion - 1), 0.000001), adjust(brim_raw, extrude: brim_extrusion), brim_raw)
+brimmed     = join(flatten([aid(brim_path), [shade]]), clear: 2 * brim_layer)
 open_path   = pick(brim, brimmed, shade)
 
 # ---- A closed end: a flat disc where the shade ends, rising through a fillet into the wall;
