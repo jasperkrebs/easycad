@@ -76,6 +76,9 @@ so in the dev log); when something new comes up, add it here, not only in the de
   squeezed) can stop with an error; `shade_layer`/`shade_line` have no Plan marks.
 - **Marks** (tap in the Plan, jump to the setting): only the Lamp and the Lampshade have them.
 - **The coat hanger** as a template.
+- **Tube with wings** ([tube-with-wings.md](tube-with-wings.md)): print it; then maybe a shade in
+  the Lamp. Its settings could get a group of their own; it's slow-ish (about 60 ms) and stops at
+  about 800 mm.
 - **Not printed yet:** two shades screwed together; a closed shade.
 
 ## Later, when wanted
