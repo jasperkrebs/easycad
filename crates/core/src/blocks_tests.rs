@@ -1508,8 +1508,8 @@ mod wings {
                 ("compensation", text(comp)),
             ])
         };
-        let (squeezed, wider, off) = (with("layer height"), with("width"), with("off"));
-        for e in [&squeezed, &wider, &off] {
+        let (squeezed, off) = (with("layer height"), with("off"));
+        for e in [&squeezed, &off] {
             clean(e);
         }
         let layers = |e: &Evaluation| e.prints[0].path.layers;
@@ -1540,14 +1540,11 @@ mod wings {
             }
         }
         assert!(pairs > 100, "{pairs}");
-        // Wider beads where it leans out, never past the max; none elsewhere.
-        let p = &wider.prints[0].path;
-        let widths: Vec<f64> = p.width.iter().copied().filter(|w| *w > 0.0).collect();
-        assert!(!widths.is_empty());
-        assert!(widths.iter().all(|w| (6.0..=6.0 * 2.5 + 1e-9).contains(w)));
-        assert!(widths.iter().any(|w| *w > 7.0));
+        // (Layer height only: no width compensation for the wings.)
+        let wider = with("width");
+        clean(&wider);
+        assert!(wider.prints[0].path.width.iter().all(|w| *w == 0.0));
         assert_eq!(layers(&wider), layers(&off));
-        assert!(off.prints[0].path.width.iter().all(|w| *w == 0.0));
     }
 
     #[test]

@@ -79,9 +79,10 @@ so in the dev log); when something new comes up, add it here, not only in the de
   own for the wings (the smoke test no longer lists every group). The bend stool's primer lines
   still count as layers (the stool shows 14 for 11): mark them `aid(…)` and they won't.
 - **The coat hanger** as a template.
-- **Tube with wings** ([tube-with-wings.md](tube-with-wings.md)): print it; then maybe a shade in
-  the Lamp. Its settings could get a group of their own; it's slow-ish (about 60 ms) and stops at
-  about 800 mm.
+- **Tube with wings** ([tube-with-wings.md](tube-with-wings.md)), in the Lampshade and the Lamp:
+  print it (the crease where a wing starts; "same layer length" within 4 %).
+- **Overhang compensation: layer height only.** The owner uses only "layer height"; width
+  compensation is no longer kept up (it stays where EasyGCode's golden tests need it, unchanged).
 - **Not printed yet:** two shades screwed together; a closed shade.
 
 ## Later, when wanted

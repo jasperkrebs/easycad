@@ -27,14 +27,28 @@ Tests: `a_when_can_join_conditions_with_and` (lang), `layer_counts_for_hand_buil
 (core), the `and` case in `settings.test.mjs`; the open-top golden test finds the last turn by
 its turn number (with a brim the layer count is now one less). Golden G-code unchanged.
 
+## 2026-11-15 (night): the tube with wings in the Lamp; layer height compensation only (recipe-developer)
+
+**Why:** the owner wants to plan winged tubes in the Lamp, threaded onto and into other shades;
+and uses only layer-height overhang compensation.
+
+**What landed:** the Lamp's shade has the shape "tube with wings", with the Lampshade's wing
+steps and a "Wings" group: its own straight start screws on (its start ports only that long),
+the wings fade out up to a straight end (or stop there), and shades screw onto that end at its
+radius, wider when it widened. Test `a_tube_with_wings_is_a_shade_too` (`lamp_tests.rs`): the
+ports, plain circles in the straight end, full wings below, a cone on the widened end with no
+collision. Width compensation is gone from the wings (both templates; "width" prints them at the
+line width) and won't be kept up; the shades' "width" option stays for EasyGCode's golden tests.
+
+**Open:** the Lampshade and the Lamp now share the wing steps as two copies too.
+
 ## 2026-11-15 (evening): overhang compensation where the winged tube widens (recipe-developer)
 
 **Why:** with "same layer length" the tube widens as the wings fade out, and its wall leans out:
 an overhang, which the owner wanted compensated as the shades' are.
 
 **What landed** (Lampshade, tube with wings): the Overhangs settings apply: "layer height" brings
-layers closer where the wall leans (each still a whole layer's bead), "width" makes the beads
-wider there. The fade, the widening and the lean are now worked out on a fine grid of heights,
+layers closer where the wall leans (each still a whole layer's bead). The fade, the widening and the lean are now worked out on a fine grid of heights,
 and the layers are laid along it by their own rise, so the shape doesn't move and every layer
 that doesn't lean is exactly a pitch; the top ends on the nearest whole layer. As it ships (no
 widening) the path is unchanged to the last digit. Test `a_widening_tubes_overhang_is_compensated`.

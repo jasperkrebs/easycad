@@ -500,8 +500,9 @@ v2_dx    = v2_f * (4 * v2_al - 4 * v2_g) / deg
 v2_len   = 2 * pi * w_r2 + w_n * (item(v2_ex, g_ks) + w_two * item(v2_ex, g_ks + 1) + w_three * item(v2_ex, g_ks + 2))
 g_R      = w_r2 + widen * (w_hold_l - v2_len) / (2 * pi + w_n * (item(v2_dx, g_ks) + w_two * item(v2_dx, g_ks + 1) + w_three * item(v2_dx, g_ks + 2)))
 # Where the tube widens its wall leans out (degrees from vertical): overhangs, compensated as the
-# shade's are (the Overhangs settings): layers closer (each still extruded for a whole layer), or
-# wider beads, by the lean's (1 − cos) or (1/cos − 1), scaled by (lean / pivot)^steep.
+# shade's are with "layer height" (the Overhangs settings): layers closer, each still extruded for
+# a whole layer, by the lean's (1 − cos) scaled by (lean / pivot)^steep. (No width compensation:
+# it isn't kept up any more.)
 w_gi     = series(0, 1, w_gn)
 g_lean   = atan2(item(g_R, min(w_gi + 1, w_gn - 1)) - item(g_R, max(w_gi - 1, 0)), item(w_gz, min(w_gi + 1, w_gn - 1)) - item(w_gz, max(w_gi - 1, 0)))
 g_cos    = max(0.05, cos(abs(g_lean)))
@@ -697,10 +698,8 @@ w_curve  = polyline(point(w_x, w_y, w_z))
 w_flow   = pick(shade_flow, shade_flow, flow)
 wing_tp  = toolpath([w_curve], width: line, layer: pitch, flow: w_flow, layers: w_lc)
 # From the bed, the first layer rises off it, each move extruded for the gap under it (as the
-# spiral's first turn ramps); with width compensation, wider beads where the tube leans out.
-w_wcomp  = less(comp, 0.5) * greater(item(bounds(abs(g_lean)), 1), 0.000001)
-w_wfield = line * min(max_width, 1 + strength * (min(abs(graph(z_w + w_gz, g_lean, z)), 89) / pivot) ^ steep * (1 / max(0.05, cos(abs(graph(z_w + w_gz, g_lean, z)))) - 1))
-wing_path = pick(greater(w_bed + w_wcomp, 0.5), bead(wing_tp, width: pick(w_wcomp, w_wfield, 0), layer: pick(w_bed, max(0.05, min(pitch, z)), 0)), wing_tp)
+# spiral's first turn ramps).
+wing_path = pick(w_bed, bead(wing_tp, layer: max(0.05, min(pitch, z))), wing_tp)
 # The wall as shown: the straight start, then the tube's wall layer by layer.
 wing_wall = revolve(polyline(point(flatten([[r_t, r_t], w_R]), 0, flatten([[0, z_w], z_w + (w_k + 1) * pitch]))))
 

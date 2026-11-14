@@ -1,8 +1,8 @@
 # Tube with wings (Lampshade)
 
 *The owner's idea (14 Nov 2026), from a sketch; built in the Lampshade template as the shape
-"tube with wings". Later it may become a shade in the Lamp too, so it can thread into another
-shade.*
+"tube with wings", and since 15 Nov a shade in the Lamp too (below), so it threads into the
+others.*
 
 ## Why
 
@@ -68,13 +68,14 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
 - **Diameter as the wings fade out:** the same, or the **same layer length**: the tube widens
   as the wings go, so each layer stays as long as at full wings (with no wings left it's a
   plain tube about three times as wide, for one seam at 100 %). The fade-in keeps the diameter.
-- **Overhangs:** where the tube widens its wall leans out, and the Lampshade's Overhangs settings
-  apply as to any shade: with "layer height", layers come closer where it leans (each still
-  extruded for a whole layer), by the lean's (1 − cos) scaled by strength and (lean / pivot)^steep;
-  with "width", wider beads there, up to the max width. The fade, the widening and the lean are
-  worked out on a fine grid of heights (every half layer) and the layers are laid along it, each
-  its own rise, so the shape stays where it is and only the layers move; where it doesn't lean
-  every layer is exactly a pitch (the thread's), and the top ends on the nearest whole layer.
+- **Overhangs:** where the tube widens its wall leans out, and the Overhangs setting "layer
+  height" applies as to any shade: layers come closer where it leans (each still extruded for a
+  whole layer), by the lean's (1 − cos) scaled by strength and (lean / pivot)^steep. (Width
+  compensation isn't used for the wings, and isn't kept up any more.) The fade, the widening and
+  the lean are worked out on a fine grid of heights (every half layer) and the layers are laid
+  along it, each its own rise, so the shape stays where it is and only the layers move; where it
+  doesn't lean every layer is exactly a pitch (the thread's), and the top ends on the nearest whole
+  layer.
 
 ## How it rises (`wing_rise`)
 
@@ -92,6 +93,18 @@ A pitch per layer, always; where it rises:
 While the wings fade in (and out) the rise blends from "whole layer" into the chosen one, in
 step with the wings' size, so the first wing layers never jump and every bead stays close to a
 layer above the one below (2.3–2.5 mm at a 2.5 mm pitch, in the tests).
+
+## In the Lamp
+
+The Lamp's shade has the same shape and settings (the "Wings" group), with these differences:
+- the straight start is the shade's own (`start_len`, or the joint length): its start ports are
+  that long, not the whole tube's;
+- the wings stop where a **straight end** starts (more shades screw on there), fading out over
+  `wing_out` up to it (0: they stop at once, which prints fine: the tube's wall carries on below
+  the end); full wings fill whatever is between the fade-in and the fade-out, so there's no
+  "full wings for";
+- the end ports are at the end's radius: wider, when the tube widens to keep the layer length;
+- it always prints start down (no wide edge down, no closed end) and never starts on the bed.
 
 ## How the recipe does it
 

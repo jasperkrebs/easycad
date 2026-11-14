@@ -1114,3 +1114,72 @@ fn the_brim_has_its_own_extrusion() {
         assert!(brim > 20 && rest > brim, "{brim} brim moves, {rest} others");
     }
 }
+
+/// A tube with wings as a shade (`docs/tube-with-wings.md`): its straight start screws on (the
+/// start ports only that long), the wings above it stop where a straight end starts, and more
+/// shades screw onto that end, at its radius (wider when the tube widens as the wings fade out).
+#[test]
+fn a_tube_with_wings_is_a_shade_too() {
+    use Literal::{Number, Text};
+    // The first shade, on the socket, a tube with wings with these settings.
+    let wings = |settings: &str| {
+        LAMP.replace(
+            "part main = shade(shape: \"sphere\", end_straight: true)",
+            &format!("part main = shade(shape: \"tube with wings\", {settings})"),
+        )
+    };
+    let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
+    // On the socket: 100 % inside, a 30 mm straight end, the wings fading out over 40 mm.
+    let src = wings("wings: 100, wing_out: 40, end_straight: true, end_len: 30");
+    assert!(src.contains("tube with wings"));
+    let e = run(&src);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let path = &e.prints[0].path;
+    assert!(path.travel.iter().skip(1).all(|t| !t));
+    // The tube's own radius: half a line outside the socket's 40 mm thread.
+    let r = 23.0;
+    // Its start screws on only as far as the straight start; the end, 30 mm, a line outside.
+    assert_eq!(port(&e, "main.start_out")[3], 20.0);
+    let end = port(&e, "main.end_out");
+    assert!(close(end[0], r + 6.0) && end[3] == 30.0, "{end:?}");
+    // Up there the wings have stopped: one plain circle a layer.
+    let top = end[1];
+    let in_end: Vec<_> = path.points.iter().filter(|p| p[2] > top - 27.0).collect();
+    assert!(in_end.len() > 50 && in_end.iter().all(|p| (radius(p) - r).abs() < 1e-6));
+    // Further down, full wings (two walls in).
+    let deepest = path
+        .points
+        .iter()
+        .filter(|p| p[2] > 100.0 && p[2] < 120.0)
+        .map(radius)
+        .fold(f64::MAX, f64::min);
+    assert!(close(deepest, r - 12.0), "{deepest}");
+    // Without a straight end there's no end port.
+    let open = run(&wings("wings: 100"));
+    assert!(warnings(&open).is_empty(), "{:?}", open.diagnostics);
+    assert_eq!(port(&open, "main.end_out")[3], 0.0);
+
+    // Widening as they fade out, the end is wider: a shade screwed onto it runs a line outside
+    // that, and nothing runs into anything.
+    let wide = wings(
+        "wings: 100, wing_out: 60, wing_widen: \"same layer length\", end_straight: true, end_len: 30",
+    );
+    let wide = with_part(
+        &wide,
+        "cone",
+        &[
+            ("mount", Text("main.end_out".into())),
+            ("opening", Number(250.0)),
+        ],
+    );
+    let e = run(&wide);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let end = port(&e, "main.end_out").to_vec();
+    assert!(end[0] > r + 6.0 + 10.0, "{end:?}");
+    let cone = &e.prints[1].path;
+    assert!(
+        close(radius(&cone.points[5]), end[0]),
+        "{}",
+        radius(&cone.points[5])
+    );
+}
