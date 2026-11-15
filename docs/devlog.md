@@ -7,6 +7,24 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-16 (latest): wings end on a whole layer, and grow without a kink (recipe-developer)
+
+**Why:** the owner's cone (wings outside, four seams, a curve from 100 % at the throat down to
+20 %, wide edge down) had one odd loop next to the throat, and a kink in the outline where the
+wings went from growing round to growing along.
+
+- **The loop:** each layer read its wings at its middle, which for the last one was half in
+  the plain throat: 57 %, between the full wings and none. Now each layer reads them inside the
+  wings' own stretch, carried on along the curve's slope past its last grid height (never up),
+  so the last layer by the throat has 99.6 % and a bell's last layers still fade to ~2 %.
+- **The kink:** a tip grew by its turn's angle up to a point, then by the tip's angle: two
+  slopes meeting. The two now blend over half a turn either side (a quadratic), so the tip's
+  angle has no corner as the % changes.
+- A test with the owner's settings: the last winged layer ≥ 95 %, every winged layer 20–100 %,
+  no jump over 0.12 between layers.
+
+Open: nothing new.
+
 ## 2026-11-16 (later): Wings keep "wide edge down" in sight (recipe-developer)
 
 **Why:** switching Wings on hid "Wide edge down": it shows while the shade isn't closed, and

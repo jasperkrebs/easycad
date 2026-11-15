@@ -56,7 +56,9 @@ a crease there. As it grows, its four turns go further round (the dent deepens, 
 steepen), and the two sides move apart only as far as they must not to cross, so the gap
 opens smoothly, never wider than it ends up: by the time the turns are a quarter round they're
 as far apart as the finished turns at the seam (±g, below), and they stay there. Once the turns
-are half circles the wings run back along the middle wall. A deeper wing (past 100 %) starts the
+are half circles the wings run back along the middle wall. The tips' growth
+blends from the turns' to the wing's own over half a turn either side, so the outline has no
+kink there as the % changes. A deeper wing (past 100 %) starts the
 same way, on the inner wall at the seam.
 
 "Two pieces a line apart" is exact: two turns facing each other (half circles a spacing `s`

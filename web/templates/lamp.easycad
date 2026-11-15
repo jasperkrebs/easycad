@@ -543,7 +543,7 @@ component shade "Shade"
   x_x      = max(x_gam, x_g * smoothstep(clamp((x_phi - 30) / 50, 0, 1)))
   x_live   = 1 - less(x_c, 0.000000001) * greater(x_j, 0.5)
   x_a1     = x_live * (x_full * x_g + (1 - x_full) * x_x)
-  x_a2     = x_live * (x_full * max(x_g, x_c * x_am) + (1 - x_full) * x_x)
+  x_a2     = x_a1 + x_live * (clamp(x_c * x_am - 0.5 * x_g, 0, x_g) ^ 2 / (2 * max(0.000001, x_g)) + max(0, x_c * x_am - 1.5 * x_g))
   x_rM     = sqrt((x_B - w_sig * rho * (1 - cos(x_phi))) ^ 2 + (rho * sin(x_phi)) ^ 2)
   x_rI     = sqrt((x_B - w_sig * x_e2d) ^ 2 + x_e2t ^ 2)
   x_ex     = (2 * rho * (x_phi + abs(x_phi - x_th)) + 2 * (x_a2 - x_a1) * x_rM + 2 * (x_a2 - x_gam) * x_rI - 2 * x_a1 * x_B) / deg
@@ -576,7 +576,7 @@ component shade "Shade"
   y_x      = max(y_gam, y_g * smoothstep(clamp((y_phi - 30) / 50, 0, 1)))
   y_live   = 1 - less(y_c, 0.000000001) * greater(y_j, 0.5)
   y_a1     = y_live * (y_full * y_g + (1 - y_full) * y_x)
-  y_a2     = y_live * (y_full * max(y_g, y_c * y_am) + (1 - y_full) * y_x)
+  y_a2     = y_a1 + y_live * (clamp(y_c * y_am - 0.5 * y_g, 0, y_g) ^ 2 / (2 * max(0.000001, y_g)) + max(0, y_c * y_am - 1.5 * y_g))
   y_rM     = sqrt((y_B - w_sig * rho * (1 - cos(y_phi))) ^ 2 + (rho * sin(y_phi)) ^ 2)
   y_rI     = sqrt((y_B - w_sig * y_e2d) ^ 2 + y_e2t ^ 2)
   y_ex     = (2 * rho * (y_phi + abs(y_phi - y_th)) + 2 * (y_a2 - y_a1) * y_rM + 2 * (y_a2 - y_gam) * y_rI - 2 * y_a1 * y_B) / deg
@@ -619,7 +619,19 @@ component shade "Shade"
   # together for their turns)?
   w_lastB  = r_t - w_sig * 2 * w_s * (w_J - 1)
   w_dent   = less(clamp(w_max - w_J + 1, 0, 1) * (w_d / 2 - asin(clamp(w_s / max(0.001, w_lastB - 1.5 * w_sig * w_s), 0, 1))), asin(clamp(w_s / max(0.001, w_lastB - 0.5 * w_sig * w_s), 0, 1)))
-  w_c      = graph(w_gz, g_c, w_zl) |> require(1 - winged * greater(w_max, 0) * w_dent, "These wings stay dents, never full turns: more wings, fewer seams, a wider tube or a narrower line", warn: true)
+  # Each layer's wings read at its middle, inside the wings' stretch (never blended across its
+  # ends: where the straight start or a lip begins, they stop with the layer before).
+  w_gstep  = w_Hg / (w_gn - 1)
+  w_zhi    = w_Hend
+  w_fl     = pick(w_rev, w_Ltot - z_w - w_zl, w_zl)
+  w_in_lo  = pick(w_rev, ceil((w_Ltot - z_w - w_zhi) / w_gstep + 0.000001) * w_gstep, 0)
+  w_in_hi  = pick(w_rev, floor((w_Ltot - z_w) / w_gstep) * w_gstep, ceil(w_zhi / w_gstep - 1.000001) * w_gstep)
+  # Past the stretch's last grid height inside it, carried on along its slope there (never up).
+  w_zc     = clamp(w_zl, w_in_lo, max(w_in_lo, w_in_hi))
+  w_zd     = w_zl - w_zc
+  w_ce     = graph(w_gz, g_c, w_zc)
+  w_cn     = graph(w_gz, g_c, clamp(w_zc + w_gstep * (1 - 2 * greater(w_zd, 0)), w_in_lo, max(w_in_lo, w_in_hi)))
+  w_c      = greater(w_fl, -0.000001) * less(w_fl, w_zhi) * clamp(w_ce + (w_ce - w_cn) * abs(w_zd) / w_gstep, 0, max(w_ce, w_cn)) |> require(1 - winged * greater(w_max, 0) * w_dent, "These wings stay dents, never full turns: more wings, fewer seams, a wider tube or a narrower line", warn: true)
   w_R      = graph(w_gz, g_R, w_zl)
 
   # Per layer and wing level (`q`: layer k, level j; level j's tube wall is j wall pairs in): a wing
@@ -647,8 +659,7 @@ component shade "Shade"
   q_am     = w_d / 2 - asin(clamp(w_s / max(0.001, q_B0 - 1.5 * w_sig * w_s), 0, 1))
   q_phi    = 180 * clamp(w_cq * q_am / max(0.000001, q_g), 0, 1)
   q_full   = greater(q_phi, 179.9999)
-  q_al     = max(q_g, w_cq * q_am)
-  q_e1d    = rho * (1 - cos(q_phi))
+    q_e1d    = rho * (1 - cos(q_phi))
   q_e1t    = rho * sin(q_phi)
   q_c2d    = rho - 2 * rho * cos(q_phi)
   q_c2t    = 2 * rho * sin(q_phi)
@@ -661,7 +672,10 @@ component shade "Shade"
   q_x      = max(q_gam, q_g * smoothstep(clamp((q_phi - 30) / 50, 0, 1)))
   q_live   = 1 - less(w_cq, 0.000000001) * greater(w_jq, 0.5)
   q_a1     = q_live * (q_full * q_g + (1 - q_full) * q_x)
-  q_a2     = q_live * (q_full * q_al + (1 - q_full) * q_x)
+  # The tips: as the turns come round, the wings start running back along the middle wall, a
+  # little before the turns are half circles and gently (a quadratic blend over half the seam's
+  # turn either side of where they'd start), so the wings' width never changes pace at once.
+  q_a2     = q_a1 + q_live * (clamp(w_cq * q_am - 0.5 * q_g, 0, q_g) ^ 2 / (2 * max(0.000001, q_g)) + max(0, w_cq * q_am - 1.5 * q_g))
   q_rI0    = sqrt((q_B0 - w_sig * q_e2d) ^ 2 + q_e2t ^ 2)
   w_m      = min(w_J - 1, floor(w_c))
   q_idle   = greater(w_jq, item(w_m, w_kq) + 0.5)

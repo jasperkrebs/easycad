@@ -1840,6 +1840,64 @@ mod wings {
     }
 
     #[test]
+    fn a_curve_ends_on_a_whole_layer_of_wings() {
+        // The owner's cone (15 Nov 2026): wings outside, four seams, 100 % at the throat down to
+        // 20 %, printed wide edge down. The layer next to the throat had read its wings half way
+        // into the plain throat (57 %): one odd loop. Each layer reads them inside their stretch.
+        use crate::eval::step_values;
+        use crate::value::Value;
+        let src = set_values(
+            TEMPLATE,
+            &[
+                ("shape".into(), text("cone")),
+                ("throat".into(), num(25.0)),
+                ("fillet".into(), num(25.0)),
+                ("opening".into(), num(200.0)),
+                ("transition".into(), num(150.0)),
+                ("wide_down".into(), Literal::Bool(true)),
+                ("wings_on".into(), Literal::Bool(true)),
+                ("wing_mode".into(), text("curve")),
+                ("wing_side".into(), text("outside")),
+                ("wing_seams".into(), num(4.0)),
+            ],
+        )
+        .unwrap()
+        .replace(
+            "param wing_curve = [[0, 100], [0.6, 80], [1, 20]]",
+            "param wing_curve = [[0, 100], [0.2, 20], [1, 20]]",
+        );
+        let (e, v) = step_values(&src, Quality::Final);
+        clean(&e);
+        let c: Vec<f64> = match v.get("w_c") {
+            Some(Value::List(l)) => l
+                .items
+                .iter()
+                .map(|x| match x {
+                    Value::Number(n) => *n,
+                    _ => f64::NAN,
+                })
+                .collect(),
+            other => panic!("w_c: {other:?}"),
+        };
+        let winged: Vec<usize> = (0..c.len()).filter(|k| c[*k] > 1e-9).collect();
+        assert!(!winged.is_empty());
+        // Every layer with wings has between 20 and 100 %, the last (by the throat) nearly 100 %.
+        assert!(
+            winged
+                .iter()
+                .all(|k| c[*k] >= 0.2 - 1e-6 && c[*k] <= 1.0 + 1e-9)
+        );
+        let last = c[*winged.last().unwrap()];
+        assert!(last > 0.95, "{last}");
+        // And they change gently from layer to layer.
+        let steepest = winged
+            .windows(2)
+            .map(|w| (c[w[1]] - c[w[0]]).abs())
+            .fold(0.0, f64::max);
+        assert!(steepest < 0.12, "{steepest}");
+    }
+
+    #[test]
     fn wings_that_cannot_fit_say_so() {
         let narrow = wings(&[("socket", text("E14")), ("line", num(7.0))]);
         assert!(
