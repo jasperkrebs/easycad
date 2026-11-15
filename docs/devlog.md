@@ -7,6 +7,90 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-16: wings are a setting of every shape (recipe-developer)
+
+**Why:** the owner wanted wings and shape set independently: any shape, wings on or off like the
+brim, and the wings following the fades, a curve of their own, or the shape.
+
+**What landed** (Lampshade and Lamp, [tube-with-wings.md](tube-with-wings.md)): the shapes are the
+plain ones again (no "tube with wings", "cone with wings"…; old projects pick their shape again
+and switch Wings on). "Wings" at the end of the Shade group switches on a "Wings" group: "Wings
+follow" fades (the %, faded in and out; the tube can widen to keep the layer length), a curve
+(`wing_curve`, rows of where along the shade 0..1 and %, a smooth curve through them; the fades
+are not used), or fit the shape (as long as the widest layer). Inside/outside, seams, gap, rise,
+start from the bed (the tube) as before. Tests `every_shape_can_have_wings` (9 shapes × 3 modes)
+and `the_wings_can_follow_a_curve_along_the_shade`; the earlier tests on the new settings.
+
+## 2026-11-15 (night, last): the widening follows the fade-out's curve; points per arc (recipe-developer)
+
+**Why:** the owner's outlines: where the wings ran out, the wall flared hard right beside their
+pointed tips. With the wings driving the radius, the wall barely widened while the wings shrank
+slowly and then jumped out in the last stretch, as the turns flattened into dents.
+
+**What landed** (Lampshade and Lamp): with "same layer length" the tube's radius now follows the
+fade-out's curve from its own radius to the plain circle as long as a full-wings layer, and the
+wings are as much as keeps each layer that long (the same table as the shapes with wings). And
+every arc gets as many points as the chord tolerance needs at its own radius and sweep (one when
+there's nothing to draw): the template as it ships drops from 9,100 points to 5,300, the owner's
+259 % tube from 115,000 to 52,000. Test `fading_out_the_tube_can_widen_to_keep_each_layer_as_long`
+now checks the wall half way out half way up a straight fade-out.
+
+## 2026-11-15 (night, later): a widening tube no longer narrows where a level of wings ends (recipe-developer)
+
+**Why:** the owner's tube (from the bed, 259 % outside on 6 seams, widening as the wings fade out)
+narrowed in two places on the way up. Made before today's exact-length fix, it still guessed the
+layer lengths, worst where a level of wings runs out; with the fix it was just over the engine's
+geometry budget (115,000 points through ~20 list steps each).
+
+**What landed:** the points are built with fewer list steps (each coordinate in one `flatten`),
+so it fits; its wall widens all the way (16.5 to 87 mm). Test
+`a_tube_widening_through_three_levels_of_wings_never_narrows`. With outside wings the outermost
+level's walls end where the wings drop below 200 %: the outline steps in there by about two walls
+(that's the wings, not the wall).
+
+## 2026-11-15 (night): from the bed, the wings screw onto the socket (recipe-developer)
+
+**Why:** the owner: with full wings from the bed (no straight start), the socket screws into the
+wings themselves, so the innermost wall must fit the socket.
+
+**What landed** (Lampshade): from the bed, inside wings put their innermost wall at the socket's
+thread (the tube's wall two walls further out per 100 %); outside wings keep the tube's wall
+there. A warning when the rise can't make that wall a thread (inside: rise along the wings at a
+whole 100/200/300 %; outside: rise along the tube wall). Test
+`from_the_bed_the_wings_screw_onto_the_socket` (both sides: the wall at the thread's radius, a
+helix a pitch a turn from the first layers; the warnings).
+
+## 2026-11-15 (evening): cone, bell, dome, sphere and flat sphere with wings (recipe-developer)
+
+**Why:** the owner wanted the shades with wings too, but with the shape set first and the wings
+following from it, rather than the % driving the shape.
+
+**What landed** (Lampshade and Lamp, [tube-with-wings.md](tube-with-wings.md)): five more shapes,
+"X with wings", each the shape X with wings that keep every layer as long as its widest
+(at most the Wings %, faded in from the plain throat, stopping at a lip or straight end). The
+same table that now works out the tube's widening works out the wings: per height, at 12 amounts
+of wings, the amount that gives the widest layer's length. Tests
+`a_shape_with_wings_keeps_its_layers_as_long_as_its_widest` (all five: within 3 % once faded in,
+never over; the throat plain; wide edge down) and `a_shape_with_wings_is_a_shade_too` (a sphere
+with wings in the Lamp, a straight end that takes a cone, no wing ports).
+
+**Open:** the Plan's add buttons give new shades sizes by their shape's name (`web/js/parts.js`):
+"cone with wings" etc. come with the component's defaults.
+
+## 2026-11-15 (later): "same layer length" works out each layer's real length (recipe-developer)
+
+**Why:** the owner's flared tube (8 seams outside, a 10 mm gap) bulged and necked where its wings
+ran out: the tube's radius grew, shrank, grew again. The length of a layer while its turns
+form was guessed (the full turns' length scaled down), far off with a gap; and with no fade-in
+the first height had no wings (0 ÷ 0), its radius leaking into the next.
+
+**What landed** (Lamp and Lampshade): a layer's exact length (partial turns and all) is worked
+out every two layers up at 12 radii and the radius that keeps the longest layer's length is read
+off between them, no Newton steps; "fade in over 0" is full wings at once; the widening starts
+exactly where the fade-out does; the wings start on the straight start's end even when they
+start wider (no hop). Test `a_flaring_winged_tube_widens_smoothly_to_the_end_of_its_wings` (the
+owner's settings: the wall only widens, no bunched layers, one line).
+
 ## 2026-11-15 (later): STEP is the surface, not a thickened wall (general-manager)
 
 **Why:** the owner works on exported shapes as surfaces; a wall thickened to the line width was
@@ -41,6 +125,19 @@ Wings group of its own would have failed the smoke test.
 Tests: `a_when_can_join_conditions_with_and` (lang), `layer_counts_for_hand_built_spirals_and_brims`
 (core), the `and` case in `settings.test.mjs`; the open-top golden test finds the last turn by
 its turn number (with a brim the layer count is now one less). Golden G-code unchanged.
+
+## 2026-11-15: a tube with wings prints wide edge down too (recipe-developer)
+
+**Why:** the owner flipped a winged tube in the Plan (it hangs down from the socket, widening at
+its end) and it still printed start first.
+
+**What landed** (Lamp and Lampshade): "wide edge down" works for the tube with wings: the whole
+tube end first from the bed (the schedule of the wings read from the other end, the first layer
+rising off the bed through `bead`, a brim round its outermost wall), its straight start last;
+shown in the same place in the lamp, its ports where they were. Tests
+`a_tube_with_wings_can_print_wide_edge_down` (the owner's tube: on the bed at its widened end,
+plain thread at the top, the same radii at every height turned over, the same span in the lamp)
+and `the_tube_can_print_wide_edge_down` (Lampshade).
 
 ## 2026-11-15 (late night): a winged tube takes a thread only where it rises a pitch a turn (recipe-developer)
 

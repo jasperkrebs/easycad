@@ -1125,7 +1125,7 @@ fn a_tube_with_wings_is_a_shade_too() {
     let wings = |settings: &str| {
         LAMP.replace(
             "part main = shade(shape: \"sphere\", end_straight: true)",
-            &format!("part main = shade(shape: \"tube with wings\", {settings})"),
+            &format!("part main = shade(shape: \"tube\", wings_on: true, {settings})"),
         )
     };
     let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
@@ -1203,7 +1203,7 @@ fn wings_take_a_thread_only_where_they_rise_a_pitch_a_turn() {
         .replace("param thread_d     = 40 mm", "param thread_d     = 80 mm")
         .replace(
             "part main = shade(shape: \"sphere\", end_straight: true)",
-            &format!("part main = shade(shape: \"tube with wings\", {settings})"),
+            &format!("part main = shade(shape: \"tube\", wings_on: true, {settings})"),
         )
     };
     // The tube's own radius: half a line outside the 80 mm thread.
@@ -1273,4 +1273,147 @@ fn wings_take_a_thread_only_where_they_rise_a_pitch_a_turn() {
         sleeve.points[5][0].hypot(sleeve.points[5][1]),
         r + 6.0
     ));
+}
+
+/// Printed wide edge down (the Plan's and the Prints view's Flip), a tube with wings prints end
+/// first from the bed, its straight start (the thread) last: the same tube turned over, shown in
+/// the same place in the lamp.
+#[test]
+fn a_tube_with_wings_can_print_wide_edge_down() {
+    let tube = |down: bool| {
+        LAMP.replace(
+            "part main = shade(shape: \"sphere\", end_straight: true)",
+            &format!(
+                "part main = shade(shape: \"tube\", wings_on: true, end_straight: true, wings: 100 %, wing_out: 106 mm, wing_widen: \"same layer length\", wing_seams: 3, direction: \"down\", wide_down: {down})"
+            ),
+        )
+    };
+    let (up, down) = (run(&tube(false)), run(&tube(true)));
+    for e in [&up, &down] {
+        assert!(warnings(e).is_empty(), "{:?}", e.diagnostics);
+        assert!(e.prints[0].path.travel.iter().skip(1).all(|t| !t));
+    }
+    let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
+    let (a, b) = (&up.prints[0].path, &down.prints[0].path);
+    let top = a.points.last().unwrap()[2];
+    // (Each on its nearest whole layer: counted from opposite ends where layers come closer.)
+    assert!((b.points.last().unwrap()[2] - top).abs() < 1.25);
+    // End first: on the bed at the widened end's radius; last, the straight start, plain turns
+    // at the thread's radius a pitch apart.
+    let widest = a.points.iter().map(radius).fold(0.0, f64::max);
+    assert!(b.points[0][2].abs() < 1e-9 && (radius(&b.points[0]) - widest).abs() < 0.1);
+    let last: Vec<_> = b.points.iter().filter(|p| p[2] > top - 17.0).collect();
+    assert!(last.len() > 50 && last.iter().all(|p| (radius(p) - 23.0).abs() < 1e-6));
+    // The same tube turned over: its widest and narrowest at every height along it.
+    let bands = |pts: &[crate::geom::P3], flip: bool| {
+        let mut out = vec![(f64::MAX, 0.0f64); 20];
+        for p in pts {
+            let h = if flip { top - p[2] } else { p[2] };
+            let k = ((h / 10.0) as usize).min(19);
+            out[k] = (out[k].0.min(radius(p)), out[k].1.max(radius(p)));
+        }
+        out
+    };
+    for (k, (x, y)) in bands(&a.points, false)
+        .iter()
+        .zip(bands(&b.points, true))
+        .enumerate()
+    {
+        // (Within a layer's worth of the widening: they're sliced from opposite ends.)
+        assert!(
+            (x.1 - y.1).abs() < 1.0 && (x.0 - y.0).abs() < 3.5,
+            "{k}: {x:?} {y:?}"
+        );
+    }
+    // Shown where it goes: the same span of the lamp either way.
+    let span = |p: &crate::toolpath::Toolpath| {
+        let v = p.view.unwrap();
+        p.points
+            .iter()
+            .map(|q| v.apply(*q)[2])
+            .fold((f64::MAX, f64::MIN), |(lo, hi), z| (lo.min(z), hi.max(z)))
+    };
+    let (sa, sb) = (span(a), span(b));
+    assert!(
+        (sa.0 - sb.0).abs() < 1.25 && (sa.1 - sb.1).abs() < 1.25,
+        "{sa:?} {sb:?}"
+    );
+}
+
+/// The owner's flared winged tube: 8 seams outside on a cone's end, a 10 mm gap between the walls
+/// (so the turns never get round to half circles), fading out over 180 mm while it widens to keep
+/// each layer as long. The tube's wall only ever widens (no neck where the wings run out), and no
+/// layers bunch up (the length of a layer while the turns form was once guessed, not worked out).
+#[test]
+fn a_flaring_winged_tube_widens_smoothly_to_the_end_of_its_wings() {
+    let src = LAMP.replace("param socket       = \"E27\"", "param socket       = \"E14\"")
+        .replace("param line       = 6 mm", "param line       = 5 mm")
+        .replace(
+            "part main = shade(shape: \"sphere\", end_straight: true)",
+            "part main = shade(shape: \"cone\", end_straight: true, direction: \"down\", fillet: 10 mm, opening: 120 mm, transition: 25 mm)\npart cone = shade(direction: \"down\", mount: main.end_out, opening: 108 mm, shape: \"tube\", wings_on: true, wing_seams: 8, wing_in: 0 mm, wings: 100 %, wing_gap: 10 mm, wing_out: 180 mm, wing_widen: \"same layer length\", wing_out_curve: \"linear\", length: 200 mm, wing_side: \"outside\")",
+        );
+    let e = run(&src);
+    let path = &e.prints[1].path;
+    assert!(path.travel.iter().skip(1).all(|t| !t));
+    // The tube's wall (the innermost point of each 4 mm of height) only ever widens.
+    let mut inner = vec![f64::MAX; 60];
+    for p in &path.points {
+        let k = (p[2] / 4.0) as usize;
+        if k < 60 {
+            inner[k] = inner[k].min(p[0].hypot(p[1]));
+        }
+    }
+    let inner: Vec<f64> = inner.into_iter().filter(|r| *r < f64::MAX).collect();
+    assert!(inner.windows(2).all(|w| w[1] >= w[0] - 0.05), "{inner:?}");
+    assert!(inner[inner.len() - 1] > 150.0);
+    // Never bunched up: no 4 mm of height holds much more of the line than the rest (layers come
+    // closer where it leans out, by the overhang compensation, but smoothly).
+    let mut per_band = vec![0.0f64; 60];
+    for (i, w) in path.points.windows(2).enumerate() {
+        let k = (w[1][2] / 4.0) as usize;
+        if k < 60 && !path.travel[i + 1] {
+            per_band[k] += (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]);
+        }
+    }
+    let mut bands: Vec<f64> = per_band[6..48].to_vec();
+    bands.sort_by(f64::total_cmp);
+    let median = bands[bands.len() / 2];
+    assert!(bands.iter().all(|b| *b < 3.0 * median), "{per_band:?}");
+}
+
+/// A shape with wings as a shade: a sphere whose wings keep its layers as long as its equator's,
+/// on the socket, with a straight end that takes more shades (plain, at the end's radius). Its
+/// wall isn't straight, so no thread along its wings.
+#[test]
+fn a_shape_with_wings_is_a_shade_too() {
+    use Literal::Text;
+    let src = LAMP.replace(
+        "part main = shade(shape: \"sphere\", end_straight: true)",
+        "part main = shade(shape: \"sphere\", wings_on: true, wing_mode: \"fit the shape\", wings: 100 %, end_straight: true)",
+    );
+    let src = with_part(&src, "top", &[("mount", Text("main.end_out".into()))]);
+    let e = run(&src);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let path = &e.prints[0].path;
+    assert!(path.travel.iter().skip(1).all(|t| !t));
+    let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
+    // The same sphere's end, without wings.
+    let plain = run(LAMP);
+    let end = port(&e, "main.end_out").to_vec();
+    assert!(close(end[0], port(&plain, "main.end_out")[0]), "{end:?}");
+    assert_eq!(end[3], 20.0);
+    // Its straight end: plain turns at the end's radius.
+    let r_end = end[0] - 6.0;
+    let top = end[1];
+    let in_end: Vec<_> = path.points.iter().filter(|p| p[2] > top - 17.0).collect();
+    assert!(in_end.len() > 30 && in_end.iter().all(|p| (radius(p) - r_end).abs() < 1e-6));
+    // Wings in between: more line than the plain sphere's (where it narrows).
+    let len = |e: &Evaluation| e.prints[0].stats.path_length_mm;
+    assert!(len(&e) > 1.1 * len(&plain), "{} {}", len(&e), len(&plain));
+    for p in ["main.wings_out", "main.wings_in"] {
+        assert_eq!(port(&e, p)[3], 0.0, "{p}");
+    }
+    // The shade on its end sits a line outside it.
+    let shade = &e.prints[1].path;
+    assert!(close(radius(&shade.points[5]), end[0]));
 }

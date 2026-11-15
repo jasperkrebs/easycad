@@ -586,7 +586,6 @@ fn every_lampshade_shade_prints_both_ways_up() {
         "bell in-out",
         "cone in-out",
         "tube",
-        "tube with wings",
     ] {
         // The last three with the shade's own layer height and line width.
         for (wide, lip, brim, comp, closed, shade_layer) in [
@@ -624,12 +623,7 @@ fn every_lampshade_shade_prints_both_ways_up() {
             } else {
                 2.5
             };
-            // A tube with wings is never closed.
-            let floor = if closed && shape != "tube with wings" {
-                disc
-            } else {
-                0.0
-            };
+            let floor = if closed { disc } else { 0.0 };
             assert!(
                 (pts[0][2] - floor).abs() < 1e-9 && pts.iter().all(|p| p[0] > 0.0),
                 "{shape} {closed}"
@@ -637,7 +631,7 @@ fn every_lampshade_shade_prints_both_ways_up() {
             let p = e.print.as_ref().unwrap();
             assert!(p.path.points.len() > 100 && p.stats.layers > 10, "{shape}");
             // Closed, the disc goes down first, at its layer, and fills the middle.
-            if closed && shape != "tube with wings" {
+            if closed {
                 let first = p.path.points.iter().find(|q| q[2] > 0.0).unwrap();
                 assert!((first[2] - disc).abs() < 1e-9 && first[0].hypot(first[1]) < 1.0);
             }
@@ -1152,7 +1146,10 @@ mod wings {
     const PITCH: f64 = 2.5;
 
     fn wings(values: &[(&str, Literal)]) -> Evaluation {
-        let mut all = vec![("shape".to_string(), Literal::Text("tube with wings".into()))];
+        let mut all = vec![
+            ("shape".to_string(), Literal::Text("tube".into())),
+            ("wings_on".to_string(), Literal::Bool(true)),
+        ];
         all.extend(values.iter().map(|(k, v)| (k.to_string(), v.clone())));
         evaluate(&set_values(TEMPLATE, &all).unwrap(), Quality::Final)
     }
@@ -1287,7 +1284,7 @@ mod wings {
         let profile = crate::gcode::Profile::default();
         let gcode = crate::gcode::write(&e.prints[0].path, &profile, "Lampshade").unwrap();
         let moves = gcode.text.lines().filter(|l| l.starts_with("G1 X")).count();
-        assert!(moves > 7000, "{moves}");
+        assert!(moves > 4000, "{moves}");
     }
 
     #[test]
@@ -1353,8 +1350,8 @@ mod wings {
     #[test]
     fn a_long_tube_can_have_wings_past_100_percent_outside() {
         // The owner's 533 mm tube: two seams outside, fading in over 152 mm and out over 280 mm,
-        // widening to keep each layer as long; past 100 % it's over 100,000 points (more than one
-        // `series` can count), and it prints.
+        // widening to keep each layer as long: past 100 % (once more points than one `series`
+        // can count) it prints.
         let e = wings(&[
             ("wings", num(150.0)),
             ("wing_side", text("outside")),
@@ -1365,7 +1362,7 @@ mod wings {
             ("wing_widen", text("same layer length")),
         ]);
         let pts = clean(&e);
-        assert!(pts.len() > 100_000, "{}", pts.len());
+        assert!(pts.len() > 30_000, "{}", pts.len());
         // (197 layers of wings at the pitch; more where layers come closer as it widens.)
         assert!(e.prints[0].path.layers > 16 + 197);
     }
@@ -1422,6 +1419,7 @@ mod wings {
             ("wing_bed", Literal::Bool(true)),
             ("wings", num(100.0)),
             ("wing_side", text("outside")),
+            ("wing_rise", text("tube wall")),
         ]);
         let pts = clean(&e);
         let p = &e.prints[0].path;
@@ -1444,6 +1442,7 @@ mod wings {
             ("wing_bed", Literal::Bool(true)),
             ("wings", num(100.0)),
             ("wing_side", text("outside")),
+            ("wing_rise", text("tube wall")),
         ];
         with_brim.push(("brim", Literal::Bool(true)));
         let b = wings(&with_brim);
@@ -1490,6 +1489,22 @@ mod wings {
             assert!((l / full - 1.0).abs() < 0.04, "{k}: {l} {full}");
         }
         let top = layer(&widened, 40.0, 60);
+        // It widens along the fade-out's curve (here straight, 80 to 140 mm up): half way out
+        // half way up it, so the wall flares evenly and the wings end where it's widest.
+        // (The wings are inside: the tube's wall is the outermost line.)
+        let wall_at = |z: f64| {
+            widened
+                .iter()
+                .filter(|p| (p[2] - z).abs() < 1.5)
+                .map(radius)
+                .fold(0.0, f64::max)
+        };
+        let half = (R + full / std::f64::consts::TAU) / 2.0;
+        assert!(
+            (wall_at(110.0) - half).abs() < 1.5,
+            "{} {half}",
+            wall_at(110.0)
+        );
         assert!(
             top.iter()
                 .all(|p| (radius(p) - full / std::f64::consts::TAU).abs() < 0.5)
@@ -1525,7 +1540,9 @@ mod wings {
         let pts = &squeezed.prints[0].path.points;
         let top = pts.last().unwrap()[2];
         assert!((top - 200.0).abs() < PITCH / 2.0, "{top}");
-        let held: Vec<&P3> = pts.iter().filter(|p| p[2] > 65.0 && p[2] < 80.0).collect();
+        // (Inside the full wings, 60 to 80 mm up; the layer that straddles where it starts widening
+        // is rightly a little thinner.)
+        let held: Vec<&P3> = pts.iter().filter(|p| p[2] > 61.0 && p[2] < 76.0).collect();
         let mut pairs = 0;
         for a in &held {
             for b in &held {
@@ -1545,6 +1562,281 @@ mod wings {
         clean(&wider);
         assert!(wider.prints[0].path.width.iter().all(|w| *w == 0.0));
         assert_eq!(layers(&wider), layers(&off));
+    }
+
+    #[test]
+    fn the_tube_can_print_wide_edge_down() {
+        // Fading out and widening at the top; printed wide edge down it's the same tube turned
+        // over, its widened end on the bed, its straight start (the thread) last.
+        let settings = [
+            ("wings", num(100.0)),
+            ("wing_out", num(60.0)),
+            ("wing_widen", text("same layer length")),
+        ];
+        let up = clean(&wings(&settings));
+        let mut flipped = settings.to_vec();
+        flipped.push(("wide_down", Literal::Bool(true)));
+        let down = clean(&wings(&flipped));
+        let top = up.last().unwrap()[2];
+        // (Each on its nearest whole layer: counted from opposite ends where layers come closer.)
+        assert!((down.last().unwrap()[2] - top).abs() < PITCH / 2.0);
+        let widest = up.iter().map(radius).fold(0.0, f64::max);
+        assert!(down[0][2].abs() < 1e-9 && (radius(&down[0]) - widest).abs() < 0.1);
+        let last: Vec<_> = down.iter().filter(|p| p[2] > top - 37.0).collect();
+        assert!(last.len() > 50 && last.iter().all(|p| (radius(p) - R).abs() < 1e-6));
+    }
+
+    /// A cone, bell, dome, sphere or flat sphere with wings: the shape as set, its wings as much as
+    /// keeps each layer as long as its widest (after the fade-in from the throat), none at the
+    /// widest, the throat a plain thread.
+    #[test]
+    fn a_shape_with_wings_keeps_its_layers_as_long_as_its_widest() {
+        use crate::eval::step_values;
+        use crate::value::Value;
+        for shape in ["cone", "bell", "dome", "sphere", "flat sphere"] {
+            let src = set_values(
+                TEMPLATE,
+                &[
+                    ("shape".into(), text(shape)),
+                    ("wings_on".into(), Literal::Bool(true)),
+                    ("wing_mode".into(), text("fit the shape")),
+                    ("wings".into(), num(100.0)),
+                ],
+            )
+            .unwrap();
+            let (e, v) = step_values(&src, Quality::Final);
+            let pts = clean(&e);
+            let nums = |n: &str| match v.get(n) {
+                Some(Value::List(l)) => l
+                    .items
+                    .iter()
+                    .map(|x| match x {
+                        Value::Number(n) => *n,
+                        _ => f64::NAN,
+                    })
+                    .collect::<Vec<_>>(),
+                Some(Value::Number(n)) => vec![*n],
+                other => panic!("{n}: {other:?}"),
+            };
+            let (zb, zw, target, c) = (
+                nums("w_zb"),
+                nums("z_w")[0],
+                nums("w_hold_l")[0],
+                nums("w_c"),
+            );
+            // The plain shape's widest layer.
+            let plain = set_values(TEMPLATE, &[("shape".into(), text(shape))]).unwrap();
+            let p = evaluate(&plain, Quality::Final);
+            let widest = p.prints[0]
+                .path
+                .points
+                .iter()
+                .map(radius)
+                .fold(0.0, f64::max);
+            assert!(
+                (target - std::f64::consts::TAU * widest).abs() < 0.02 * target,
+                "{shape}: {target} {widest}"
+            );
+            // Each layer's length: never much more than the target's, and from the first that
+            // reaches it (the fade-in from the throat done), about the target's while it has wings.
+            let mut checked = 0;
+            let mut reached = false;
+            for k in 0..zb.len() - 1 {
+                let (lo, hi) = (zw + zb[k], zw + zb[k + 1]);
+                let len: f64 = pts
+                    .windows(2)
+                    .filter(|w| w[1][2] > lo + 1e-9 && w[1][2] <= hi + 1e-9)
+                    .map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]))
+                    .sum();
+                assert!(len < target * 1.03, "{shape} {k}: {len} {target}");
+                reached |= len > target * 0.97;
+                if reached && c[k] > 0.005 {
+                    assert!(len > target * 0.97, "{shape} {k}: {len} {target}");
+                    checked += 1;
+                }
+            }
+            assert!(checked >= 3, "{shape}: {checked}");
+            // The throat (20 mm) is a plain thread at the socket's radius.
+            assert!(
+                pts.iter()
+                    .filter(|p| p[2] < 19.0)
+                    .all(|p| (radius(p) - R).abs() < 1e-6)
+            );
+            // Printed wide edge down too.
+            let down = set_values(&src, &[("wide_down".into(), Literal::Bool(true))]).unwrap();
+            clean(&evaluate(&down, Quality::Final));
+        }
+    }
+
+    /// From the bed (no straight start) the wall that screws onto the socket is the wings' own:
+    /// inside, the innermost (at the socket's thread, the tube's wall two walls further out per
+    /// 100 %), rising along the wings; outside, the tube's wall, rising along the tube wall. Each a
+    /// helix a pitch a turn from the first layers up; set to rise otherwise, it says so.
+    #[test]
+    fn from_the_bed_the_wings_screw_onto_the_socket() {
+        let bed = |side: &str, rise: &str| {
+            wings(&[
+                ("wing_bed", Literal::Bool(true)),
+                ("wings", num(100.0)),
+                ("wing_side", text(side)),
+                ("wing_rise", text(rise)),
+            ])
+        };
+        for (side, rise) in [("inside", "wings"), ("outside", "tube wall")] {
+            let pts = clean(&bed(side, rise));
+            let (lo, hi) = pts
+                .iter()
+                .filter(|p| p[2] > 1.0)
+                .map(radius)
+                .fold((f64::MAX, 0.0f64), |(a, b), r| (a.min(r), b.max(r)));
+            // The socket's thread wall at the thread's radius; everything else outside it.
+            assert!(
+                (lo - R).abs() < 1e-6 && (hi - (R + 12.0)).abs() < 1e-6,
+                "{side}: {lo} {hi}"
+            );
+            let offs: Vec<f64> = pts
+                .iter()
+                .filter(|p| p[2] > 5.0 && (radius(p) - R).abs() < 1e-6)
+                .map(|p| (p[2] / PITCH - round_from_seam(p) / 360.0).rem_euclid(1.0))
+                .collect();
+            assert!(offs.len() > 100, "{side}");
+            let spread = offs.iter().fold(0.0f64, |m, o| {
+                let d = (o - offs[0]).rem_euclid(1.0);
+                m.max(d.min(1.0 - d))
+            });
+            assert!(spread < 1e-4, "{side}: {spread}");
+        }
+        for (side, rise, says) in [
+            ("inside", "whole layer", "innermost wall"),
+            ("outside", "wings", "rise along the tube wall"),
+        ] {
+            let e = bed(side, rise);
+            assert!(
+                e.diagnostics
+                    .iter()
+                    .any(|d| d.severity == Severity::Warning && d.message.contains(says)),
+                "{side}: {:?}",
+                e.diagnostics
+            );
+        }
+    }
+
+    /// The owner's flaring winged tube: from the bed, 259 % outside on 6 seams (three levels of
+    /// wings), fading out over more than its height while it widens to keep each layer as long.
+    /// Its wall only ever widens, also where a level of wings runs out (it once narrowed there:
+    /// the layers' lengths were guessed); and it fits the engine's budget.
+    #[test]
+    fn a_tube_widening_through_three_levels_of_wings_never_narrows() {
+        let e = wings(&[
+            ("socket", text("E14")),
+            ("line", num(5.0)),
+            ("flow", num(15.0)),
+            ("wings", num(259.0)),
+            ("wing_side", text("outside")),
+            ("wing_seams", num(6.0)),
+            ("wing_rise", text("tube wall")),
+            ("wing_bed", Literal::Bool(true)),
+            ("wing_in", num(20.0)),
+            ("wing_hold", num(20.0)),
+            ("wing_out", num(230.0)),
+            ("wing_widen", text("same layer length")),
+        ]);
+        let pts = clean(&e);
+        assert!(pts.len() > 40_000, "{}", pts.len());
+        let mut wall = vec![f64::MAX; 26];
+        for p in &pts {
+            let k = (p[2] / 8.0) as usize;
+            if k < 26 {
+                wall[k] = wall[k].min(radius(p));
+            }
+        }
+        let wall: Vec<f64> = wall.into_iter().filter(|r| *r < f64::MAX).collect();
+        assert!(wall.windows(2).all(|w| w[1] >= w[0] - 0.05), "{wall:?}");
+    }
+
+    /// Wings are a setting of every shape, as a brim is: following the fades, a curve along the
+    /// shade, or the shape. Each prints as one line.
+    #[test]
+    fn every_shape_can_have_wings() {
+        for shape in [
+            "cone",
+            "bell",
+            "dome",
+            "sphere",
+            "flat sphere",
+            "own",
+            "bell in-out",
+            "cone in-out",
+            "tube",
+        ] {
+            for mode in ["fades", "curve", "fit the shape"] {
+                let src = set_values(
+                    TEMPLATE,
+                    &[
+                        ("shape".into(), text(shape)),
+                        ("wings_on".into(), Literal::Bool(true)),
+                        ("wing_mode".into(), text(mode)),
+                        ("wings".into(), num(100.0)),
+                    ],
+                )
+                .unwrap();
+                let e = evaluate(&src, Quality::Final);
+                assert!(
+                    e.diagnostics.iter().all(|d| d.severity != Severity::Error),
+                    "{shape} {mode}: {:?}",
+                    e.diagnostics
+                );
+                let p = &e.prints[0].path;
+                assert!(p.travel.iter().skip(1).all(|t| !t), "{shape} {mode}");
+                assert!(
+                    p.points.windows(2).all(|w| w[1][2] >= w[0][2] - 1e-9),
+                    "{shape} {mode}"
+                );
+            }
+        }
+    }
+
+    /// Along a curve: the wings at each height are the curve's, read where that height is along
+    /// the wings' stretch (0 at its start, 1 at its end), a smooth curve through the points.
+    #[test]
+    fn the_wings_can_follow_a_curve_along_the_shade() {
+        use crate::eval::step_values;
+        use crate::value::Value;
+        let src = set_values(
+            TEMPLATE,
+            &[
+                ("shape".into(), text("tube")),
+                ("wings_on".into(), Literal::Bool(true)),
+                ("wing_mode".into(), text("curve")),
+            ],
+        )
+        .unwrap();
+        // As it ships: 100 % at the start, 80 % at 0.6, 20 % at the end (the wings from 40 mm up
+        // a 200 mm tube).
+        assert!(src.contains("param wing_curve = [[0, 100], [0.6, 80], [1, 20]]"));
+        let (e, v) = step_values(&src, Quality::Final);
+        clean(&e);
+        let nums = |n: &str| match v.get(n) {
+            Some(Value::List(l)) => l
+                .items
+                .iter()
+                .map(|x| match x {
+                    Value::Number(n) => *n,
+                    _ => f64::NAN,
+                })
+                .collect::<Vec<_>>(),
+            other => panic!("{n}: {other:?}"),
+        };
+        let (c, zl) = (nums("w_c"), nums("w_zl"));
+        let at = |t: f64| {
+            let k = zl.iter().position(|z| *z >= t * 160.0).unwrap();
+            c[k]
+        };
+        assert!((at(0.0) - 1.0).abs() < 0.02, "{}", at(0.0));
+        assert!((at(0.6) - 0.8).abs() < 0.02, "{}", at(0.6));
+        assert!((at(0.99) - 0.2).abs() < 0.03, "{}", at(0.99));
+        // Smooth and never past its points in between.
+        assert!(c.iter().all(|x| *x <= 1.0 + 1e-9 && *x >= 0.2 - 1e-9));
     }
 
     #[test]
