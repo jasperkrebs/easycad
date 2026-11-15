@@ -1379,3 +1379,40 @@ fn a_flaring_winged_tube_widens_smoothly_to_the_end_of_its_wings() {
     let median = bands[bands.len() / 2];
     assert!(bands.iter().all(|b| *b < 3.0 * median), "{per_band:?}");
 }
+
+/// A shape with wings as a shade: a sphere whose wings keep its layers as long as its equator's,
+/// on the socket, with a straight end that takes more shades (plain, at the end's radius). Its
+/// wall isn't straight, so no thread along its wings.
+#[test]
+fn a_shape_with_wings_is_a_shade_too() {
+    use Literal::Text;
+    let src = LAMP.replace(
+        "part main = shade(shape: \"sphere\", end_straight: true)",
+        "part main = shade(shape: \"sphere with wings\", wings: 100 %, end_straight: true)",
+    );
+    let src = with_part(&src, "top", &[("mount", Text("main.end_out".into()))]);
+    let e = run(&src);
+    assert!(warnings(&e).is_empty(), "{:?}", e.diagnostics);
+    let path = &e.prints[0].path;
+    assert!(path.travel.iter().skip(1).all(|t| !t));
+    let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
+    // The same sphere's end, without wings.
+    let plain = run(LAMP);
+    let end = port(&e, "main.end_out").to_vec();
+    assert!(close(end[0], port(&plain, "main.end_out")[0]), "{end:?}");
+    assert_eq!(end[3], 20.0);
+    // Its straight end: plain turns at the end's radius.
+    let r_end = end[0] - 6.0;
+    let top = end[1];
+    let in_end: Vec<_> = path.points.iter().filter(|p| p[2] > top - 17.0).collect();
+    assert!(in_end.len() > 30 && in_end.iter().all(|p| (radius(p) - r_end).abs() < 1e-6));
+    // Wings in between: more line than the plain sphere's (where it narrows).
+    let len = |e: &Evaluation| e.prints[0].stats.path_length_mm;
+    assert!(len(&e) > 1.1 * len(&plain), "{} {}", len(&e), len(&plain));
+    for p in ["main.wings_out", "main.wings_in"] {
+        assert_eq!(port(&e, p)[3], 0.0, "{p}");
+    }
+    // The shade on its end sits a line outside it.
+    let shade = &e.prints[1].path;
+    assert!(close(radius(&shade.points[5]), end[0]));
+}

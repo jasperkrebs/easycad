@@ -28,7 +28,7 @@ at the seam are a line apart too, closing the tube's wall with a small notch bet
 
 - **Wings on the inside or the outside** (`wing_side`): outside, the same path mirrored outward
   from the tube's wall, which then stays the tube's inside (a thread inside).
-- **Wings** (%): how far round they reach. At 100 % each tip meets the facing tip a line apart
+- **Wings** (%): how far round they reach (for a shape with wings, the most they may; below). At 100 % each tip meets the facing tip a line apart
   (one seam: opposite the seam, a triple wall all round). **Past 100 %** a second wing grows the
   same way on the first wing's inner wall, at the seam (one fold deeper: two more walls), up to
   its own tips meeting at 200 % (five walls); and a third past 200 %, up to 300 %. At 150 % the
@@ -76,6 +76,27 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
   along it, each its own rise, so the shape stays where it is and only the layers move; where it
   doesn't lean every layer is exactly a pitch (the thread's), and the top ends on the nearest whole
   layer.
+
+## Shapes with wings
+
+"Cone with wings", "bell with wings", "dome with wings", "sphere with wings" and "flat sphere with
+wings" (the owner's idea, 15 Nov 2026) are the shapes as set (opening, transition height,
+sphere and so on), with wings that follow from the shape: as much as keeps every layer as long
+as the shade's widest one, so the layer time stays about the same where it narrows. None at the
+widest; more where it's narrower (a sphere: near the throat and near the opening).
+
+- **Wings** is the most they may take (up to 300 %); where even that isn't enough, the layer is
+  shorter.
+- The throat stays a plain thread; above it the wings fade in over "Fade in over" (an S-curve or
+  straight), and follow the shape once the shape needs less.
+- A lip (in the Lamp, a straight end) stays plain too: the wings stop where it starts, fading out
+  over "Fade out over" up to there (0: at once).
+- Each layer's length (its partial turns and all) is worked out every two layers at 12 amounts of
+  wings (more of them near none, where the turns form), and the amount that gives the widest
+  layer's length is read off between them. In the tests every layer that has its wings is
+  within 3 % of the widest layer's length.
+- In the Lamp it's a shade like the rest (its straight start screws on, its straight end takes
+  more shades), but no thread along its wings: its wall isn't straight.
 
 ## Printed wide edge down
 

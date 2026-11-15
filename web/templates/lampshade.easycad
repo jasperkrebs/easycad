@@ -14,22 +14,22 @@ param thread_d     = 40 mm   in 5..100 step 0.1     "Custom thread diameter"  wh
 param thread_pitch = 2.5 mm  in 0.5..5 step 0.1     "Custom thread pitch"  when socket = "custom"
 
 group "Shade"
-param shape      = "cone" of ["cone", "bell", "dome", "sphere", "flat sphere", "own", "bell in-out", "cone in-out", "tube", "tube with wings"] "Shape"
+param shape      = "cone" of ["cone", "bell", "dome", "sphere", "flat sphere", "own", "bell in-out", "cone in-out", "tube", "tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"] "Shape"
 param throat     = 20 mm   in 0..100 step 1         "Throat length (straight)"
 param length     = 200 mm  in 10..1000 step 1       "Tube length"  when shape = ["tube", "tube with wings"]
 param fillet     = 10 mm   in 0..100 step 1         "Fillet radius"  when not shape = ["tube", "bell in-out", "tube with wings"]
-param opening    = 150 mm  in 10..400 step 1        "Bottom opening diameter"  when shape = ["cone", "bell", "dome", "sphere", "flat sphere", "own"]
+param opening    = 150 mm  in 10..400 step 1        "Bottom opening diameter"  when shape = ["cone", "bell", "dome", "sphere", "flat sphere", "own", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
 param widest     = 200 mm  in 10..600 step 1        "Widest diameter"  when shape = ["bell in-out", "cone in-out"]
 param widest_at  = 50 %    in 5..95                 "Widest at (of the height)"  when shape = ["bell in-out", "cone in-out"]
 param widest_len = 0 mm    in 0..1000 step 1        "Straight at the widest (0: none)"  when shape = ["bell in-out", "cone in-out"]
 param widest_fillet = 0 mm in 0..200 step 1  "Fillet at the widest"  when shape = "cone in-out"
 param end_d      = 0 mm    in 0..600 step 1         "End diameter (0: as the throat)"  when shape = ["bell in-out", "cone in-out"]
-param transition = 52 mm   in 1..400 step 1         "Transition height"  when shape = ["cone", "bell", "dome", "sphere", "flat sphere", "own"]
+param transition = 52 mm   in 1..400 step 1         "Transition height"  when shape = ["cone", "bell", "dome", "sphere", "flat sphere", "own", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
 param inout_h    = 220 mm  in 10..1000 step 1       "Height"  when shape = ["bell in-out", "cone in-out"]
-param max_angle  = 0 deg   in 0..90 step 1          "Max angle (bell; 0: uncapped; 90: it opens out flat)"  when shape = "bell"
-param sphere     = 200 mm  in 20..500 step 1        "Sphere diameter (at its widest)"  when shape = ["sphere", "flat sphere"]
-param flatness   = 0.5     in 0.05..1 step 0.05     "Flatness (flat sphere: height ÷ width)"  when shape = "flat sphere"
-param closed     = false                            "Closed end (a flat disc, printed first)"  when not shape = "tube with wings"
+param max_angle  = 0 deg   in 0..90 step 1          "Max angle (bell; 0: uncapped; 90: it opens out flat)"  when shape = ["bell", "bell with wings"]
+param sphere     = 200 mm  in 20..500 step 1        "Sphere diameter (at its widest)"  when shape = ["sphere", "flat sphere", "sphere with wings", "flat sphere with wings"]
+param flatness   = 0.5     in 0.05..1 step 0.05     "Flatness (flat sphere: height ÷ width)"  when shape = ["flat sphere", "flat sphere with wings"]
+param closed     = false                            "Closed end (a flat disc, printed first)"  when not shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
 param closed_fillet = 10 mm in 0..100 step 1        "Closed end's fillet"  when closed
 param closed_layer = 0 mm  in 0..10 step 0.1        "Disc layer height (0: the shade's)"  when closed
 param lip        = false                            "Straight lip at the opening"  when not closed
@@ -38,18 +38,18 @@ param lip_fillet = 0 mm    in 0..100 step 1         "Lip fillet (0: the throat's
 param wide_down  = false                            "Wide edge down"  when not closed
 
 group "Wings"
-param wings      = 50 %    in 0..300                "Wings (100 %: the tips meet; past it, more walls)"  when shape = "tube with wings"
-param wing_side  = "inside" of ["inside", "outside"] "Wings on the"  when shape = "tube with wings"
-param wing_seams = 1       in 1..8 step 1           "Seams"  when shape = "tube with wings"
-param wing_gap   = 0 mm    in 0..10 step 0.1        "Gap between the walls"  when shape = "tube with wings"
-param wing_rise  = "whole layer" of ["whole layer", "tube wall", "wings"] "Rise along"  when shape = "tube with wings"
+param wings      = 50 %    in 0..300                "Wings (100 %: the tips meet; past it, more walls; a shape: at most)"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
+param wing_side  = "inside" of ["inside", "outside"] "Wings on the"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
+param wing_seams = 1       in 1..8 step 1           "Seams"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
+param wing_gap   = 0 mm    in 0..10 step 0.1        "Gap between the walls"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
+param wing_rise  = "whole layer" of ["whole layer", "tube wall", "wings"] "Rise along"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
 param wing_bed   = false                            "Start with full wings (no straight start)"  when shape = "tube with wings"
 param wing_start = 40 mm   in 0..1000 step 1        "Straight start"  when shape = "tube with wings" and not wing_bed
-param wing_in    = 60 mm   in 0..1000 step 1        "Fade in over"  when shape = "tube with wings" and not wing_bed
-param wing_in_curve = "smooth" of ["linear", "smooth"] "Fade-in curve"  when shape = "tube with wings" and not wing_bed
-param wing_out   = 0 mm    in 0..1000 step 1        "Fade out over (0: wings to the top)"  when shape = "tube with wings"
+param wing_in    = 60 mm   in 0..1000 step 1        "Fade in over"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"] and not wing_bed
+param wing_in_curve = "smooth" of ["linear", "smooth"] "Fade-in curve"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"] and not wing_bed
+param wing_out   = 0 mm    in 0..1000 step 1        "Fade out over (0: wings to the top)"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"]
 param wing_hold  = 60 mm   in 0..1000 step 1        "Full wings for"  when shape = "tube with wings" and wing_out
-param wing_out_curve = "smooth" of ["linear", "smooth"] "Fade-out curve"  when shape = "tube with wings" and wing_out
+param wing_out_curve = "smooth" of ["linear", "smooth"] "Fade-out curve"  when shape = ["tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"] and wing_out
 param wing_widen = "same diameter" of ["same diameter", "same layer length"] "Diameter as the wings fade out"  when shape = "tube with wings" and wing_out
 
 group "Own shade"
@@ -216,7 +216,9 @@ coi_z    = flatten([[0], cA_z, pick(bio_on, cB_z, []), [h]])
 coi_l    = flatten([[coi_a1], cA_phi, pick(bio_on, cB_phi, []), [coi_a2]])
 
 # The chosen shade (a tube is the cone's arithmetic, replaced below by a straight wall).
-k_shape = index_of(["cone", "bell", "dome", "sphere", "flat sphere", "own", "bell in-out", "cone in-out", "tube", "tube with wings"], shape)
+k_raw   = index_of(["cone", "bell", "dome", "sphere", "flat sphere", "own", "bell in-out", "cone in-out", "tube", "tube with wings", "cone with wings", "bell with wings", "dome with wings", "sphere with wings", "flat sphere with wings"], shape)
+# A shape with wings is its shape (its index) with wings that keep its layers as long as its widest.
+k_shape = item([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4], k_raw)
 # A tube, with or without wings.
 is_tube = greater(k_shape, 7.5)
 fl_r = pick(less(k_shape, 0.5), cone_r, pick(less(k_shape, 1.5), bell_r, pick(less(k_shape, 2.5), dome_r, pick(less(k_shape, 3.5), sphere_r, pick(less(k_shape, 4.5), flat_r, pick(less(k_shape, 5.5), own_rr, pick(less(k_shape, 6.5), bio_r, pick(less(k_shape, 7.5), coi_r, cone_r))))))))
@@ -314,7 +316,7 @@ top_z   = item(full_z, count(full_z) - 1)
 print_r = pick(is_closed, cap_r, pick(wide_eff, reverse(full_r), full_r))
 print_z = pick(is_closed, cap_z, pick(wide_eff, top_z - reverse(full_z), full_z))
 print_l = pick(is_closed, cap_l, pick(wide_eff, -reverse(full_l), full_l))
-profile = polyline(point(print_r, 0, print_z))
+profile = polyline(point(pick(w_prof * wing_on, [r_t, r_t], print_r), 0, pick(w_prof * wing_on, [0, max(pitch, z_w)], print_z)))
 
 # ---- Slicing: by height (each turn rises a pitch), or along the surface (each turn steps along
 # the wall; the turn's fields read z as the distance along the profile).
@@ -433,13 +435,15 @@ path     = pick(is_closed, cap_path, pick(wing_on, pick(w_bedp, wings_bed, join(
 # A wing starts as a shallow dent: its four turns grow from a few degrees to half circles, and
 # only then do the wings run back. The walls are a line plus the gap apart; at the seam the two
 # turns onto and off the tube's wall are a line apart, closing it.
-winged   = greater(k_shape, 8.5)
+winged   = greater(k_raw, 8.5)
+# A shape with wings (not the tube): the wings follow from the shape.
+w_prof   = greater(k_raw, 9.5)
 w_bed    = pick(wing_bed, 1, 0) * winged
 w_n      = pick(winged, round(clamp(wing_seams, 1, 8)), 1)
 # Inside (1) or outside (-1): which way from the tube's wall the wings go.
 w_sig    = 1 - 2 * less(abs(index_of(["inside", "outside"], wing_side) - 1), 0.5)
 w_J      = pick(winged, clamp(ceil(wings - 0.000001), 1, 3), 1)
-z_w      = (1 - w_bed) * max(1, round(wing_start / pitch)) * pitch
+z_w      = (1 - w_bed) * max(1, round(pick(w_prof, throat, wing_start) / pitch)) * pitch
 # Room inside the tube for every wall (inside wings).
 w_s      = line + wing_gap |> require(1 - winged * greater(w_sig, 0) * less(r_t - (2 * w_J + 0.5) * (line + wing_gap), 0.5), "The tube is too narrow for this many walls: fewer wings past 100 %, a wider socket, a narrower line or a smaller gap")
 rho      = w_s / 2
@@ -450,7 +454,9 @@ deg      = 180 / pi
 # start): how far the wings reach (0..3: 1 is 100 %), up over `wing_in` (from the bed: full at
 # once), held, down over `wing_out` (0: never), each straight or an S-curve that starts and ends
 # gently; and the tube's radius.
-w_Hn     = max(0, length - z_w)
+# The tube or shape over its whole height: the wings from the straight start up.
+w_Ltot   = pick(w_prof, item(prof_z, count(prof_z) - 1), length)
+w_Hn     = max(0, w_Ltot - z_w)
 # Printed wide edge down (`w_rev`): the whole tube end first, from the bed, its straight start
 # last; the grid then runs over the print (`w_gz`, from the bed), and `w_gf` is each height's
 # place in the wings as they go up the tube (negative in the straight start). Start first, the
@@ -458,17 +464,19 @@ w_Hn     = max(0, length - z_w)
 w_rev    = winged * pick(wide_down, 1, 0)
 w_bedp   = max(w_bed, w_rev)
 z_p0     = (1 - w_rev) * z_w
-w_Hp     = pick(w_rev, length, w_Hn)
+w_Hp     = pick(w_rev, w_Ltot, w_Hn)
 w_Hg     = max(0.01, w_Hp) + 2 * pitch
 w_gn     = pick(winged, ceil(w_Hg / (pitch / 2)), 1) + 1
 w_gz     = series(0, 1, w_gn) * w_Hg / (w_gn - 1)
-w_gf     = pick(w_rev, length - z_w - w_gz, w_gz)
+w_gf     = pick(w_rev, w_Ltot - z_w - w_gz, w_gz)
 w_in     = (1 - w_bed) * wing_in
+# A shape's wings end where a lip starts (they fade out over `wing_out` up to it).
+w_Hend   = max(0, w_Hn - w_prof * end_on * end_eff)
 g_tin    = pick(greater(w_in, 0.000001), clamp(w_gf / max(w_in, 0.000001), 0, 1), 1 - less(w_gf, -0.000001))
 g_up     = pick(less(index_of(["linear", "smooth"], wing_in_curve), 0.5), g_tin, smoothstep(g_tin))
-g_tout   = clamp((w_gf - w_in - wing_hold) / max(wing_out, 0.000001), 0, 1)
+g_tout   = clamp(pick(w_prof, w_gf - w_Hend + wing_out, w_gf - w_in - wing_hold) / max(wing_out, 0.000001), 0, 1)
 g_down   = greater(wing_out, 0) * pick(less(index_of(["linear", "smooth"], wing_out_curve), 0.5), g_tout, smoothstep(g_tout))
-g_c      = wings * g_up * (1 - g_down)
+g_cs     = wings * g_up * (1 - g_down) * less(w_gf, w_Hend + (1 - w_prof) * 2 * pitch)
 # Fading out with "same layer length", the tube widens as the wings shrink so each layer stays as
 # long as the longest (at full wings). A layer's exact length (its turns, partial while they
 # form; the middle and inner walls; less the tube wall they replace) is worked out every two
@@ -477,7 +485,7 @@ g_c      = wings * g_up * (1 - g_down)
 # (the length grows with R).
 w_two    = greater(w_J, 1.5)
 w_three  = greater(w_J, 2.5)
-widen    = less(abs(index_of(["same diameter", "same layer length"], wing_widen) - 1), 0.5) * greater(wing_out, 0) * greater(w_gf, w_in + wing_hold)
+widen    = (1 - w_prof) * less(abs(index_of(["same diameter", "same layer length"], wing_widen) - 1), 0.5) * greater(wing_out, 0) * greater(w_gf, w_in + wing_hold)
 w_yn     = ceil(w_Hg / (2 * pitch)) + 1
 w_yz     = series(0, 1, w_yn) * w_Hg / (w_yn - 1)
 w_ym     = 12
@@ -486,9 +494,12 @@ y_t      = series(0, 1, w_yn * w_ym * w_J)
 y_i      = floor(y_t / (w_ym * w_J))
 y_m      = floor((y_t - y_i * w_ym * w_J) / w_J)
 y_j      = y_t - y_i * w_ym * w_J - y_m * w_J
-y_R      = r_t + (w_yhi - r_t) * y_m / (w_ym - 1)
+# A shape: at each height its own radius (`y_Rp`), and the wings from none up to the most
+# allowed (more samples near none, where the turns form).
+y_Rp     = graph(prof_z, prof_r, z_w + pick(w_rev, w_Ltot - z_w - w_yz, w_yz))
+y_R      = pick(w_prof, item(y_Rp, y_i), r_t + (w_yhi - r_t) * y_m / (w_ym - 1))
 y_B      = y_R - w_sig * 2 * w_s * y_j
-y_c      = clamp(item(graph(w_gz, g_c, w_yz), y_i) - y_j, 0, 1)
+y_c      = clamp(pick(w_prof, wings * (y_m / (w_ym - 1)) ^ 2, item(graph(w_gz, g_cs, w_yz), y_i)) - y_j, 0, 1)
 y_g      = asin(clamp(w_s / max(0.001, y_B - 0.5 * w_sig * w_s), 0, 1))
 y_am     = w_d / 2 - asin(clamp(w_s / max(0.001, y_B - 1.5 * w_sig * w_s), 0, 1))
 y_phi    = 180 * clamp(y_c * y_am / max(0.000001, y_g), 0, 1)
@@ -509,16 +520,21 @@ y_rM     = sqrt((y_B - w_sig * rho * (1 - cos(y_phi))) ^ 2 + (rho * sin(y_phi)) 
 y_rI     = sqrt((y_B - w_sig * y_e2d) ^ 2 + y_e2t ^ 2)
 y_ex     = (2 * rho * (y_phi + abs(y_phi - y_th)) + 2 * (y_a2 - y_a1) * y_rM + 2 * (y_a2 - y_gam) * y_rI - 2 * y_a1 * y_B) / deg
 y_k      = series(0, w_J, w_yn * w_ym)
-y_len    = 2 * pi * (r_t + (w_yhi - r_t) * mod(series(0, 1, w_yn * w_ym), w_ym) / (w_ym - 1)) + w_n * (item(y_ex, y_k) + w_two * item(y_ex, y_k + 1) + w_three * item(y_ex, y_k + 2))
-w_hold_l = item(bounds(item(y_len, series(0, w_ym, w_yn))), 1)
+y_len    = 2 * pi * pick(w_prof, item(y_Rp, floor(series(0, 1, w_yn * w_ym) / w_ym)), r_t + (w_yhi - r_t) * mod(series(0, 1, w_yn * w_ym), w_ym) / (w_ym - 1)) + w_n * (item(y_ex, y_k) + w_two * item(y_ex, y_k + 1) + w_three * item(y_ex, y_k + 2))
+# The length to keep: a tube's longest layer (at full wings); a shape's widest plain layer.
+w_hold_l = pick(w_prof, 2 * pi * item(bounds(prof_r * less(prof_z, z_w + w_Hend + 0.000001)), 1), item(bounds(item(y_len, series(0, w_ym, w_yn))), 1))
 y_cum    = flatten([[0], accumulate(less(y_len, w_hold_l))])
 y_ii     = series(0, 1, w_yn)
 y_cnt    = item(y_cum, (y_ii + 1) * w_ym) - item(y_cum, y_ii * w_ym)
 y_ms     = clamp(y_cnt - 1, 0, w_ym - 2)
 y_l0     = item(y_len, y_ii * w_ym + y_ms)
 y_l1     = item(y_len, y_ii * w_ym + y_ms + 1)
-y_Rw     = r_t + greater(graph(w_gz, widen, w_yz), 0.5) * (clamp(r_t + (w_yhi - r_t) * (y_ms + (w_hold_l - y_l0) / max(0.000001, y_l1 - y_l0)) / (w_ym - 1), r_t, w_yhi) - r_t)
-g_R      = r_t + widen * (graph(w_yz, y_Rw, w_gz) - r_t)
+y_p      = clamp((y_ms + (w_hold_l - y_l0) / max(0.000001, y_l1 - y_l0)) / (w_ym - 1), 0, 1)
+y_Rw     = r_t + greater(graph(w_gz, widen, w_yz), 0.5) * (w_yhi - r_t) * y_p
+# A shape: the wings that keep its layer as long (at most `wings`), but no more than the fade
+# allows.
+g_c      = pick(w_prof, min(g_cs, graph(w_yz, wings * y_p ^ 2, w_gz)), g_cs)
+g_R      = pick(w_prof, graph(prof_z, prof_r, z_w + w_gf), r_t + widen * (graph(w_yz, y_Rw, w_gz) - r_t))
 # Where the tube widens its wall leans out (degrees from vertical): overhangs, compensated as the
 # shade's are with "layer height" (the Overhangs settings): layers closer, each still extruded for
 # a whole layer, by the lean's (1 − cos) scaled by (lean / pivot)^steep. (No width compensation:

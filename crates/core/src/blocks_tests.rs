@@ -1571,6 +1571,86 @@ mod wings {
         assert!(last.len() > 50 && last.iter().all(|p| (radius(p) - R).abs() < 1e-6));
     }
 
+    /// A cone, bell, dome, sphere or flat sphere with wings: the shape as set, its wings as much as
+    /// keeps each layer as long as its widest (after the fade-in from the throat), none at the
+    /// widest, the throat a plain thread.
+    #[test]
+    fn a_shape_with_wings_keeps_its_layers_as_long_as_its_widest() {
+        use crate::eval::step_values;
+        use crate::value::Value;
+        for shape in ["cone", "bell", "dome", "sphere", "flat sphere"] {
+            let src = set_values(
+                TEMPLATE,
+                &[
+                    ("shape".into(), text(&format!("{shape} with wings"))),
+                    ("wings".into(), num(100.0)),
+                ],
+            )
+            .unwrap();
+            let (e, v) = step_values(&src, Quality::Final);
+            let pts = clean(&e);
+            let nums = |n: &str| match v.get(n) {
+                Some(Value::List(l)) => l
+                    .items
+                    .iter()
+                    .map(|x| match x {
+                        Value::Number(n) => *n,
+                        _ => f64::NAN,
+                    })
+                    .collect::<Vec<_>>(),
+                Some(Value::Number(n)) => vec![*n],
+                other => panic!("{n}: {other:?}"),
+            };
+            let (zb, zw, target, c) = (
+                nums("w_zb"),
+                nums("z_w")[0],
+                nums("w_hold_l")[0],
+                nums("w_c"),
+            );
+            // The plain shape's widest layer.
+            let plain = set_values(TEMPLATE, &[("shape".into(), text(shape))]).unwrap();
+            let p = evaluate(&plain, Quality::Final);
+            let widest = p.prints[0]
+                .path
+                .points
+                .iter()
+                .map(radius)
+                .fold(0.0, f64::max);
+            assert!(
+                (target - std::f64::consts::TAU * widest).abs() < 0.02 * target,
+                "{shape}: {target} {widest}"
+            );
+            // Each layer's length: never much more than the target's, and from the first that
+            // reaches it (the fade-in from the throat done), about the target's while it has wings.
+            let mut checked = 0;
+            let mut reached = false;
+            for k in 0..zb.len() - 1 {
+                let (lo, hi) = (zw + zb[k], zw + zb[k + 1]);
+                let len: f64 = pts
+                    .windows(2)
+                    .filter(|w| w[1][2] > lo + 1e-9 && w[1][2] <= hi + 1e-9)
+                    .map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]))
+                    .sum();
+                assert!(len < target * 1.03, "{shape} {k}: {len} {target}");
+                reached |= len > target * 0.97;
+                if reached && c[k] > 0.005 {
+                    assert!(len > target * 0.97, "{shape} {k}: {len} {target}");
+                    checked += 1;
+                }
+            }
+            assert!(checked >= 3, "{shape}: {checked}");
+            // The throat (20 mm) is a plain thread at the socket's radius.
+            assert!(
+                pts.iter()
+                    .filter(|p| p[2] < 19.0)
+                    .all(|p| (radius(p) - R).abs() < 1e-6)
+            );
+            // Printed wide edge down too.
+            let down = set_values(&src, &[("wide_down".into(), Literal::Bool(true))]).unwrap();
+            clean(&evaluate(&down, Quality::Final));
+        }
+    }
+
     #[test]
     fn wings_that_cannot_fit_say_so() {
         let narrow = wings(&[("socket", text("E14")), ("line", num(7.0))]);

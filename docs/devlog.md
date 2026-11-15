@@ -7,6 +7,23 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15 (evening): cone, bell, dome, sphere and flat sphere with wings (recipe-developer)
+
+**Why:** the owner wanted the shades with wings too, but with the shape set first and the wings
+following from it, rather than the % driving the shape.
+
+**What landed** (Lampshade and Lamp, [tube-with-wings.md](tube-with-wings.md)): five more shapes,
+"X with wings", each the shape X with wings that keep every layer as long as its widest
+(at most the Wings %, faded in from the plain throat, stopping at a lip or straight end). The
+same table that now works out the tube's widening works out the wings: per height, at 12 amounts
+of wings, the amount that gives the widest layer's length. Tests
+`a_shape_with_wings_keeps_its_layers_as_long_as_its_widest` (all five: within 3 % once faded in,
+never over; the throat plain; wide edge down) and `a_shape_with_wings_is_a_shade_too` (a sphere
+with wings in the Lamp, a straight end that takes a cone, no wing ports).
+
+**Open:** the Plan's add buttons give new shades sizes by their shape's name (`web/js/parts.js`):
+"cone with wings" etc. come with the component's defaults.
+
 ## 2026-11-15 (later): "same layer length" works out each layer's real length (recipe-developer)
 
 **Why:** the owner's flared tube (8 seams outside, a 10 mm gap) bulged and necked where its wings
