@@ -7,6 +7,18 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15 (night): from the bed, the wings screw onto the socket (recipe-developer)
+
+**Why:** the owner: with full wings from the bed (no straight start), the socket screws into the
+wings themselves, so the innermost wall must fit the socket.
+
+**What landed** (Lampshade): from the bed, inside wings put their innermost wall at the socket's
+thread (the tube's wall two walls further out per 100 %); outside wings keep the tube's wall
+there. A warning when the rise can't make that wall a thread (inside: rise along the wings at a
+whole 100/200/300 %; outside: rise along the tube wall). Test
+`from_the_bed_the_wings_screw_onto_the_socket` (both sides: the wall at the thread's radius, a
+helix a pitch a turn from the first layers; the warnings).
+
 ## 2026-11-15 (evening): cone, bell, dome, sphere and flat sphere with wings (recipe-developer)
 
 **Why:** the owner wanted the shades with wings too, but with the shape set first and the wings

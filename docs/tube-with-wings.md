@@ -61,6 +61,11 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
   the first layer, which rises off the bed with each move extruded for the gap under it (as the
   spiral's first turn ramps; at a set flow, faster where the bead is thin). A brim goes round the
   outermost wall.
+  The thread that screws onto the socket is then the wings' own. Inside wings screw on by their
+  innermost wall, which sits at the socket's thread, so the tube's wall is two walls further out
+  for every 100 % (three walls at 100 %, the socket inside the innermost). That wall only takes
+  the thread rising along the wings, at a whole 100, 200 or 300 %. Outside wings screw on by the
+  tube's wall, at the thread as usual, rising along the tube wall. Set otherwise, it says so.
 - **Fade in** over `wing_in` mm, linear or smooth (an S-curve: starts and ends gently, for the
   overhang of each new bit of wing).
 - **Full wings** for `wing_hold` mm, then **fade out** over `wing_out` mm (0: wings to the

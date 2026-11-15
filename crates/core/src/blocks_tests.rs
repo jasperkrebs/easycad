@@ -1422,6 +1422,7 @@ mod wings {
             ("wing_bed", Literal::Bool(true)),
             ("wings", num(100.0)),
             ("wing_side", text("outside")),
+            ("wing_rise", text("tube wall")),
         ]);
         let pts = clean(&e);
         let p = &e.prints[0].path;
@@ -1444,6 +1445,7 @@ mod wings {
             ("wing_bed", Literal::Bool(true)),
             ("wings", num(100.0)),
             ("wing_side", text("outside")),
+            ("wing_rise", text("tube wall")),
         ];
         with_brim.push(("brim", Literal::Bool(true)));
         let b = wings(&with_brim);
@@ -1648,6 +1650,59 @@ mod wings {
             // Printed wide edge down too.
             let down = set_values(&src, &[("wide_down".into(), Literal::Bool(true))]).unwrap();
             clean(&evaluate(&down, Quality::Final));
+        }
+    }
+
+    /// From the bed (no straight start) the wall that screws onto the socket is the wings' own:
+    /// inside, the innermost (at the socket's thread, the tube's wall two walls further out per
+    /// 100 %), rising along the wings; outside, the tube's wall, rising along the tube wall. Each a
+    /// helix a pitch a turn from the first layers up; set to rise otherwise, it says so.
+    #[test]
+    fn from_the_bed_the_wings_screw_onto_the_socket() {
+        let bed = |side: &str, rise: &str| {
+            wings(&[
+                ("wing_bed", Literal::Bool(true)),
+                ("wings", num(100.0)),
+                ("wing_side", text(side)),
+                ("wing_rise", text(rise)),
+            ])
+        };
+        for (side, rise) in [("inside", "wings"), ("outside", "tube wall")] {
+            let pts = clean(&bed(side, rise));
+            let (lo, hi) = pts
+                .iter()
+                .filter(|p| p[2] > 1.0)
+                .map(radius)
+                .fold((f64::MAX, 0.0f64), |(a, b), r| (a.min(r), b.max(r)));
+            // The socket's thread wall at the thread's radius; everything else outside it.
+            assert!(
+                (lo - R).abs() < 1e-6 && (hi - (R + 12.0)).abs() < 1e-6,
+                "{side}: {lo} {hi}"
+            );
+            let offs: Vec<f64> = pts
+                .iter()
+                .filter(|p| p[2] > 5.0 && (radius(p) - R).abs() < 1e-6)
+                .map(|p| (p[2] / PITCH - round_from_seam(p) / 360.0).rem_euclid(1.0))
+                .collect();
+            assert!(offs.len() > 100, "{side}");
+            let spread = offs.iter().fold(0.0f64, |m, o| {
+                let d = (o - offs[0]).rem_euclid(1.0);
+                m.max(d.min(1.0 - d))
+            });
+            assert!(spread < 1e-4, "{side}: {spread}");
+        }
+        for (side, rise, says) in [
+            ("inside", "whole layer", "innermost wall"),
+            ("outside", "wings", "rise along the tube wall"),
+        ] {
+            let e = bed(side, rise);
+            assert!(
+                e.diagnostics
+                    .iter()
+                    .any(|d| d.severity == Severity::Warning && d.message.contains(says)),
+                "{side}: {:?}",
+                e.diagnostics
+            );
         }
     }
 
