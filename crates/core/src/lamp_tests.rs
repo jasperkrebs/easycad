@@ -1274,3 +1274,67 @@ fn wings_take_a_thread_only_where_they_rise_a_pitch_a_turn() {
         r + 6.0
     ));
 }
+
+/// Printed wide edge down (the Plan's and the Prints view's Flip), a tube with wings prints end
+/// first from the bed, its straight start (the thread) last: the same tube turned over, shown in
+/// the same place in the lamp.
+#[test]
+fn a_tube_with_wings_can_print_wide_edge_down() {
+    let tube = |down: bool| {
+        LAMP.replace(
+            "part main = shade(shape: \"sphere\", end_straight: true)",
+            &format!(
+                "part main = shade(shape: \"tube with wings\", end_straight: true, wings: 100 %, wing_out: 106 mm, wing_widen: \"same layer length\", wing_seams: 3, direction: \"down\", wide_down: {down})"
+            ),
+        )
+    };
+    let (up, down) = (run(&tube(false)), run(&tube(true)));
+    for e in [&up, &down] {
+        assert!(warnings(e).is_empty(), "{:?}", e.diagnostics);
+        assert!(e.prints[0].path.travel.iter().skip(1).all(|t| !t));
+    }
+    let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
+    let (a, b) = (&up.prints[0].path, &down.prints[0].path);
+    let top = a.points.last().unwrap()[2];
+    // (Each on its nearest whole layer: counted from opposite ends where layers come closer.)
+    assert!((b.points.last().unwrap()[2] - top).abs() < 1.25);
+    // End first: on the bed at the widened end's radius; last, the straight start, plain turns
+    // at the thread's radius a pitch apart.
+    assert!(b.points[0][2].abs() < 1e-9 && (radius(&b.points[0]) - 45.4).abs() < 0.1);
+    let last: Vec<_> = b.points.iter().filter(|p| p[2] > top - 17.0).collect();
+    assert!(last.len() > 50 && last.iter().all(|p| (radius(p) - 23.0).abs() < 1e-6));
+    // The same tube turned over: its widest and narrowest at every height along it.
+    let bands = |pts: &[crate::geom::P3], flip: bool| {
+        let mut out = vec![(f64::MAX, 0.0f64); 20];
+        for p in pts {
+            let h = if flip { top - p[2] } else { p[2] };
+            let k = ((h / 10.0) as usize).min(19);
+            out[k] = (out[k].0.min(radius(p)), out[k].1.max(radius(p)));
+        }
+        out
+    };
+    for (k, (x, y)) in bands(&a.points, false)
+        .iter()
+        .zip(bands(&b.points, true))
+        .enumerate()
+    {
+        // (Within a layer's worth of the widening: they're sliced from opposite ends.)
+        assert!(
+            (x.1 - y.1).abs() < 1.0 && (x.0 - y.0).abs() < 3.5,
+            "{k}: {x:?} {y:?}"
+        );
+    }
+    // Shown where it goes: the same span of the lamp either way.
+    let span = |p: &crate::toolpath::Toolpath| {
+        let v = p.view.unwrap();
+        p.points
+            .iter()
+            .map(|q| v.apply(*q)[2])
+            .fold((f64::MAX, f64::MIN), |(lo, hi), z| (lo.min(z), hi.max(z)))
+    };
+    let (sa, sb) = (span(a), span(b));
+    assert!(
+        (sa.0 - sb.0).abs() < 1.25 && (sa.1 - sb.1).abs() < 1.25,
+        "{sa:?} {sb:?}"
+    );
+}

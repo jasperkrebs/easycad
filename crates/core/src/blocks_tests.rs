@@ -1548,6 +1548,28 @@ mod wings {
     }
 
     #[test]
+    fn the_tube_can_print_wide_edge_down() {
+        // Fading out and widening at the top; printed wide edge down it's the same tube turned
+        // over, its widened end on the bed, its straight start (the thread) last.
+        let settings = [
+            ("wings", num(100.0)),
+            ("wing_out", num(60.0)),
+            ("wing_widen", text("same layer length")),
+        ];
+        let up = clean(&wings(&settings));
+        let mut flipped = settings.to_vec();
+        flipped.push(("wide_down", Literal::Bool(true)));
+        let down = clean(&wings(&flipped));
+        let top = up.last().unwrap()[2];
+        // (Each on its nearest whole layer: counted from opposite ends where layers come closer.)
+        assert!((down.last().unwrap()[2] - top).abs() < PITCH / 2.0);
+        let widest = up.iter().map(radius).fold(0.0, f64::max);
+        assert!(down[0][2].abs() < 1e-9 && (radius(&down[0]) - widest).abs() < 0.1);
+        let last: Vec<_> = down.iter().filter(|p| p[2] > top - 37.0).collect();
+        assert!(last.len() > 50 && last.iter().all(|p| (radius(p) - R).abs() < 1e-6));
+    }
+
+    #[test]
     fn wings_that_cannot_fit_say_so() {
         let narrow = wings(&[("socket", text("E14")), ("line", num(7.0))]);
         assert!(

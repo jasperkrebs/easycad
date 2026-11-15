@@ -42,6 +42,19 @@ Tests: `a_when_can_join_conditions_with_and` (lang), `layer_counts_for_hand_buil
 (core), the `and` case in `settings.test.mjs`; the open-top golden test finds the last turn by
 its turn number (with a brim the layer count is now one less). Golden G-code unchanged.
 
+## 2026-11-15: a tube with wings prints wide edge down too (recipe-developer)
+
+**Why:** the owner flipped a winged tube in the Plan (it hangs down from the socket, widening at
+its end) and it still printed start first.
+
+**What landed** (Lamp and Lampshade): "wide edge down" works for the tube with wings: the whole
+tube end first from the bed (the schedule of the wings read from the other end, the first layer
+rising off the bed through `bead`, a brim round its outermost wall), its straight start last;
+shown in the same place in the lamp, its ports where they were. Tests
+`a_tube_with_wings_can_print_wide_edge_down` (the owner's tube: on the bed at its widened end,
+plain thread at the top, the same radii at every height turned over, the same span in the lamp)
+and `the_tube_can_print_wide_edge_down` (Lampshade).
+
 ## 2026-11-15 (late night): a winged tube takes a thread only where it rises a pitch a turn (recipe-developer)
 
 **Why:** the owner: shades must only be added where they can actually thread on, and that

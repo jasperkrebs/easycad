@@ -77,6 +77,17 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
   doesn't lean every layer is exactly a pitch (the thread's), and the top ends on the nearest whole
   layer.
 
+## Printed wide edge down
+
+"Wide edge down" (in the Lamp, the Flip on the Plan and in the Prints view) prints the tube the
+other way up: end first from the bed, the wings in reverse (a fade-out becomes a fade-in), its
+straight start (the thread) last, at the top of the print. It's the same tube turned over (a
+helix turned over keeps its hand, so the threads still match), so where the tube widens towards
+its end that end goes on the bed and the widening becomes a lean inward. The first layer rises
+off the bed as the spiral's first turn does; a brim goes round the first layer's outermost
+wall. Each way round the top lands on its own nearest whole layer (where layers come closer,
+they're counted from opposite ends), so the two can differ by a fraction of a layer.
+
 ## How it rises (`wing_rise`)
 
 A pitch per layer, always; where it rises:
@@ -104,7 +115,8 @@ The Lamp's shade has the same shape and settings (the "Wings" group), with these
   the end); full wings fill whatever is between the fade-in and the fade-out, so there's no
   "full wings for";
 - the end ports are at the end's radius: wider, when the tube widens to keep the layer length;
-- it always prints start down (no wide edge down, no closed end) and never starts on the bed.
+- it has no closed end and never starts on the bed (it screws onto something);
+- **printed wide edge down** (the Plan's and the Prints view's Flip) it prints end first, as below.
 
 ### Where it takes a thread
 
