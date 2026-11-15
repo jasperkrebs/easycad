@@ -29,14 +29,14 @@ param inout_h    = 220 mm  in 10..1000 step 1       "Height"  when shape = ["bel
 param max_angle  = 0 deg   in 0..90 step 1          "Max angle (bell; 0: uncapped; 90: it opens out flat)"  when shape = "bell"
 param sphere     = 200 mm  in 20..500 step 1        "Sphere diameter (at its widest)"  when shape = ["sphere", "flat sphere"]
 param flatness   = 0.5     in 0.05..1 step 0.05     "Flatness (flat sphere: height ÷ width)"  when shape = "flat sphere"
-param closed     = false                            "Closed end (a flat disc, printed first)"  when not wings_on
+param closed     = false                            "Closed end (a flat disc, printed first)"
 param closed_fillet = 10 mm in 0..100 step 1        "Closed end's fillet"  when closed
 param closed_layer = 0 mm  in 0..10 step 0.1        "Disc layer height (0: the shade's)"  when closed
 param lip        = false                            "Straight lip at the opening"  when not closed
 param lip_length = 10 mm   in 0..100 step 1         "Lip length"  when lip
 param lip_fillet = 0 mm    in 0..100 step 1         "Lip fillet (0: the throat's)"  when lip
 param wide_down  = false                            "Wide edge down"  when not closed
-param wings_on   = false                            "Wings"
+param wings_on   = false                            "Wings"  when not closed
 
 group "Wings"
 param wing_mode  = "fades" of ["fades", "curve", "fit the shape"] "Wings follow"  when wings_on
@@ -382,7 +382,7 @@ open_path   = pick(brim, brimmed, shade)
 # shade, as any shade prints (overhang compensation and all), its profile from the disc's edge
 # up the fillet (flat at first, so compensated the most) to the throat's thread, its first turn
 # starting on the disc as any first turn starts on the bed.
-is_closed = pick(closed, 1, 0) * (1 - winged)
+is_closed = pick(closed, 1, 0)
 # The disc is the shade's end: its layer (0) and line are the shade's (a tube's: the thread's).
 cap_dl   = pick(closed_layer, closed_layer, pick(is_tube, pitch, sh_layer))
 cap_w    = pick(is_tube, line, sh_line)
@@ -436,8 +436,8 @@ path     = pick(is_closed, cap_path, pick(wing_on, pick(w_bedp, wings_bed, join(
 # A wing starts as a shallow dent: its four turns grow from a few degrees to half circles, and
 # only then do the wings run back. The walls are a line plus the gap apart; at the seam the two
 # turns onto and off the tube's wall are a line apart, closing it.
-# (Wings take the place of a closed end: switched on, the shade is open.)
-winged   = pick(wings_on, 1, 0)
+# (A closed end takes the place of wings: closed, the shade has none.)
+winged   = pick(wings_on, 1, 0) * (1 - pick(closed, 1, 0))
 # The wings follow the fades (the %, faded in and out), a curve along the shade, or the shape
 # (as much as keeps every layer as long as the widest). Any shape but the tube: its own radius
 # (`w_shape`); fitting it, the wings from the table below (`w_fit`).

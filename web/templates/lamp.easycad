@@ -78,14 +78,14 @@ component shade "Shade"
   param flatness   = 0.5     in 0.05..1 step 0.05    "Flatness (height ÷ width)"  when shape = "flat sphere"
   param own_at     = 50 %    in 5..95                "Middle point's height"  when shape = "own"
   param own_r      = 50 mm   in 5..250               "Middle point's radius"  when shape = "own"
-  param closed     = false                           "Closed end (a flat disc, printed first)"  when not wings_on
+  param closed     = false                           "Closed end (a flat disc, printed first)"
   param closed_fillet = 10 mm in 0..100 step 1       "Closed end's fillet"  when closed
   param closed_layer = 0 mm  in 0..10 step 0.1       "Disc layer height (0: the shade's)"  when closed
   param end_straight = false                         "Straight end (more shades screw on there)"  when not closed
   param end_len    = 20 mm   in 1..200 step 1        "Straight end length"  when end_straight
   param lip_fillet = 0 mm    in 0..100 step 1        "End fillet (0: the start's)"  when end_straight
   param wide_down  = false                           "Printed wide edge down"  when not closed
-  param wings_on   = false                            "Wings"
+  param wings_on   = false                            "Wings"  when not closed
 
   group "Wings"
   param wing_mode  = "fades" of ["fades", "curve", "fit the shape"] "Wings follow"  when wings_on
@@ -402,7 +402,7 @@ component shade "Shade"
   # shade, as any shade prints (overhang compensation and all), its profile from the disc's edge
   # up the fillet (flat at first, so compensated the most) to the start's thread, its first turn
   # starting on the disc as any first turn starts on the bed.
-  is_closed = pick(closed, 1, 0) * (1 - winged)
+  is_closed = pick(closed, 1, 0)
   # The disc is the shade's end: its layer (0) and line are the shade's (a tube's: the thread's).
   cap_dl   = pick(closed_layer, closed_layer, pick(is_tube, pitch, sh_layer))
   cap_w    = pick(is_tube, line, sh_line)
@@ -456,8 +456,8 @@ component shade "Shade"
   # A wing starts as a shallow dent: its four turns grow from a few degrees to half circles, and
   # only then do the wings run back. The walls are a line plus the gap apart; at the seam the two
   # turns onto and off the tube's wall are a line apart, closing it.
-  # (Wings take the place of a closed end: switched on, the shade is open.)
-  winged   = pick(wings_on, 1, 0)
+  # (A closed end takes the place of wings: closed, the shade has none.)
+  winged   = pick(wings_on, 1, 0) * (1 - pick(closed, 1, 0))
   # The wings follow the fades (the %, faded in and out), a curve along the shade, or the shape
   # (as much as keeps every layer as long as the widest). Any shape but the tube: its own radius
   # (`w_shape`); fitting it, the wings from the table below (`w_fit`).

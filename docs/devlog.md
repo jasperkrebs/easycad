@@ -7,6 +7,16 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-16 (later): Wings keep "wide edge down" in sight (recipe-developer)
+
+**Why:** switching Wings on hid "Wide edge down": it shows while the shade isn't closed, and
+Wings hid "Closed end" (a setting only shows while the settings its `when` names show too).
+
+**What landed** (Lampshade and Lamp): the other way round: "Closed end" always shows and "Wings"
+shows while the shade isn't closed (a closed end prints disc down, wings or not; closed, the shade
+has no wings). Checked in the app: with Wings on, Wide edge down shows; closing the shade hides
+Wings and Wide edge down.
+
 ## 2026-11-15 (evening): overhangs keep their plastic (general-manager)
 
 **Correction:** the roadmap's overhang note suggested extruding less on squeezed turns and a floor
