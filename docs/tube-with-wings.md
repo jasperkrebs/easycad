@@ -56,7 +56,9 @@ a crease there. As it grows, its four turns go further round (the dent deepens, 
 steepen), and the two sides move apart only as far as they must not to cross, so the gap
 opens smoothly, never wider than it ends up: by the time the turns are a quarter round they're
 as far apart as the finished turns at the seam (±g, below), and they stay there. Once the turns
-are half circles the wings run back along the middle wall. A deeper wing (past 100 %) starts the
+are half circles the wings run back along the middle wall. The tips' growth
+blends from the turns' to the wing's own over half a turn either side, so the outline has no
+kink there as the % changes. A deeper wing (past 100 %) starts the
 same way, on the inner wall at the seam.
 
 "Two pieces a line apart" is exact: two turns facing each other (half circles a spacing `s`
@@ -78,8 +80,11 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
   for every 100 % (three walls at 100 %, the socket inside the innermost). That wall only takes
   the thread rising along the wings, at a whole 100, 200 or 300 %. Outside wings screw on by the
   tube's wall, at the thread as usual, rising along the tube wall. Set otherwise, it says so.
-- **Fade in** over `wing_in` mm, linear or smooth (an S-curve: starts and ends gently, for the
-  overhang of each new bit of wing).
+- **Wings start** (`wing_begin`): **fading in** over `wing_in` mm, linear or smooth (an S-curve:
+  starts and ends gently), and never faster than the tips' pace (below); or **full**: the wings at
+  their set % (with a curve, its first value) on the first layer after the straight part, which
+  hangs from the wall below for that one layer. (On every shape; until 16 Nov the fade-in settings
+  were hidden on all but the tube, because they named the tube-only "from the bed".)
 - **Full wings** for `wing_hold` mm, then **fade out** over `wing_out` mm (0: wings to the
   top), linear or smooth; above that, a plain tube to the top.
 - **Diameter as the wings fade out:** the same, or the **same layer length**: the tube widens
@@ -97,6 +102,29 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
   along it, each its own rise, so the shape stays where it is and only the layers move; where it
   doesn't lean every layer is exactly a pitch (the thread's), and the top ends on the nearest whole
   layer.
+
+## Growing without hanging in the air
+
+A wing's new bit, where its tips move on round the shade, has nothing under it but the turn of the
+layer below. So the tips move on at most **`wing_grow` lines a layer** (½ as it ships: each new turn
+sits half on the one under it, about a 50° overhang; 0: no limit). Measured round each level's
+middle wall in mm, so a wide shade, or a deeper level outside, grows more slowly in %; a wing's
+forming (the dent deepening and its sides parting) counts three times as much, more where the shade
+leans the way the wings grow (out, outside; in, inside). Worked out as a running minimum on a coarse
+grid of heights, from none at the top of the straight part (unless the wings start on the bed or
+full). Where the wings can't reach 90 % of their peak at that pace (a short, wide cone with one
+seam needs about 70 layers for full wings), it says so: a longer shade, more seams, or a faster pace.
+
+**Past 100 % inside**, a layer takes only the levels that have room at its radius (a level needs its
+two walls and half a line inside them; a deeper one a line more), so a cone or sphere grows deeper
+wings where it's wide; where the setting asks for more than fits, it says so. (Until 16 Nov it was
+an error whenever the throat couldn't hold them all, and a level that hadn't started yet, its own
+radius below zero, drew a loop at the seam and a whole circle.)
+
+**Each point follows the shade as it rises**: a layer rises a pitch along its length, so on a
+leaning shade its wall and wings move out (or in) with the height, as the spiral does, scaled about
+the axis by the layer's slope of radius over height. (Before, a layer kept one radius: outside wings
+on a widening cone crowded the next layer's wall at the seam.)
 
 ## Fitting the shape
 

@@ -1125,7 +1125,9 @@ fn a_tube_with_wings_is_a_shade_too() {
     let wings = |settings: &str| {
         LAMP.replace(
             "part main = shade(shape: \"sphere\", end_straight: true)",
-            &format!("part main = shade(shape: \"tube\", wings_on: true, {settings})"),
+            &format!(
+                "part main = shade(shape: \"tube\", wings_on: true, wing_grow: 0, {settings})"
+            ),
         )
     };
     let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
@@ -1203,7 +1205,9 @@ fn wings_take_a_thread_only_where_they_rise_a_pitch_a_turn() {
         .replace("param thread_d     = 40 mm", "param thread_d     = 80 mm")
         .replace(
             "part main = shade(shape: \"sphere\", end_straight: true)",
-            &format!("part main = shade(shape: \"tube\", wings_on: true, {settings})"),
+            &format!(
+                "part main = shade(shape: \"tube\", wings_on: true, wing_grow: 0, {settings})"
+            ),
         )
     };
     // The tube's own radius: half a line outside the 80 mm thread.
@@ -1389,7 +1393,7 @@ fn a_shape_with_wings_is_a_shade_too() {
     use Literal::Text;
     let src = LAMP.replace(
         "part main = shade(shape: \"sphere\", end_straight: true)",
-        "part main = shade(shape: \"sphere\", wings_on: true, wing_mode: \"fit the shape\", wings: 100 %, end_straight: true)",
+        "part main = shade(shape: \"sphere\", wings_on: true, wing_grow: 0, wing_mode: \"fit the shape\", wings: 100 %, end_straight: true)",
     );
     let src = with_part(&src, "top", &[("mount", Text("main.end_out".into()))]);
     let e = run(&src);
