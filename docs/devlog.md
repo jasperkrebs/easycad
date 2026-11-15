@@ -7,6 +7,20 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15 (later): "same layer length" works out each layer's real length (recipe-developer)
+
+**Why:** the owner's flared tube (8 seams outside, a 10 mm gap) bulged and necked where its wings
+ran out: the tube's radius grew, shrank, grew again. The length of a layer while its turns
+form was guessed (the full turns' length scaled down), far off with a gap; and with no fade-in
+the first height had no wings (0 ÷ 0), its radius leaking into the next.
+
+**What landed** (Lamp and Lampshade): a layer's exact length (partial turns and all) is worked
+out every two layers up at 12 radii and the radius that keeps the longest layer's length is read
+off between them, no Newton steps; "fade in over 0" is full wings at once; the widening starts
+exactly where the fade-out does; the wings start on the straight start's end even when they
+start wider (no hop). Test `a_flaring_winged_tube_widens_smoothly_to_the_end_of_its_wings` (the
+owner's settings: the wall only widens, no bunched layers, one line).
+
 ## 2026-11-15 (later): STEP is the surface, not a thickened wall (general-manager)
 
 **Why:** the owner works on exported shapes as surfaces; a wall thickened to the line width was

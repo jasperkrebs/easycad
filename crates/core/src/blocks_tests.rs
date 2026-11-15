@@ -1525,7 +1525,9 @@ mod wings {
         let pts = &squeezed.prints[0].path.points;
         let top = pts.last().unwrap()[2];
         assert!((top - 200.0).abs() < PITCH / 2.0, "{top}");
-        let held: Vec<&P3> = pts.iter().filter(|p| p[2] > 65.0 && p[2] < 80.0).collect();
+        // (Inside the full wings, 60 to 80 mm up; the layer that straddles where it starts widening
+        // is rightly a little thinner.)
+        let held: Vec<&P3> = pts.iter().filter(|p| p[2] > 61.0 && p[2] < 76.0).collect();
         let mut pairs = 0;
         for a in &held {
             for b in &held {

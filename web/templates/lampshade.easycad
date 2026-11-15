@@ -464,50 +464,61 @@ w_gn     = pick(winged, ceil(w_Hg / (pitch / 2)), 1) + 1
 w_gz     = series(0, 1, w_gn) * w_Hg / (w_gn - 1)
 w_gf     = pick(w_rev, length - z_w - w_gz, w_gz)
 w_in     = (1 - w_bed) * wing_in
-g_tin    = clamp(w_gf / max(w_in, 0.000001), 0, 1)
+g_tin    = pick(greater(w_in, 0.000001), clamp(w_gf / max(w_in, 0.000001), 0, 1), 1 - less(w_gf, -0.000001))
 g_up     = pick(less(index_of(["linear", "smooth"], wing_in_curve), 0.5), g_tin, smoothstep(g_tin))
 g_tout   = clamp((w_gf - w_in - wing_hold) / max(wing_out, 0.000001), 0, 1)
 g_down   = greater(wing_out, 0) * pick(less(index_of(["linear", "smooth"], wing_out_curve), 0.5), g_tout, smoothstep(g_tout))
 g_c      = wings * g_up * (1 - g_down)
 # Fading out with "same layer length", the tube widens as the wings shrink so each layer stays as
-# long as the longest (at full wings): R from three Newton steps on the layer's length (its turns
-# half circles, `f` of them while they form), per height and wing level (`g_q`).
-g_q      = series(0, 1, w_gn * w_J)
-g_kq     = floor(g_q / w_J)
-g_jq     = g_q - g_kq * w_J
-g_cq     = clamp(item(g_c, g_kq) - g_jq, 0, 1)
-g_ks     = series(0, w_J, w_gn)
+# long as the longest (at full wings). A layer's exact length (its turns, partial while they
+# form; the middle and inner walls; less the tube wall they replace) is worked out every two
+# layers up (`y_`), for wing level j, at radii R from the tube's (m = 0) out to well past the
+# widest it can need; the radius that gives the longest layer's length is read off between them
+# (the length grows with R).
 w_two    = greater(w_J, 1.5)
 w_three  = greater(w_J, 2.5)
 widen    = less(abs(index_of(["same diameter", "same layer length"], wing_widen) - 1), 0.5) * greater(wing_out, 0) * greater(w_gf, w_in + wing_hold)
-v0_B     = r_t - w_sig * 2 * w_s * g_jq
-v0_g     = asin(clamp(w_s / max(0.001, v0_B - 0.5 * w_sig * w_s), 0, 1))
-v0_am    = w_d / 2 - asin(clamp(w_s / max(0.001, v0_B - 1.5 * w_sig * w_s), 0, 1))
-v0_al    = max(v0_g, g_cq * v0_am)
-v0_f     = clamp(g_cq * v0_am / max(0.000001, v0_g), 0, 1)
-v0_ex    = v0_f * (2 * pi * w_s + (2 * (v0_al - v0_g) * (v0_B - w_sig * w_s) + 2 * v0_al * (v0_B - 2 * w_sig * w_s) - 2 * v0_g * v0_B) / deg)
-v0_dx    = v0_f * (4 * v0_al - 4 * v0_g) / deg
-v0_len   = 2 * pi * r_t + w_n * (item(v0_ex, g_ks) + w_two * item(v0_ex, g_ks + 1) + w_three * item(v0_ex, g_ks + 2))
-w_hold_l = item(bounds(v0_len), 1)
-w_r1     = r_t + widen * (w_hold_l - v0_len) / (2 * pi + w_n * (item(v0_dx, g_ks) + w_two * item(v0_dx, g_ks + 1) + w_three * item(v0_dx, g_ks + 2)))
-v1_B     = item(w_r1, g_kq) - w_sig * 2 * w_s * g_jq
-v1_g     = asin(clamp(w_s / max(0.001, v1_B - 0.5 * w_sig * w_s), 0, 1))
-v1_am    = w_d / 2 - asin(clamp(w_s / max(0.001, v1_B - 1.5 * w_sig * w_s), 0, 1))
-v1_al    = max(v1_g, g_cq * v1_am)
-v1_f     = clamp(g_cq * v1_am / max(0.000001, v1_g), 0, 1)
-v1_ex    = v1_f * (2 * pi * w_s + (2 * (v1_al - v1_g) * (v1_B - w_sig * w_s) + 2 * v1_al * (v1_B - 2 * w_sig * w_s) - 2 * v1_g * v1_B) / deg)
-v1_dx    = v1_f * (4 * v1_al - 4 * v1_g) / deg
-v1_len   = 2 * pi * w_r1 + w_n * (item(v1_ex, g_ks) + w_two * item(v1_ex, g_ks + 1) + w_three * item(v1_ex, g_ks + 2))
-w_r2     = w_r1 + widen * (w_hold_l - v1_len) / (2 * pi + w_n * (item(v1_dx, g_ks) + w_two * item(v1_dx, g_ks + 1) + w_three * item(v1_dx, g_ks + 2)))
-v2_B     = item(w_r2, g_kq) - w_sig * 2 * w_s * g_jq
-v2_g     = asin(clamp(w_s / max(0.001, v2_B - 0.5 * w_sig * w_s), 0, 1))
-v2_am    = w_d / 2 - asin(clamp(w_s / max(0.001, v2_B - 1.5 * w_sig * w_s), 0, 1))
-v2_al    = max(v2_g, g_cq * v2_am)
-v2_f     = clamp(g_cq * v2_am / max(0.000001, v2_g), 0, 1)
-v2_ex    = v2_f * (2 * pi * w_s + (2 * (v2_al - v2_g) * (v2_B - w_sig * w_s) + 2 * v2_al * (v2_B - 2 * w_sig * w_s) - 2 * v2_g * v2_B) / deg)
-v2_dx    = v2_f * (4 * v2_al - 4 * v2_g) / deg
-v2_len   = 2 * pi * w_r2 + w_n * (item(v2_ex, g_ks) + w_two * item(v2_ex, g_ks + 1) + w_three * item(v2_ex, g_ks + 2))
-g_R      = w_r2 + widen * (w_hold_l - v2_len) / (2 * pi + w_n * (item(v2_dx, g_ks) + w_two * item(v2_dx, g_ks + 1) + w_three * item(v2_dx, g_ks + 2)))
+w_yn     = ceil(w_Hg / (2 * pitch)) + 1
+w_yz     = series(0, 1, w_yn) * w_Hg / (w_yn - 1)
+w_ym     = 12
+w_yhi    = (2 * w_J + 1) * (r_t + 2 * w_J * w_s) + 2 * w_s * w_n
+y_t      = series(0, 1, w_yn * w_ym * w_J)
+y_i      = floor(y_t / (w_ym * w_J))
+y_m      = floor((y_t - y_i * w_ym * w_J) / w_J)
+y_j      = y_t - y_i * w_ym * w_J - y_m * w_J
+y_R      = r_t + (w_yhi - r_t) * y_m / (w_ym - 1)
+y_B      = y_R - w_sig * 2 * w_s * y_j
+y_c      = clamp(item(graph(w_gz, g_c, w_yz), y_i) - y_j, 0, 1)
+y_g      = asin(clamp(w_s / max(0.001, y_B - 0.5 * w_sig * w_s), 0, 1))
+y_am     = w_d / 2 - asin(clamp(w_s / max(0.001, y_B - 1.5 * w_sig * w_s), 0, 1))
+y_phi    = 180 * clamp(y_c * y_am / max(0.000001, y_g), 0, 1)
+y_full   = greater(y_phi, 179.9999)
+y_c2d    = rho - 2 * rho * cos(y_phi)
+y_c2t    = 2 * rho * sin(y_phi)
+y_th1    = w_sig * atan2(y_c2t, y_B - w_sig * (y_c2d + rho))
+y_th2    = w_sig * atan2(y_c2t - rho * sin(y_th1), y_B - w_sig * (y_c2d + rho * cos(y_th1)))
+y_th     = w_sig * atan2(y_c2t - rho * sin(y_th2), y_B - w_sig * (y_c2d + rho * cos(y_th2)))
+y_e2d    = y_c2d + rho * cos(y_th)
+y_e2t    = y_c2t - rho * sin(y_th)
+y_gam    = atan2(y_e2t, y_B - w_sig * y_e2d)
+y_x      = max(y_gam, y_g * smoothstep(clamp((y_phi - 30) / 50, 0, 1)))
+y_live   = 1 - less(y_c, 0.000000001) * greater(y_j, 0.5)
+y_a1     = y_live * (y_full * y_g + (1 - y_full) * y_x)
+y_a2     = y_live * (y_full * max(y_g, y_c * y_am) + (1 - y_full) * y_x)
+y_rM     = sqrt((y_B - w_sig * rho * (1 - cos(y_phi))) ^ 2 + (rho * sin(y_phi)) ^ 2)
+y_rI     = sqrt((y_B - w_sig * y_e2d) ^ 2 + y_e2t ^ 2)
+y_ex     = (2 * rho * (y_phi + abs(y_phi - y_th)) + 2 * (y_a2 - y_a1) * y_rM + 2 * (y_a2 - y_gam) * y_rI - 2 * y_a1 * y_B) / deg
+y_k      = series(0, w_J, w_yn * w_ym)
+y_len    = 2 * pi * (r_t + (w_yhi - r_t) * mod(series(0, 1, w_yn * w_ym), w_ym) / (w_ym - 1)) + w_n * (item(y_ex, y_k) + w_two * item(y_ex, y_k + 1) + w_three * item(y_ex, y_k + 2))
+w_hold_l = item(bounds(item(y_len, series(0, w_ym, w_yn))), 1)
+y_cum    = flatten([[0], accumulate(less(y_len, w_hold_l))])
+y_ii     = series(0, 1, w_yn)
+y_cnt    = item(y_cum, (y_ii + 1) * w_ym) - item(y_cum, y_ii * w_ym)
+y_ms     = clamp(y_cnt - 1, 0, w_ym - 2)
+y_l0     = item(y_len, y_ii * w_ym + y_ms)
+y_l1     = item(y_len, y_ii * w_ym + y_ms + 1)
+y_Rw     = r_t + greater(graph(w_gz, widen, w_yz), 0.5) * (clamp(r_t + (w_yhi - r_t) * (y_ms + (w_hold_l - y_l0) / max(0.000001, y_l1 - y_l0)) / (w_ym - 1), r_t, w_yhi) - r_t)
+g_R      = r_t + widen * (graph(w_yz, y_Rw, w_gz) - r_t)
 # Where the tube widens its wall leans out (degrees from vertical): overhangs, compensated as the
 # shade's are with "layer height" (the Overhangs settings): layers closer, each still extruded for
 # a whole layer, by the lean's (1 − cos) scaled by (lean / pivot)^steep. (No width compensation:
@@ -700,9 +711,14 @@ e_z      = series(accumulate(e_n * e_wt) - e_n * e_wt + (z_p0 - pitch), e_wt, e_
 # from where the straight start's spiral ends (its open top, on the seam), or from the bed; the
 # curve is drawn a layer lower (a toolpath prints a layer above its curve).
 w_end_a  = 450 + item(w_a10, w_lc - 1)
-w_x      = flatten([flatten(item(t_cx, e_ix) + e_rr * cos(e_ang)), [item(w_R, w_lc - 1) * cos(w_end_a)]])
-w_y      = flatten([flatten(item(t_cy, e_ix) + e_rr * sin(e_ang)), [item(w_R, w_lc - 1) * sin(w_end_a)]])
-w_z      = flatten([flatten(e_z), [z_p0 + item(w_zb, w_lc) - pitch]])
+# On the straight start, the first point is where its spiral ends (on the seam, at the tube's
+# radius), so the line carries straight on even when the wings start wider.
+w_xb     = flatten(item(t_cx, e_ix) + e_rr * cos(e_ang))
+w_yb     = flatten(item(t_cy, e_ix) + e_rr * sin(e_ang))
+w_zbody  = flatten(e_z)
+w_x      = flatten([[pick(w_bedp, item(w_xb, 0), 0)], w_xb, [item(w_R, w_lc - 1) * cos(w_end_a)]])
+w_y      = flatten([[pick(w_bedp, item(w_yb, 0), r_t)], w_yb, [item(w_R, w_lc - 1) * sin(w_end_a)]])
+w_z      = flatten([[pick(w_bedp, item(w_zbody, 0), z_p0 - pitch)], w_zbody, [z_p0 + item(w_zb, w_lc) - pitch]])
 w_curve  = polyline(point(w_x, w_y, w_z))
 w_flow   = pick(shade_flow, shade_flow, flow)
 wing_tp  = toolpath([w_curve], width: line, layer: pitch, flow: w_flow, layers: w_lc)

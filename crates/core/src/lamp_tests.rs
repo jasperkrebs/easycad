@@ -1338,3 +1338,44 @@ fn a_tube_with_wings_can_print_wide_edge_down() {
         "{sa:?} {sb:?}"
     );
 }
+
+/// The owner's flared winged tube: 8 seams outside on a cone's end, a 10 mm gap between the walls
+/// (so the turns never get round to half circles), fading out over 180 mm while it widens to keep
+/// each layer as long. The tube's wall only ever widens (no neck where the wings run out), and no
+/// layers bunch up (the length of a layer while the turns form was once guessed, not worked out).
+#[test]
+fn a_flaring_winged_tube_widens_smoothly_to_the_end_of_its_wings() {
+    let src = LAMP.replace("param socket       = \"E27\"", "param socket       = \"E14\"")
+        .replace("param line       = 6 mm", "param line       = 5 mm")
+        .replace(
+            "part main = shade(shape: \"sphere\", end_straight: true)",
+            "part main = shade(shape: \"cone\", end_straight: true, direction: \"down\", fillet: 10 mm, opening: 120 mm, transition: 25 mm)\npart cone = shade(direction: \"down\", mount: main.end_out, opening: 108 mm, shape: \"tube with wings\", wing_seams: 8, wing_in: 0 mm, wings: 100 %, wing_gap: 10 mm, wing_out: 180 mm, wing_widen: \"same layer length\", wing_out_curve: \"linear\", length: 200 mm, wing_side: \"outside\")",
+        );
+    let e = run(&src);
+    let path = &e.prints[1].path;
+    assert!(path.travel.iter().skip(1).all(|t| !t));
+    // The tube's wall (the innermost point of each 4 mm of height) only ever widens.
+    let mut inner = vec![f64::MAX; 60];
+    for p in &path.points {
+        let k = (p[2] / 4.0) as usize;
+        if k < 60 {
+            inner[k] = inner[k].min(p[0].hypot(p[1]));
+        }
+    }
+    let inner: Vec<f64> = inner.into_iter().filter(|r| *r < f64::MAX).collect();
+    assert!(inner.windows(2).all(|w| w[1] >= w[0] - 0.05), "{inner:?}");
+    assert!(inner[inner.len() - 1] > 150.0);
+    // Never bunched up: no 4 mm of height holds much more of the line than the rest (layers come
+    // closer where it leans out, by the overhang compensation, but smoothly).
+    let mut per_band = vec![0.0f64; 60];
+    for (i, w) in path.points.windows(2).enumerate() {
+        let k = (w[1][2] / 4.0) as usize;
+        if k < 60 && !path.travel[i + 1] {
+            per_band[k] += (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]);
+        }
+    }
+    let mut bands: Vec<f64> = per_band[6..48].to_vec();
+    bands.sort_by(f64::total_cmp);
+    let median = bands[bands.len() / 2];
+    assert!(bands.iter().all(|b| *b < 3.0 * median), "{per_band:?}");
+}
