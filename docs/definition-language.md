@@ -395,6 +395,8 @@ Print tab checks the flow against the printer's "max flow" setting.
   a line wide centred on its path, so `thicken(wall, line)`). A surface of revolution stays
   exact; a loft is offset point by point. A bend tighter than half the thickness is refused
   rather than written folded. The result is a solid for `export` (STEP or STL), not for slicing.
+  The templates export the surface itself (an open STEP shell, no thickness), which is what CAD
+  programs work on; `thicken` is there for a recipe that wants the solid.
 - G-code is checked before it's written: every point must be on the bed and below the build
   height (both from the printer settings), and every extrusion sane. A toolpath that fails gets
   a message instead of a file. The recipe's origin sits at the bed point set in the printer

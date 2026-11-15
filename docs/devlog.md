@@ -7,6 +7,21 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15 (later): STEP is the surface, not a thickened wall (general-manager)
+
+**Why:** the owner works on exported shapes as surfaces; a wall thickened to the line width was
+the wrong thing to hand over. STEP doesn't need a solid: a surface goes in as an open shell.
+
+**What landed:** the Lampshade and every Lamp shade export `wall` itself (the surface through
+the bead's middle) as STEP: one open shell of exact cones, cylinders and planes, no solid, the
+sizes as designed (the default lampshade 150 mm across, was 156 thickened). `thicken` stays as a
+step for a recipe that wants a solid. Checked with Open CASCADE 8: the default lampshade, a
+closed bell in-out, the tube with wings and a Lamp shade each read as one valid shell. Tests and
+the smoke test expect the surface model; docs and the AI's guide updated.
+
+**For the recipe developer:** the tube with wings' `wall` is the plain tube, so its STEP has no
+wings (on the roadmap).
+
 ## 2026-11-15: `when … and …`, a hand-built spiral's layer count (general-manager)
 
 **Why:** the recipe developer's "Needs from the app" for the tube with wings: settings that hang
