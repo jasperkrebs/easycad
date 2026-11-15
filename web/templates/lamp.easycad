@@ -751,12 +751,10 @@ component shade "Shade"
   w_end_a  = 450 + item(w_a10, w_lc - 1)
   # On the straight start, the first point is where its spiral ends (on the seam, at the tube's
   # radius), so the line carries straight on even when the wings start wider.
-  w_xb     = flatten(item(t_cx, e_ix) + e_rr * cos(e_ang))
-  w_yb     = flatten(item(t_cy, e_ix) + e_rr * sin(e_ang))
-  w_zbody  = flatten(e_z)
-  w_x      = flatten([[pick(w_bedp, item(w_xb, 0), 0)], w_xb, [item(w_R, w_lc - 1) * cos(w_end_a)]])
-  w_y      = flatten([[pick(w_bedp, item(w_yb, 0), r_t)], w_yb, [item(w_R, w_lc - 1) * sin(w_end_a)]])
-  w_z      = flatten([[pick(w_bedp, item(w_zbody, 0), z_p0 - pitch)], w_zbody, [z_p0 + item(w_zb, w_lc) - pitch]])
+  # (From the bed the first point is the first layer's own start: the seam, at its radius.)
+  w_x      = flatten([[0], item(t_cx, e_ix) + e_rr * cos(e_ang), [item(w_R, w_lc - 1) * cos(w_end_a)]])
+  w_y      = flatten([[pick(w_bedp, item(w_R, 0), r_t)], item(t_cy, e_ix) + e_rr * sin(e_ang), [item(w_R, w_lc - 1) * sin(w_end_a)]])
+  w_z      = flatten([[z_p0 - pitch], e_z, [z_p0 + item(w_zb, w_lc) - pitch]])
   w_curve  = polyline(point(w_x, w_y, w_z))
   w_flow   = pick(shade_flow, shade_flow, flow)
   wing_tp  = toolpath([w_curve], width: line, layer: pitch, flow: w_flow, layers: w_lc)

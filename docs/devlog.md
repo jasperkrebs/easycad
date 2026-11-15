@@ -7,6 +7,19 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15 (night, later): a widening tube no longer narrows where a level of wings ends (recipe-developer)
+
+**Why:** the owner's tube (from the bed, 259 % outside on 6 seams, widening as the wings fade out)
+narrowed in two places on the way up. Made before today's exact-length fix, it still guessed the
+layer lengths, worst where a level of wings runs out; with the fix it was just over the engine's
+geometry budget (115,000 points through ~20 list steps each).
+
+**What landed:** the points are built with fewer list steps (each coordinate in one `flatten`),
+so it fits; its wall widens all the way (16.5 to 87 mm). Test
+`a_tube_widening_through_three_levels_of_wings_never_narrows`. With outside wings the outermost
+level's walls end where the wings drop below 200 %: the outline steps in there by about two walls
+(that's the wings, not the wall).
+
 ## 2026-11-15 (night): from the bed, the wings screw onto the socket (recipe-developer)
 
 **Why:** the owner: with full wings from the bed (no straight start), the socket screws into the

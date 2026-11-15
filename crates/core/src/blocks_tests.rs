@@ -1706,6 +1706,39 @@ mod wings {
         }
     }
 
+    /// The owner's flaring winged tube: from the bed, 259 % outside on 6 seams (three levels of
+    /// wings), fading out over more than its height while it widens to keep each layer as long.
+    /// Its wall only ever widens, also where a level of wings runs out (it once narrowed there:
+    /// the layers' lengths were guessed); and it fits the engine's budget (115,000 points).
+    #[test]
+    fn a_tube_widening_through_three_levels_of_wings_never_narrows() {
+        let e = wings(&[
+            ("socket", text("E14")),
+            ("line", num(5.0)),
+            ("flow", num(15.0)),
+            ("wings", num(259.0)),
+            ("wing_side", text("outside")),
+            ("wing_seams", num(6.0)),
+            ("wing_rise", text("tube wall")),
+            ("wing_bed", Literal::Bool(true)),
+            ("wing_in", num(20.0)),
+            ("wing_hold", num(20.0)),
+            ("wing_out", num(230.0)),
+            ("wing_widen", text("same layer length")),
+        ]);
+        let pts = clean(&e);
+        assert!(pts.len() > 100_000, "{}", pts.len());
+        let mut wall = vec![f64::MAX; 26];
+        for p in &pts {
+            let k = (p[2] / 8.0) as usize;
+            if k < 26 {
+                wall[k] = wall[k].min(radius(p));
+            }
+        }
+        let wall: Vec<f64> = wall.into_iter().filter(|r| *r < f64::MAX).collect();
+        assert!(wall.windows(2).all(|w| w[1] >= w[0] - 0.05), "{wall:?}");
+    }
+
     #[test]
     fn wings_that_cannot_fit_say_so() {
         let narrow = wings(&[("socket", text("E14")), ("line", num(7.0))]);
