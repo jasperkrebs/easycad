@@ -7,6 +7,13 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15 (evening): overhangs keep their plastic (general-manager)
+
+**Correction:** the roadmap's overhang note suggested extruding less on squeezed turns and a floor
+on the rise. The owner doesn't want either: every turn keeps the same plastic for even layer
+lines, and the compensation is only how close the turns sit. The note now says so, with tests 5
+and 6 (test 6: 80 %, steep 0.8, pivot 76, opening 160 mm).
+
 ## 2026-11-16: wings are a setting of every shape (recipe-developer)
 
 **Why:** the owner wanted wings and shape set independently: any shape, wings on or off like the

@@ -62,14 +62,14 @@ so in the dev log); when something new comes up, add it here, not only in the de
 
 ### Recipes and projects (recipe-developer)
 
-- **Overhang tuning on the G1** (tests 1–4, 14 Nov): find the strength / steep / pivot that print
-  from vertical to flat; flow changed between tests 1 and 2, so one thing at a time.
-- **Overhangs near flat** (test 5, 15 Nov, Bambu, E14, 5 mm line): fine to about 70°, failed at
-  74° (turn 50): layer-height compensation rises 0.72 mm a turn there but extrudes a full 2 mm
-  layer (179 % extra plastic). The strength/steep/pivot curve can't ease off near flat; next try
-  75 %, steep 0. Two recipe fixes: extrude a squeezed turn for less than its full layer
-  (`bead_layer` is already a per-turn field), and a floor on the rise (e.g. never under 40 % of
-  the layer).
+- **Overhang tuning** (tests 1–6, 14–15 Nov; the Bambu with a 0.8 mm nozzle, E14 (2 mm pitch),
+  5 mm line, flow 15): the overhang settings only, layer-height compensation. **Every turn keeps
+  the same plastic** (even layer lines); the compensation is only how close the turns sit, so the
+  plastic squeezes. Never extrude less on overhangs. Found so far: test 5 (85 %, steep 0.8,
+  pivot 70) printed well to about 70° and overflowed at 74°; its turns stepped out about half a
+  bead (2.5 mm) each, which held. Test 6 (80 %, steep 0.8, pivot 76, opening 160 mm, so about
+  79° at the rim) eases the top turns a little. Change one thing at a time (flow changed between
+  tests 1 and 2).
 - **The bell in-out** changes to the shade's layer and line at once at the throat (it has no
   fillet there): ease it over its first curve.
 - **The Lampshade and the Lamp's shade** are two copies of the same steps; a change to one has to
