@@ -7,6 +7,20 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-16: wings are a setting of every shape (recipe-developer)
+
+**Why:** the owner wanted wings and shape set independently: any shape, wings on or off like the
+brim, and the wings following the fades, a curve of their own, or the shape.
+
+**What landed** (Lampshade and Lamp, [tube-with-wings.md](tube-with-wings.md)): the shapes are the
+plain ones again (no "tube with wings", "cone with wings"…; old projects pick their shape again
+and switch Wings on). "Wings" at the end of the Shade group switches on a "Wings" group: "Wings
+follow" fades (the %, faded in and out; the tube can widen to keep the layer length), a curve
+(`wing_curve`, rows of where along the shade 0..1 and %, a smooth curve through them; the fades
+are not used), or fit the shape (as long as the widest layer). Inside/outside, seams, gap, rise,
+start from the bed (the tube) as before. Tests `every_shape_can_have_wings` (9 shapes × 3 modes)
+and `the_wings_can_follow_a_curve_along_the_shade`; the earlier tests on the new settings.
+
 ## 2026-11-15 (night, last): the widening follows the fade-out's curve; points per arc (recipe-developer)
 
 **Why:** the owner's outlines: where the wings ran out, the wall flared hard right beside their

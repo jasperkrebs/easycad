@@ -586,7 +586,6 @@ fn every_lampshade_shade_prints_both_ways_up() {
         "bell in-out",
         "cone in-out",
         "tube",
-        "tube with wings",
     ] {
         // The last three with the shade's own layer height and line width.
         for (wide, lip, brim, comp, closed, shade_layer) in [
@@ -624,12 +623,7 @@ fn every_lampshade_shade_prints_both_ways_up() {
             } else {
                 2.5
             };
-            // A tube with wings is never closed.
-            let floor = if closed && shape != "tube with wings" {
-                disc
-            } else {
-                0.0
-            };
+            let floor = if closed { disc } else { 0.0 };
             assert!(
                 (pts[0][2] - floor).abs() < 1e-9 && pts.iter().all(|p| p[0] > 0.0),
                 "{shape} {closed}"
@@ -637,7 +631,7 @@ fn every_lampshade_shade_prints_both_ways_up() {
             let p = e.print.as_ref().unwrap();
             assert!(p.path.points.len() > 100 && p.stats.layers > 10, "{shape}");
             // Closed, the disc goes down first, at its layer, and fills the middle.
-            if closed && shape != "tube with wings" {
+            if closed {
                 let first = p.path.points.iter().find(|q| q[2] > 0.0).unwrap();
                 assert!((first[2] - disc).abs() < 1e-9 && first[0].hypot(first[1]) < 1.0);
             }
@@ -1152,7 +1146,10 @@ mod wings {
     const PITCH: f64 = 2.5;
 
     fn wings(values: &[(&str, Literal)]) -> Evaluation {
-        let mut all = vec![("shape".to_string(), Literal::Text("tube with wings".into()))];
+        let mut all = vec![
+            ("shape".to_string(), Literal::Text("tube".into())),
+            ("wings_on".to_string(), Literal::Bool(true)),
+        ];
         all.extend(values.iter().map(|(k, v)| (k.to_string(), v.clone())));
         evaluate(&set_values(TEMPLATE, &all).unwrap(), Quality::Final)
     }
@@ -1600,7 +1597,9 @@ mod wings {
             let src = set_values(
                 TEMPLATE,
                 &[
-                    ("shape".into(), text(&format!("{shape} with wings"))),
+                    ("shape".into(), text(shape)),
+                    ("wings_on".into(), Literal::Bool(true)),
+                    ("wing_mode".into(), text("fit the shape")),
                     ("wings".into(), num(100.0)),
                 ],
             )
@@ -1753,6 +1752,91 @@ mod wings {
         }
         let wall: Vec<f64> = wall.into_iter().filter(|r| *r < f64::MAX).collect();
         assert!(wall.windows(2).all(|w| w[1] >= w[0] - 0.05), "{wall:?}");
+    }
+
+    /// Wings are a setting of every shape, as a brim is: following the fades, a curve along the
+    /// shade, or the shape. Each prints as one line.
+    #[test]
+    fn every_shape_can_have_wings() {
+        for shape in [
+            "cone",
+            "bell",
+            "dome",
+            "sphere",
+            "flat sphere",
+            "own",
+            "bell in-out",
+            "cone in-out",
+            "tube",
+        ] {
+            for mode in ["fades", "curve", "fit the shape"] {
+                let src = set_values(
+                    TEMPLATE,
+                    &[
+                        ("shape".into(), text(shape)),
+                        ("wings_on".into(), Literal::Bool(true)),
+                        ("wing_mode".into(), text(mode)),
+                        ("wings".into(), num(100.0)),
+                    ],
+                )
+                .unwrap();
+                let e = evaluate(&src, Quality::Final);
+                assert!(
+                    e.diagnostics.iter().all(|d| d.severity != Severity::Error),
+                    "{shape} {mode}: {:?}",
+                    e.diagnostics
+                );
+                let p = &e.prints[0].path;
+                assert!(p.travel.iter().skip(1).all(|t| !t), "{shape} {mode}");
+                assert!(
+                    p.points.windows(2).all(|w| w[1][2] >= w[0][2] - 1e-9),
+                    "{shape} {mode}"
+                );
+            }
+        }
+    }
+
+    /// Along a curve: the wings at each height are the curve's, read where that height is along
+    /// the wings' stretch (0 at its start, 1 at its end), a smooth curve through the points.
+    #[test]
+    fn the_wings_can_follow_a_curve_along_the_shade() {
+        use crate::eval::step_values;
+        use crate::value::Value;
+        let src = set_values(
+            TEMPLATE,
+            &[
+                ("shape".into(), text("tube")),
+                ("wings_on".into(), Literal::Bool(true)),
+                ("wing_mode".into(), text("curve")),
+            ],
+        )
+        .unwrap();
+        // As it ships: 100 % at the start, 80 % at 0.6, 20 % at the end (the wings from 40 mm up
+        // a 200 mm tube).
+        assert!(src.contains("param wing_curve = [[0, 100], [0.6, 80], [1, 20]]"));
+        let (e, v) = step_values(&src, Quality::Final);
+        clean(&e);
+        let nums = |n: &str| match v.get(n) {
+            Some(Value::List(l)) => l
+                .items
+                .iter()
+                .map(|x| match x {
+                    Value::Number(n) => *n,
+                    _ => f64::NAN,
+                })
+                .collect::<Vec<_>>(),
+            other => panic!("{n}: {other:?}"),
+        };
+        let (c, zl) = (nums("w_c"), nums("w_zl"));
+        let at = |t: f64| {
+            let k = zl.iter().position(|z| *z >= t * 160.0).unwrap();
+            c[k]
+        };
+        assert!((at(0.0) - 1.0).abs() < 0.02, "{}", at(0.0));
+        assert!((at(0.6) - 0.8).abs() < 0.02, "{}", at(0.6));
+        assert!((at(0.99) - 0.2).abs() < 0.03, "{}", at(0.99));
+        // Smooth and never past its points in between.
+        assert!(c.iter().all(|x| *x <= 1.0 + 1e-9 && *x >= 0.2 - 1e-9));
     }
 
     #[test]

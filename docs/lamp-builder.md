@@ -88,8 +88,8 @@ writes a new `part` line; `removePart(name)` removes it and the parts mounted on
 The lampshade's profile code, generalised:
 - the start is a straight holder at the mount's radius (the throat on the socket), its length
   the shade's start length or the global joint length;
-- shapes: tube, cone, bell, dome, sphere, flat sphere, bell in-out, cone in-out, own, tube with
-  wings, and the cone, bell, dome, sphere and flat sphere with wings;
+- shapes: tube, cone, bell, dome, sphere, flat sphere, bell in-out, cone in-out, own; any of them
+  with wings ([tube-with-wings.md](tube-with-wings.md));
 - an optional straight end for every shape (the spheres' lip, for all), its length the shade's
   end length or the global joint length;
 - where it sits: on a port, going up or down, and how far along the straight section it sits

@@ -1125,7 +1125,7 @@ fn a_tube_with_wings_is_a_shade_too() {
     let wings = |settings: &str| {
         LAMP.replace(
             "part main = shade(shape: \"sphere\", end_straight: true)",
-            &format!("part main = shade(shape: \"tube with wings\", {settings})"),
+            &format!("part main = shade(shape: \"tube\", wings_on: true, {settings})"),
         )
     };
     let radius = |p: &crate::geom::P3| p[0].hypot(p[1]);
@@ -1203,7 +1203,7 @@ fn wings_take_a_thread_only_where_they_rise_a_pitch_a_turn() {
         .replace("param thread_d     = 40 mm", "param thread_d     = 80 mm")
         .replace(
             "part main = shade(shape: \"sphere\", end_straight: true)",
-            &format!("part main = shade(shape: \"tube with wings\", {settings})"),
+            &format!("part main = shade(shape: \"tube\", wings_on: true, {settings})"),
         )
     };
     // The tube's own radius: half a line outside the 80 mm thread.
@@ -1284,7 +1284,7 @@ fn a_tube_with_wings_can_print_wide_edge_down() {
         LAMP.replace(
             "part main = shade(shape: \"sphere\", end_straight: true)",
             &format!(
-                "part main = shade(shape: \"tube with wings\", end_straight: true, wings: 100 %, wing_out: 106 mm, wing_widen: \"same layer length\", wing_seams: 3, direction: \"down\", wide_down: {down})"
+                "part main = shade(shape: \"tube\", wings_on: true, end_straight: true, wings: 100 %, wing_out: 106 mm, wing_widen: \"same layer length\", wing_seams: 3, direction: \"down\", wide_down: {down})"
             ),
         )
     };
@@ -1350,7 +1350,7 @@ fn a_flaring_winged_tube_widens_smoothly_to_the_end_of_its_wings() {
         .replace("param line       = 6 mm", "param line       = 5 mm")
         .replace(
             "part main = shade(shape: \"sphere\", end_straight: true)",
-            "part main = shade(shape: \"cone\", end_straight: true, direction: \"down\", fillet: 10 mm, opening: 120 mm, transition: 25 mm)\npart cone = shade(direction: \"down\", mount: main.end_out, opening: 108 mm, shape: \"tube with wings\", wing_seams: 8, wing_in: 0 mm, wings: 100 %, wing_gap: 10 mm, wing_out: 180 mm, wing_widen: \"same layer length\", wing_out_curve: \"linear\", length: 200 mm, wing_side: \"outside\")",
+            "part main = shade(shape: \"cone\", end_straight: true, direction: \"down\", fillet: 10 mm, opening: 120 mm, transition: 25 mm)\npart cone = shade(direction: \"down\", mount: main.end_out, opening: 108 mm, shape: \"tube\", wings_on: true, wing_seams: 8, wing_in: 0 mm, wings: 100 %, wing_gap: 10 mm, wing_out: 180 mm, wing_widen: \"same layer length\", wing_out_curve: \"linear\", length: 200 mm, wing_side: \"outside\")",
         );
     let e = run(&src);
     let path = &e.prints[1].path;
@@ -1389,7 +1389,7 @@ fn a_shape_with_wings_is_a_shade_too() {
     use Literal::Text;
     let src = LAMP.replace(
         "part main = shade(shape: \"sphere\", end_straight: true)",
-        "part main = shade(shape: \"sphere with wings\", wings: 100 %, end_straight: true)",
+        "part main = shade(shape: \"sphere\", wings_on: true, wing_mode: \"fit the shape\", wings: 100 %, end_straight: true)",
     );
     let src = with_part(&src, "top", &[("mount", Text("main.end_out".into()))]);
     let e = run(&src);

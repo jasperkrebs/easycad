@@ -1,8 +1,20 @@
-# Tube with wings (Lampshade)
+# Wings (Lampshade and Lamp)
 
-*The owner's idea (14 Nov 2026), from a sketch; built in the Lampshade template as the shape
-"tube with wings", and since 15 Nov a shade in the Lamp too (below), so it threads into the
-others.*
+*The owner's idea (14 Nov 2026), from a sketch; first the Lampshade's shape "tube with wings",
+then the Lamp's too, then "cone with wings" and the rest; since 15 Nov a setting of every shape
+(**Wings**, at the end of the Shade group, like the brim: on, and its own "Wings" group shows),
+following one of three things (`wing_mode`):*
+
+| Wings follow | The wings | The shape |
+|---|---|---|
+| **fades** | the Wings %, faded in (or full from the bed, the tube) and out, linear or smooth | as set; a tube can widen as they fade out (below) |
+| **curve** | a smooth curve through your points: where along the shade (0 where the wings can start, 1 where they end) and the % there, e.g. 0 → 100 %, 0.6 → 80 %, 1 → 20 %; moving a point moves where the curve is steepest (no other fades) | as set |
+| **fit the shape** | as much as keeps every layer as long as the shade's widest (at most the Wings %), faded in from the throat | as set |
+
+*Everything else is the same in every mode: inside or outside, seams, gap, how it rises, the
+straight start, wide edge down, where a thread can go (the Lamp). Below, "the tube" is the tube
+shape with wings on; the other shapes have their own radius at every height, and the wings sit
+on that wall.*
 
 ## Why
 
@@ -86,13 +98,12 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
   doesn't lean every layer is exactly a pitch (the thread's), and the top ends on the nearest whole
   layer.
 
-## Shapes with wings
+## Fitting the shape
 
-"Cone with wings", "bell with wings", "dome with wings", "sphere with wings" and "flat sphere with
-wings" (the owner's idea, 15 Nov 2026) are the shapes as set (opening, transition height,
-sphere and so on), with wings that follow from the shape: as much as keeps every layer as long
-as the shade's widest one, so the layer time stays about the same where it narrows. None at the
-widest; more where it's narrower (a sphere: near the throat and near the opening).
+"Fit the shape" (the owner's idea, 15 Nov 2026) keeps the shape as set (opening, transition
+height, sphere and so on) and gives it wings that follow from it: as much as keeps every layer as
+long as the shade's widest one, so the layer time stays about the same where it narrows. None at
+the widest; more where it's narrower (a sphere: near the throat and near the opening).
 
 - **Wings** is the most they may take (up to 300 %); where even that isn't enough, the layer is
   shorter.
@@ -105,7 +116,8 @@ widest; more where it's narrower (a sphere: near the throat and near the opening
   layer's length is read off between them. In the tests every layer that has its wings is
   within 3 % of the widest layer's length.
 - In the Lamp it's a shade like the rest (its straight start screws on, its straight end takes
-  more shades), but no thread along its wings: its wall isn't straight.
+  more shades). Only the tube takes a thread along its wings (its wall is straight), and only
+  with the fades (a curve changes along the way).
 
 ## Printed wide edge down
 
