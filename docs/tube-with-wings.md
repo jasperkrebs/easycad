@@ -51,20 +51,22 @@ at the seam are a line apart too, closing the tube's wall with a small notch bet
 ## How a wing starts
 
 A wing starts where the tube's wall **parts at the seam**: at first the line only dips in (or
-out) a little at a single point and carries straight on, so from outside the wall seems to open
-a crease there. As it grows, its four turns go further round (the dent deepens, its sides
-steepen), and the two sides move apart only as far as they must not to cross, so the gap
-opens smoothly, never wider than it ends up: by the time the turns are a quarter round they're
-as far apart as the finished turns at the seam (±g, below), and they stay there. Once the turns
-are half circles the wings run back along the middle wall. The tips' growth
-blends from the turns' to the wing's own over half a turn either side, so the outline has no
-kink there as the % changes. A deeper wing (past 100 %) starts the
-same way, on the inner wall at the seam.
+out) a little and carries straight on, so from outside the wall seems to open a crease there.
+**The tips reach round in step with the %** from the very first layer (the reach is the % of the
+way to where they'd meet), so the wing's outline follows the fades or the curve exactly, with no
+corner where it forms. While the reach is less than the seam's turn angle (`g`, below) the opening
+at the seam simply widens with it; past that it stays at `g` and the middle wall starts running
+back along the tube's wall, while the turns underneath finish forming (they come round slowly,
+over about twice `g` of reach, more slowly at first), so the opening never gets ahead of the tips.
+Until a turn is half a circle the middle wall sits a little over the tube's wall (up to a tenth of
+a line, for a few layers). A deeper wing (past 100 %) starts the same way, on the inner wall at the
+seam. (Until 16 Nov the opening rushed to `g` and the tips waited there for the turns: a few layers
+where the outline stalled, then jogged on, "the pointy bit".)
 
 "Two pieces a line apart" is exact: two turns facing each other (half circles a spacing `s`
 across, their centres on a circle of radius ρ) just touch when their centres are `2s` apart,
 `asin(s / ρ)` either side of the line between them. The tests check that no two pieces of a
-layer come closer than a line (less the chord tolerance), as the wings grow and at full.
+layer come closer than a line (less the chord tolerance), at full (and, while a turn forms, a tenth of a line less).
 
 ## Over the height
 

@@ -7,6 +7,23 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-16 (night): the wings' outline follows the % smoothly (recipe-developer)
+
+**Why:** the owner's sphere (eight seams, a curve down to none): "always that pointy bit that
+doesn't follow the curve", at every setting. It was the recipe: while a wing formed, the opening at
+the seam rushed to its full width, then the tips waited there until the turns were half circles
+(in that file: 5.5° for four layers), then ran on: a stall and a jog in the outline.
+
+- Now the tips reach round in step with the % from the first layer; the opening widens with them
+  up to the seam's angle, the turns form under them over about twice that (slowly at first, so the
+  opening never needs more than the reach). The middle wall sits up to a tenth of a line over the
+  wall for a few layers while a turn forms (the growth test allows that, full wings stay strict).
+- No button needed: it's how every wing forms now. The tips' pace counts each level's forming
+  over its own radius (a deeper level's was counted too fast).
+- Test: the owner's sphere, every growing layer's tips within 20 % of the % (they stalled at 0).
+  The fit-the-shape test skips layers under 3 % of wings and a bell's last two (lengths every two
+  layers are too coarse where it flares flat).
+
 ## 2026-11-16 (evening): wings tried on every shape: a pace, room past 100 %, a choice of start (recipe-developer)
 
 **Why:** the owner: the fade-in couldn't be found, wings past 100 % didn't work, "a few things
