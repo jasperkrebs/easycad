@@ -82,6 +82,9 @@ so in the dev log); when something new comes up, add it here, not only in the de
   the shape and each other; `toolpath(…, layers: n)` for the wings' layer count; a group of its
   own for the wings (the smoke test no longer lists every group). The bend stool's primer lines
   still count as layers (the stool shows 14 for 11): mark them `aid(…)` and they won't.
+- **Wings:** check the tips' pace (½ line a layer) in a print; "same layer length" with deep
+  outside wings flares hard (outside 200 %: 23 → 144 mm over the fade-out), maybe cap it; tips on
+  a narrowing top still overhang a little.
 - **The coat hanger** as a template.
 - **Tube with wings** ([tube-with-wings.md](tube-with-wings.md)), in the Lampshade and the Lamp:
   print it (the crease where a wing starts; "same layer length" within 4 %).

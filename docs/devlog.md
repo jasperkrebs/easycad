@@ -7,6 +7,33 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-16 (evening): wings tried on every shape: a pace, room past 100 %, a choice of start (recipe-developer)
+
+**Why:** the owner: the fade-in couldn't be found, wings past 100 % didn't work, "a few things
+don't work". A scratch survey (every shape, in and out, 50–300 %, seams, gap, curve, fit, wide edge
+down, lip) checked each print for beads with nothing under them and lines crossing in a layer.
+
+- **Fade-in hidden on every shape but the tube:** its settings named `wing_bed` (tube only), and a
+  setting shows only when every setting it names applies. Fixed; the bed start now applies only to
+  the tube in the recipe too.
+- **Wings start: fading in / full** (new): full puts the wings at their set % on the first layer.
+- **Tips grow at most ½ line a layer** (`wing_grow`, new; 0: no limit): grown faster, wings on a
+  cone or sphere hung in the air at their tips (up to 26 mm gaps) and their forming sides spread
+  ~5 mm a layer. Now every bead in the survey has one under it, apart from the bell's and dome's
+  own flat tops. Warns when the wings can't reach their peak at that pace.
+- **Past 100 % inside:** levels by the room at each layer's radius (was an error on any E27 shade).
+- **Fixed:** a level not started yet with its radius below zero drew a loop and a whole circle at
+  the seam (cone 300 %); dividing by zero with no pace limit; a curve wide edge down starting at 0
+  instead of its value; outside wings on a widening cone crowding the next layer (each point now
+  follows the shade's radius at its own height); the dents warning on wings the room or pace capped.
+- Tests: the pace (no bead hanging, inside and out; hanging without it), the full start, deeper
+  wings on a wide cone (no crowding), 200 % inside on E27 (a warning, 100 % printed). The wing
+  tests of other features run without the pace.
+
+Open: outside 200 % with "same layer length" widens the tube from 23 to 144 mm over the fade-out
+(a 60° flare; flipped, unprintable): maybe cap it. Tips on a narrowing top (sphere, in-out) still
+overhang a little. Default pace (½ line) to check in a print.
+
 ## 2026-11-16 (latest): wings end on a whole layer, and grow without a kink (recipe-developer)
 
 **Why:** the owner's cone (wings outside, four seams, a curve from 100 % at the throat down to

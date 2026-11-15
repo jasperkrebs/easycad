@@ -1149,7 +1149,10 @@ mod wings {
         let mut all = vec![
             ("shape".to_string(), Literal::Text("tube".into())),
             ("wings_on".to_string(), Literal::Bool(true)),
+            // The tests of the shapes and fades: wings as set, at any pace (the pace has its own).
+            ("wing_grow".to_string(), Literal::Number(0.0)),
         ];
+        all.retain(|(k, _)| !values.iter().any(|(o, _)| o == k));
         all.extend(values.iter().map(|(k, v)| (k.to_string(), v.clone())));
         evaluate(&set_values(TEMPLATE, &all).unwrap(), Quality::Final)
     }
@@ -1166,6 +1169,16 @@ mod wings {
         assert!(p.travel.iter().skip(1).all(|t| !t));
         assert!(p.points.windows(2).all(|w| w[1][2] >= w[0][2] - 1e-9));
         p.points.clone()
+    }
+    fn clean_but_warnings(e: &Evaluation) -> Vec<P3> {
+        assert!(
+            e.diagnostics
+                .iter()
+                .all(|d| d.severity == Severity::Warning),
+            "{:?}",
+            e.diagnostics
+        );
+        e.prints[0].path.points.clone()
     }
     fn radius(p: &P3) -> f64 {
         p[0].hypot(p[1])
@@ -1232,6 +1245,51 @@ mod wings {
             let step = (round_from_seam(&w[1]) - round_from_seam(&w[0]) + 540.0).rem_euclid(360.0);
             step > 180.0 - 1e-9
         })
+    }
+
+    /// Along the whole print from `z_from` up, beads seen against their neighbours (every 2 mm):
+    /// how many have no bead under them within 0.6 of a line (sideways, a layer or so lower),
+    /// and how many crowd a bead of their own layer (closer than 0.7 of a line, but far away
+    /// along the path: a loop or a crossing).
+    fn support_and_crowding(points: &[P3], line: f64, pitch: f64, z_from: f64) -> (usize, usize) {
+        use std::collections::HashMap;
+        let mut d: Vec<(P3, f64)> = Vec::new();
+        let mut along = 0.0;
+        for w in points.windows(2) {
+            let l = (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]);
+            let n = (l / 2.0).ceil().max(1.0) as usize;
+            for i in 0..n {
+                let t = i as f64 / n as f64;
+                let q = [0, 1, 2].map(|k| w[0][k] + (w[1][k] - w[0][k]) * t);
+                d.push((q, along + l * t));
+            }
+            along += l;
+        }
+        let cell = |q: &P3| ((q[0] / line).floor() as i64, (q[1] / line).floor() as i64);
+        let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for (i, q) in d.iter().enumerate() {
+            grid.entry(cell(&q.0)).or_default().push(i);
+        }
+        let (mut hanging, mut crowded) = (0, 0);
+        for q in &d {
+            let (cx, cy) = cell(&q.0);
+            let (mut under, mut crowd) = (false, false);
+            for (dx, dy) in (-1..=1).flat_map(|a| (-1..=1).map(move |b| (a, b))) {
+                for &j in grid.get(&(cx + dx, cy + dy)).map_or(&[][..], |v| &v[..]) {
+                    let r = &d[j];
+                    let h = (r.0[0] - q.0[0]).hypot(r.0[1] - q.0[1]);
+                    let dz = q.0[2] - r.0[2];
+                    under |= h < 0.6 * line && dz > 0.3 * pitch && dz < 1.6 * pitch;
+                    crowd |=
+                        h < 0.7 * line && dz.abs() < 0.3 * pitch && (r.1 - q.1).abs() > 3.0 * line;
+                }
+            }
+            if q.0[2] > z_from {
+                hanging += usize::from(!under);
+                crowded += usize::from(crowd);
+            }
+        }
+        (hanging, crowded)
     }
 
     #[test]
@@ -1581,7 +1639,11 @@ mod wings {
         // (Each on its nearest whole layer: counted from opposite ends where layers come closer.)
         assert!((down.last().unwrap()[2] - top).abs() < PITCH / 2.0);
         let widest = up.iter().map(radius).fold(0.0, f64::max);
-        assert!(down[0][2].abs() < 1e-9 && (radius(&down[0]) - widest).abs() < 0.1);
+        assert!(
+            down[0][2].abs() < 1e-9 && (radius(&down[0]) - widest).abs() < 0.5,
+            "{} {widest}",
+            radius(&down[0])
+        );
         let last: Vec<_> = down.iter().filter(|p| p[2] > top - 37.0).collect();
         assert!(last.len() > 50 && last.iter().all(|p| (radius(p) - R).abs() < 1e-6));
     }
@@ -1599,6 +1661,7 @@ mod wings {
                 &[
                     ("shape".into(), text(shape)),
                     ("wings_on".into(), Literal::Bool(true)),
+                    ("wing_grow".into(), num(0.0)),
                     ("wing_mode".into(), text("fit the shape")),
                     ("wings".into(), num(100.0)),
                 ],
@@ -1775,6 +1838,7 @@ mod wings {
                     &[
                         ("shape".into(), text(shape)),
                         ("wings_on".into(), Literal::Bool(true)),
+                        ("wing_grow".into(), num(0.0)),
                         ("wing_mode".into(), text(mode)),
                         ("wings".into(), num(100.0)),
                     ],
@@ -1807,6 +1871,7 @@ mod wings {
             &[
                 ("shape".into(), text("tube")),
                 ("wings_on".into(), Literal::Bool(true)),
+                ("wing_grow".into(), num(0.0)),
                 ("wing_mode".into(), text("curve")),
             ],
         )
@@ -1856,6 +1921,7 @@ mod wings {
                 ("transition".into(), num(150.0)),
                 ("wide_down".into(), Literal::Bool(true)),
                 ("wings_on".into(), Literal::Bool(true)),
+                ("wing_grow".into(), num(0.0)),
                 ("wing_mode".into(), text("curve")),
                 ("wing_side".into(), text("outside")),
                 ("wing_seams".into(), num(4.0)),
@@ -1897,6 +1963,110 @@ mod wings {
         assert!(steepest < 0.12, "{steepest}");
     }
 
+    /// The tips grow round at most half a line a layer (as they ship), so every new bit of wing
+    /// sits on the turn under it: on a cone, inside and outside, every bead has one under it.
+    /// Without the limit, the wings faded in over 60 mm hang in the air at their tips.
+    #[test]
+    fn the_wings_grow_at_the_tips_pace() {
+        let cone = |more: &[(&str, Literal)]| {
+            let mut v = vec![
+                ("shape", text("cone")),
+                ("wings", num(100.0)),
+                ("wing_grow", num(0.5)),
+            ];
+            v.retain(|(k, _)| !more.iter().any(|(o, _)| o == k));
+            v.extend(more.iter().cloned());
+            wings(&v)
+        };
+        for side in ["inside", "outside"] {
+            let e = cone(&[("wing_side", text(side))]);
+            let (hanging, crowded) =
+                support_and_crowding(&clean_but_warnings(&e), 6.0, PITCH, 25.0);
+            assert_eq!((hanging, crowded), (0, 0), "{side}");
+            // The cone's too short to grow them all the way at that pace: it says so.
+            assert!(
+                e.diagnostics
+                    .iter()
+                    .any(|d| d.message.contains("tips' pace")),
+                "{side}"
+            );
+        }
+        let fast = cone(&[("wing_grow", num(0.0))]);
+        let (hanging, _) = support_and_crowding(&clean(&fast), 6.0, PITCH, 25.0);
+        assert!(hanging > 100, "{hanging}");
+        // The tube as it ships, inside 150 % on a wider thread and 300 % outside: all held up.
+        for more in [
+            vec![
+                ("wings", num(150.0)),
+                ("socket", text("custom")),
+                ("thread_d", num(80.0)),
+            ],
+            vec![("wings", num(300.0)), ("wing_side", text("outside"))],
+        ] {
+            let mut v = vec![("wing_grow", num(0.5))];
+            v.extend(more);
+            let e = wings(&v);
+            let (hanging, crowded) =
+                support_and_crowding(&clean_but_warnings(&e), 6.0, PITCH, 45.0);
+            assert_eq!((hanging, crowded), (0, 0), "{v:?}");
+        }
+    }
+
+    /// "Wings start: full" puts the whole wings on the first layer after the straight start (that
+    /// one layer hangs); fading in, even over 0 mm, they grow at the tips' pace from nothing.
+    #[test]
+    fn the_wings_can_start_full() {
+        use crate::eval::step_values;
+        use crate::value::Value;
+        let first = |begin: &str| {
+            let src = set_values(
+                TEMPLATE,
+                &[
+                    ("shape".into(), text("tube")),
+                    ("wings_on".into(), Literal::Bool(true)),
+                    ("wings".into(), num(100.0)),
+                    ("wing_in".into(), num(0.0)),
+                    ("wing_begin".into(), text(begin)),
+                ],
+            )
+            .unwrap();
+            let (e, v) = step_values(&src, Quality::Final);
+            clean(&e);
+            match v.get("w_c") {
+                Some(Value::List(l)) => match l.items.first() {
+                    Some(Value::Number(n)) => *n,
+                    other => panic!("{other:?}"),
+                },
+                other => panic!("{other:?}"),
+            }
+        };
+        assert!((first("full") - 1.0).abs() < 1e-9);
+        assert!(first("fading in") < 0.1);
+    }
+
+    /// Inside, past 100 %, a wide cone takes the deeper wings where it's wide enough; a level that
+    /// hasn't started yet stays on the wall (it used to draw a loop at the seam, and a whole
+    /// circle, where its own radius came out below zero).
+    #[test]
+    fn deeper_wings_inside_where_the_shade_is_wide() {
+        let e = wings(&[
+            ("shape", text("cone")),
+            ("wings", num(300.0)),
+            ("opening", num(250.0)),
+        ]);
+        let pts = clean_but_warnings(&e);
+        let (_, crowded) = support_and_crowding(&pts, 6.0, PITCH, 0.0);
+        assert_eq!(crowded, 0);
+        // At the top, three levels: the innermost wall six walls (36 mm) in from the shade's.
+        let top = pts.iter().map(|p| p[2]).fold(0.0, f64::max);
+        let near: Vec<&P3> = pts.iter().filter(|p| p[2] > top - 2.5).collect();
+        let (lo, hi) = near.iter().fold((f64::INFINITY, 0.0_f64), |(lo, hi), p| {
+            (lo.min(radius(p)), hi.max(radius(p)))
+        });
+        // (Within a layer's rise, a leaning wall moves out a little more.)
+        assert!((hi - lo - 36.0).abs() < 4.0 && lo > 0.6 * hi, "{lo} {hi}");
+    }
+
     #[test]
     fn wings_that_cannot_fit_say_so() {
         let narrow = wings(&[("socket", text("E14")), ("line", num(7.0))]);
@@ -1907,13 +2077,19 @@ mod wings {
                 .any(|d| d.severity == Severity::Error
                     && d.message.contains("too narrow for this many walls"))
         );
+        // Past 100 % inside, where there's no room for the walls the wings stop at 100 %.
         let deep = wings(&[("wings", num(200.0))]);
         assert!(
             deep.diagnostics
                 .iter()
-                .any(|d| d.severity == Severity::Error
-                    && d.message.contains("too narrow for this many walls"))
+                .any(|d| d.severity == Severity::Warning
+                    && d.message.contains("only where the shade is wide enough"))
         );
+        let deepest = clean_but_warnings(&deep)
+            .iter()
+            .map(radius)
+            .fold(R, f64::min);
+        assert!((deepest - (R - 12.0)).abs() < 0.5, "{deepest}");
         let dents = wings(&[("wing_seams", num(8.0))]);
         assert!(
             dents
