@@ -7,6 +7,20 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-15 (night, last): the widening follows the fade-out's curve; points per arc (recipe-developer)
+
+**Why:** the owner's outlines: where the wings ran out, the wall flared hard right beside their
+pointed tips. With the wings driving the radius, the wall barely widened while the wings shrank
+slowly and then jumped out in the last stretch, as the turns flattened into dents.
+
+**What landed** (Lampshade and Lamp): with "same layer length" the tube's radius now follows the
+fade-out's curve from its own radius to the plain circle as long as a full-wings layer, and the
+wings are as much as keeps each layer that long (the same table as the shapes with wings). And
+every arc gets as many points as the chord tolerance needs at its own radius and sweep (one when
+there's nothing to draw): the template as it ships drops from 9,100 points to 5,300, the owner's
+259 % tube from 115,000 to 52,000. Test `fading_out_the_tube_can_widen_to_keep_each_layer_as_long`
+now checks the wall half way out half way up a straight fade-out.
+
 ## 2026-11-15 (night, later): a widening tube no longer narrows where a level of wings ends (recipe-developer)
 
 **Why:** the owner's tube (from the bed, 259 % outside on 6 seams, widening as the wings fade out)

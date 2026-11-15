@@ -1300,7 +1300,8 @@ fn a_tube_with_wings_can_print_wide_edge_down() {
     assert!((b.points.last().unwrap()[2] - top).abs() < 1.25);
     // End first: on the bed at the widened end's radius; last, the straight start, plain turns
     // at the thread's radius a pitch apart.
-    assert!(b.points[0][2].abs() < 1e-9 && (radius(&b.points[0]) - 45.4).abs() < 0.1);
+    let widest = a.points.iter().map(radius).fold(0.0, f64::max);
+    assert!(b.points[0][2].abs() < 1e-9 && (radius(&b.points[0]) - widest).abs() < 0.1);
     let last: Vec<_> = b.points.iter().filter(|p| p[2] > top - 17.0).collect();
     assert!(last.len() > 50 && last.iter().all(|p| (radius(p) - 23.0).abs() < 1e-6));
     // The same tube turned over: its widest and narrowest at every height along it.

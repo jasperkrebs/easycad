@@ -71,8 +71,12 @@ layer come closer than a line (less the chord tolerance), as the wings grow and 
 - **Full wings** for `wing_hold` mm, then **fade out** over `wing_out` mm (0: wings to the
   top), linear or smooth; above that, a plain tube to the top.
 - **Diameter as the wings fade out:** the same, or the **same layer length**: the tube widens
-  as the wings go, so each layer stays as long as at full wings (with no wings left it's a
-  plain tube about three times as wide, for one seam at 100 %). The fade-in keeps the diameter.
+  along the fade-out's curve (straight or an S-curve), from its own radius out to the plain
+  circle as long as a layer at full wings, and the wings shrink exactly as much as keeps every
+  layer that long; so the wall flares as smoothly as the curve, and the wings end where it's
+  widest. (Driving the radius by the wings instead, the wall stayed narrow and then flared hard
+  just where the wings ran out, next to their pointed tips: an odd outline.) The fade-in keeps
+  the diameter.
 - **Overhangs:** where the tube widens its wall leans out, and the Overhangs setting "layer
   height" applies as to any shade: layers come closer where it leans (each still extruded for a
   whole layer), by the lean's (1 − cos) scaled by strength and (lean / pivot)^steep. (Width

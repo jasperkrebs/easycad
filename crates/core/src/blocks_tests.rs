@@ -1287,7 +1287,7 @@ mod wings {
         let profile = crate::gcode::Profile::default();
         let gcode = crate::gcode::write(&e.prints[0].path, &profile, "Lampshade").unwrap();
         let moves = gcode.text.lines().filter(|l| l.starts_with("G1 X")).count();
-        assert!(moves > 7000, "{moves}");
+        assert!(moves > 4000, "{moves}");
     }
 
     #[test]
@@ -1353,8 +1353,8 @@ mod wings {
     #[test]
     fn a_long_tube_can_have_wings_past_100_percent_outside() {
         // The owner's 533 mm tube: two seams outside, fading in over 152 mm and out over 280 mm,
-        // widening to keep each layer as long; past 100 % it's over 100,000 points (more than one
-        // `series` can count), and it prints.
+        // widening to keep each layer as long: past 100 % (once more points than one `series`
+        // can count) it prints.
         let e = wings(&[
             ("wings", num(150.0)),
             ("wing_side", text("outside")),
@@ -1365,7 +1365,7 @@ mod wings {
             ("wing_widen", text("same layer length")),
         ]);
         let pts = clean(&e);
-        assert!(pts.len() > 100_000, "{}", pts.len());
+        assert!(pts.len() > 30_000, "{}", pts.len());
         // (197 layers of wings at the pitch; more where layers come closer as it widens.)
         assert!(e.prints[0].path.layers > 16 + 197);
     }
@@ -1492,6 +1492,22 @@ mod wings {
             assert!((l / full - 1.0).abs() < 0.04, "{k}: {l} {full}");
         }
         let top = layer(&widened, 40.0, 60);
+        // It widens along the fade-out's curve (here straight, 80 to 140 mm up): half way out
+        // half way up it, so the wall flares evenly and the wings end where it's widest.
+        // (The wings are inside: the tube's wall is the outermost line.)
+        let wall_at = |z: f64| {
+            widened
+                .iter()
+                .filter(|p| (p[2] - z).abs() < 1.5)
+                .map(radius)
+                .fold(0.0, f64::max)
+        };
+        let half = (R + full / std::f64::consts::TAU) / 2.0;
+        assert!(
+            (wall_at(110.0) - half).abs() < 1.5,
+            "{} {half}",
+            wall_at(110.0)
+        );
         assert!(
             top.iter()
                 .all(|p| (radius(p) - full / std::f64::consts::TAU).abs() < 0.5)
@@ -1709,7 +1725,7 @@ mod wings {
     /// The owner's flaring winged tube: from the bed, 259 % outside on 6 seams (three levels of
     /// wings), fading out over more than its height while it widens to keep each layer as long.
     /// Its wall only ever widens, also where a level of wings runs out (it once narrowed there:
-    /// the layers' lengths were guessed); and it fits the engine's budget (115,000 points).
+    /// the layers' lengths were guessed); and it fits the engine's budget.
     #[test]
     fn a_tube_widening_through_three_levels_of_wings_never_narrows() {
         let e = wings(&[
@@ -1727,7 +1743,7 @@ mod wings {
             ("wing_widen", text("same layer length")),
         ]);
         let pts = clean(&e);
-        assert!(pts.len() > 100_000, "{}", pts.len());
+        assert!(pts.len() > 40_000, "{}", pts.len());
         let mut wall = vec![f64::MAX; 26];
         for p in &pts {
             let k = (p[2] / 8.0) as usize;

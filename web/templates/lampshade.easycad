@@ -482,29 +482,55 @@ g_up     = pick(less(index_of(["linear", "smooth"], wing_in_curve), 0.5), g_tin,
 g_tout   = clamp(pick(w_prof, w_gf - w_Hend + wing_out, w_gf - w_in - wing_hold) / max(wing_out, 0.000001), 0, 1)
 g_down   = greater(wing_out, 0) * pick(less(index_of(["linear", "smooth"], wing_out_curve), 0.5), g_tout, smoothstep(g_tout))
 g_cs     = wings * g_up * (1 - g_down) * less(w_gf, w_Hend + (1 - w_prof) * 2 * pitch)
-# Fading out with "same layer length", the tube widens as the wings shrink so each layer stays as
-# long as the longest (at full wings). A layer's exact length (its turns, partial while they
-# form; the middle and inner walls; less the tube wall they replace) is worked out every two
-# layers up (`y_`), for wing level j, at radii R from the tube's (m = 0) out to well past the
-# widest it can need; the radius that gives the longest layer's length is read off between them
-# (the length grows with R).
+# Fading out with "same layer length", the tube widens along the fade-out's curve, from its own
+# radius to the plain circle as long as a layer at full wings (`w_Rfin`), and the wings shrink as
+# much as keeps every layer that long: the wall flares as smoothly as the curve, the wings end
+# where it's as wide as it gets. A shape with wings is its shape, its wings as much as keeps
+# every layer as long as its widest. Either way: a layer's exact length (its turns, partial while
+# they form; the middle and inner walls; less the wall they replace) is worked out every two
+# layers up (`y_`), for wing level j, at 12 amounts of wings from none up to the most allowed
+# (more of them near none, where the turns form); the amount that gives the length to keep is
+# read off between them (the length grows with the wings).
 w_two    = greater(w_J, 1.5)
 w_three  = greater(w_J, 2.5)
 widen    = (1 - w_prof) * less(abs(index_of(["same diameter", "same layer length"], wing_widen) - 1), 0.5) * greater(wing_out, 0) * greater(w_gf, w_in + wing_hold)
+# A layer at full wings on the tube (`x_`, per wing level), for the length to keep.
+x_j      = series(0, 1, w_J)
+x_B      = w_r0 - w_sig * 2 * w_s * x_j
+x_c      = clamp(wings - x_j, 0, 1)
+x_g      = asin(clamp(w_s / max(0.001, x_B - 0.5 * w_sig * w_s), 0, 1))
+x_am     = w_d / 2 - asin(clamp(w_s / max(0.001, x_B - 1.5 * w_sig * w_s), 0, 1))
+x_phi    = 180 * clamp(x_c * x_am / max(0.000001, x_g), 0, 1)
+x_full   = greater(x_phi, 179.9999)
+x_c2d    = rho - 2 * rho * cos(x_phi)
+x_c2t    = 2 * rho * sin(x_phi)
+x_th1    = w_sig * atan2(x_c2t, x_B - w_sig * (x_c2d + rho))
+x_th2    = w_sig * atan2(x_c2t - rho * sin(x_th1), x_B - w_sig * (x_c2d + rho * cos(x_th1)))
+x_th     = w_sig * atan2(x_c2t - rho * sin(x_th2), x_B - w_sig * (x_c2d + rho * cos(x_th2)))
+x_e2d    = x_c2d + rho * cos(x_th)
+x_e2t    = x_c2t - rho * sin(x_th)
+x_gam    = atan2(x_e2t, x_B - w_sig * x_e2d)
+x_x      = max(x_gam, x_g * smoothstep(clamp((x_phi - 30) / 50, 0, 1)))
+x_live   = 1 - less(x_c, 0.000000001) * greater(x_j, 0.5)
+x_a1     = x_live * (x_full * x_g + (1 - x_full) * x_x)
+x_a2     = x_live * (x_full * max(x_g, x_c * x_am) + (1 - x_full) * x_x)
+x_rM     = sqrt((x_B - w_sig * rho * (1 - cos(x_phi))) ^ 2 + (rho * sin(x_phi)) ^ 2)
+x_rI     = sqrt((x_B - w_sig * x_e2d) ^ 2 + x_e2t ^ 2)
+x_ex     = (2 * rho * (x_phi + abs(x_phi - x_th)) + 2 * (x_a2 - x_a1) * x_rM + 2 * (x_a2 - x_gam) * x_rI - 2 * x_a1 * x_B) / deg
+# The length to keep: a tube's layer at full wings; a shape's widest plain layer.
+w_hold_l = pick(w_prof, 2 * pi * item(bounds(prof_r * less(prof_z, z_w + w_Hend + 0.000001)), 1), 2 * pi * w_r0 + w_n * sum(x_ex))
+w_Rfin   = w_hold_l / (2 * pi)
 w_yn     = ceil(w_Hg / (2 * pitch)) + 1
 w_yz     = series(0, 1, w_yn) * w_Hg / (w_yn - 1)
 w_ym     = 12
-w_yhi    = (2 * w_J + 1) * (w_r0 + 2 * w_J * w_s) + 2 * w_s * w_n
+# At each height: the radius (a shape's own; a widening tube's along the fade-out's curve).
+y_Rp     = pick(w_prof, graph(prof_z, prof_r, z_w + pick(w_rev, w_Ltot - z_w - w_yz, w_yz)), w_r0 + greater(graph(w_gz, widen, w_yz), 0.5) * (w_Rfin - w_r0) * graph(w_gz, g_down, w_yz))
 y_t      = series(0, 1, w_yn * w_ym * w_J)
 y_i      = floor(y_t / (w_ym * w_J))
 y_m      = floor((y_t - y_i * w_ym * w_J) / w_J)
 y_j      = y_t - y_i * w_ym * w_J - y_m * w_J
-# A shape: at each height its own radius (`y_Rp`), and the wings from none up to the most
-# allowed (more samples near none, where the turns form).
-y_Rp     = graph(prof_z, prof_r, z_w + pick(w_rev, w_Ltot - z_w - w_yz, w_yz))
-y_R      = pick(w_prof, item(y_Rp, y_i), w_r0 + (w_yhi - w_r0) * y_m / (w_ym - 1))
-y_B      = y_R - w_sig * 2 * w_s * y_j
-y_c      = clamp(pick(w_prof, wings * (y_m / (w_ym - 1)) ^ 2, item(graph(w_gz, g_cs, w_yz), y_i)) - y_j, 0, 1)
+y_B      = item(y_Rp, y_i) - w_sig * 2 * w_s * y_j
+y_c      = clamp(wings * (y_m / (w_ym - 1)) ^ 2 - y_j, 0, 1)
 y_g      = asin(clamp(w_s / max(0.001, y_B - 0.5 * w_sig * w_s), 0, 1))
 y_am     = w_d / 2 - asin(clamp(w_s / max(0.001, y_B - 1.5 * w_sig * w_s), 0, 1))
 y_phi    = 180 * clamp(y_c * y_am / max(0.000001, y_g), 0, 1)
@@ -525,9 +551,7 @@ y_rM     = sqrt((y_B - w_sig * rho * (1 - cos(y_phi))) ^ 2 + (rho * sin(y_phi)) 
 y_rI     = sqrt((y_B - w_sig * y_e2d) ^ 2 + y_e2t ^ 2)
 y_ex     = (2 * rho * (y_phi + abs(y_phi - y_th)) + 2 * (y_a2 - y_a1) * y_rM + 2 * (y_a2 - y_gam) * y_rI - 2 * y_a1 * y_B) / deg
 y_k      = series(0, w_J, w_yn * w_ym)
-y_len    = 2 * pi * pick(w_prof, item(y_Rp, floor(series(0, 1, w_yn * w_ym) / w_ym)), w_r0 + (w_yhi - w_r0) * mod(series(0, 1, w_yn * w_ym), w_ym) / (w_ym - 1)) + w_n * (item(y_ex, y_k) + w_two * item(y_ex, y_k + 1) + w_three * item(y_ex, y_k + 2))
-# The length to keep: a tube's longest layer (at full wings); a shape's widest plain layer.
-w_hold_l = pick(w_prof, 2 * pi * item(bounds(prof_r * less(prof_z, z_w + w_Hend + 0.000001)), 1), item(bounds(item(y_len, series(0, w_ym, w_yn))), 1))
+y_len    = 2 * pi * item(y_Rp, floor(series(0, 1, w_yn * w_ym) / w_ym)) + w_n * (item(y_ex, y_k) + w_two * item(y_ex, y_k + 1) + w_three * item(y_ex, y_k + 2))
 y_cum    = flatten([[0], accumulate(less(y_len, w_hold_l))])
 y_ii     = series(0, 1, w_yn)
 y_cnt    = item(y_cum, (y_ii + 1) * w_ym) - item(y_cum, y_ii * w_ym)
@@ -535,11 +559,11 @@ y_ms     = clamp(y_cnt - 1, 0, w_ym - 2)
 y_l0     = item(y_len, y_ii * w_ym + y_ms)
 y_l1     = item(y_len, y_ii * w_ym + y_ms + 1)
 y_p      = clamp((y_ms + (w_hold_l - y_l0) / max(0.000001, y_l1 - y_l0)) / (w_ym - 1), 0, 1)
-y_Rw     = w_r0 + greater(graph(w_gz, widen, w_yz), 0.5) * (w_yhi - w_r0) * y_p
-# A shape: the wings that keep its layer as long (at most `wings`), but no more than the fade
-# allows.
-g_c      = pick(w_prof, min(g_cs, graph(w_yz, wings * y_p ^ 2, w_gz)), g_cs)
-g_R      = pick(w_prof, graph(prof_z, prof_r, z_w + w_gf), w_r0 + widen * (graph(w_yz, y_Rw, w_gz) - w_r0))
+# The wings: a shape's, as much as keeps its layer as long (at most `wings`) and no more than
+# the fade allows; a widening tube's, as much as keeps its layer as long; otherwise the fade's.
+g_need   = graph(w_yz, wings * y_p ^ 2, w_gz)
+g_c      = pick(w_prof, min(g_cs, g_need), widen * g_need + (1 - widen) * g_cs)
+g_R      = pick(w_prof, graph(prof_z, prof_r, z_w + w_gf), w_r0 + widen * (w_Rfin - w_r0) * g_down)
 # Where the tube widens its wall leans out (degrees from vertical): overhangs, compensated as the
 # shade's are with "layer height" (the Overhangs settings): layers closer, each still extruded for
 # a whole layer, by the lean's (1 − cos) scaled by (lean / pivot)^steep. (No width compensation:
@@ -721,10 +745,12 @@ e_p      = w_e - e_blk * w_np
 e_k      = floor(e_blk / w_n)
 e_ty     = item(w_ptype, e_p)
 e_ix     = e_ty * w_LJN + (e_k * w_J + item(w_plev, e_p)) * w_n + e_blk - e_k * w_n
-e_n      = item(w_tcount, e_ty)
+# Each arc as many points as the chord tolerance needs on it (one, when there's nothing to
+# draw: a level of wings not started yet); its share of the rise spread over them.
+e_n      = max(1, ceil(abs(item(t_da, e_ix)) / (2 * acos(clamp(1 - tolerance / max(0.001, item(t_rr, e_ix)), 0, 0.9999)))))
 e_rr     = item(t_rr, e_ix)
 e_da     = item(t_da, e_ix)
-e_wt     = item(t_wt, e_ix) * item(w_lyr, e_k)
+e_wt     = item(t_wt, e_ix) * item(w_tcount, e_ty) / e_n * item(w_lyr, e_k)
 e_ang    = series(item(t_a0, e_ix), e_da / e_n, e_n)
 e_z      = series(accumulate(e_n * e_wt) - e_n * e_wt + (z_p0 - pitch), e_wt, e_n)
 
