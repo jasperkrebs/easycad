@@ -7,6 +7,30 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-16 (late): the Thread pendant, from the Thread Lampshade Sketcher (recipe-developer)
+
+**Why:** a friend of the owner's built a Claude artifact, the Thread Lampshade Sketcher: wings
+that run in from the wall and close into rings that thread onto the socket. The owner: make its
+pendant here, printable, reading its settings files natively, E27 (E14 later); the general
+manager's part allowed for this one.
+
+- **`thread_shade`** (`crates/core/src/pendant.rs`): the sketcher's generator ported to Rust,
+  pendant with the wings on the socket; the same points as the sketcher's own for its four files
+  (to 0.00002 mm, the browser's floats; a test keeps samples of two). A project's own step, against
+  "general steps" on purpose: it keeps the files and the shade the same.
+- **Printable:** the first layer on the bed (`bead`), overhang compensation by layer height below
+  the thread (never in it: the grip stays a true helix, tested), line width and flow as settings,
+  the sketcher's checks as warnings plus one: wings stepping more than half a line a layer (its
+  65–70° files do, at 6.9 mm a layer).
+- **The template** `thread-pendant.easycad` (the sketcher's settings by name), in the template list.
+- **The files:** Open or Load settings takes a sketcher `.json` (`web/js/sketcher.js`, tested
+  with its files in `fixtures/sketcher/`, `node --test scripts/sketcher.test.mjs`, in CI); "Save
+  for the sketcher" writes one back.
+- Found by the sweep: a custom pitch rounded the first point a hair under the bed (fixed, tested).
+
+Open: a test print; the E14 barrel; a pace for the wing rings; floor lamp, linear pendant and
+screw part not made ([thread-pendant.md](thread-pendant.md)).
+
 ## 2026-11-16 (night): the wings' outline follows the % smoothly (recipe-developer)
 
 **Why:** the owner's sphere (eight seams, a curve down to none): "always that pointy bit that

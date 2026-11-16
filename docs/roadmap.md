@@ -11,8 +11,10 @@ archives ([October](devlog-2026-10.md), [November 1–14](devlog-2026-11.md)).
 
 - **Recipes** (`.easycad`): a project is a small text file (settings and steps) that reopens
   with its settings window; templates for every EasyGCode project (spiral disc, thread
-  connector, lampshade, bend stool, vessel) plus the salt & pepper shaker and the **Lamp** (shades
-  that screw into each other, [lamp-builder.md](lamp-builder.md)).
+  connector, lampshade, bend stool, vessel) plus the salt & pepper shaker, the **Lamp** (shades
+  that screw into each other, [lamp-builder.md](lamp-builder.md)) and the **Thread pendant** (the
+  Thread Lampshade Sketcher's pendant, printable; it opens the sketcher's settings files,
+  [thread-pendant.md](thread-pendant.md)).
 - **G-code** for the G1 and the P1P with EasyGCode's start/end blocks; the EasyGCode projects
   golden-tested command for command; speeds as volumetric flow; bed, height and heater checks.
 - **The views:** shape, toolpath, both, the **Plan** (a cut through the axis: tap a part, its
@@ -85,6 +87,9 @@ so in the dev log); when something new comes up, add it here, not only in the de
 - **Wings:** check the tips' pace (½ line a layer) in a print; "same layer length" with deep
   outside wings flares hard (outside 200 %: 23 → 144 mm over the fade-out), maybe cap it; tips on
   a narrowing top still overhang a little.
+- **Thread pendant** ([thread-pendant.md](thread-pendant.md)): a test print on E27; measure an E14
+  barrel; maybe a pace for the wing rings (half a line a layer) instead of the max overhang; the
+  floor lamp, linear pendant and screw part if wanted; Plan marks.
 - **The coat hanger** as a template.
 - **Tube with wings** ([tube-with-wings.md](tube-with-wings.md)), in the Lampshade and the Lamp:
   print it (the crease where a wing starts; "same layer length" within 4 %).

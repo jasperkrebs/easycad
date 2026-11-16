@@ -1,0 +1,117 @@
+{
+  "profD": 30,
+  "profClr": 0.5,
+  "capD": 50,
+  "endLen": 30,
+  "wingRot": 0,
+  "hangLen": 700,
+  "linOrient": "hang",
+  "footD": 260,
+  "footH": 15,
+  "footMat": "steel",
+  "lamp": "pendant",
+  "archN": 1,
+  "archH": 15,
+  "archW": 90,
+  "archSoft": 1,
+  "archAng": 270,
+  "minLayer": 1.5,
+  "path": [
+    {
+      "u": 0,
+      "w": 0
+    },
+    {
+      "u": 0.10184151785714286,
+      "w": 0.19673352345083853
+    },
+    {
+      "u": 0.19707961309523808,
+      "w": 0.3656962746710856
+    },
+    {
+      "u": 0.35184151785714285,
+      "w": 0.5606532953098323
+    },
+    {
+      "u": 0.5780319940476191,
+      "w": 0.7599426941849956
+    },
+    {
+      "u": 0.8042224702380952,
+      "w": 0.8985787977503266
+    },
+    {
+      "u": 1,
+      "w": 1
+    }
+  ],
+  "pathLen": 80,
+  "globeOpen": 95,
+  "globeTop": 28,
+  "globeBot": 100,
+  "shapeKind": "",
+  "H": 300,
+  "scale": 1,
+  "diam": 500,
+  "hD": 500,
+  "hZ": 0,
+  "profile": [
+    {
+      "u": 0,
+      "r": 247.5,
+      "sharp": true
+    },
+    {
+      "u": 1,
+      "r": 63.31022832652452
+    }
+  ],
+  "wing": [
+    {
+      "u": 0,
+      "l": 0
+    },
+    {
+      "u": 0.27449845679012347,
+      "l": 0.8346153846153846
+    },
+    {
+      "u": 0.5584490740740741,
+      "l": 1
+    },
+    {
+      "u": 1,
+      "l": 1
+    }
+  ],
+  "N": 5,
+  "wingLen": 250,
+  "maxOver": 70,
+  "tipGap": 0,
+  "neckGap": 0,
+  "wallGap": 5,
+  "pinGap": 5,
+  "mount": "socket",
+  "socket": "E27",
+  "grip": 28.5,
+  "hide": 35,
+  "sockH": 55,
+  "topMode": "crease",
+  "crease": 15,
+  "mode": "follow",
+  "threadD": 80,
+  "zMode": "angle",
+  "cView": "place",
+  "floor": true,
+  "Hc": 25,
+  "spokes": 1,
+  "eShade": 1,
+  "sockD": 40,
+  "eSock": 1,
+  "sockP": 2.5,
+  "bulb": "A60",
+  "section": false,
+  "res": "draft",
+  "LH": 2.5
+}
