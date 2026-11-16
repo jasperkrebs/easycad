@@ -8,6 +8,7 @@ use crate::eval::Ctx;
 use crate::field::Field;
 use crate::geom::P3;
 use crate::legs;
+use crate::pendant;
 use crate::rings::{self, Link};
 use crate::scatter;
 use crate::toolpath::{EventKind, MAX_PATH_POINTS, Temperatures};
@@ -222,4 +223,125 @@ pub(super) fn speed_override(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 
 pub(super) fn extrusion_override(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     event(ctx, a, EventKind::ExtrusionOverride(a.num(1)?), a.flag(2)?)
+}
+
+/// Handles of a curve over 0..1: `[u, value]` or `[u, value, corner]` lists.
+fn handles(a: &Args, i: usize, what: &str) -> Result<Vec<pendant::Handle>, String> {
+    a.items(i)?
+        .iter()
+        .map(|v| {
+            let Value::List(l) = v else {
+                return Err(format!(
+                    "`{what}`'s points must be [where 0..1, value] lists"
+                ));
+            };
+            let n = |k: usize| match l.items.get(k) {
+                Some(Value::Number(x)) => Some(*x),
+                Some(Value::Bool(b)) => Some(f64::from(u8::from(*b))),
+                _ => None,
+            };
+            match (n(0), n(1)) {
+                (Some(u), Some(v)) => Ok(pendant::Handle {
+                    u,
+                    v,
+                    sharp: n(2).is_some_and(|c| c != 0.0),
+                }),
+                _ => Err(format!(
+                    "`{what}`'s points must be [where 0..1, value] lists"
+                )),
+            }
+        })
+        .collect()
+}
+
+pub(super) fn thread_shade(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let choice = |i: usize, name: &str, options: [&str; 2]| -> Result<bool, String> {
+        match a.text(i) {
+            Err(_) => Ok(true),
+            Ok(t) if t == options[0] => Ok(true),
+            Ok(t) if t == options[1] => Ok(false),
+            Ok(t) => Err(format!(
+                "`{name}` is \"{}\" or \"{}\", got \"{t}\"",
+                options[0], options[1]
+            )),
+        }
+    };
+    let s = pendant::Settings {
+        profile: handles(a, 0, "profile")?,
+        height: a.num(1)?,
+        wing: handles(a, 2, "wing")?,
+        path: handles(a, 3, "path")?,
+        path_len: a.num(4)?,
+        entries: a.count(5, 1, 8)?,
+        wing_zone: a.num(6)?,
+        max_overhang: a.num(7)?,
+        tip_gap: a.num(8)?,
+        neck_gap: a.num(9)?,
+        wall_gap: a.num(10)?,
+        pin_gap: a.num(11)?,
+        rotation: a.num(12)?,
+        socket_d: a.num(13)?,
+        engagement: a.num(14)?,
+        grip: a.num(15)?,
+        hide: a.num(16)?,
+        socket_h: a.num(17)?,
+        crease_top: choice(18, "top", ["crease", "full"])?,
+        crease: a.num(19)?,
+        z_by_angle: choice(20, "z_by", ["angle", "length"])?,
+        line: a.num(21)?,
+        layer: a.num(22)?,
+        step: a.num(23)?,
+        strength: a.num(24)?,
+        steep: a.num(25)?,
+        pivot: a.num(26)?,
+        scale: a.num(27)?,
+    };
+    let output = a.text(28).unwrap_or("path");
+    let (points, info) = pendant::thread_shade(&s)?;
+    match output {
+        "path" => {
+            ctx.spend(points.len())?;
+            Ok(Value::Curve(Rc::new(crate::curve::Curve::new(
+                points, false,
+            ))))
+        }
+        "wall" => {
+            ctx.spend(info.wall.len())?;
+            let pts = info
+                .wall
+                .iter()
+                .map(|&(r, z)| [r, 0.0, z - s.layer])
+                .collect();
+            Ok(Value::Curve(Rc::new(crate::curve::Curve::new(pts, false))))
+        }
+        "info" => {
+            let f = |b: bool| f64::from(u8::from(b));
+            let nums = [
+                info.top - s.layer,
+                info.layers as f64,
+                f(info.clamped),
+                f(info.too_many),
+                f(info.limited),
+                f(info.path_limited),
+                info.max_lean,
+                info.grip_bottom - s.layer,
+                info.grip_top - s.layer,
+                info.grip_r,
+                f(info.grip_full),
+                info.socket_shows,
+                info.socket_room,
+                info.top_room,
+                f(info.zone_short),
+                info.length,
+                info.max_d,
+                info.bottom_d,
+                info.min_rise,
+                info.max_wing_step,
+            ];
+            Value::list(nums.iter().map(|&x| Value::Number(x)).collect())
+        }
+        other => Err(format!(
+            "`output` is \"path\", \"wall\" or \"info\", got \"{other}\""
+        )),
+    }
 }

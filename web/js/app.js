@@ -15,10 +15,12 @@ import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch } from './parts.js';
 import { beadExtremes, renderBeads } from './beads.js';
+import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
 
 const TEMPLATES = [
   { id: 'lampshade', name: 'Lampshade' },
   { id: 'lamp', name: 'Lamp' },
+  { id: 'thread-pendant', name: 'Thread pendant' },
   { id: 'vessel', name: 'Vessel' },
   { id: 'salt-shaker', name: 'Salt & pepper shaker' },
   { id: 'bend-stool', name: 'Bend stool' },
@@ -127,6 +129,7 @@ async function run(quality, how = {}) {
       onRemovePart: (name) => removePart(name),
     });
   }
+  $('saveSketcher').hidden = result.project !== 'Thread pendant';
   viewport.show(result, { refit: refitNext });
   refitNext = false;
   syncScrub();
@@ -1265,6 +1268,23 @@ async function readPicked(input) {
   return file.text();
 }
 
+/**
+ * Opens a Thread Lampshade Sketcher settings file: a new Thread pendant with its values.
+ * @param {any} data the parsed file
+ * @param {string} name the file's name
+ */
+async function openSketcher(data, name) {
+  const { values, notes } = sketcherToValues(data);
+  await openTemplate(SKETCHER_TEMPLATE);
+  Object.assign(state.values, values);
+  state.unsaved = true;
+  state.layout = '';
+  await run('final');
+  setSaveName(name.replace(/\.json$/i, ''));
+  autosave();
+  note(['Opened the sketcher\'s settings as a Thread pendant.', ...notes].join(' '));
+}
+
 function wire() {
   for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => selectTab(t));
 
@@ -1488,7 +1508,10 @@ function wire() {
     try {
       const picked = /** @type {HTMLInputElement} */ (e.target).files?.[0];
       const text = await readPicked(e.target);
-      if (text !== null) {
+      const sketch = text !== null && /^\s*\{/.test(text) ? JSON.parse(text) : null;
+      if (sketch && isSketcherSettings(sketch)) {
+        await openSketcher(sketch, picked?.name || 'thread-pendant');
+      } else if (text !== null) {
         const { text: recipe, colors } = withoutColors(withoutFileNote(text));
         await openSource(recipe);
         restoreColors(colors);
@@ -1534,12 +1557,20 @@ function wire() {
     };
     download(`${saveName()}-settings.json`, JSON.stringify(data, null, 2), 'application/json');
   });
+  $('saveSketcher').addEventListener('click', async () => {
+    await engine.idle();
+    download(`${saveName()}.json`, JSON.stringify(valuesToSketcher(state.values), null, 2), 'application/json');
+  });
   $('loadSettings').addEventListener('click', () => $('settingsFile').click());
   $('settingsFile').addEventListener('change', async (e) => {
     try {
       const text = await readPicked(e.target);
       if (text === null) return;
       const data = JSON.parse(text);
+      if (isSketcherSettings(data)) {
+        await openSketcher(data, 'thread-pendant');
+        return;
+      }
       if (!data || typeof data.values !== 'object') throw new Error('this file has no EasyCAD settings in it.');
       // The printer first: naming it in the recipe runs it again, from the values in the text.
       if (typeof data.printer === 'string' && data.printer in PRINTERS) await choosePrinter(/** @type {any} */ (data.printer));

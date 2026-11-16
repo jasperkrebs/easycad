@@ -19,7 +19,8 @@ app, the engine, the language, the build, how the pieces fit.
 |---|---|---|
 | Templates and project recipes | `web/templates/*.easycad`, `fixtures/recipes/`, the owner's `.easycad` files | recipe developer |
 | Recipe tests | `crates/core/src/lamp_tests.rs`, the template tests in `blocks_tests.rs` and `toolbox_tests.rs` | recipe developer |
-| Recipe docs | `docs/lamp-builder.md` (the shade and its settings), `docs/easygcode-coverage.md`, `docs/creating-shapes.md` | recipe developer |
+| Recipe docs | `docs/lamp-builder.md` (the shade and its settings), `docs/easygcode-coverage.md`, `docs/creating-shapes.md`, `docs/tube-with-wings.md`, `docs/thread-pendant.md` | recipe developer |
+| The Thread pendant (16 Nov, built by the recipe developer with the owner's leave) | `crates/core/src/pendant.rs`, `pendant_tests.rs`, `web/js/sketcher.js`, `scripts/sketcher.test.mjs`, `fixtures/sketcher/` | recipe developer (the engine and app around them stay the general manager's) |
 | Tuning a print (overhangs, flows, layer heights) and test prints | settings, notes in the devlog | recipe developer |
 | The engine | `crates/` (steps, `vase_revolve`, toolpaths, G-code, STEP/STL, the checks) | general manager |
 | The language | `crates/lang/`, `docs/definition-language.md`, `web/js/language-guide.js` | general manager |

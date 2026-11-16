@@ -21,6 +21,7 @@ pub mod gcode;
 pub mod geom;
 pub mod legs;
 pub mod nodes;
+pub mod pendant;
 pub mod rings;
 pub mod scatter;
 pub mod spiral;
@@ -45,5 +46,7 @@ mod eval_tests;
 mod golden_tests;
 #[cfg(test)]
 mod lamp_tests;
+#[cfg(test)]
+mod pendant_tests;
 #[cfg(test)]
 mod toolbox_tests;

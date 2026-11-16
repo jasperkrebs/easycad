@@ -136,7 +136,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: node --test scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs
+      - run: node --test scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs scripts/sketcher.test.mjs
       # The smoke test, for pull requests that change the app (or the test itself).
       - name: Does this pull request change the app?
         id: app
