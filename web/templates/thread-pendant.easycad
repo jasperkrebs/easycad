@@ -14,7 +14,7 @@ param grip         = 25 mm   in 5..60 step 0.5      "Grip height"
 param hide         = 35 mm   in 0..150 step 2.5     "Grip depth below the top (hides the socket)"
 param top          = "crease" of ["crease", "full"] "Above the grip"
 param crease       = 5 mm    in 1..30 step 0.5      "Crease depth above the grip"  when top = "crease"
-param z_by         = "angle" of ["angle", "length"] "Heights by (angle: every ring a true helix)"
+param z_by         = "flat" of ["flat", "angle", "length"] "Layers (flat: only the thread a helix; angle: all of it, as the sketcher)"
 
 group "Shade"
 param height       = 200 mm  in 80..3000 step 2.5   "Height"
@@ -78,7 +78,7 @@ checked = shade_line
   |> require(1 - item(info, 4), "The wing curve grows faster than the max overhang allows, so it was slowed down", warn: true)
   |> require(less(item(info, 19), line / 2 + 0.01), "The wings step in or out more than half a line a layer in places, so their new rings hang off the ones below: lower the max overhang", warn: true)
   |> require(comp + less(item(info, 6), max_overhang + 0.5), "The outer wall leans more than the max overhang: turn on the overhang compensation", warn: true)
-  |> require(less(abs(index_of(["angle", "length"], z_by)), 0.5), "Heights by length: the grip isn't a true helix (about ±0.2–0.4 mm off). Use angle before screwing it onto a socket", warn: true)
+  |> require(1 - less(abs(index_of(["flat", "angle", "length"], z_by) - 2), 0.5), "Layers by length: the grip isn't a true helix (about ±0.2–0.4 mm off). Use flat or angle before screwing it onto a socket", warn: true)
 
 # ---- Printed as it hangs, the opening on the bed; the first layer rises off it, each move
 # extruded for the gap under it (the bead thinner where it's lower).

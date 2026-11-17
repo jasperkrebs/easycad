@@ -25,15 +25,28 @@ Printed as it hangs: the bottom opening on the bed, the socket going in at the t
 - **The path to the socket:** below the grip the wings lean in from the wall to the socket's
   barrel over the path height, along your path curve, never faster than the max overhang.
 - **The grip:** the inner rings, all the entries' together, sit on the socket's barrel (its
-  diameter less the engagement, plus half a line). Every point's height comes from its angle round
-  the axis (**heights by angle**), so every ring is a true helix one pitch a turn and the slots
-  take up the difference: the shade screws onto the socket. (Heights by length, as a slicer does
-  it, drift: it warns.)
+  diameter less the engagement, plus half a line), as a true helix one pitch a turn: the shade
+  screws onto the socket.
 - **Above the grip:** only a crease at each entry (the lines on the outside run on to the top), or
   full wings leaning back out.
 
-Within a layer the line goes down a little where a wing runs back round (its height is its
-angle's): every point is still exactly a layer above the one under it.
+**Layers** (`z_by`, since 17 Nov):
+- **flat** (the default): every layer is level, except the thread. The inner rings in the grip
+  climb a pitch a turn (a pitch below the layer at the seam, level with it a turn on), easing in
+  over the 4 layers below the grip and out over the 4 above (so the layers next to it still sit
+  on it); the half turns onto and off them climb with their ends. Each layer steps up to the next
+  along its last two line widths, at the seam (between two entries).
+- **angle**: the sketcher's: every point at the height its angle round the axis gives, so every
+  ring is a helix and the slots take up the difference (within a layer the line dips a little
+  where a wing runs back round).
+- **length**: rising by the length so far, as a slicer's vase mode: the thread drifts (it warns).
+
+A sketcher file's "angle" opens as flat: what it was for, a true-helix thread, is kept.
+
+**The slots land on the rings:** the sketcher draws each slot straight in its own frame, so its
+ends land a hair outside the wall and the rings (0.2–0.4 mm, most near the socket), a little
+zigzag where each ring starts (the owner's photos, 17 Nov). Here they land exactly, so the
+sketcher's points are within half a millimetre of these (tested), not the same.
 
 ## How it's built
 
@@ -43,7 +56,7 @@ with `toolpath` and `bead`, and says what's wrong from the numbers it returns (`
 A step for one product goes against "general steps, not per-project code" on purpose (the
 owner's call): it keeps the sketcher's files and this template the same shade, which a recipe
 rebuilt from general steps couldn't promise. A test checks it against points the sketcher itself
-drew for two of its files.
+drew for two of its files (within half a millimetre: the slots' ends, above).
 
 The translator (`web/js/sketcher.js`, tested with the sketcher's own files in
 `fixtures/sketcher/`):
@@ -56,7 +69,7 @@ The translator (`web/js/sketcher.js`, tested with the sketcher's own files in
 | `tipGap`, `neckGap`, `wallGap`, `pinGap`, `wingRot` | Gap at the wing tips, Entry slot width, Air gaps, Wing rotation |
 | `path` (u, w), `pathLen` | Path, Path height |
 | `socket`, `sockD`, `sockP` (= `LH`), `sockH` | Socket (E27, E14, or custom with the three) |
-| `eSock`, `grip`, `hide`, `topMode`, `crease`, `zMode`, `res` | Thread engagement, Grip height, Grip depth below the top, Above the grip, Crease depth, Heights by, Resolution |
+| `eSock`, `grip`, `hide`, `topMode`, `crease`, `zMode`, `res` | Thread engagement, Grip height, Grip depth below the top, Above the grip, Crease depth, Layers ("angle" opens as flat), Resolution |
 
 Not made here (the file still opens, and says so): the **floor lamp** and the **linear
 pendant**, the **separate screw part** (`mount: coupler`). The view-only settings (bulb, section
@@ -67,12 +80,12 @@ cut, the globe helper) aren't needed: the shape is its points.
 What the sketcher leaves out, added here:
 
 - **The first layer sits on the bed:** the sketcher's first layer rises off the bed by a whole
-  layer as it goes round; here the nozzle starts on the bed and each move is extruded for the gap
-  under it (`bead`), as a vase's first turn.
+  layer as it goes round; here it's flat on the bed (by angle or length: it starts on the bed and
+  each move is extruded for the gap under it, `bead`, as a vase's first turn).
 - **Overhang compensation by layer height**, as the Lampshade's (strength, steep curve, pivot):
   layers come closer where the wall leans, each still extruded for a whole layer. Never inside
   the thread: from a layer below the grip to the top every layer is exactly a pitch, so the grip
-  stays a true helix (tested). A sphere's bottom, leaning 70°, gets layers down to about a third
+  stays a true helix (tested), and the 4 layers either side where it eases in and out. A sphere's bottom, leaning 70°, gets layers down to about a third
   of the pitch.
 - **Line width and flow** are settings (the sketcher's bead is 5 mm), and the G-code comes from
   the printer profiles like every other project.

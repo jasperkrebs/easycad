@@ -63,7 +63,8 @@ export function sketcherToValues(file) {
     hide: num(d.hide, 35),
     top: d.topMode === 'full' ? 'full' : 'crease',
     crease: num(d.crease, 5),
-    z_by: d.zMode === 'length' ? 'length' : 'angle',
+    // The sketcher's "angle" is there for a true-helix thread: flat layers keep that, the rest flat.
+    z_by: d.zMode === 'length' ? 'length' : 'flat',
     height: num(d.H, 200),
     profile,
     entries: Math.round(num(d.N, 2)),

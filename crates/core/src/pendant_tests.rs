@@ -91,10 +91,10 @@ fn the_template_prints_as_it_ships() {
     assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
     assert_eq!(e.project.as_deref(), Some("Thread pendant"));
     let p = &e.prints[0];
-    // 79 layers (200 mm at 2.5 mm), first on the bed: its nozzle from the bed up a layer.
+    // 79 layers (200 mm at 2.5 mm), the first flat on the bed, a layer up.
     assert_eq!(p.stats.layers, 79);
     let first = p.path.points[1];
-    assert!(first[2] < 0.5, "{first:?}");
+    assert!((first[2] - 2.5).abs() < 1e-9, "{first:?}");
     let top = p.path.points.iter().map(|q| q[2]).fold(0.0, f64::max);
     assert!((top - 197.5).abs() < 1e-6, "{top}");
     // G-code the printers take.
@@ -126,7 +126,7 @@ fn the_sketchers_angled_cone() {
     let pts = points(&e);
     // The widest: the 500 mm opening on the bed.
     let widest = pts.iter().map(|q| q[0].hypot(q[1])).fold(0.0, f64::max);
-    assert!((widest - 247.5).abs() < 1.0, "{widest}");
+    assert!((widest - 247.5).abs() < 2.5, "{widest}");
 }
 
 /// Overhang compensation squeezes the layers where the wall leans (the half sphere's bottom

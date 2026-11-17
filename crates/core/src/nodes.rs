@@ -1237,7 +1237,7 @@ pub static NODES: &[Node] = &[
                 "z_by",
                 "Text",
                 0.0,
-                "each point's height from its angle round the axis (\"angle\": every ring a true helix) or from the length so far (\"length\")",
+                "how the layers rise: \"flat\" (the default: flat layers, only the thread a helix, easing in and out over 4 layers, each layer stepping up at the seam), \"angle\" (every point at its angle's height, every ring a true helix: the sketcher's) or \"length\" (by the length so far)",
             ),
             opt("line", "Length", 5.0, "line width"),
             req("layer", "Length", "layer height: the thread's pitch"),
@@ -1264,7 +1264,7 @@ pub static NODES: &[Node] = &[
             ),
         ],
         output: "Curve | List",
-        doc: "A pendant shade whose wings thread onto the lampholder, as one line: the Thread Lampshade Sketcher's pendant, point for point, with overhang compensation by layer height below the thread. The outer wall follows the profile; at each entry the line turns in (a crease at first, deepening by at most the overhang a layer), then runs out as two wings, out along a middle ring and back along an inner ring; in the grip the inner rings sit on the socket's barrel. Every point's height comes from its angle round the axis, so every ring is a true helix one `layer` a turn. Print with `toolpath(…, layer: layer)` (and `bead` for the first layer on the bed). Heights are from the bed: the first layer's nozzle rises from 0 to a layer.",
+        doc: "A pendant shade whose wings thread onto the lampholder, as one line: the Thread Lampshade Sketcher's pendant, point for point, with overhang compensation by layer height below the thread. The outer wall follows the profile; at each entry the line turns in (a crease at first, deepening by at most the overhang a layer), then runs out as two wings, out along a middle ring and back along an inner ring; in the grip the inner rings sit on the socket's barrel. The layers are flat except the thread: the inner rings in the grip are a true helix one `layer` a turn, easing in and out over 4 layers (with `z_by: \"angle\"`, every point's height comes from its angle, every ring a helix: the sketcher's). Print with `toolpath(…, layer: layer)` (and `bead` for the first layer on the bed). Heights are from the bed: the first layer's nozzle rises from 0 to a layer.",
         run: Run::Op(printing::thread_shade),
     },
     Node {
