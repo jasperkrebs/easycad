@@ -2,8 +2,8 @@
  *
  * Network-first for everything on this site, revalidating past the HTTP cache, so a plain
  * refresh always gets the latest deploy when online. The cache is only the offline fallback.
- * One fixed cache name: nothing to bump per release. Edit ASSETS only when adding or removing
- * a shipped file.
+ * One fixed cache name: nothing to bump per release. ASSETS lists every shipped file the app
+ * runs on (scripts/settings.test.mjs checks it against web/), so it works offline once opened.
  */
 const CACHE = 'easycad';
 const ASSETS = [
@@ -21,10 +21,12 @@ const ASSETS = [
   './js/engine.js',
   './js/engine.worker.js',
   './js/language-guide.js',
+  './js/parts.js',
   './js/print.js',
   './js/recipe.js',
   './js/requests.js',
   './js/settings.js',
+  './js/sketcher.js',
   './js/templates.js',
   './js/viewport.js',
   './templates/spiral-disc.easycad',
@@ -33,6 +35,8 @@ const ASSETS = [
   './templates/lampshade.easycad',
   './templates/vessel.easycad',
   './templates/salt-shaker.easycad',
+  './templates/lamp.easycad',
+  './templates/thread-pendant.easycad',
   './pkg/easycad_wasm.js',
   './pkg/easycad_wasm_bg.wasm',
   './vendor/anthropic/anthropic-sdk.min.mjs',
@@ -46,6 +50,7 @@ const ASSETS = [
   './vendor/three/addons/lines/LineSegmentsGeometry.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
 ];
 
 self.addEventListener('install', (e) => {

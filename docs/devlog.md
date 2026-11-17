@@ -7,6 +7,18 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-17: works offline again, every file (general-manager)
+
+**Why:** the owner asked whether the app works without WiFi. It does (the engine runs in the
+browser; only the Chat tab needs the internet), but the offline cache's list in `web/sw.js` was
+written by hand and had fallen behind: the Plan's code (`js/parts.js`), the sketcher, and the
+Lamp and Thread pendant templates were missing, so offline they worked only if used online first.
+
+**What landed:** the missing files are on the list, and a test (`settings.test.mjs`) fails when a
+shipped file (code, template, icon, vendored library) isn't, naming it. Checked in Chromium:
+opened once online, then offline: reloads, the engine starts, the Lamp and Thread pendant open.
+A new template or script must be added to `web/sw.js` (the test says which).
+
 ## 2026-11-16 (late): the Thread pendant, from the Thread Lampshade Sketcher (recipe-developer)
 
 **Why:** a friend of the owner's built a Claude artifact, the Thread Lampshade Sketcher: wings

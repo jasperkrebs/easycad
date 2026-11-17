@@ -423,3 +423,24 @@ test('taken apart: furthest out first, each turned off its thread then moved on 
   assert.deepEqual(assemblyMotion(steps, 0.75).get('cone'), { angle: 7200, dz: 90 });
   assert.equal(all.has('main'), false, 'on the socket it stays');
 });
+
+test('every file the app runs on is saved for offline use (web/sw.js)', async () => {
+  const { readdirSync, statSync, readFileSync: read } = await import('node:fs');
+  const web = new URL('../web/', import.meta.url);
+  const walk = (dir) =>
+    readdirSync(new URL(dir, web)).flatMap((name) => {
+      const rel = `${dir}${name}`;
+      return statSync(new URL(rel, web)).isDirectory() ? walk(`${rel}/`) : [rel];
+    });
+  // What the app loads: its code, templates, icons and the vendored libraries' code (not their
+  // licence and readme files, nor web/pkg, which is built and listed by name).
+  const shipped = ['js/', 'templates/', 'icons/', 'vendor/']
+    .flatMap(walk)
+    .filter((f) => /\.(js|mjs|easycad|png)$/.test(f));
+  const cached = new Set([...read(new URL('sw.js', web), 'utf8').matchAll(/'\.\/([^']+)'/g)].map((m) => m[1]));
+  const missing = shipped.filter((f) => !cached.has(f));
+  assert.deepEqual(missing, [], `add these to ASSETS in web/sw.js: ${missing.join(', ')}`);
+  for (const f of ['index.html', 'styles.css', 'manifest.webmanifest', 'pkg/easycad_wasm.js', 'pkg/easycad_wasm_bg.wasm']) {
+    assert.ok(cached.has(f), f);
+  }
+});
