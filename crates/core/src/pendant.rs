@@ -63,8 +63,10 @@ pub struct Settings {
     /// Above the grip: only a crease of this depth (true, `topMode` "crease") or full wings.
     pub crease_top: bool,
     pub crease: f64,
-    /// Heights from each point's angle (true helix, `zMode` "angle") or from the length so far.
-    pub z_by_angle: bool,
+    /// How the layers rise: flat, with only the thread a helix (the default); every point at its
+    /// angle's height, every ring a helix (the sketcher's `zMode` "angle"); or by the length so
+    /// far (its "length", a slicer's vase mode).
+    pub layers: Layers,
     /// Line width (the sketcher's 5 mm bead) and layer height (the thread's pitch, `LH`).
     pub line: f64,
     pub layer: f64,
@@ -75,6 +77,17 @@ pub struct Settings {
     pub steep: f64,
     pub pivot: f64,
 }
+
+/// How the layers rise (see [`Settings::layers`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layers {
+    Flat,
+    Angle,
+    Length,
+}
+
+/// Layers over which the thread eases in below the grip and out above it (all exactly a pitch).
+const FADE: f64 = 4.0;
 
 /// What came out, besides the line.
 #[derive(Clone, Debug, Default)]
@@ -250,16 +263,24 @@ struct Rev {
     xs: Vec<f64>,
     ys: Vec<f64>,
     za: Vec<f64>,
+    /// The thread: points whose height follows the helix in flat layers.
+    helix: Vec<bool>,
     step: f64,
+    /// Flat layers: the turns between the rings take their heights from their ends.
+    flat: bool,
+    on_thread: bool,
 }
 
 impl Rev {
-    fn new(step: f64) -> Rev {
+    fn new(step: f64, flat: bool) -> Rev {
         Rev {
             xs: Vec::new(),
             ys: Vec::new(),
             za: Vec::new(),
+            helix: Vec::new(),
             step,
+            flat,
+            on_thread: false,
         }
     }
 
@@ -268,15 +289,17 @@ impl Rev {
             && (x - px).hypot(y - py) < 0.05
         {
             if !a.is_nan()
-                && let Some(last) = self.za.last_mut()
+                && let (Some(last), Some(h)) = (self.za.last_mut(), self.helix.last_mut())
             {
                 *last = a;
+                *h = self.on_thread;
             }
             return;
         }
         self.xs.push(x);
         self.ys.push(y);
         self.za.push(a);
+        self.helix.push(self.on_thread);
     }
 
     fn arc(&mut self, r: f64, a0: f64, a1: f64) {
@@ -300,10 +323,24 @@ fn ang(al: f64, lr: f64, lt: f64) -> f64 {
     al + lt.atan2(lr)
 }
 
+/// Along an entry's own axis, how far out a point `t` to the side sits on radius `r`: the
+/// slots are drawn straight in their own frame, so their ends land on the wall and the rings
+/// exactly (the sketcher's land a hair outside: a little step where each ring starts, most
+/// near the socket).
+fn on_radius(r: f64, t: f64) -> f64 {
+    (r * r - t * t).max(0.0).sqrt()
+}
+
 /// The slot in from the wall: a quarter turn of radius `q` off the outer wall (radius `ro`),
 /// straight in at `-dn`, then (with `qb`) a quarter turn onto radius `r1` going clockwise.
 fn neck_pts(ro: f64, r1: f64, dn: f64, step: f64, q: f64, qb: f64) -> Vec<(f64, f64)> {
     let mut pts = Vec::new();
+    let ro = on_radius(ro, dn + q);
+    let r1 = if qb > 0.05 {
+        on_radius(r1, dn + qb)
+    } else {
+        on_radius(r1, dn)
+    };
     for j in 0..=4 {
         let s = j as f64 / 4.0 * PI / 2.0;
         pts.push((ro - q + q * s.cos(), -dn - q + q * s.sin()));
@@ -330,7 +367,9 @@ fn neck_pts(ro: f64, r1: f64, dn: f64, step: f64, q: f64, qb: f64) -> Vec<(f64, 
 fn feat_spoke(rv: &mut Rev, ro: f64, al: f64, d: f64, dn: f64, q: f64, cur: f64) -> f64 {
     let step = rv.step;
     let mut pts: Vec<(f64, f64)> = Vec::new();
+    let r_wall = ro;
     if d >= dn + q + 0.05 {
+        let ro = on_radius(r_wall, dn + q);
         for j in 0..=4 {
             let s = j as f64 / 4.0 * PI / 2.0;
             pts.push((ro - q + q * s.cos(), -dn - q + q * s.sin()));
@@ -356,13 +395,13 @@ fn feat_spoke(rv: &mut Rev, ro: f64, al: f64, d: f64, dn: f64, q: f64, cur: f64)
         let w = dn + q;
         for j in 0..=12 {
             let t = -w + 2.0 * w * j as f64 / 12.0;
-            pts.push((ro - d * 0.5 * (1.0 + (PI * t / w).cos()), t));
+            pts.push((on_radius(ro, t) - d * 0.5 * (1.0 + (PI * t / w).cos()), t));
         }
     }
     let Some(&(r0, t0)) = pts.first() else {
         return cur;
     };
-    rv.arc(ro, cur, ang(al, r0, t0));
+    rv.arc(r_wall, cur, ang(al, r0, t0));
     for &(r, t) in &pts {
         rv.loc(al, r, t, true);
     }
@@ -399,17 +438,34 @@ fn feat_wings(
         rv.loc(al, r, t, true);
     }
     let (ba, bb) = (al - l / rt, al + l / rt);
-    rv.arc(rm, ang(al, rm, -dn - qb), ba);
+    let a_in = nin.last().map_or(al, |&(r, t)| ang(al, r, t));
+    let a_out = nout.first().map_or(al, |&(r, t)| ang(al, r, t));
+    // In flat layers the turns between the rings take their heights from their ends (the
+    // middle ring flat, the inner one on the thread).
+    let turns_anchored = !rv.flat;
+    rv.arc(rm, a_in, ba);
     for j in 0..=8 {
         let s = j as f64 / 8.0 * PI;
-        rv.loc(ba, rt + rho2 * s.cos(), -rho2 * s.sin(), true);
+        rv.loc(
+            ba,
+            rt + rho2 * s.cos(),
+            -rho2 * s.sin(),
+            turns_anchored || j == 0,
+        );
     }
+    rv.on_thread = true;
     rv.arc(ri, ba, bb);
+    rv.on_thread = false;
     for j in 0..=8 {
         let s = j as f64 / 8.0 * PI;
-        rv.loc(bb, rt - rho2 * s.cos(), rho2 * s.sin(), true);
+        rv.loc(
+            bb,
+            rt - rho2 * s.cos(),
+            rho2 * s.sin(),
+            turns_anchored || j == 8,
+        );
     }
-    rv.arc(rm, bb, ang(al, rm, dn + qb));
+    rv.arc(rm, bb, a_out);
     for &(r, t) in &nout {
         rv.loc(al, r, t, true);
     }
@@ -418,13 +474,13 @@ fn feat_wings(
 
 /// The layer rises: a pitch each, less where the wall leans (layer-height compensation, as the
 /// Lampshade's: pitch × (1 − strength × (lean / pivot)^steep × (1 − cos lean))), never inside the
-/// thread: from a layer below the grip to the top every layer is exactly a pitch. Returns each
+/// thread: from a layer below where it eases in to the top every layer is exactly a pitch. Returns each
 /// layer's start height, and its rise.
 fn layer_plan(s: &Settings, radius: &Radius) -> Vec<(f64, f64)> {
     let lh = s.layer;
     let top_target = (s.height / lh).round().max(3.0) * lh;
     // The exact part: from the grip's bottom (less a layer) up, measured from the top.
-    let exact_from = top_target - (s.hide.max(0.0) + s.grip.max(0.0) + 2.0 * lh);
+    let exact_from = top_target - (s.hide.max(0.0) + s.grip.max(0.0) + (FADE + 2.0) * lh);
     let mut out = Vec::new();
     let mut z = 0.0;
     let comp = s.strength > 0.0;
@@ -489,8 +545,11 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
     // wings on the socket.
     let mut checks: Vec<(f64, f64, f64, bool)> = Vec::new();
     let mut prev_ro: Option<(f64, f64)> = None;
-    for &(z0, rise) in &plan {
+    for (k, &(z0, rise)) in plan.iter().enumerate() {
         let zc = z0 + lh;
+        let rise_next = plan.get(k + 1).map_or(0.0, |p| p.1);
+        // The thread: a helix in the grip, eased in below it and out above it.
+        let thread = (1.0 - (z_gb - zc).max(zc - z_gt).max(0.0) / (FADE * lh)).clamp(0.0, 1.0);
         let grow = rise * tan_over;
         info.min_rise = info.min_rise.min(rise);
         let mut ro = radius.at(zc);
@@ -535,7 +594,7 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
                 info.path_limited = true;
             }
         }
-        let mut rv = Rev::new(step);
+        let mut rv = Rev::new(step, s.layers == Layers::Flat);
         // 0: nothing, 1: a crease, 2: wings.
         let mut kind = 0;
         let (mut d, mut l) = (0.0, 0.0);
@@ -617,10 +676,15 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         let base = z0 + lh / 2.0;
         info.length += finish(
             &rv,
-            base,
-            rise,
-            th_s,
-            s.z_by_angle,
+            Heights {
+                base,
+                rise,
+                rise_next,
+                th_s,
+                thread,
+                ramp: 2.0 * bw,
+                layers: s.layers,
+            },
             !out.is_empty(),
             &mut out,
             |x, y, z| {
@@ -679,15 +743,31 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
     Ok((out, info))
 }
 
-/// A turn's points into the line, each at the height its angle (or the length so far) gives;
-/// returns the turn's length.
-#[allow(clippy::too_many_arguments)]
-fn finish(
-    rv: &Rev,
+/// How a turn's points get their heights.
+struct Heights {
+    /// The turn's start (the sketcher's bead centre), its rise and the next turn's.
     base: f64,
     rise: f64,
+    rise_next: f64,
+    /// Where each turn starts (the seam), and how much of a helix the thread is (0..1).
     th_s: f64,
-    by_angle: bool,
+    thread: f64,
+    /// Flat layers: the step up to the next layer, along the end of the turn.
+    ramp: f64,
+    layers: Layers,
+}
+
+/// A turn's points into the line, each at its height; returns the turn's length.
+///
+/// - Flat: every point at the layer's top, except the thread (the inner ring in and near the
+///   grip), a helix one pitch a turn: a pitch below the top at the seam, rising to it a turn on;
+///   the turns into and out of it in between, by length. The last `ramp` mm step up to the next
+///   layer.
+/// - By angle: every point at the height its angle round the axis gives (the sketcher's).
+/// - By length: rising by the length so far.
+fn finish(
+    rv: &Rev,
+    h: Heights,
     skip_first: bool,
     out: &mut Vec<P3>,
     adj: impl Fn(f64, f64, f64) -> (f64, f64),
@@ -698,27 +778,40 @@ fn finish(
         cum[j] = cum[j - 1] + (rv.xs[j] - rv.xs[j - 1]).hypot(rv.ys[j] - rv.ys[j - 1]);
     }
     let len = cum.last().copied().unwrap_or(0.0);
+    let (base, rise) = (h.base, h.rise);
     let mut z = vec![base; n];
-    if !by_angle || len <= 0.0 {
+    if h.layers == Layers::Length || len <= 0.0 {
         for j in 0..n {
             z[j] = base + rise * cum[j] / len.max(1e-9);
         }
     } else {
+        let top = base + rise;
+        let at = |j: usize, a: f64| -> f64 {
+            let frac = ((a - h.th_s) / TAU).clamp(0.0, 1.0);
+            match h.layers {
+                Layers::Flat if rv.helix.get(j) == Some(&true) => {
+                    top - rise * (1.0 - frac) * h.thread
+                }
+                Layers::Flat => top,
+                _ => base + rise * frac,
+            }
+        };
         let mut last: Option<usize> = None;
         for j in 0..n {
             let a = rv.za[j];
             if a.is_nan() {
                 continue;
             }
-            z[j] = base + rise * (a - th_s) / TAU;
+            z[j] = at(j, a);
             if let Some(l) = last {
                 for m in l + 1..j {
                     let f = (cum[m] - cum[l]) / (cum[j] - cum[l]).max(1e-12);
                     z[m] = z[l] + (z[j] - z[l]) * f;
                 }
             } else {
+                let zj = z[j];
                 for zm in z.iter_mut().take(j) {
-                    *zm = base + rise * (a - th_s) / TAU;
+                    *zm = zj;
                 }
             }
             last = Some(j);
@@ -727,6 +820,15 @@ fn finish(
             let zl = z[l];
             for zm in z.iter_mut().skip(l + 1) {
                 *zm = zl;
+            }
+        }
+        if h.layers == Layers::Flat && h.rise_next > 0.0 {
+            let ramp = h.ramp.min(len / 4.0).max(1e-6);
+            for (zj, &c) in z.iter_mut().zip(&cum) {
+                let t = (c - (len - ramp)) / ramp;
+                if t > 0.0 {
+                    *zj += h.rise_next * t.min(1.0);
+                }
             }
         }
     }
@@ -852,7 +954,7 @@ mod tests {
             socket_h: 50.0,
             crease_top: true,
             crease: 14.0,
-            z_by_angle: true,
+            layers: Layers::Angle,
             line: 5.0,
             layer: 2.5,
             step: 2.5,
@@ -996,16 +1098,113 @@ mod tests {
         ];
         for (s, count, samples) in cases {
             let (pts, _) = thread_shade(&s).unwrap();
-            assert_eq!(pts.len(), count);
+            // The slots' ends land on the rings here (the sketcher's a hair outside), so the
+            // count differs a little and the sketcher's points sit within half a millimetre of
+            // the line, everywhere.
+            assert!(
+                (pts.len() as f64 / count as f64 - 1.0).abs() < 0.03,
+                "{}",
+                pts.len()
+            );
             for (i, want) in samples.iter().enumerate() {
-                let p = pts[i * 2500];
-                let got = [p[0], p[1], p[2] + 1.5 * s.layer];
-                assert!(
-                    (0..3).all(|k| (got[k] - want[k]).abs() < 1e-3),
-                    "{i}: {got:?} {want:?}"
-                );
+                let near = pts
+                    .iter()
+                    .map(|p| {
+                        let got = [p[0], p[1], p[2] + 1.5 * s.layer];
+                        (0..3)
+                            .map(|k| (got[k] - want[k]).powi(2))
+                            .sum::<f64>()
+                            .sqrt()
+                    })
+                    .fold(f64::INFINITY, f64::min);
+                assert!(near < 0.5, "{i}: {want:?} {near}");
             }
         }
+    }
+
+    /// The slots' ends land on the wall and the rings: no zigzag where a ring starts (the
+    /// sketcher's landed a hair outside, 0.2–0.4 mm, most near the socket: 876 of them in this
+    /// shade, the owner's photos of 17 Nov). A zigzag: two sharp turns one way and back within a
+    /// millimetre.
+    #[test]
+    fn no_zigzags_where_the_rings_start() {
+        for layers in [Layers::Flat, Layers::Angle] {
+            let s = Settings {
+                layers,
+                ..straight()
+            };
+            let (pts, _) = thread_shade(&s).unwrap();
+            let mut segs: Vec<((f64, f64), f64)> = Vec::new();
+            let mut last = pts[0];
+            for p in &pts[1..] {
+                let (dx, dy) = (p[0] - last[0], p[1] - last[1]);
+                let l = dx.hypot(dy);
+                if l >= 0.02 {
+                    segs.push(((dx / l, dy / l), l));
+                    last = *p;
+                }
+            }
+            let turn = |a: (f64, f64), b: (f64, f64)| {
+                (a.0 * b.1 - a.1 * b.0)
+                    .atan2(a.0 * b.0 + a.1 * b.1)
+                    .to_degrees()
+            };
+            let zigzags = segs
+                .windows(3)
+                .filter(|w| {
+                    let (t1, t2) = (turn(w[0].0, w[1].0), turn(w[1].0, w[2].0));
+                    t1.abs() > 30.0 && t2.abs() > 30.0 && t1.signum() != t2.signum() && w[1].1 < 1.0
+                })
+                .count();
+            assert_eq!(zigzags, 0, "{layers:?}");
+        }
+    }
+
+    /// Flat layers: the outer wall is level, a layer up each turn, except where it steps up to
+    /// the next layer (the last two line widths of each turn, at the seam); only the thread
+    /// (the inner rings in the grip) is a helix.
+    #[test]
+    fn flat_layers_except_the_thread() {
+        let s = Settings {
+            layers: Layers::Flat,
+            ..straight()
+        };
+        let (pts, info) = thread_shade(&s).unwrap();
+        let th_s = PI / 2.0 - PI / 3.0;
+        let mut wall = 0;
+        for p in &pts {
+            let r = p[0].hypot(p[1]);
+            if (r - 72.5).abs() > 0.01 {
+                continue;
+            }
+            // How far before the seam, along the wall.
+            let back = (th_s - p[1].atan2(p[0])).rem_euclid(TAU) * r;
+            let nozzle = p[2] + s.layer;
+            if back > 2.0 * s.line + 0.5 {
+                assert!(
+                    (nozzle / s.layer - (nozzle / s.layer).round()).abs() < 1e-9,
+                    "{p:?}"
+                );
+                wall += 1;
+            }
+        }
+        assert!(wall > 10_000, "{wall}");
+        // The thread: on the barrel, a helix (its height less its angle's share of a pitch the
+        // same at every point, whole pitches apart).
+        let ring: Vec<&P3> = pts
+            .iter()
+            .filter(|p| (p[0].hypot(p[1]) - info.grip_r).abs() < 1e-6)
+            .collect();
+        assert!(ring.len() > 200);
+        let phase = |p: &P3| {
+            let t = (p[2] + s.layer) / s.layer - (p[1].atan2(p[0]) - th_s).rem_euclid(TAU) / TAU;
+            t - t.round()
+        };
+        assert!(
+            ring.iter().all(|p| phase(p).abs() < 1e-6),
+            "{:?}",
+            ring.iter().map(|p| phase(p)).fold(0.0, f64::max)
+        );
     }
 
     #[test]

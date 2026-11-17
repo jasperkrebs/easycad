@@ -287,7 +287,16 @@ pub(super) fn thread_shade(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         socket_h: a.num(17)?,
         crease_top: choice(18, "top", ["crease", "full"])?,
         crease: a.num(19)?,
-        z_by_angle: choice(20, "z_by", ["angle", "length"])?,
+        layers: match a.text(20) {
+            Err(_) | Ok("flat") => pendant::Layers::Flat,
+            Ok("angle") => pendant::Layers::Angle,
+            Ok("length") => pendant::Layers::Length,
+            Ok(t) => {
+                return Err(format!(
+                    "`z_by` is \"flat\", \"angle\" or \"length\", got \"{t}\""
+                ));
+            }
+        },
         line: a.num(21)?,
         layer: a.num(22)?,
         step: a.num(23)?,

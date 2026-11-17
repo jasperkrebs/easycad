@@ -19,6 +19,21 @@ shipped file (code, template, icon, vendored library) isn't, naming it. Checked 
 opened once online, then offline: reloads, the engine starts, the Lamp and Thread pendant open.
 A new template or script must be added to `web/sw.js` (the test says which).
 
+## 2026-11-17: Thread pendant: flat layers, and no zigzags where the rings start (recipe-developer)
+
+**Why:** the owner's first look (photos of the toolpath): little zigzags by the wings near the
+socket, and the whole layer rising when only the part on the socket should.
+
+- **Zigzags:** the sketcher draws each slot straight in its own frame, so its ends landed
+  0.2–0.4 mm outside the wall and the rings (most near the socket, the smallest radius), then the
+  ring started on its own radius: 876 zigzags in the straight shade. The slots now land on the
+  radii (tested: none, either way of layering). The sketcher's points are within 0.5 mm of ours.
+- **Flat layers** (`z_by: "flat"`, the default; the sketcher's "angle" opens as flat): every layer
+  level, only the thread a helix (the inner rings in the grip), easing in and out over 4 layers
+  each side (all exactly a pitch); each layer steps up along its last two line widths at the seam.
+  "angle" (all helical, the sketcher's) and "length" stay as choices. Tested: the wall is level
+  away from the seam, the thread a true helix.
+
 ## 2026-11-16 (late): the Thread pendant, from the Thread Lampshade Sketcher (recipe-developer)
 
 **Why:** a friend of the owner's built a Claude artifact, the Thread Lampshade Sketcher: wings
