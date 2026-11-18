@@ -71,6 +71,11 @@ pub struct Settings {
     /// Line width (the sketcher's 5 mm bead) and layer height (the thread's pitch, `LH`).
     pub line: f64,
     pub layer: f64,
+    /// The outer wall's and the wings' own line width and layer height (0: the thread's `line`
+    /// and the pitch): thinner everywhere but the thread, which grows into its own over the
+    /// layers before the grip.
+    pub wall_line: f64,
+    pub wall_layer: f64,
     /// Longest step along an arc (the sketcher's draft 2.5, fine 1.2).
     pub step: f64,
     /// Overhang compensation by layer height on the outer wall (0: off), as the Lampshade's; the
@@ -87,6 +92,10 @@ pub enum Layers {
     Angle,
     Length,
 }
+
+/// How much slower than the wall the wing rings rise at most, where the thread starts below the
+/// wall or the wall catches up with it.
+const SLOW: f64 = 0.25;
 
 /// Layers over which the thread eases in below the grip and out above it (all exactly a pitch).
 const FADE: f64 = 4.0;
@@ -130,6 +139,14 @@ pub struct Info {
     pub min_rise: f64,
     /// The most the wing rings move in or out from one layer to the next (mm).
     pub max_wing_step: f64,
+    /// The steepest the thread's lead makes the line climb (the bridge from the wall to the
+    /// thread, on top of the layer's own heights), degrees.
+    pub max_bridge_slope: f64,
+    /// The thinnest layer of the wing rings (mm): the inner ring over the one below it, where
+    /// the thread's lead changes as they move in or out.
+    pub min_ring_gap: f64,
+    /// Each point's bead: the line width and layer height to extrude the move to it for.
+    pub bead: Vec<[f64; 2]>,
     /// Each layer's outer radius and the height of its top (for the wall shown).
     pub wall: Vec<(f64, f64)>,
 }
@@ -475,144 +492,248 @@ fn feat_wings(
 }
 
 /// One layer of the plan: where the outer wall's turn starts and how much it rises, and how far
-/// the thread (the inner ring) sits above or below the wall at its start.
+/// the thread (the inner ring) sits above the wall at its start.
 #[derive(Clone, Copy, Debug)]
 struct Layer {
     z0: f64,
     rise: f64,
-    /// The thread's height less the wall's, at the layer's start (0 without compensation).
+    /// The thread's height less the wall's, at the layer's start.
     d: f64,
+    /// How much of a thread this layer's inner ring is, 0..1: 0 a wall layer (the wall's
+    /// height, width and bead), 1 the thread (a pitch, the thread's width and bead).
+    f: f64,
 }
 
-/// The layers. The outer wall rises a pitch a layer, less where it leans (layer-height
-/// compensation, as the Lampshade's: pitch × (1 − strength × (lean / pivot)^steep × (1 − cos
-/// lean))), all the way up. The thread keeps its own heights: where its rings sit on the socket
-/// (and the layer under them) they rise exactly a pitch, so the grip stays a true helix. Over
-/// `FADE` layers below and above they ease from the wall's rise into a pitch and back; below
-/// that they rise a little less than the wall, to start low enough that the thread meets the
-/// wall again at the top. In each layer the bridge (the slot and the wing rings) takes the
-/// height from one to the other (see `bridge`).
+/// The wall's own layer height: `wall_layer` (0: the pitch), never more than the pitch.
+fn wall_layer(s: &Settings) -> f64 {
+    if s.wall_layer > 0.0 {
+        s.wall_layer.min(s.layer)
+    } else {
+        s.layer
+    }
+}
+
+/// The wall's (and wings') own line width: `wall_line` (0: the thread's, `line`).
+fn wall_line(s: &Settings) -> f64 {
+    if s.wall_line > 0.0 {
+        s.wall_line
+    } else {
+        s.line
+    }
+}
+
+/// The layers. The outer wall (and the wings) rises its own layer height (`wall_layer`, the pitch
+/// unless set), less where it leans (layer-height compensation, as the Lampshade's: × (1 −
+/// strength × (lean / pivot)^steep × (1 − cos lean))), all the way up. The thread keeps its own
+/// heights (see `thread_offsets`): a pitch a layer on the socket, so the grip stays a true helix.
 fn layer_plan(s: &Settings, radius: &Radius) -> Vec<Layer> {
     let lh = s.layer;
+    let lw = wall_layer(s);
     let top_target = (s.height / lh).round().max(3.0) * lh;
     let mut out: Vec<Layer> = Vec::new();
     let mut z = 0.0;
     let comp = s.strength > 0.0;
     while out.len() < 100_000 {
         let rise = if comp {
-            let (a, b) = (z, z + lh);
-            let lean = (radius.at(b) - radius.at(a)).abs().atan2(lh).to_degrees();
+            let (a, b) = (z, z + lw);
+            let lean = (radius.at(b) - radius.at(a)).abs().atan2(lw).to_degrees();
             let curve = s.strength * (lean.min(89.0) / s.pivot.max(1.0)).powf(s.steep);
-            lh * (1.0 - curve * (1.0 - lean.to_radians().cos())).max(0.05)
+            lw * (1.0 - curve * (1.0 - lean.to_radians().cos())).max(0.05)
         } else {
-            lh
+            lw
         };
-        // The sketcher's layers: their tops one pitch apart up to a pitch below the top.
-        if z + lh > top_target - lh + 1e-6 && !out.is_empty() {
+        // The sketcher's layers: their tops up to a pitch below the top.
+        if z + lw > top_target - lh + 1e-6 && !out.is_empty() {
             break;
         }
         out.push(Layer {
             z0: z,
             rise,
             d: 0.0,
+            f: 0.0,
         });
         z += rise;
     }
-    if comp {
-        thread_offsets(s, &mut out);
-    }
+    thread_offsets(s, &mut out);
     out
 }
 
-/// The thread's offsets from the wall (`Layer::d`), worked down from the top, where it is 0.
+/// The top of the print in the sketcher's terms (its `zEnd`): a pitch over the last layer's top.
+fn top_of(plan: &[Layer], s: &Settings) -> f64 {
+    plan.last()
+        .map_or(2.0 * s.layer, |l| l.z0 + wall_layer(s) + s.layer)
+}
+
+/// The thread's heights against the wall's.
+///
+/// - Over the layers before the grip the inner ring grows into the thread, its rise a step at a
+///   time (a tenth of a pitch, over at least `FADE` layers) from the wall's to a pitch, its
+///   width and bead with it.
+/// - On the socket, and the layer under it, it rises exactly a pitch: the grip a true helix.
+/// - Above the grip it eases back over as many layers.
+///
+/// Where the thread rises faster than the wall it pulls ahead of it: by the grip's top, by the
+/// difference between the two over every layer it took. That lead is shared: the thread starts
+/// half of it below the wall and ends half of it above, so the bridge between them (the slot and
+/// the wing rings, see `bridge`) climbs half as far. To start low, the rings rise less than the
+/// wall for a while below the grip; above it, they rise less again until the wall has caught up
+/// (as far as there are layers). They never rise less than `SLOW` of the wall, easing in and out
+/// of that by a twentieth of the wall's rise a layer.
 fn thread_offsets(s: &Settings, plan: &mut [Layer]) {
     let lh = s.layer;
+    let lw = wall_layer(s);
     let n = plan.len();
-    let Some(last) = plan.last() else {
+    if n == 0 {
         return;
-    };
-    let z_end = last.z0 + 2.0 * lh;
+    }
+    let z_end = top_of(plan, s);
     let z_gt = z_end - s.hide;
     let z_gb = z_gt - s.grip;
-    let fade = FADE as usize;
-    // The thread's rise in each layer; d[k] = d[k + 1] − (its rise − the wall's).
-    let mut d = vec![0.0; n + 1];
-    // Above the grip (a layer's clearance): easing from a pitch back to the wall's rise.
-    let k_b = plan.iter().position(|l| l.z0 + lh > z_gt + lh).unwrap_or(n);
-    for k in (k_b..n).rev() {
-        let i = k - k_b;
-        let w = if i < fade {
-            1.0 - (i + 1) as f64 / (fade + 1) as f64
+    let fade = (FADE as usize).max(((lh - lw) / (0.1 * lh)).ceil().clamp(0.0, 1e4) as usize);
+    let ramp_in = |i: usize| (i + 1) as f64 / (fade + 1) as f64;
+    // The thread's lead after easing in from layer `k`.
+    let lead_after = |k: usize| -> f64 {
+        (0..fade)
+            .filter_map(|i| plan.get(k + i))
+            .enumerate()
+            .map(|(i, l)| ramp_in(i) * (lh - l.rise))
+            .sum()
+    };
+    // Where it starts easing in, starting `pre` from the wall: the first layer from which,
+    // eased in, the thread reaches the layer under the grip.
+    let start = |pre: f64| {
+        (0..n)
+            .find(|&k| {
+                plan.get(k + fade)
+                    .is_some_and(|l| l.z0 + lh + pre + lead_after(k) >= z_gb - 2.0 * lh)
+            })
+            .unwrap_or(n)
+    };
+    // From easing in at `k_s`, `d0` from the wall: each layer's (lead at its start, thread
+    // fraction, the thread's rise), up to where it has eased out (the rest left as the wall's).
+    let rising = |k_s: usize, d0: f64| -> Vec<(f64, f64, f64)> {
+        let mut out = Vec::new();
+        let (mut d, mut phase, mut i) = (d0, 1, 0);
+        for l in plan.iter().skip(k_s) {
+            let wall = l.rise;
+            if phase == 1 && i >= fade {
+                phase = 2;
+            }
+            if phase == 2 && l.z0 + lh + d > z_gt + lh {
+                phase = 3;
+                i = 0;
+            }
+            if phase == 3 && i >= fade {
+                break;
+            }
+            let (f, rise) = match phase {
+                1 => (ramp_in(i), wall + ramp_in(i) * (lh - wall)),
+                2 => (1.0, lh),
+                _ => {
+                    let t = 1.0 - ramp_in(i);
+                    (t, wall + t * (lh - wall))
+                }
+            };
+            out.push((d, f, rise));
+            d += rise - wall;
+            i += 1;
+        }
+        out
+    };
+    // How much of the lead is below the wall: half with a crease above the grip; with full
+    // wings, which move back out above the grip (and would lose the lead they carry), all of it.
+    let share = if s.crease_top { 0.5 } else { 1.0 };
+    // The lead, shared: find where to start from half of it below (a few rounds, as starting
+    // lower moves the start and so, on a changing wall, the lead).
+    let mut pre = 0.0;
+    let mut k_s = start(pre);
+    for _ in 0..4 {
+        let lead: f64 = rising(k_s, pre).iter().map(|r| r.2).sum::<f64>()
+            - plan
+                .iter()
+                .skip(k_s)
+                .take(rising(k_s, pre).len())
+                .map(|l| l.rise)
+                .sum::<f64>();
+        pre = -lead * share;
+        k_s = start(pre);
+    }
+    // Below: the rings rise less than the wall to start `pre` from it at `k_s`, the less
+    // easing in and out (a trapezoid over as few layers as it takes, before the easing in).
+    let need = (-pre).max(0.0);
+    let mut cut = vec![0.0; n];
+    // (With no room below, the thread starts level with the wall.)
+    if need > 1e-9 && k_s > 3 {
+        let avail = k_s - 1;
+        let trapezoid = |m: usize, cut: &mut [f64]| -> f64 {
+            let mut sum = 0.0;
+            for j in 0..m {
+                let k = k_s - m + j;
+                let w = plan[k].rise;
+                // (Back to none the layer before the easing in.)
+                let c = (SLOW * w)
+                    .min(0.05 * w * (j + 1) as f64)
+                    .min(0.05 * w * (m - 1 - j) as f64);
+                cut[k] = c;
+                sum += c;
+            }
+            sum
+        };
+        // As few layers as it takes (the sum grows with them: a binary search).
+        let (mut lo, mut hi) = (2, avail.max(2));
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            cut.iter_mut().for_each(|c| *c = 0.0);
+            if trapezoid(mid, &mut cut) >= need {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        cut.iter_mut().for_each(|c| *c = 0.0);
+        let sum = trapezoid(lo, &mut cut);
+        if sum > need {
+            for c in cut.iter_mut() {
+                *c *= need / sum;
+            }
+        }
+    }
+    let mut below = Vec::with_capacity(k_s.min(n));
+    let mut d = 0.0;
+    for c in cut.iter().take(k_s.min(n)) {
+        below.push(d);
+        d -= c;
+    }
+    let up = rising(k_s, d);
+    for (l, &dk) in plan.iter_mut().zip(&below) {
+        l.d = dk;
+    }
+    let mut k = k_s;
+    for &(dk, f, rise) in &up {
+        plan[k].d = dk;
+        plan[k].f = f;
+        d = dk + rise - plan[k].rise;
+        k += 1;
+    }
+    // Above: the wall catches up (from a layer level with it).
+    let mut c = -0.05 * plan.get(k).map_or(lw, |l| l.rise);
+    for l in plan.iter_mut().skip(k) {
+        l.d = d;
+        let w = l.rise;
+        // Easing in, and out again in time to stop at none.
+        let step = 0.05 * w;
+        c = if d > 1e-9 {
+            let tail = c * (c / step + 1.0) / 2.0;
+            let next = if d <= tail {
+                (c - step).max(step.min(d))
+            } else {
+                (c + step).min(SLOW * w)
+            };
+            next.min(d)
         } else {
             0.0
         };
-        let r = plan[k].rise + w * (lh - plan[k].rise);
-        d[k] = d[k + 1] - (r - plan[k].rise);
-    }
-    // The grip and the layer under it: exactly a pitch.
-    let mut k_a = k_b;
-    while k_a > 0 {
-        let k = k_a - 1;
-        let dk = d[k + 1] - (lh - plan[k].rise);
-        if plan[k].z0 + dk + lh < z_gb - 2.0 * lh {
-            break;
-        }
-        d[k] = dk;
-        k_a = k;
-    }
-    // Below: easing from the wall's rise into a pitch over `fade` layers, and, before that, a
-    // little less than the wall's, to start the thread where it has to be. The less is spread
-    // over enough layers to stay within a tenth of a pitch a layer, when there's room.
-    let avail = k_a.saturating_sub(1);
-    if avail > 0 {
-        below_the_grip(plan, &mut d, k_a, avail, lh);
-    }
-    for (l, dk) in plan.iter_mut().zip(&d) {
-        l.d = *dk;
-    }
-}
-
-/// The thread's rise below the exact part (`k_a` up), over the `avail` layers under it.
-fn below_the_grip(plan: &[Layer], d: &mut [f64], k_a: usize, avail: usize, lh: f64) {
-    let fade = FADE as usize;
-    let need = -d[k_a];
-    let ramp = |i: usize| -> f64 {
-        if i <= fade {
-            (fade + 1 - i) as f64 / (fade + 1) as f64
-        } else {
-            0.0
-        }
-    };
-    // How much of the "less" layer i (1: the one under k_a) takes, with `m` full layers.
-    let catch = |i: usize, m: usize| -> f64 {
-        if i <= fade {
-            1.0 - ramp(i)
-        } else if i <= fade + m {
-            1.0
-        } else if i <= 2 * fade + m {
-            1.0 - (i - fade - m) as f64 / (fade + 1) as f64
-        } else {
-            0.0
-        }
-    };
-    let gain: f64 = (1..=avail.min(fade))
-        .map(|i| ramp(i) * (lh - plan[k_a - i].rise))
-        .sum();
-    let mut m = 0;
-    let mut delta;
-    loop {
-        let total: f64 = (1..=avail).map(|i| catch(i, m)).sum();
-        delta = (need + gain) / total.max(1e-9);
-        if delta.abs() <= 0.1 * lh || 2 * fade + m >= avail {
-            break;
-        }
-        m += 1;
-    }
-    for i in 1..=avail {
-        let k = k_a - i;
-        let wall = plan[k].rise;
-        let r = (wall + ramp(i) * (lh - wall) - delta * catch(i, m)).max(0.05 * lh);
-        d[k] = d[k + 1] - (r - wall);
+        d -= c;
     }
 }
 
@@ -628,12 +749,26 @@ fn bridge(r: f64, lo: f64, hi: f64) -> f64 {
 pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
     check(s)?;
     let lh = s.layer;
-    let bw = s.line;
+    // The wall's (and wings') line width, and the thread's.
+    let bw = wall_line(s);
+    let tw = s.line;
+    let lw = wall_layer(s);
     let q = bw / 2.0;
     let radius = Radius::new(&s.profile, s.height, s.scale);
     let wing_fn = unit_curve(&s.wing);
     let path_fn = (!s.path.is_empty()).then(|| unit_curve(&s.path));
     let plan = layer_plan(s, &radius);
+    // Too many points, said before making them: the outer wall alone, a turn a layer.
+    let wall_points: f64 = plan
+        .iter()
+        .map(|l| TAU * radius.at(l.z0 + s.layer).abs() / s.step)
+        .sum();
+    if !wall_points.is_finite() || wall_points > 3_000_000.0 {
+        return Err(
+            "thread_shade: this shade makes too many points: a larger step or a smaller shade"
+                .into(),
+        );
+    }
     let n = s.entries;
     let step = s.step;
     let phi0 = PI / 2.0 + s.rotation.to_radians();
@@ -643,6 +778,7 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
     let mut info = Info {
         grip_full: true,
         min_rise: lh,
+        min_ring_gap: lh,
         ..Info::default()
     };
     let mut out: Vec<P3> = Vec::new();
@@ -650,22 +786,25 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         (0.0, 0.0, 0.0, 0.0);
     // Heights in the sketcher's terms: layer k's `zc` is the top of its start (its base + a
     // layer); the top of the print one layer above the last.
-    let last_zc = plan.last().map_or(lh, |l| l.z0 + lh);
-    let z_end = last_zc + lh;
+    let z_end = top_of(&plan, s);
     let z_start = z_end - s.wing_zone;
     info.top = z_end;
-    let r_grip = s.socket_d / 2.0 - s.engagement + bw / 2.0;
+    let r_grip = s.socket_d / 2.0 - s.engagement + tw / 2.0;
     let z_gt = z_end - s.hide;
     let z_gb = z_gt - s.grip;
     info.grip_bottom = z_gb;
     info.grip_top = z_gt;
     info.grip_r = r_grip;
-    let wall_ri_of = |ro: f64| ro - bw - s.wall_gap - bw - s.pin_gap;
+    // The inner ring furthest out: inside the wall, its gap, the middle ring and its gap (`wi`,
+    // `wm` the inner and middle rings' widths).
+    let wall_ri_of =
+        |ro: f64, wi: f64, wm: f64| ro - (bw + wm) / 2.0 - s.wall_gap - (wm + wi) / 2.0 - s.pin_gap;
     // Per layer, for the checks: its height, outer radius, the innermost face, whether it has
     // wings on the socket.
     let mut checks: Vec<(f64, f64, f64, bool)> = Vec::new();
     let mut prev_ro: Option<(f64, f64)> = None;
-    let d_at = |k: usize| plan.get(k).map_or(0.0, |l| l.d);
+    // (Past the last layer the lead carries on as it was.)
+    let d_at = |k: usize| plan.get(k).or(plan.last()).map_or(0.0, |l| l.d);
     for (k, layer) in plan.iter().enumerate() {
         let (z0, rise) = (layer.z0, layer.rise);
         let zc = z0 + lh;
@@ -684,10 +823,18 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         }
         prev_ro = Some((zc, ro));
         let in_zone = n > 0 && zc >= z_start && zc <= z_end;
+        // The bridge to the thread, out to a line inside this layer's outer wall (see `bridge`):
+        // the line's width follows its height there, from the wall's bead to the thread's, so
+        // the rings are as wide as their layers are tall. The inner and middle rings' widths
+        // (taken where they'd be in the grip; the line itself takes them where it is).
+        let hi_l = (radius.at(zc) - bw).max(r_grip + bw);
+        let width_at = |r: f64| bw + (tw - bw) * layer.f * bridge(r, r_grip, hi_l);
+        let wi = width_at(r_grip);
+        let wm = width_at(r_grip + (wi + width_at(r_grip + wi + s.pin_gap)) / 2.0 + s.pin_gap);
         let (mut rm, mut ri) = (0.0, 0.0);
         let mut ri_wanted: Option<f64> = None;
         if in_zone {
-            let wall_ri = wall_ri_of(ro);
+            let wall_ri = wall_ri_of(ro, wi, wm);
             ri = if zc_r >= z_gb && zc_r <= z_gt {
                 r_grip
             } else if zc_r < z_gb && s.path_len > 0.0 {
@@ -702,17 +849,24 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
             };
             ri = ri.min(wall_ri);
             ri_wanted = Some(ri);
-            rm = ri + bw + s.pin_gap;
-            let req = rm + bw + s.wall_gap;
+            rm = ri + (wi + wm) / 2.0 + s.pin_gap;
+            let req = rm + (wm + bw) / 2.0 + s.wall_gap;
             if ro < req - 1e-6 {
                 ro = req;
                 info.clamped = true;
             }
         }
         if in_zone && l_prev > 0.0 && ri_prev > 0.0 {
-            let wall_ri = wall_ri_of(ro);
-            ri = wall_ri.min((ri_prev - grow).max((ri_prev + grow).min(ri)));
-            rm = ri + bw + s.pin_gap;
+            // The rings move by at most the overhang over their own rise (the thread's, where
+            // it rises faster or slower than the wall).
+            let own = k
+                .checked_sub(1)
+                .and_then(|j| plan.get(j))
+                .map_or(rise, |b| b.rise + layer.d - b.d);
+            let grow_r = own.max(0.0) * tan_over;
+            let wall_ri = wall_ri_of(ro, wi, wm);
+            ri = wall_ri.min((ri_prev - grow_r).max((ri_prev + grow_r).min(ri)));
+            rm = ri + (wi + wm) / 2.0 + s.pin_gap;
             if let Some(w) = ri_wanted
                 && (ri - w).abs() > 0.5
             {
@@ -760,8 +914,17 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
                 l = 0.0;
             }
         }
-        if kind == 2 && ri_prev > 0.0 {
+        if kind == 2
+            && ri_prev > 0.0
+            && let Some(below) = k.checked_sub(1).and_then(|j| plan.get(j))
+        {
             info.max_wing_step = info.max_wing_step.max((ri - ri_prev).abs());
+            // The inner ring over the one below: the wall's rise and the change in the lead
+            // each carries (by its radius; see `bridge`).
+            let hi = |z: f64| (radius.at(z) - bw).max(r_grip + bw);
+            let lead = |d: f64, r: f64, z: f64| d * bridge(r, r_grip, hi(z));
+            let gap = below.rise + lead(layer.d, ri, zc) - lead(below.d, ri_prev, below.z0 + lh);
+            info.min_ring_gap = info.min_ring_gap.min(gap);
         }
         d_prev = if in_zone { d } else { 0.0 };
         l_prev = if kind == 2 { l } else { 0.0 };
@@ -783,7 +946,7 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         // changing shape leaves no step at the seam; the rings only move with it where they
         // follow the wall.
         let clamped_layer = (ro - radius.at(zc)).abs() > 1e-9;
-        let wall_ri_l = wall_ri_of(ro);
+        let wall_ri_l = wall_ri_of(ro, wi, wm);
         let follow_all = kind == 0
             || (kind == 2 && (ri - wall_ri_l).abs() < 1e-6 && (ri - r_grip).abs() >= 1e-6);
         let r_in = match kind {
@@ -792,14 +955,14 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
             _ => ro,
         };
         let inner = if kind == 2 {
-            ri - bw / 2.0
+            ri - wi / 2.0
         } else {
             ro - d - bw / 2.0
         };
         checks.push((zc_r, ro, inner, kind == 2 && (ri - r_grip).abs() < 0.01));
         info.wall.push((ro, zc));
         let base = z0 + lh / 2.0;
-        info.length += finish(
+        let (len, slope) = finish(
             &rv,
             Heights {
                 base,
@@ -820,10 +983,16 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
                 // and the bridge with it: a point sits a hair off the same point below (the
                 // offset × that share, a tenth of a mm or so).
                 lo: r_grip,
-                hi: (radius.at(zc) - bw).max(r_grip + bw),
+                hi: hi_l,
+                bead: Bead {
+                    f: layer.f,
+                    wall: [bw, lw],
+                    thread: [tw, lh],
+                },
             },
             !out.is_empty(),
             &mut out,
+            &mut info.bead,
             |x, y, z| {
                 if clamped_layer {
                     return (x, y);
@@ -845,6 +1014,8 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
                 (x * k, y * k)
             },
         );
+        info.length += len;
+        info.max_bridge_slope = info.max_bridge_slope.max(slope);
         if out.len() > 3_000_000 {
             return Err(
                 "thread_shade: this shade makes too many points: a larger step or a smaller shade"
@@ -874,8 +1045,11 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
     // Heights: the sketcher's are bead centres; the nozzle runs half a layer above, and the
     // curve is drawn a layer below the nozzle.
     // (Never below the bed: the first layer's start can round a hair under it.)
-    for p in &mut out {
+    // (On the first layer each move is extruded for the gap over the bed, as a vase's first
+    // turn: the nozzle a layer above the curve.)
+    for (p, b) in out.iter_mut().zip(info.bead.iter_mut()) {
         p[2] = (p[2] - 1.5 * lh).max(-lh);
+        b[1] = b[1].min((p[2] + lh).max(0.05));
     }
     Ok((out, info))
 }
@@ -895,6 +1069,15 @@ struct Heights {
     layers: Layers,
 }
 
+/// What each point is extruded for: the wall's bead (width, layer) out by the wall, the
+/// thread's on the inner ring as far as the layer is a thread (`f`), blending between them over
+/// the bridge, as the heights: each point's bead as wide as its layer is tall.
+struct Bead {
+    f: f64,
+    wall: [f64; 2],
+    thread: [f64; 2],
+}
+
 /// The thread's offset from the wall at the turn's start, the next's and the one after (for
 /// the step up at its end), and the bridge's radii (see `bridge`).
 struct Thread {
@@ -903,6 +1086,8 @@ struct Thread {
     d_after: f64,
     lo: f64,
     hi: f64,
+    /// What each point is extruded for.
+    bead: Bead,
 }
 
 /// A turn's points into the line, each at its height; returns the turn's length. The wall's
@@ -922,9 +1107,12 @@ fn finish(
     t: Thread,
     skip_first: bool,
     out: &mut Vec<P3>,
+    beads: &mut Vec<[f64; 2]>,
     adj: impl Fn(f64, f64, f64) -> (f64, f64),
-) -> f64 {
+) -> (f64, f64) {
     let (z, len) = heights(rv, &h);
+    // Each point's share of the thread's lead (0 where there's none).
+    let mut lead = vec![0.0; z.len()];
     let z = if t.d.abs() > 1e-12 || t.d_next.abs() > 1e-12 || t.d_after.abs() > 1e-12 {
         let ring = Heights {
             base: h.base + t.d,
@@ -937,25 +1125,40 @@ fn finish(
             ..h
         };
         let (zr, _) = heights(rv, &ring);
-        z.iter()
+        for (((l, &zw), &zt), (&x, &y)) in lead
+            .iter_mut()
+            .zip(&z)
             .zip(&zr)
             .zip(rv.xs.iter().zip(&rv.ys))
-            .map(|((&zw, &zt), (&x, &y))| zw + (zt - zw) * bridge(x.hypot(y), t.lo, t.hi))
-            .collect()
+        {
+            *l = (zt - zw) * bridge(x.hypot(y), t.lo, t.hi);
+        }
+        z.iter().zip(&lead).map(|(&zw, &l)| zw + l).collect()
     } else {
         z
     };
-    for ((&x, &y), &zj) in rv
-        .xs
-        .iter()
-        .zip(&rv.ys)
-        .zip(&z)
-        .skip(usize::from(skip_first))
-    {
+    let skip = usize::from(skip_first);
+    // The steepest the lead makes the line climb (the layer's own heights left out: the flat
+    // layers' turns onto the helix, the step up at the seam).
+    let mut slope: f64 = 0.0;
+    for j in 1..rv.xs.len() {
+        let run = (rv.xs[j] - rv.xs[j - 1]).hypot(rv.ys[j] - rv.ys[j - 1]);
+        if run > 0.3 {
+            slope = slope.max((lead[j] - lead[j - 1]).abs().atan2(run).to_degrees());
+        }
+    }
+    for ((&x, &y), &zj) in rv.xs.iter().zip(&rv.ys).zip(&z).skip(skip) {
+        let b = &t.bead;
+        let r = x.hypot(y);
+        let tall = bridge(r, t.lo, t.hi);
+        beads.push([
+            b.wall[0] + (b.thread[0] - b.wall[0]) * b.f * tall,
+            b.wall[1] + (b.thread[1] - b.wall[1]) * b.f * tall,
+        ]);
         let (x, y) = adj(x, y, zj);
         out.push([x, y, zj]);
     }
-    len
+    (len, slope)
 }
 
 /// A turn's points' heights (see `finish`), and its length.
@@ -1047,6 +1250,8 @@ fn check(s: &Settings) -> Result<(), String> {
         s.strength,
         s.steep,
         s.pivot,
+        s.wall_line,
+        s.wall_layer,
     ];
     if finite.iter().any(|v| !v.is_finite()) {
         return Err("thread_shade: every setting must be a number".into());
@@ -1072,6 +1277,12 @@ fn check(s: &Settings) -> Result<(), String> {
     }
     if !(1..=8).contains(&s.entries) {
         return Err("thread_shade: `entries` must be 1 to 8".into());
+    }
+    if s.wall_line < 0.0 || (s.wall_line > 0.0 && s.wall_line < 0.2) || s.wall_layer < 0.0 {
+        return Err("thread_shade: `wall_line` must be 0 (the thread's) or at least 0.2 mm, `wall_layer` 0 (the pitch) or more".into());
+    }
+    if s.wall_layer > 0.0 && s.wall_layer < 0.1 {
+        return Err("thread_shade: `wall_layer` must be 0 (the pitch) or at least 0.1 mm".into());
     }
     if s.layer < 0.1 || s.line < 0.2 || s.height < 3.0 * s.layer || s.height > 5000.0 {
         return Err("thread_shade: the height must be at least three layers (and at most 5 m), the layer at least 0.1 mm, the line at least 0.2 mm".into());
@@ -1139,6 +1350,8 @@ mod tests {
             strength: 0.0,
             steep: 0.0,
             pivot: 45.0,
+            wall_line: 0.0,
+            wall_layer: 0.0,
         }
     }
 
@@ -1421,9 +1634,48 @@ mod tests {
         }
     }
 
+    /// The gaps under the bridge (the slot and the wing rings, inside the outer wall), from each
+    /// point down to the nearest point of an earlier turn under it (within 0.6 mm sideways):
+    /// the thinnest and the thickest. (The thickest is where the wings grow or move, as they
+    /// always have: a new tip over nothing.)
+    fn bridge_gaps(pts: &[P3], s: &Settings, radius: &Radius, from: f64) -> (f64, f64) {
+        use std::collections::HashMap;
+        let cell = |p: &P3| ((p[0] / 0.6).floor() as i64, (p[1] / 0.6).floor() as i64);
+        let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for (i, p) in pts.iter().enumerate() {
+            grid.entry(cell(p)).or_default().push(i);
+        }
+        let (mut lo, mut hi) = (f64::INFINITY, 0.0_f64);
+        for (i, p) in pts.iter().enumerate() {
+            let r = p[0].hypot(p[1]);
+            if p[2] < from || r > radius.at(p[2] + 1.5 * s.layer) - wall_line(s) - 1.0 {
+                continue;
+            }
+            let (cx, cy) = cell(p);
+            let mut best: Option<f64> = None;
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for &j in grid.get(&(cx + dx, cy + dy)).into_iter().flatten() {
+                        let q = &pts[j];
+                        let gap = p[2] - q[2];
+                        // Earlier in the line, under it, not the same turn.
+                        if j + 50 < i && gap > 0.05 && (p[0] - q[0]).hypot(p[1] - q[1]) < 0.6 {
+                            best = Some(best.map_or(gap, |b: f64| b.min(gap)));
+                        }
+                    }
+                }
+            }
+            if let Some(g) = best {
+                lo = lo.min(g);
+                hi = hi.max(g);
+            }
+        }
+        (lo, hi)
+    }
+
     /// A leaning wall: compensated in every layer, the grip's included; the thread on the
-    /// socket still a true helix a pitch a turn; the two meet again at the top, and the bridge
-    /// between them climbs gently.
+    /// socket still a true helix a pitch a turn, starting level with the wall below the grip and
+    /// growing into the pitch, the bridge between them climbing gently.
     fn leaning() -> Settings {
         let mut s = straight();
         s.profile = vec![
@@ -1438,6 +1690,35 @@ mod tests {
         s
     }
 
+    /// On the socket in the grip: a true helix (its height less its angle's share of a pitch the
+    /// same at every point, whole pitches apart).
+    fn assert_true_helix(pts: &[P3], s: &Settings, info: &Info) {
+        let th_s = PI / 2.0 - PI / 3.0;
+        let ring: Vec<&P3> = pts
+            .iter()
+            .filter(|p| (p[0].hypot(p[1]) - info.grip_r).abs() < 1e-6)
+            .filter(|p| {
+                let zc = p[2] + 1.5 * s.layer;
+                zc > info.grip_bottom && zc < info.grip_top
+            })
+            .collect();
+        assert!(ring.len() > 200, "{}", ring.len());
+        let phase = |p: &P3| {
+            let a = (p[1].atan2(p[0]) - th_s).rem_euclid(TAU) / TAU;
+            p[2] / s.layer
+                - if s.layers == Layers::Flat {
+                    a.min(1.0)
+                } else {
+                    a
+                }
+        };
+        let p0 = phase(ring[0]);
+        for p in &ring {
+            let t = phase(p) - p0;
+            assert!((t - t.round()).abs() < 1e-6, "{:?} {p:?} {t}", s.layers);
+        }
+    }
+
     #[test]
     fn overhang_compensation_on_the_wall_not_the_thread() {
         for layers in [Layers::Angle, Layers::Flat] {
@@ -1449,67 +1730,103 @@ mod tests {
             let plan = layer_plan(&s, &radius);
             // The wall: compensated all the way up.
             assert!(plan.iter().all(|l| l.rise < s.layer - 0.05), "{plan:?}");
-            // The thread meets the wall at the top and is below it in the grip.
-            assert!(plan.last().unwrap().d.abs() < 1e-12);
-            assert!(plan.iter().any(|l| l.d < -1.0), "{plan:?}");
-            // Its own rise never jumps: from layer to layer it changes by at most a fifth of a
-            // pitch, and never gets thin.
+            // The thread starts level with the wall, goes below it before the grip and ends
+            // above it: the lead shared.
+            assert!(plan[..plan.len() / 3].iter().all(|l| l.d == 0.0));
+            let lo = plan.iter().map(|l| l.d).fold(0.0, f64::min);
+            let hi = plan.iter().map(|l| l.d).fold(0.0, f64::max);
+            assert!(
+                lo < -0.5 && hi > 0.5 && (lo + hi).abs() < 0.3 * (hi - lo),
+                "{lo} {hi}"
+            );
+            // Its own rise grows a step at a time (a tenth of a pitch at most).
             let ring: Vec<f64> = plan
                 .windows(2)
                 .map(|w| w[0].rise + w[1].d - w[0].d)
                 .collect();
-            assert!(ring.iter().all(|&r| r > 0.5 * s.layer), "{ring:?}");
             assert!(
-                ring.windows(2).all(|w| (w[1] - w[0]).abs() < 0.2 * s.layer),
+                ring.windows(2)
+                    .all(|w| (w[1] - w[0]).abs() < 0.1 * s.layer + 0.02),
                 "{ring:?}"
             );
             let (pts, info) = thread_shade(&s).unwrap();
             assert!(info.grip_full);
-            // On the barrel in the grip: a true helix (its height less its angle's share of a
-            // pitch the same at every point, whole pitches apart).
-            let th_s = PI / 2.0 - PI / 3.0;
-            let ring: Vec<&P3> = pts
-                .iter()
-                .filter(|p| (p[0].hypot(p[1]) - info.grip_r).abs() < 1e-6)
-                .filter(|p| {
-                    let zc = p[2] + 1.5 * s.layer;
-                    zc > info.grip_bottom && zc < info.grip_top
-                })
-                .collect();
-            assert!(ring.len() > 200, "{}", ring.len());
-            let phase = |p: &P3| {
-                let a = (p[1].atan2(p[0]) - th_s).rem_euclid(TAU) / TAU;
-                p[2] / s.layer
-                    - if layers == Layers::Flat {
-                        a.min(1.0)
-                    } else {
-                        a
-                    }
+            assert_true_helix(&pts, &s, &info);
+            // No bead in the bridge is pressed into the one under it: every gap at least half
+            // the wall's layer.
+            let (lo, _) = bridge_gaps(&pts, &s, &radius, 2.0 * s.layer);
+            assert!(lo > 0.5 * plan[0].rise, "{layers:?} {lo}");
+            assert!(info.max_bridge_slope < 15.0, "{}", info.max_bridge_slope);
+        }
+    }
+
+    /// A thinner wall and wings (3 mm lines, 1.5 mm layers) than the thread (5 mm, a 2.5 mm
+    /// pitch): the thread on the socket still a true helix, extruded for its own bead; the wall
+    /// for its own; the thread grows into it before the grip, a tenth of a pitch a layer.
+    #[test]
+    fn a_thinner_wall_than_the_thread() {
+        for (layers, crease_top, strength) in [
+            (Layers::Angle, true, 0.0),
+            (Layers::Flat, true, 0.0),
+            (Layers::Angle, true, 1.0),
+            (Layers::Angle, false, 0.0),
+        ] {
+            let s = Settings {
+                layers,
+                crease_top,
+                strength,
+                wall_line: 3.0,
+                wall_layer: 1.5,
+                ..leaning()
             };
-            let p0 = phase(ring[0]);
-            for p in &ring {
-                let t = phase(p) - p0;
-                assert!((t - t.round()).abs() < 1e-6, "{layers:?} {p:?} {t}");
-            }
-            // The outer wall: on its own layers (each turn's wall a layer's rise above the last).
-            let wall: Vec<&P3> = pts
-                .iter()
-                .filter(|p| {
-                    let r = p[0].hypot(p[1]);
-                    (r - radius.at(p[2] + 1.5 * s.layer)).abs() < 1e-6
-                })
+            let radius = Radius::new(&s.profile, s.height, s.scale);
+            let plan = layer_plan(&s, &radius);
+            assert!(plan.iter().all(|l| l.rise <= 1.5 + 1e-9));
+            assert!(plan.len() > 160, "{}", plan.len());
+            let ring: Vec<f64> = plan
+                .windows(2)
+                .map(|w| w[0].rise + w[1].d - w[0].d)
                 .collect();
-            assert!(wall.len() > 1000);
-            // The bridge: no steeper than 1 in 4 anywhere off the seam's step.
-            let mut steepest: f64 = 0.0;
-            for w in pts.windows(2) {
-                let run = (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]);
-                let r = w[0][0].hypot(w[0][1]);
-                if run > 0.2 && r < radius.at(w[0][2] + 1.5 * s.layer) - s.line {
-                    steepest = steepest.max((w[1][2] - w[0][2]).abs() / run);
+            assert!(ring.iter().any(|&r| (r - 2.5).abs() < 1e-12));
+            assert!(
+                ring.windows(2)
+                    .all(|w| (w[1] - w[0]).abs() < 0.1 * 2.5 + 1e-9),
+                "{ring:?}"
+            );
+            let (pts, info) = thread_shade(&s).unwrap();
+            assert_eq!(pts.len(), info.bead.len());
+            assert!(info.grip_full);
+            assert_true_helix(&pts, &s, &info);
+            // The beads: the thread's on the socket in the grip, the wall's on the wall.
+            for (p, b) in pts.iter().zip(&info.bead) {
+                let r = p[0].hypot(p[1]);
+                let zc = p[2] + 1.5 * s.layer;
+                if (r - info.grip_r).abs() < 1e-6 && zc > info.grip_bottom && zc < info.grip_top {
+                    assert!(
+                        (b[0] - 5.0).abs() < 1e-9 && (b[1] - 2.5).abs() < 1e-9,
+                        "{b:?}"
+                    );
                 }
+                if (r - radius.at(zc)).abs() < 1e-6 && p[2] > 0.0 {
+                    assert!(
+                        (b[0] - 3.0).abs() < 1e-9 && (b[1] - 1.5).abs() < 1e-9,
+                        "{b:?}"
+                    );
+                }
+                assert!(b[0] >= 3.0 - 1e-9 && b[0] <= 5.0 + 1e-9 && b[1] <= 2.5 + 1e-9);
             }
-            assert!(steepest < 0.25, "{layers:?} {steepest}");
+            // The inner face on the socket is the thread's: half its width inside the grip
+            // radius (the barrel less the engagement).
+            assert!((info.grip_r - (20.0 - s.engagement + 2.5)).abs() < 1e-9);
+            let (lo, hi) = bridge_gaps(&pts, &s, &radius, 2.0 * s.layer);
+            // (With full wings the rings move back out above the grip while the wall catches
+            // up: a little closer.)
+            let least = if crease_top { 0.5 } else { 0.45 };
+            assert!(lo > least * 1.5, "{layers:?} {crease_top} {lo} {hi}");
+            assert!(info.min_ring_gap > least * 1.5, "{}", info.min_ring_gap);
+            // A narrow shade (a 47 mm wall round a 22.5 mm thread at the grip's top) climbs
+            // steeply; the check in the recipe says so.
+            assert!(info.max_bridge_slope < 40.0, "{}", info.max_bridge_slope);
         }
     }
 
@@ -1542,6 +1859,17 @@ mod tests {
             "{:?}",
             pts.iter().map(|p| p[2]).fold(0.0, f64::min)
         );
+    }
+
+    /// Found by the fuzz test: a radius of 4 × 10⁹ mm in the profile took a minute to say it
+    /// was too big (it made millions of points first); now it says so at once.
+    #[test]
+    fn too_big_is_said_at_once() {
+        let mut s = straight();
+        s.profile[1].v = 4_294_967_296.0;
+        let t = std::time::Instant::now();
+        assert!(thread_shade(&s).is_err_and(|e| e.contains("too many points")));
+        assert!(t.elapsed().as_secs_f64() < 1.0);
     }
 
     #[test]

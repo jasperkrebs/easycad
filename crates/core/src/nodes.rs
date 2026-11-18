@@ -1246,7 +1246,7 @@ pub static NODES: &[Node] = &[
                 "strength",
                 "Number",
                 0.0,
-                "overhang compensation by layer height, 0 to 1, as the Lampshade's (never inside the thread)",
+                "overhang compensation by layer height on the outer wall, 0 to 1, as the Lampshade's (the thread keeps its pitch)",
             ),
             opt(
                 "steep",
@@ -1260,11 +1260,23 @@ pub static NODES: &[Node] = &[
                 "output",
                 "Text",
                 0.0,
-                "\"path\": the line (a layer below the nozzle, for `toolpath`); \"wall\": the outer wall, radius against height; \"info\": [top, layers, wall pushed out, too many entries, wings slowed, path slowed, steepest wall lean (°), grip bottom, grip top, grip radius, grip full, socket shows (mm), room to the socket above the grip, room at the top opening, wing zone short, line length, widest Ø, bottom Ø, thinnest layer, the most the wing rings move in or out a layer]",
+                "\"path\": the line (a layer below the nozzle, for `toolpath`); \"wall\": the outer wall, radius against height; \"info\": [top, layers, wall pushed out, too many entries, wings slowed, path slowed, steepest wall lean (°), grip bottom, grip top, grip radius, grip full, socket shows (mm), room to the socket above the grip, room at the top opening, wing zone short, line length, widest Ø, bottom Ø, thinnest layer, the most the wing rings move in or out a layer, the steepest the bridge to the thread climbs (°), the wing rings' thinnest layer]",
+            ),
+            opt(
+                "wall_line",
+                "Length",
+                0.0,
+                "the outer wall's and the wings' line width (0: `line`, the thread's)",
+            ),
+            opt(
+                "wall_layer",
+                "Length",
+                0.0,
+                "the outer wall's and the wings' layer height, at most the pitch (0: the pitch); the thread grows from it into the pitch over the layers before the grip",
             ),
         ],
         output: "Curve | List",
-        doc: "A pendant shade whose wings thread onto the lampholder, as one line: the Thread Lampshade Sketcher's pendant, point for point, with overhang compensation by layer height below the thread. The outer wall follows the profile; at each entry the line turns in (a crease at first, deepening by at most the overhang a layer), then runs out as two wings, out along a middle ring and back along an inner ring; in the grip the inner rings sit on the socket's barrel. The layers are flat except the thread: the inner rings in the grip are a true helix one `layer` a turn, easing in and out over 4 layers (with `z_by: \"angle\"`, every point's height comes from its angle, every ring a helix: the sketcher's). Print with `toolpath(…, layer: layer)` (and `bead` for the first layer on the bed). Heights are from the bed: the first layer's nozzle rises from 0 to a layer.",
+        doc: "A pendant shade whose wings thread onto the lampholder, as one line: the Thread Lampshade Sketcher's pendant, point for point, with overhang compensation by layer height on the outer wall (the thread keeps its pitch) and, if set, a thinner wall and wings than the thread (`wall_line`, `wall_layer`). The outer wall follows the profile; at each entry the line turns in (a crease at first, deepening by at most the overhang a layer), then runs out as two wings, out along a middle ring and back along an inner ring; in the grip the inner rings sit on the socket's barrel. The layers are flat except the thread: the inner rings in the grip are a true helix one `layer` a turn, easing in and out over 4 layers (with `z_by: \"angle\"`, every point's height comes from its angle, every ring a helix: the sketcher's). The line carries its own bead (each move's width and layer, the first layer's for the gap over the bed): print it with `toolpath(…, width: line, layer: layer)`. Where the thread rises faster than the wall it pulls ahead of it, and in each layer the slot and the wings climb from the wall's height to the thread's. Heights are from the bed: the first layer's nozzle rises from 0 to a layer.",
         run: Run::Op(printing::thread_shade),
     },
     Node {
@@ -1576,7 +1588,7 @@ pub static NODES: &[Node] = &[
             ),
         ],
         output: "Toolpath",
-        doc: "Prints curves exactly as drawn, in order, with a travel move to the start of each. A curve drawn at z = 0 prints on the bed (the nozzle one layer up). Its layers are counted one per curve; a hand-built spiral (one long curve climbing many layers) says how many with `layers:`.",
+        doc: "Prints curves exactly as drawn, in order, with a travel move to the start of each. A curve drawn at z = 0 prints on the bed (the nozzle one layer up). Its layers are counted one per curve; a hand-built spiral (one long curve climbing many layers) says how many with `layers:`. A curve that carries its own bead (`thread_shade`'s line: a thin wall and a thick thread) prints each move for its point's width and layer height; `width`/`layer` are where it has none.",
         run: Run::Op(toolpath),
     },
     Node {

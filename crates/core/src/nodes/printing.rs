@@ -304,15 +304,17 @@ pub(super) fn thread_shade(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         steep: a.num(25)?,
         pivot: a.num(26)?,
         scale: a.num(27)?,
+        wall_line: a.num(29)?,
+        wall_layer: a.num(30)?,
     };
     let output = a.text(28).unwrap_or("path");
     let (points, info) = pendant::thread_shade(&s)?;
     match output {
         "path" => {
             ctx.spend(points.len())?;
-            Ok(Value::Curve(Rc::new(crate::curve::Curve::new(
-                points, false,
-            ))))
+            let mut line = crate::curve::Curve::new(points, false);
+            line.bead = Some(info.bead);
+            Ok(Value::Curve(Rc::new(line)))
         }
         "wall" => {
             ctx.spend(info.wall.len())?;
@@ -346,6 +348,8 @@ pub(super) fn thread_shade(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
                 info.bottom_d,
                 info.min_rise,
                 info.max_wing_step,
+                info.max_bridge_slope,
+                info.min_ring_gap,
             ];
             Value::list(nums.iter().map(|&x| Value::Number(x)).collect())
         }

@@ -897,13 +897,29 @@ pub fn from_curves(
                 .and_then(|w| w.turn.get(i).copied())
                 .unwrap_or(0.0)
         };
+        // A curve with its own bead: each move extruded for its point's width and layer.
+        let bead = |path: &mut Toolpath, i: usize| {
+            if let Some([w, h]) = curve.bead.as_ref().and_then(|b| b.get(i).copied())
+                && let (Some(sw), Some(sh), Some(&travel)) = (
+                    path.width.last_mut(),
+                    path.height.last_mut(),
+                    path.travel.last(),
+                )
+                && !travel
+            {
+                *sw = if w.is_finite() && w > 0.0 { w } else { 0.0 };
+                *sh = if h.is_finite() && h > 0.0 { h } else { 0.0 };
+            }
+        };
         for (i, p) in curve.points.iter().enumerate() {
             path.push([p[0], p[1], p[2] + settings.layer], i == 0, 1.0, turn(i), 0);
+            bead(&mut path, i);
         }
         if curve.closed
             && let Some(p) = curve.points.first()
         {
             path.push([p[0], p[1], p[2] + settings.layer], false, 1.0, turn(0), 0);
+            bead(&mut path, 0);
         }
     }
     if let [only] = curves
@@ -1813,6 +1829,23 @@ mod tests {
 
     fn constant(v: f64) -> Field {
         Field::constant(v)
+    }
+
+    /// A curve with its own bead: each move extruded for its end point's width and layer
+    /// (0: the part's); the travel to the start for nothing.
+    #[test]
+    fn a_curve_with_its_own_bead() {
+        let mut c = Curve::new(
+            vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [20.0, 0.0, 0.0]],
+            false,
+        );
+        c.bead = Some(vec![[3.0, 1.0], [3.0, 1.0], [5.0, 0.0]]);
+        let p = from_curves(&[&c], settings(4.0, 2.0, 20.0), MAX_PATH_POINTS).unwrap();
+        assert_eq!(p.width, vec![0.0, 3.0, 5.0]);
+        assert_eq!(p.height, vec![0.0, 1.0, 0.0]);
+        assert_eq!(p.bead_of(1), (3.0, 1.0));
+        assert_eq!(p.bead_of(2), (5.0, 2.0));
+        assert!((p.area(2) / p.area(1) - bead_area(5.0, 2.0) / bead_area(3.0, 1.0)).abs() < 1e-12);
     }
 
     #[test]
