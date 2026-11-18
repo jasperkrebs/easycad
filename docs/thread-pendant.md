@@ -83,10 +83,25 @@ What the sketcher leaves out, added here:
   layer as it goes round; here it's flat on the bed (by angle or length: it starts on the bed and
   each move is extruded for the gap under it, `bead`, as a vase's first turn).
 - **Overhang compensation by layer height**, as the Lampshade's (strength, steep curve, pivot):
-  layers come closer where the wall leans, each still extruded for a whole layer. Never inside
-  the thread: from a layer below the grip to the top every layer is exactly a pitch, so the grip
-  stays a true helix (tested), and the 4 layers either side where it eases in and out. A sphere's bottom, leaning 70°, gets layers down to about a third
-  of the pitch.
+  layers come closer where the wall leans, each still extruded for a whole layer. A sphere's
+  bottom, leaning 70°, gets layers down to about a third of the pitch. **Only the outer wall:**
+  the thread keeps its pitch, and the wings between them climb from one to the other.
+  - The outer wall is compensated in every layer, bottom to top, the grip's layers included.
+  - The thread (the inner ring) has its own heights. On the socket, and the layer under it, it
+    rises exactly a pitch a layer, so the grip stays a true helix (tested). Because the wall
+    rises less, the thread sits below the wall in the grip and meets it at the top: on the
+    Angled cone (31.5°, 2.13 mm wall layers) up to 6.3 mm below, at the grip's bottom.
+  - To start that low, the thread rises a little less than the wall below the grip (at most a
+    tenth of a pitch less, spread over as many layers as that takes), then eases into a pitch
+    over 4 layers; above the grip it eases back to the wall's rise over 4 layers. Its rise
+    changes by under a fifth of a pitch from one layer to the next (tested).
+  - In each layer the bridge (the slot and the wing rings) blends the two heights by radius: all
+    of the thread's on the socket's inner ring, none from a line width inside the outer wall
+    out, smoothly between. Each point sits on the same point of the layer below, give or take
+    a tenth of a mm where the wall moves in or out; on the Angled cone the bridge climbs at
+    most 1 in 8.5, and the thread's thinnest layer is 1.88 mm (the wall's 2.13).
+  - Without compensation (or a straight wall) nothing moves: the thread and the wall are the
+    same layers, as before.
 - **Line width and flow** are settings (the sketcher's bead is 5 mm), and the G-code comes from
   the printer profiles like every other project.
 - **The checks:** the sketcher's (wings not formed over the grip, the socket showing, the wings
