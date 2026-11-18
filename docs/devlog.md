@@ -7,6 +7,28 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-18: Thread pendant: compensation on the wall, the pitch only on the thread (recipe-developer)
+
+**Why:** the owner's shades with more overhang: the compensation stopped a layer below the grip,
+so from there to the top every whole layer (the outer wall too) rose a full pitch. Only the part
+on the socket needs the pitch.
+
+**What landed** (`pendant.rs`, `layer_plan` and `finish`; the default, no setting):
+- The outer wall is compensated in every layer, bottom to top.
+- The thread on the socket rises exactly a pitch a layer, a true helix as before (tested in
+  flat and angle layers, and the half sphere's every point on the barrel).
+- The thread sits below the wall in the grip and meets it at the top. Below the grip it rises a
+  little less than the wall, then eases into the pitch over 4 layers, and back out over 4 above.
+- In each layer the slot and wings blend the two heights by radius, so the line climbs gently
+  from wall to socket and back. The extrusion is unchanged: solid, a whole pitch's bead.
+
+The owner's Angled-cone file: 139 layers instead of 134, and the wall 2.13 mm all the way up.
+The thread is 2.5 mm on the socket and at least 1.88 mm below it. The two are up to 6.3 mm
+apart, and the bridge climbs at most 1 in 8.5.
+
+**Open:** a test print. In `nodes.rs` (the general manager's), the `thread_shade` description
+still says "below the thread".
+
 ## 2026-11-17: works offline again, every file (general-manager)
 
 **Why:** the owner asked whether the app works without WiFi. It does (the engine runs in the

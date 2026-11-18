@@ -2,7 +2,7 @@ easycad 0.1
 project "Thread pendant"
 printer "Ginger G1"
 note "A pendant shade whose wings thread onto the lampholder (E27 or E14), printed as one line: the Thread Lampshade Sketcher's pendant, point for point (open its settings files here: Open, a .json from the sketcher). The outer wall follows the shape; at each entry point the line turns in, first as a crease, then as two wings running round a middle and an inner ring. In the grip the inner rings sit on the socket's barrel: every ring is a true helix one pitch a turn, so the shade screws on."
-note "Printable on top of the sketch: the first layer sits on the bed, overhangs are compensated by layer height below the thread (never inside it, so it stays a true helix), the line width and flow are your own, and the checks say when the wings can't form, the socket shows or the wall leans too far."
+note "Printable on top of the sketch: the first layer sits on the bed, overhangs are compensated by layer height on the outer wall all the way up, while the thread on the socket keeps its pitch (a true helix) and the wings in between climb gently from one to the other, the line width and flow are your own, and the checks say when the wings can't form, the socket shows or the wall leans too far."
 
 group "Socket"
 param socket       = "E27" of ["E27", "E14", "custom"] "Socket"
@@ -41,7 +41,7 @@ param flow         = 20      in 1..400              "Flow (mm³/s)"
 param resolution   = "draft" of ["draft", "fine"]   "Resolution"
 
 group "Overhangs"
-param compensation = "layer height" of ["layer height", "off"] "Compensation (below the thread)"
+param compensation = "layer height" of ["layer height", "off"] "Compensation (the outer wall; the thread keeps its pitch)"
 param strength     = 100 %   in 0..100              "Strength"  when compensation = "layer height"
 param steep        = 0       in 0..4 step 0.1       "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
 param pivot        = 45 deg  in 5..85 step 1        "Steep curve pivot (as now at this angle)"  when steep
