@@ -1237,7 +1237,7 @@ pub static NODES: &[Node] = &[
                 "z_by",
                 "Text",
                 0.0,
-                "how the layers rise: \"flat\" (the default: flat layers, only the thread a helix, easing in and out over 4 layers, each layer stepping up at the seam), \"angle\" (every point at its angle's height, every ring a true helix: the sketcher's) or \"length\" (by the length so far)",
+                "how the layers rise: \"angle\" (the default, the sketcher's: every point at its angle's height, so every layer rises a layer a turn with no seam and every ring is a true helix), \"flat\" (level layers, only the thread a helix, each layer stepping up at a seam: it shows on the wall) or \"length\" (by the length so far)",
             ),
             opt("line", "Length", 5.0, "line width"),
             req("layer", "Length", "layer height: the thread's pitch"),

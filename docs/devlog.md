@@ -7,6 +7,20 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-19: Thread pendant: layers rise a layer a turn again, no seam (recipe-developer)
+
+**Why:** the owner's print: flat layers (the default since 17 Nov) step up to the next layer
+over the last two line widths at one place, a seam straight up the whole wall, far too visible.
+They want every layer rising a layer a turn.
+
+**What landed:** "angle" layers (every point at its angle's height, as the sketcher) are the
+default again: in the template, in `thread_shade` without `z_by`, and for sketcher files. The
+wall rises steadily all the way round and never steps (tested: nowhere faster than a layer a
+turn, a whole turn exactly its layer, with compensation and a thinner wall); the thread on the
+socket is the same true helix as before, rising a pitch a turn while the wall rises its own
+layer, the wings climbing between them. "flat" stays as a choice. A project saved with
+"flat" keeps it: set Layers to "angle".
+
 ## 2026-11-18: Thread pendant: a thinner wall and wings than the thread (recipe-developer)
 
 **Why:** the owner wants thin layers and lines in the shade and the wings, to save plastic, and

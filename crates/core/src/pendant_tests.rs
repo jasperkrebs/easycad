@@ -91,12 +91,19 @@ fn the_template_prints_as_it_ships() {
     assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
     assert_eq!(e.project.as_deref(), Some("Thread pendant"));
     let p = &e.prints[0];
-    // 79 layers (200 mm at 2.5 mm), the first flat on the bed, a layer up.
+    // 79 layers (200 mm at 2.5 mm), rising a layer a turn (no seam): the first starts on the
+    // bed and climbs a layer as it goes round, each move extruded for the gap over the bed.
     assert_eq!(p.stats.layers, 79);
     let first = p.path.points[1];
-    assert!((first[2] - 2.5).abs() < 1e-9, "{first:?}");
+    assert!(first[2] < 0.1, "{first:?}");
+    for i in 1..p.path.points.len() {
+        let z = p.path.points[i][2];
+        if z < 2.5 && !p.path.travel[i] {
+            assert!(p.path.bead_of(i).1 <= z.max(0.05) + 1e-9, "{i} {z}");
+        }
+    }
     let top = p.path.points.iter().map(|q| q[2]).fold(0.0, f64::max);
-    assert!((top - 197.5).abs() < 1e-6, "{top}");
+    assert!((top - 197.5).abs() < 2.5 + 1e-6, "{top}");
     // G-code the printers take.
     let g =
         crate::gcode::write(&p.path, &crate::gcode::Profile::default(), "Thread pendant").unwrap();
