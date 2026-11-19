@@ -64,8 +64,9 @@ pub struct Settings {
     /// Above the grip: only a crease of this depth (true, `topMode` "crease") or full wings.
     pub crease_top: bool,
     pub crease: f64,
-    /// How the layers rise: flat, with only the thread a helix (the default); every point at its
-    /// angle's height, every ring a helix (the sketcher's `zMode` "angle"); or by the length so
+    /// How the layers rise: every point at its angle's height, every layer rising a layer a turn
+    /// with no seam and every ring a helix (the default, the sketcher's `zMode` "angle"); flat,
+    /// with only the thread a helix and each layer stepping up at a seam; or by the length so
     /// far (its "length", a slicer's vase mode).
     pub layers: Layers,
     /// Line width (the sketcher's 5 mm bead) and layer height (the thread's pitch, `LH`).
@@ -1859,6 +1860,69 @@ mod tests {
             "{:?}",
             pts.iter().map(|p| p[2]).fold(0.0, f64::min)
         );
+    }
+
+    /// The owner's photos: flat layers step up at one place, a seam all the way up the wall. By
+    /// angle (the default) the outer wall rises a layer a turn and never steps: between any two
+    /// points along it, the height changes by at most its layer's rise × the turn between them,
+    /// and a whole turn rises exactly that layer's rise; the thread on the socket stays a true
+    /// helix, with a thinner wall too.
+    #[test]
+    fn the_wall_rises_a_layer_a_turn_with_no_seam() {
+        for (wall_line, wall_layer, strength) in [(0.0, 0.0, 1.0), (3.0, 1.5, 1.0), (3.0, 1.5, 0.0)]
+        {
+            let s = Settings {
+                layers: Layers::Angle,
+                wall_line,
+                wall_layer,
+                strength,
+                ..leaning()
+            };
+            let radius = Radius::new(&s.profile, s.height, s.scale);
+            let plan = layer_plan(&s, &radius);
+            let most = plan.iter().map(|l| l.rise).fold(0.0, f64::max);
+            let (pts, info) = thread_shade(&s).unwrap();
+            let on_wall =
+                |p: &P3| (p[0].hypot(p[1]) - radius.at(p[2] + 1.5 * s.layer)).abs() < 1e-6;
+            let mut pairs = 0;
+            for w in pts.windows(2) {
+                if !(on_wall(&w[0]) && on_wall(&w[1])) || w[0][2] < 0.0 {
+                    continue;
+                }
+                let turn = (w[1][1].atan2(w[1][0]) - w[0][1].atan2(w[0][0])).rem_euclid(TAU);
+                let turn = turn.min(TAU - turn) / TAU;
+                assert!(
+                    (w[1][2] - w[0][2]).abs() <= most * turn + 1e-9,
+                    "a step on the wall: {:?} {:?}",
+                    w[0],
+                    w[1]
+                );
+                pairs += 1;
+            }
+            assert!(pairs > 5_000, "{pairs}");
+            // A whole turn: from the seam round to the seam, the layer's rise.
+            let th_s = PI / 2.0 - PI / 3.0;
+            let seam: Vec<f64> = pts
+                .iter()
+                .filter(|p| {
+                    on_wall(p)
+                        && ((p[1].atan2(p[0]) - th_s).rem_euclid(TAU))
+                            .min(TAU - (p[1].atan2(p[0]) - th_s).rem_euclid(TAU))
+                            < 1e-9
+                })
+                .map(|p| p[2])
+                .collect();
+            assert!(seam.len() > 50, "{}", seam.len());
+            for (w, l) in seam.windows(2).zip(plan.iter().skip(1)) {
+                assert!(
+                    (w[1] - w[0] - l.rise).abs() < 1e-9,
+                    "{} {}",
+                    w[1] - w[0],
+                    l.rise
+                );
+            }
+            assert_true_helix(&pts, &s, &info);
+        }
     }
 
     /// Found by the fuzz test: a radius of 4 × 10⁹ mm in the profile took a minute to say it

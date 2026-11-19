@@ -14,7 +14,7 @@ param grip         = 25 mm   in 5..60 step 0.5      "Grip height"
 param hide         = 35 mm   in 0..150 step 2.5     "Grip depth below the top (hides the socket)"
 param top          = "crease" of ["crease", "full"] "Above the grip"
 param crease       = 5 mm    in 1..30 step 0.5      "Crease depth above the grip"  when top = "crease"
-param z_by         = "flat" of ["flat", "angle", "length"] "Layers (flat: only the thread a helix; angle: all of it, as the sketcher)"
+param z_by         = "angle" of ["angle", "flat", "length"] "Layers (angle: rising a layer a turn, no seam; flat: level, stepping up at a seam)"
 
 group "Shade"
 param height       = 200 mm  in 80..3000 step 2.5   "Height"

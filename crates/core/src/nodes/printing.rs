@@ -288,8 +288,8 @@ pub(super) fn thread_shade(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         crease_top: choice(18, "top", ["crease", "full"])?,
         crease: a.num(19)?,
         layers: match a.text(20) {
-            Err(_) | Ok("flat") => pendant::Layers::Flat,
-            Ok("angle") => pendant::Layers::Angle,
+            Ok("flat") => pendant::Layers::Flat,
+            Err(_) | Ok("angle") => pendant::Layers::Angle,
             Ok("length") => pendant::Layers::Length,
             Ok(t) => {
                 return Err(format!(

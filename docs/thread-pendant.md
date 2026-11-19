@@ -30,18 +30,20 @@ Printed as it hangs: the bottom opening on the bed, the socket going in at the t
 - **Above the grip:** only a crease at each entry (the lines on the outside run on to the top), or
   full wings leaning back out.
 
-**Layers** (`z_by`, since 17 Nov):
-- **flat** (the default): every layer is level, except the thread. The inner rings in the grip
-  climb a pitch a turn (a pitch below the layer at the seam, level with it a turn on), easing in
-  over the 4 layers below the grip and out over the 4 above (so the layers next to it still sit
-  on it); the half turns onto and off them climb with their ends. Each layer steps up to the next
-  along its last two line widths, at the seam (between two entries).
-- **angle**: the sketcher's: every point at the height its angle round the axis gives, so every
-  ring is a helix and the slots take up the difference (within a layer the line dips a little
-  where a wing runs back round).
+**Layers** (`z_by`):
+- **angle** (the default since 19 Nov, the sketcher's): every point at the height its angle round
+  the axis gives, so every layer rises one layer a turn, a vase spiral with no seam, and every
+  ring is a helix (the thread on the socket one pitch a turn); the slots take up the difference
+  (within a layer the line dips a little where a wing runs back round). Tested: along the outer
+  wall the height never changes faster than a layer a turn, and a whole turn rises exactly its
+  layer.
+- **flat**: every layer level, except the thread (the inner rings in the grip climb a pitch a
+  turn, easing in and out over 4 layers). Each layer steps up to the next along its last two line
+  widths at the seam (between two entries): in the owner's prints that step is a seam all the
+  way up the wall, too visible, so it's no longer the default (17–19 Nov it was).
 - **length**: rising by the length so far, as a slicer's vase mode: the thread drifts (it warns).
 
-A sketcher file's "angle" opens as flat: what it was for, a true-helix thread, is kept.
+A sketcher file's "angle" opens as angle.
 
 **The slots land on the rings:** the sketcher draws each slot straight in its own frame, so its
 ends land a hair outside the wall and the rings (0.2–0.4 mm, most near the socket), a little
@@ -69,7 +71,7 @@ The translator (`web/js/sketcher.js`, tested with the sketcher's own files in
 | `tipGap`, `neckGap`, `wallGap`, `pinGap`, `wingRot` | Gap at the wing tips, Entry slot width, Air gaps, Wing rotation |
 | `path` (u, w), `pathLen` | Path, Path height |
 | `socket`, `sockD`, `sockP` (= `LH`), `sockH` | Socket (E27, E14, or custom with the three) |
-| `eSock`, `grip`, `hide`, `topMode`, `crease`, `zMode`, `res` | Thread engagement, Grip height, Grip depth below the top, Above the grip, Crease depth, Layers ("angle" opens as flat), Resolution |
+| `eSock`, `grip`, `hide`, `topMode`, `crease`, `zMode`, `res` | Thread engagement, Grip height, Grip depth below the top, Above the grip, Crease depth, Layers, Resolution |
 
 Not made here (the file still opens, and says so): the **floor lamp** and the **linear
 pendant**, the **separate screw part** (`mount: coupler`). The view-only settings (bulb, section
