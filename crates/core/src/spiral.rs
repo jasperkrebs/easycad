@@ -118,6 +118,7 @@ pub fn spiral(
         turn.push((i as f64 / total as f64) * turns as f64);
     }
     Ok(Curve {
+        bead: None,
         winding: Some(Winding {
             turn,
             per_turn,
@@ -145,7 +146,11 @@ pub fn end_exactly_at(curve: Curve, outer: f64) -> Curve {
         .iter()
         .map(|p| [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k, p[2]])
         .collect();
-    Curve { points, ..curve }
+    Curve {
+        points,
+        bead: None,
+        ..curve
+    }
 }
 
 /// A flat spiral (in the XY plane, around the origin) of exactly `turns` turns (any fraction
@@ -250,6 +255,7 @@ pub fn spiral_turns(
         turn.push((i as f64 / steps as f64) * turns);
     }
     Ok(Curve {
+        bead: None,
         winding: Some(Winding {
             turn,
             // Only exact when the turns divide the points evenly; `interlock` checks.

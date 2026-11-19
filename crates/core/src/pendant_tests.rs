@@ -254,3 +254,68 @@ fn the_checks_say_what_is_wrong() {
         assert!(!e.prints.is_empty(), "{s}: {:?}", e.diagnostics);
     }
 }
+
+/// The owner's Angled cone with a thinner wall and wings (3.2 mm lines, 1.5 mm layers) than the
+/// thread (5 mm, the E27's 2.5 mm pitch): about a third less plastic; the thread on the socket
+/// still one true helix, each move extruded for its own bead.
+#[test]
+fn a_thinner_wall_on_the_angled_cone() {
+    let mut v = angled();
+    v.extend([
+        ("grip", num(28.5)),
+        ("hide", num(35.0)),
+        ("crease", num(15.0)),
+        ("z_by", text("angle")),
+    ]);
+    let thick = pendant(&v);
+    v.extend([("wall_line", num(3.2)), ("wall_layer", num(1.5))]);
+    let thin = pendant(&v);
+    // Nothing the thick one doesn't say (the wings stepping more than half a line at 70°).
+    assert_eq!(warnings(&thin), warnings(&thick));
+    let (a, b) = (&thin.prints[0].stats, &thick.prints[0].stats);
+    assert!(
+        a.volume_mm3 < 0.7 * b.volume_mm3,
+        "{} {}",
+        a.volume_mm3,
+        b.volume_mm3
+    );
+    assert!(a.layers > b.layers);
+    let path = &thin.prints[0].path;
+    let pts = &path.points;
+    // On the barrel (radius 20 − 1 + 2.5): one helix, a pitch a turn, each move there extruded
+    // for the thread's bead.
+    let on: Vec<usize> = (1..pts.len())
+        .filter(|&i| {
+            let r = |p: &P3| p[0].hypot(p[1]);
+            (r(&pts[i]) - 21.5).abs() < 1e-6 && (r(&pts[i - 1]) - 21.5).abs() < 1e-6
+        })
+        .collect();
+    assert!(on.len() > 100, "{}", on.len());
+    let phase = |q: &P3| {
+        let t = q[2] / 2.5 - q[1].atan2(q[0]) / std::f64::consts::TAU;
+        t - t.floor()
+    };
+    let p0 = phase(&pts[on[0]]);
+    for &i in &on {
+        let d = (phase(&pts[i]) - p0).abs();
+        assert!(d.min(1.0 - d) < 1e-6, "{:?}", pts[i]);
+        let (w, h) = path.bead_of(i);
+        assert!((w - 5.0).abs() < 1e-9 && (h - 2.5).abs() < 1e-9, "{w} {h}");
+    }
+    // Everywhere: between the wall's bead and the thread's; most of it the wall's.
+    let mut walls = 0;
+    for i in 1..pts.len() {
+        if path.travel[i] {
+            continue;
+        }
+        let (w, h) = path.bead_of(i);
+        assert!(
+            (3.2 - 1e-9..=5.0 + 1e-9).contains(&w) && h <= 2.5 + 1e-9,
+            "{i} {w} {h}"
+        );
+        if (w - 3.2).abs() < 1e-9 && (h - 1.5).abs() < 1e-9 {
+            walls += 1;
+        }
+    }
+    assert!(walls * 10 > pts.len() * 6, "{walls} of {}", pts.len());
+}

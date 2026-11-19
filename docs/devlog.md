@@ -7,6 +7,39 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-18: Thread pendant: a thinner wall and wings than the thread (recipe-developer)
+
+**Why:** the owner wants thin layers and lines in the shade and the wings, to save plastic, and
+the socket's pitch and a thick bead only on the thread. (Done with the owner's leave in the
+general manager's files too: a curve that carries its own bead.)
+
+**What landed:**
+- **Curves can carry a bead** (`Curve::bead`: a width and layer height per point), and
+  `toolpath` prints each move for it (the per-move width and height the toolpath already had,
+  as `bead` sets them). Moves and turns keep it; a tween or anything that remakes the points
+  drops it. Tested.
+- **`thread_shade`: `wall_line`, `wall_layer`** (0: the thread's). The wall and wings print
+  with their own bead; the thread grows into the pitch and its own width over the layers before
+  the grip (a tenth of a pitch a layer), a true helix on the socket, and back after. The line
+  carries each point's bead, the first layer's for the gap over the bed (the template's `bead`
+  step is gone).
+- **The lead is shared**: the thread starts half of it below the wall and ends half above (all
+  below with full wings), so the bridge climbs half as far. This changes yesterday's compensation
+  too (the thread started level with the wall's top then): the owner's cone now runs ±3.3 mm.
+- **Widths follow heights across the bridge**, so the middle ring next to the thread is as wide
+  as its pitch-tall layers. The wing rings' sideways step is limited by their own rise.
+- **Two checks:** the bridge climbing steeper than 15°, and the wing rings' layers thinner than
+  half the wall's (new info items 20 and 21).
+- **Too big is said at once:** a shade with millions of points used to be built before the
+  error (a fuzzed 4 × 10⁹ mm radius took a minute); the outer wall's points are counted first.
+
+The owner's Angled cone, 3.2 mm × 1.5 mm wall and wings, the E27 thread 5 × 2.5: 232 layers,
+2,004 cm³ and 28 h instead of 2,980 cm³ and 41 h. The thread is ±11.6 mm from the wall, the
+bridge climbs at most 12.5°, and no warning besides the 70° wings' (as before).
+
+**Open:** a test print, and which nozzle: a 3.2 mm wall wants the 3 mm one (the width check
+passes 1–2 × the nozzle).
+
 ## 2026-11-18: Thread pendant: compensation on the wall, the pitch only on the thread (recipe-developer)
 
 **Why:** the owner's shades with more overhang: the compensation stopped a layer below the grip,

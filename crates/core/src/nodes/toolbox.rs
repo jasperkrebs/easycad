@@ -302,6 +302,7 @@ fn map_points(
                 closed: c.closed,
                 circle: None,
                 winding: c.winding.clone(),
+                bead: c.bead.clone(),
             })))
         }
         Value::Surface(s) => {

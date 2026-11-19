@@ -20,6 +20,10 @@ pub struct Curve {
     /// Set when the curve winds around a centre, like a spiral: where each point is, in turns.
     /// Waves and interlocking use it to line up one turn with the next.
     pub winding: Option<Winding>,
+    /// Set when every point carries its own bead: the line width and layer height to extrude
+    /// the move that ends at it for (mm; 0 keeps the toolpath's). `toolpath` prints it so, a bead
+    /// that changes along the line (the Thread pendant's thin wall and thick thread).
+    pub bead: Option<Vec<[f64; 2]>>,
 }
 
 /// An exact circle: centre (x, y) and radius.
@@ -45,6 +49,7 @@ impl Curve {
             closed,
             circle: None,
             winding: None,
+            bead: None,
         }
     }
 
@@ -245,6 +250,7 @@ impl Curve {
             closed: self.closed,
             circle,
             winding,
+            bead: self.bead.clone(),
         }
     }
 
@@ -487,6 +493,7 @@ impl Curve {
             closed: a.closed,
             circle: None,
             winding,
+            bead: None,
         })
     }
 
