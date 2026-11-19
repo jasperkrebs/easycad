@@ -9,7 +9,8 @@ import { test } from 'node:test';
 import { runStatus } from '../web/js/agent.js';
 import { parseNumber } from '../web/js/dom.js';
 import { assemblyMotion, assemblySteps, freePorts, newPartName, sections, shapeSwitch, threadOf, withMounted } from '../web/js/parts.js';
-import { applies, listValue } from '../web/js/settings.js';
+import { axisRange, curvePieces, tidy } from '../web/js/curve-editor.js';
+import { applies, between, listValue } from '../web/js/settings.js';
 import { fileNote, fingerprint, projectOf, withoutFileNote, withoutValues } from '../web/js/templates.js';
 
 const rows = { value: [[0, 33], [1, 32]] };
@@ -25,6 +26,35 @@ test('a list setting takes a list of its own kind', () => {
   }
   assert.match(listValue(numbers, [[1, 2]]).error, /needs numbers/);
   assert.match(listValue(numbers, [1, Infinity]).error, /needs numbers/);
+});
+
+test('a row put in between two is halfway, value by value; after the last, a copy', () => {
+  assert.deepEqual(between([0, 0], [0.5, 1]), [0.25, 0.5]);
+  assert.deepEqual(between([0.1, 0.2], [0.2, 0.4]), [0.15, 0.3], 'no float dust');
+  // A corner flag only one of them has stays out (the shorter row decides).
+  assert.deepEqual(between([0, 247.5, 1], [1, 63.3]), [0.5, 155.4]);
+  assert.deepEqual(between([1, 1], undefined), [1, 1]);
+});
+
+test("a list's graph: its axes, the values it rounds to, the curve through its points", () => {
+  assert.deepEqual(axisRange([0, 0.25, 1]), [0, 1], 'a 0..1 curve keeps 0..1');
+  assert.deepEqual(axisRange([63.3, 247.5]).map((v) => Number(v.toFixed(2))), [44.88, 265.92], 'else its span, with room');
+  assert.deepEqual(axisRange([5, 5]), [4.5, 5.5]);
+  assert.deepEqual(axisRange([]), [0, 1]);
+  assert.equal(tidy(0.806906123, [0, 1]), 0.807);
+  assert.equal(tidy(155.43219, [44, 266]), 155.4);
+  // A monotone curve: through every point, never past them (a flat run stays flat).
+  const pieces = curvePieces([[0, 0], [0.25, 0.83], [0.56, 1], [1, 1]]);
+  assert.equal(pieces.length, 1);
+  const ys = pieces[0].map((q) => q[1]);
+  assert.ok(ys.every((y) => y >= -1e-12 && y <= 1 + 1e-12), 'never past the points');
+  assert.ok(pieces[0].filter((q) => q[0] >= 0.56).every((q) => Math.abs(q[1] - 1) < 1e-12), 'flat after 0.56');
+  for (const pt of [[0, 0], [0.25, 0.83], [0.56, 1], [1, 1]]) {
+    assert.ok(pieces[0].some((q) => Math.abs(q[0] - pt[0]) < 1e-12 && Math.abs(q[1] - pt[1]) < 1e-12), JSON.stringify(pt));
+  }
+  // Points out of order are drawn in order of x; a corner (third value 1) splits the curve.
+  assert.deepEqual(curvePieces([[1, 1], [0, 0]])[0][0], [0, 0]);
+  assert.equal(curvePieces([[0, 1], [0.5, 2, 1], [1, 0]]).length, 2);
 });
 
 test('the agent sees list settings as lists, and every part a recipe prints', () => {

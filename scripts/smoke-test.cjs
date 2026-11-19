@@ -363,7 +363,13 @@ async function saveFrom(page, selector) {
       await page
         .waitForFunction(() => /^param body\s+= \[\[0, 33\], \[0\.45, 38\], \[1, 32\], \[1, 30\]\]/m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
         .catch(async () => failures.push(`${name}: the new row didn't reach the recipe: ${body(await page.inputValue('#recipe'))}`));
-      await page.click('.setting.list .list-row >> nth=3 >> button');
+      // A row put in between the first two: halfway, value by value; then removed again.
+      await page.click('.setting.list .list-row >> nth=0 >> button[title="Add a row below this one"]');
+      await page
+        .waitForFunction(() => /^param body\s+= \[\[0, 33\], \[0\.225, 35\.5\], \[0\.45, 38\]/m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
+        .catch(async () => failures.push(`${name}: a row put in between didn't reach the recipe: ${body(await page.inputValue('#recipe'))}`));
+      await page.click('.setting.list .list-row >> nth=1 >> button[title="Remove this row"]');
+      await page.click('.setting.list .list-row >> nth=3 >> button[title="Remove this row"]');
       await page
         .waitForFunction(() => /^param body\s+= \[\[0, 33\], \[0\.45, 38\], \[1, 32\]\] /m.test(document.getElementById('recipe').value), null, { timeout: 15000 })
         .catch(async () => failures.push(`${name}: removing the row didn't reach the recipe: ${body(await page.inputValue('#recipe'))}`));
