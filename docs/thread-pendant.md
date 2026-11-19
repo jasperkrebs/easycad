@@ -114,20 +114,32 @@ thread's and back: through the slot and along the wing rings (the bridge).
   there are layers). Never less than 75 % of the wall's rise, easing in and out of that a
   twentieth of it a layer. With full wings above the grip (they move back out, and would lose
   the lead they carry) all of the lead is below.
-- **The bridge.** In each layer the heights blend by radius: all of the thread's on the socket's
-  inner ring, none from a line width inside the outer wall outwards, smoothly between. Each point
-  sits on the same point of the layer below. The bead blends the same way (each point extruded
-  for its own width and layer height), so every ring is as wide as its layer is tall: the middle
-  ring next to the thread prints nearly as the thread.
-- **On the owner's Angled cone:** with compensation only (2.13 mm wall layers) the thread runs
-  3.3 mm below to 3.3 mm above the wall, the bridge climbs at most 3.5°, and the rings' thinnest
-  layer is 1.76 mm. With a 3.2 × 1.5 mm wall: ±11.6 mm, 12.5°, 0.84 mm.
+- **The bridge is the straight arm.** In each layer the heights blend by radius along the arm
+  only: all of the thread's from the middle ring on the socket inwards (in the grip both rings
+  and the turns at their tips print the thread's height and bead, 5 × 2.5 mm), none from a line
+  width inside the outer wall outwards, smoothly between. The arm starts at the same radius in
+  every layer, so each point sits on the same point of the layer below even where the rings
+  move (below the grip they're still wall layers). The bead blends the same way (each point
+  extruded for its own width and layer height), and the two rings always have the same width.
+- **On the owner's straight shade** (72.5 mm, a 3.5 × 1.5 mm wall, a 30 mm grip): the thread
+  runs 9.5 mm below to 9.5 mm above the wall, the arm climbs at most 19° (17° when the blend ran
+  from the socket ring), and the rings' thinnest layer is 1.13 mm.
 - **Two checks** say when it goes too far: the bridge climbing steeper than 15° (the nozzle may
   drag on the layer below; a narrow shade round a long grip does it), and the wing rings' layers
   thinner than half the wall's (rings moving while the lead changes; full wings with thin
   layers do it).
 - Without compensation and with the thread's own bead everywhere, nothing moves: one layer
   height, as before.
+- **The gap between the wing lines** ("Air gap between wing lines") opens from none where the
+  wings start: the first turn at each tip is then one line across and hangs at most half a line
+  off the slot under it (with the whole gap it hung a full line, in the owner's photo). It opens
+  a layer at a time by what's left of half a line (or the max overhang, if less) after the inner
+  ring's own move that layer, so the middle ring never steps out further. **No gap on the socket**
+  (on by default, "closed pockets"): it closes again before the grip, as fast as the max overhang
+  allows on top of the inner ring's move, and only opens as far as it can close in time, so every
+  layer on the socket is solid and each gap is a closed pocket. On the owner's Angled cone (70°)
+  the 5 mm gap holds along the whole path and closes over the last three layers before the
+  socket. Tested: the first turn a line across, the steps, no gap on the socket.
 - **Line width and flow** are settings (the sketcher's bead is 5 mm), and the G-code comes from
   the printer profiles like every other project.
 - **The checks:** the sketcher's (wings not formed over the grip, the socket showing, the wings

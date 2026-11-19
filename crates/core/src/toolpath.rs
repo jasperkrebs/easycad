@@ -888,6 +888,19 @@ pub fn from_curves(
         .map(|c| c.points.len() + usize::from(c.closed))
         .sum::<usize>();
     too_many(needed, max_points, "use fewer or simpler curves")?;
+    // A curve's own bead: within what a toolpath's settings may be.
+    for curve in curves {
+        for (i, &[w, h]) in curve.bead.iter().flatten().enumerate() {
+            if w != 0.0 {
+                check("width", w, 0.05, 20.0, " mm")
+                    .map_err(|e| format!("point {}: {e}", i + 1))?;
+            }
+            if h != 0.0 {
+                check("layer", h, 0.02, 10.0, " mm")
+                    .map_err(|e| format!("point {}: {e}", i + 1))?;
+            }
+        }
+    }
     let mut path = Toolpath::empty(vec![settings], needed);
     for curve in curves {
         let turn = |i: usize| {
@@ -1846,6 +1859,13 @@ mod tests {
         assert_eq!(p.bead_of(1), (3.0, 1.0));
         assert_eq!(p.bead_of(2), (5.0, 2.0));
         assert!((p.area(2) / p.area(1) - bead_area(5.0, 2.0) / bead_area(3.0, 1.0)).abs() < 1e-12);
+        // Found by the fuzz test: a 100 m bead (a damaged setting) hung the checks after it;
+        // it's said instead, as a toolpath's own width would be.
+        c.bead = Some(vec![[3.0, 1.0], [100_000.0, 1.0], [5.0, 0.0]]);
+        let e = from_curves(&[&c], settings(4.0, 2.0, 20.0), MAX_PATH_POINTS).unwrap_err();
+        assert!(e.contains("point 2") && e.contains("width"), "{e}");
+        c.bead = Some(vec![[3.0, f64::NAN], [3.0, 1.0], [5.0, 0.0]]);
+        assert!(from_curves(&[&c], settings(4.0, 2.0, 20.0), MAX_PATH_POINTS).is_err());
     }
 
     #[test]
