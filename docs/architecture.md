@@ -400,9 +400,11 @@ holds the tabs Settings / Chat / Recipe / Print / About.
 
 **The page never scrolls** (an app shell that fills the screen): the panels scroll on their
 own under their pinned tab row, so the viewport stays in sight however long the settings are.
-On a phone the viewport takes the top 52 % (at least 260 px). Nothing sits on the 3D view: its
-controls are pinned in a strip under it (one row that slides sideways, the print progress, the
-legend and stats).
+On a phone (up to 700 px wide) the 3D view itself takes 38 % of the screen's height (at least
+180 px) and its controls tighten up under it (one row that slides sideways, the print progress,
+the legend and stats, the colour sliders side by side), so the view and its controls fill about
+the top half and the panels scroll in the rest; the header is smaller. Elsewhere the viewport
+takes the top 52 % (at least 260 px). Nothing sits on the 3D view.
 
 ### 9.2 Panels
 - **Viewport** (three.js):
