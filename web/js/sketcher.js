@@ -68,6 +68,8 @@ export function sketcherToValues(file) {
     height: num(d.H, 200),
     profile,
     entries: Math.round(num(d.N, 2)),
+    // Its wings as it makes them: its path and max overhang.
+    wing_shape: 'sketcher',
     wing_zone: num(d.wingLen, 147.5),
     wing_curve: wing,
     max_overhang: num(d.maxOver, 45),

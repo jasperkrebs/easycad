@@ -7,6 +7,34 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+
+## 2026-11-19 (late): Thread pendant: the wings compensated on their own, and the leaf (recipe-developer)
+
+**Why:** the owner's sphere: the wings and the outer shape lean differently, so each needs its
+own compensation, the arm taking up the difference ("if we need more layers on the inside they
+have to come from more layers from the outside"). And: no shaping the wings with the max
+overhang; a graph for the leaf's silhouette (against height), the path from where the wings
+start to the socket.
+
+**What landed** (`pendant.rs`, the template):
+- **The wings' own compensation:** each layer's rise for the wings from their lean (the rings
+  coming in, or the leaf's edges, whichever is steeper); the wall's from the shape's. Over each
+  stretch of wings both get the same number of layers: whichever needs fewer gets thinner ones
+  (on a sphere the wall gives the wings layers: 187 instead of 131). In between their heights
+  part only as far as the arm can climb at 7°, back to none by the socket. The lead is now two
+  parts: the wings' own (fading along the arm from each layer's middle ring) and the thread's
+  (from the middle ring on the socket, as before), so the thread stays a true helix (tested).
+  The wings and the arm are extruded for the gap they're in; the thin-layer check is now
+  relative to each layer (under half warns).
+- **Wing shape: leaf** (default) or **sketcher** (sketcher files open so). The leaf: the wing
+  curve is its width against height along the zone, exactly; a straight path from the wall where
+  the zone starts to the socket; no max overhang (the half-a-line check stays, by eye). The max
+  overhang, path and path height show only for the sketcher's.
+- Measured: the owner's sphere (leaf) ±9 mm, 10°, nothing under 69 % of its layer; the Angled
+  cone with a 3.2 × 1.5 mm wall now warns of a 16° arm (the thread far ahead and the 70° wings).
+
+**Open:** a test print of a leaf sphere; adding or removing leaf points on the graph itself.
+
 ## 2026-11-19 (later): Thread pendant: wing gaps that open from none and close on the socket; the bead changes along the arm (recipe-developer)
 
 **Why:** the owner's photo: the first turn at each wing tip hung a whole line off the slot

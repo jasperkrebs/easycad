@@ -32,6 +32,7 @@ test('the angled shade: its corner, its cone, five entries on an E27', () => {
   assert.equal(values.socket, 'E27');
   assert.equal(values.wing_zone, 250);
   assert.equal(values.max_overhang, 70);
+  assert.equal(values.wing_shape, 'sketcher', 'its wings as it makes them');
   assert.equal(values.top, 'crease');
   assert.equal(values.z_by, 'angle', 'every layer rising a layer a turn, as the sketcher');
   assert.equal(values.path.length, 7);

@@ -307,6 +307,7 @@ pub(super) fn thread_shade(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         wall_line: a.num(29)?,
         wall_layer: a.num(30)?,
         pockets: a.flag(31)?,
+        leaf: a.flag(32)?,
     };
     let output = a.text(28).unwrap_or("path");
     let (points, info) = pendant::thread_shade(&s)?;
