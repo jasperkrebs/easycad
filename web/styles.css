@@ -905,6 +905,79 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+/* A list of points: a table or a graph (its points dragged), chosen above it. */
+.list-setting {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.list-views {
+  justify-self: start;
+}
+
+.curve-editor {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.curve-graph {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+  user-select: none;
+}
+
+.curve-graph .axis {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.curve-graph .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.curve-graph .tick {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.curve-graph .curve {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.curve-graph .hit {
+  fill: transparent;
+  cursor: grab;
+}
+
+.curve-graph .dot {
+  fill: var(--card);
+  stroke: var(--accent);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.curve-graph .handle.sharp .dot {
+  stroke: var(--accent2);
+}
+
+.curve-graph .handle.active .dot {
+  fill: var(--accent);
+}
+
+.curve-graph .handle.active .hit {
+  cursor: grabbing;
+}
+
 .btn.tiny {
   padding: 5px 10px;
   border-radius: 8px;

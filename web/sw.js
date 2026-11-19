@@ -17,6 +17,7 @@ const ASSETS = [
   './js/beads.js',
   './js/chat.js',
   './js/chat-text.js',
+  './js/curve-editor.js',
   './js/dom.js',
   './js/engine.js',
   './js/engine.worker.js',

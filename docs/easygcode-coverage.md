@@ -124,7 +124,7 @@ the owner's changes:
 
 | Feature | How |
 |---|---|
-| Body radii at heights 0–1, any number of them | a **list setting** (`param body = [[0, 33], [0.45, 38], [1, 32]]`), edited as a table |
+| Body radii at heights 0–1, any number of them | a **list setting** (`param body = [[0, 33], [0.45, 38], [1, 32]]`), edited as a table (rows put in between, or added at the end) or as a graph, its points dragged |
 | A body that leaves the fillet and meets the neck straight up | `graph(heights, radii, t, smooth: true)`: smooth through the points, never past them, level at both ends |
 | Flat bottom, fillet, wall: one continuous line | `rings` of the fillet's foot + `link_rings(…, "spiral")` from the centre out: its last turn widens onto the foot and ends on the seam (EasyGCode's ring fill); a quarter-circle fillet and the body as `loft` sections; `contour(pace)` + `spiralize(ramp: false, flat_top: false)` + `bead(layer)`; `join` carries straight on |
 | Closer layers on the fillet's overhang (each still a full layer's bead) | `contour(wall, layer, pace: …)` + `bead(layer: …)` (EasyGCode's squeeze) |
