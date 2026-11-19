@@ -9,6 +9,20 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+
+## 2026-11-20: a bigger 3D view on the phone (claude/eager-maxwell-ph399i, the general manager's files with the owner's leave)
+
+**Why:** the owner: on the phone the 3D view was a strip; they want it about half the screen,
+pinned, the settings scrolling under it.
+
+**What landed** (`web/styles.css`, phones up to 700 px wide): the view itself 38 % of the
+screen's height (at least 180 px); its controls tighter (smaller buttons, the colour sliders side
+by side in one row); a smaller header. On an iPhone-sized screen (664 px seen) the view went from
+92 px to 252 px, its controls from 205 px to 130 px; the settings scroll in the remaining 209 px
+under the pinned view and tabs. Desktop unchanged. Smoke and agent tests pass; checked with the
+owner's half sphere.
+
+
 ## 2026-11-19 (night): Thread pendant: the wings compensated for their radial lean, even along the leaf (recipe-developer)
 
 **Why:** the owner: on the sphere the leaf (one straight thing) had different layer heights
