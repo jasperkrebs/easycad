@@ -106,24 +106,20 @@ What the sketcher leaves out, added here:
 ### The wings compensated on their own
 
 With compensation on, the wall and the wings are compensated each for its own lean (since 19
-Nov): the wall for the shape's, the wings for theirs (the steeper of the rings coming in and the
-leaf's edges growing or shrinking along them). Each layer is still one line, so:
+Nov): the wall for the shape's, the wings for theirs in towards the socket (radially; not the
+leaf's edges growing along the rings). Each layer is still one line, so over any stretch the
+wings and the wall have the same number of layers: the wings can't keep more layers than the
+wall, only fall behind it for a while and catch up. So where the wings run, **both rise the
+thinner of the two**:
 
-- **Both have the same number of layers.** Over each stretch of wings (below the grip, and with
-  full wings above it), whichever needs fewer layers for its height gets thinner ones, evenly, so
-  they match. Where the wings lean more than the wall (a sphere's), the wall gives them layers: on
-  the owner's sphere 187 layers instead of 131 without compensation, the wall's thinnest 0.85 mm.
-  That extra thinning isn't squeezed: the wall is extruded for it.
-- **In between, the wings' heights part from the wall's** where one leans more than the other,
-  and the arm takes up the difference, but only as far as it can climb gently (7° for this part,
-  per mm of arm): by the wall, where the arm is short, the wings keep to the wall's heights. By
-  the socket the difference is back to none, so the thread's own lead (below) comes on top of
-  nothing.
-- **The wings are extruded for their own layers** (not squeezed: they keep their width), and
-  every point of the arm for the gap it's actually in.
-- **On the owner's sphere:** the wings run 9.4 mm below to 7.4 mm above the wall, the arm climbs
-  at most 10°, and nothing gets under 69 % of its layer. A check says where something gets under
-  half.
+- Each is compensated at least as much as its own lean asks; the extra thinning (the wall's
+  layers beside steeper wings, say) is extruded for, not squeezed.
+- Along a straight leaf the wings' layers are even (tested on the owner's sphere).
+- The band eases in and out (the layer height changes by at most 0.04 mm per mm of height), so
+  it doesn't show as a line on the outside.
+- The wings' heights stay the wall's, so the arm only climbs for the thread's own lead (below).
+- **On the owner's sphere:** 186 layers instead of 131 without compensation (164 with the wall
+  compensated alone), 40.8 h; the arm climbs at most 7.7°, nothing under 67 % of its layer.
 
 ### How the thread keeps its pitch
 
