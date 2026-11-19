@@ -29,6 +29,30 @@ ring in the grip at the thread's bead.
   0.02–10 mm): a fuzzed 100 m wall line hung the checks after it; now `toolpath` says which
   point. And `thread_shade` refuses a line over 20 mm.
 
+
+## 2026-11-19: list settings: rows in between, and a graph to drag the points on (claude/eager-maxwell-ph399i, the general manager's files with the owner's leave)
+
+**Why:** the owner: adding a row only at the end and shifting the values down is slow; they
+want rows put in between, and the points of a curve dragged on a graph, like Grasshopper's Graph
+Mapper, without recomputing while dragging.
+
+**What landed** (`web/js/settings.js`, new `web/js/curve-editor.js`):
+- **A "+" on every row but the last** puts a row under it, halfway to the next, value by value
+  (as many values as both have, so a corner flag isn't copied). "+ Add a row" still copies the
+  last row at the end.
+- **Table | Graph** above any list of points ([x, y] or [x, y, corner]); the choice is
+  remembered per setting on the device. The graph draws the points on a monotone cubic through
+  them (as the Thread pendant reads its curves; a corner splits it), axes 0..1 when the values
+  are, else their span. A point drags between its neighbours along x and inside the axes, rounded
+  to a thousandth of the axis; nothing is computed while it moves, letting go is one change
+  (written into the recipe as typing is). Both views edit the same rows.
+- Tested: the in-between row and the graph's helpers (`scripts/settings.test.mjs`), the smoke
+  test puts a row in between and removes it; checked in Chromium (desktop, phone): a drag leaves
+  the shade alone until let go, then the recipe has the new point.
+
+**Open:** adding or removing points on the graph itself. The request test (not in CI) fails
+waiting for "Send to be built", with or without this change.
+
 ## 2026-11-19: Thread pendant: layers rise a layer a turn again, no seam (recipe-developer)
 
 **Why:** the owner's print: flat layers (the default since 17 Nov) step up to the next layer

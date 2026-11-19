@@ -111,6 +111,7 @@ so in the dev log); when something new comes up, add it here, not only in the de
   output (KUKA KRL, ABB RAPID or G-code with tool axes), reach checks, a golden test.
 - **Send to the printer** (Klipper/Moonraker; Bambu LAN later), probably through a small desktop
   helper.
-- A project library on the device; presets; a drawn curve editor for list settings.
+- A project library on the device; presets. (List settings of points have a graph to drag
+  them on, since 19 Nov; adding and removing points there, and other curve shapes, are open.)
 - 3MF export; solids and booleans; Rhino `.3dm`, SVG/DXF.
 - A multi-threaded engine (needs cross-origin isolation); Claude Desktop/MCP control.

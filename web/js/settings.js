@@ -3,6 +3,7 @@
 // profile's points). Values are shown and edited in each setting's own unit (18 %, 90°),
 // exactly as they are written in the recipe.
 
+import { curveEditor } from './curve-editor.js';
 import { el, loadJSON, numberField, parseNumber, saveJSON } from './dom.js';
 
 const UNIT_LABELS = { deg: '°', inch: 'in' };
@@ -341,16 +342,33 @@ function settingRow(p, value, onChange) {
   return row;
 }
 
+/** Which list settings show as a graph rather than a table, by name (remembered on this device). */
+const VIEW_KEY = 'easycad.listViews';
+
+/**
+ * A row between two others: halfway, value by value (as many values as both have); after the
+ * last, a copy of it.
+ * @param {number[]} a @param {number[] | undefined} b
+ */
+export function between(a, b) {
+  if (!b) return [...a];
+  const n = Math.min(a.length, b.length);
+  return a.slice(0, n).map((v, j) => Number(((v + b[j]) / 2).toPrecision(12)));
+}
+
 /**
  * A list setting as a table: a row of number fields per item (one field for a list of numbers),
- * a button to remove each row and one to add a row (a copy of the last). Every change is the
- * whole list, written back into the recipe.
+ * a button to remove each row, one to put a new row under it (halfway to the next) and one to add
+ * a row at the end (a copy of the last). Rows of points ([x, y], [x, y, corner]) can show as a
+ * graph instead, its points dragged; the two edit the same rows. Every change is the whole list,
+ * written back into the recipe; a point being dragged changes nothing until it's let go.
  */
 function listTable(p, value, id, onChange) {
   const rows = hasRows(p.value) || hasRows(value);
   /** @type {number[][]} */
   let items = (Array.isArray(value) ? value : []).map((r) => (Array.isArray(r) ? r.map(Number) : [Number(r)]));
   const width = Math.max(1, ...items.map((r) => r.length), ...(Array.isArray(p.value) ? p.value.map((r) => (Array.isArray(r) ? r.length : 1)) : []));
+  const host = el('div', { className: 'list-setting' });
   const table = el('div', { className: 'list-table' });
   const commit = () => onChange(p.name, rows ? items.map((r) => [...r]) : items.map((r) => r[0]), 'final');
   const draw = () => {
@@ -373,13 +391,25 @@ function listTable(p, value, id, onChange) {
         });
         return input;
       });
+      const insert = el('button', { className: 'btn tiny', type: 'button', text: '+', title: 'Add a row below this one', 'aria-label': `Add a row below row ${i + 1} of ${p.label}` });
+      insert.addEventListener('click', () => {
+        items.splice(i + 1, 0, between(items[i], items[i + 1]));
+        draw();
+        commit();
+      });
+      // The last row's "+" would be "Add a row": it keeps its place, so the buttons line up.
+      if (i === items.length - 1) {
+        insert.style.visibility = 'hidden';
+        insert.tabIndex = -1;
+        insert.setAttribute('aria-hidden', 'true');
+      }
       const remove = el('button', { className: 'btn tiny', type: 'button', text: '−', title: 'Remove this row', 'aria-label': `Remove row ${i + 1} of ${p.label}` });
       remove.addEventListener('click', () => {
         items.splice(i, 1);
         draw();
         commit();
       });
-      table.append(el('div', { className: 'list-row' }, [...fields, remove]));
+      table.append(el('div', { className: 'list-row' }, [...fields, insert, remove]));
     });
     const add = el('button', { className: 'btn tiny', type: 'button', text: '+ Add a row', 'aria-label': `Add a row to ${p.label}` });
     add.addEventListener('click', () => {
@@ -390,5 +420,34 @@ function listTable(p, value, id, onChange) {
     table.append(el('div', { className: 'list-add' }, [add]));
   };
   draw();
-  return table;
+  if (!(rows && width >= 2)) {
+    host.append(table);
+    return host;
+  }
+  // Points: a table or a graph.
+  const graph = curveEditor({ items, name: p.label, onCommit: commit });
+  const views = () => {
+    const v = loadJSON(VIEW_KEY, {});
+    return v && typeof v === 'object' ? v : {};
+  };
+  const tabs = el('div', { className: 'seg list-views', role: 'group', 'aria-label': `${p.label}: show as` });
+  const show = (view) => {
+    const asGraph = view === 'graph';
+    if (asGraph) graph.redraw();
+    else draw();
+    table.hidden = asGraph;
+    graph.node.hidden = !asGraph;
+    for (const b of tabs.children) b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view));
+  };
+  for (const [view, text] of [['table', 'Table'], ['graph', 'Graph']]) {
+    const b = el('button', { type: 'button', text, 'data-view': view, 'aria-pressed': 'false' });
+    b.addEventListener('click', () => {
+      saveJSON(VIEW_KEY, { ...views(), [p.name]: view });
+      show(view);
+    });
+    tabs.append(b);
+  }
+  host.append(tabs, table, graph.node);
+  show(views()[p.name] === 'graph' ? 'graph' : 'table');
+  return host;
 }
