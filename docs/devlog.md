@@ -9,6 +9,19 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+
+## 2026-11-20: Thread pendant: the leaf's pocket closes with the inner ring (recipe-developer)
+
+**Why:** the owner's half sphere: closing the gap before the socket, the middle ring (joined to
+the arm) swung in onto the inner ring, a harsh overhang where the layer height, the width and the
+thread are all changing.
+
+**What landed:** with the leaf the middle ring keeps to a straight line from the wall to its
+place on the socket, the inner ring the gap inside it; the gap opens and closes by the inner
+ring moving. On the half sphere the middle ring's steps stay 3.1–3.5 mm while the inner ring
+slows to 1.1–2.6 mm (it was 5.6 for the middle one). The sketcher's wings unchanged. Tested.
+
+
 ## 2026-11-19 (night): Thread pendant: the wings compensated for their radial lean, even along the leaf (recipe-developer)
 
 **Why:** the owner: on the sphere the leaf (one straight thing) had different layer heights

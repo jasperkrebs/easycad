@@ -625,6 +625,28 @@ impl<'a> Geo<'a> {
         r.min(wall_ri)
     }
 
+    /// The leaf's middle ring at the rings' height `z` (off the socket): a straight line from
+    /// the wall where the wings start to its place on the socket (two thread lines and the gap
+    /// there out from the barrel) below the grip, and (full wings) another back out to the wall
+    /// at the top above it; never further out than `rm_wall`.
+    fn middle(&self, z: f64, rm_wall: f64) -> f64 {
+        let s = self.s;
+        let at_wall = |z: f64| self.radius.at(z) - self.bw - s.wall_gap;
+        let on_socket = self.r_grip + s.line + if s.pockets { 0.0 } else { s.pin_gap.max(0.0) };
+        let (from, to) = if z < self.z_gb {
+            (self.z_start, self.z_gb)
+        } else {
+            (self.z_end, self.z_gt)
+        };
+        let r = if (to - from).abs() < 1e-6 {
+            on_socket
+        } else {
+            let t = ((to - z) / (to - from)).clamp(0.0, 1.0);
+            on_socket + t * (at_wall(from) - on_socket)
+        };
+        r.min(rm_wall)
+    }
+
     /// Where along the wing zone the height `z` is, 0..1 (for the leaf's width).
     fn along(&self, z: f64) -> f64 {
         (z - self.z_start) / (self.z_end - self.z_start).max(1e-6)
@@ -1180,10 +1202,20 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         let (mut rm, mut ri) = (0.0, 0.0);
         let mut ri_wanted: Option<f64> = None;
         if in_zone {
-            let wall_ri = wall_ri_of(ro, wi, wm, gap);
-            ri = ring_target(zc_r, wall_ri);
-            ri_wanted = Some(ri);
-            rm = ri + (wi + wm) / 2.0 + gap;
+            if s.leaf && !(zc_r >= z_gb && zc_r <= z_gt) {
+                // The leaf: the middle ring (the one the arm runs into) on its straight line,
+                // the inner ring the gap inside it, so the gap opens and closes by the inner ring
+                // moving (closing before the grip, it comes in more slowly, not the middle ring
+                // swinging in onto it).
+                let rm_wall = ro - (bw + wm) / 2.0 - s.wall_gap;
+                rm = geo.middle(zc_r, rm_wall);
+                ri = rm - (wi + wm) / 2.0 - gap;
+            } else {
+                let wall_ri = wall_ri_of(ro, wi, wm, gap);
+                ri = ring_target(zc_r, wall_ri);
+                ri_wanted = Some(ri);
+                rm = ri + (wi + wm) / 2.0 + gap;
+            }
             let req = rm + (wm + bw) / 2.0 + s.wall_gap;
             if ro < req - 1e-6 {
                 ro = req;
@@ -2517,6 +2549,34 @@ mod tests {
         assert!(hi - lo < 0.02 * hi, "{lo} {hi}");
         assert!(info.max_bridge_slope < 15.0, "{}", info.max_bridge_slope);
         assert!(info.min_ring_share > 0.5, "{}", info.min_ring_share);
+    }
+
+    /// The owner's half sphere: with a gap closing before the socket, the leaf's middle ring
+    /// (the one the arm runs into) keeps to its straight line and the inner ring moves out to it,
+    /// coming in more slowly (the middle ring swung in onto it, 5.6 mm a layer).
+    #[test]
+    fn the_leaf_closes_its_gap_with_the_inner_ring() {
+        let s = Settings {
+            pin_gap: 5.0,
+            ..owners_sphere()
+        };
+        let (_, info) = thread_shade(&s).unwrap();
+        let mut closing = 0;
+        for w in info.rings.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if b[3] < a[3] - 1e-9 && b[0] < info.grip_bottom {
+                closing += 1;
+                let (di, dm) = ((b[1] - a[1]).abs(), (b[2] - a[2]).abs());
+                assert!(di < dm, "{a:?} {b:?}");
+            }
+        }
+        assert!(closing > 0);
+        assert!(
+            info.rings
+                .iter()
+                .filter(|r| r[0] >= info.grip_bottom && r[0] <= info.grip_top)
+                .all(|r| r[3] == 0.0)
+        );
     }
 
     /// Found by the fuzz test: a radius of 4 × 10⁹ mm in the profile took a minute to say it

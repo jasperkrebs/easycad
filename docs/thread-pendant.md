@@ -164,7 +164,12 @@ thread's and back: through the slot and along the wing rings (the bridge).
   allows on top of the inner ring's move, and only opens as far as it can close in time, so every
   layer on the socket is solid and each gap is a closed pocket. On the owner's Angled cone (70°)
   the 5 mm gap holds along the whole path and closes over the last three layers before the
-  socket. Tested: the first turn a line across, the steps, no gap on the socket.
+  socket. Tested: the first turn a line across, the steps, no gap on the socket. With the leaf
+  (since 19 Nov) the middle ring, the one the arm runs into, keeps to a straight line from the
+  wall to its place on the socket and the inner ring sits the gap inside it: the gap opens and
+  closes by the inner ring moving, so before the socket it comes in more slowly rather than the
+  middle ring swinging in onto it (on the owner's half sphere its biggest step went from 5.6 to
+  3.5 mm).
 - **Line width and flow** are settings (the sketcher's bead is 5 mm), and the G-code comes from
   the printer profiles like every other project.
 - **The checks:** the sketcher's (wings not formed over the grip, the socket showing, the wings
