@@ -17,13 +17,20 @@ Printed as it hangs: the bottom opening on the bed, the socket going in at the t
 - **The outer wall** follows the shape: a curve through your points (radius to the bead's
   middle against height 0..1), a monotone cubic that never overshoots them, with a corner where a
   point is marked as one.
-- **Entry points:** at each, the line turns in. Up the wing zone it's first a **crease**, a
-  radial slot getting deeper by at most the max overhang a layer. Once the slot reaches the wings'
-  radius, two **wings** run off it, one each way, as a loop: out along a middle ring, round a half
-  circle onto an inner ring, back past the slot, round onto the middle ring, back to the slot. The
-  wing curve sets how long they are along the zone, slowed to the max overhang.
-- **The path to the socket:** below the grip the wings lean in from the wall to the socket's
-  barrel over the path height, along your path curve, never faster than the max overhang.
+- **Entry points:** at each, the line turns in, and two **wings** run off the slot, one each
+  way, as a loop: out along a middle ring, round a half circle onto an inner ring, back past the
+  slot, round onto the middle ring, back to the slot.
+- **Wing shape** (since 19 Nov), one of two:
+  - **leaf** (the default): the wings as drawn. The **leaf** graph sets how wide they are (0..1
+    of the room between entries) against height along the wing zone, exactly; they start at the
+    wall where the zone starts and come in **in a straight line to the socket** (with full wings
+    above the grip, back out to the wall at the top in another). Nothing is held back by a max
+    overhang: judge the overhangs by eye (the half-a-line check still says where the wings step
+    more than half a line a layer).
+  - **sketcher**: the sketcher's wings (sketcher files open this way). Up the wing zone it's
+    first a **crease**, getting deeper by at most the max overhang a layer, until it reaches the
+    wings; the wing curve sets how long they are, slowed to the max overhang; below the grip they
+    lean in over the path height along the path curve, never faster than the max overhang.
 - **The grip:** the inner rings, all the entries' together, sit on the socket's barrel (its
   diameter less the engagement, plus half a line), as a true helix one pitch a turn: the shade
   screws onto the socket.
@@ -95,6 +102,28 @@ What the sketcher leaves out, added here:
   Angled cone with 3.2 mm lines and 1.5 mm layers takes 2,004 cm³ and 28 h, against 2,980 cm³
   and 41 h. The Ginger G1's width check passes 1–2 × the nozzle, so a 3.2 mm wall wants the 3 mm
   nozzle (and a 5 mm thread on it is 1.7 ×).
+
+### The wings compensated on their own
+
+With compensation on, the wall and the wings are compensated each for its own lean (since 19
+Nov): the wall for the shape's, the wings for theirs (the steeper of the rings coming in and the
+leaf's edges growing or shrinking along them). Each layer is still one line, so:
+
+- **Both have the same number of layers.** Over each stretch of wings (below the grip, and with
+  full wings above it), whichever needs fewer layers for its height gets thinner ones, evenly, so
+  they match. Where the wings lean more than the wall (a sphere's), the wall gives them layers: on
+  the owner's sphere 187 layers instead of 131 without compensation, the wall's thinnest 0.85 mm.
+  That extra thinning isn't squeezed: the wall is extruded for it.
+- **In between, the wings' heights part from the wall's** where one leans more than the other,
+  and the arm takes up the difference, but only as far as it can climb gently (7° for this part,
+  per mm of arm): by the wall, where the arm is short, the wings keep to the wall's heights. By
+  the socket the difference is back to none, so the thread's own lead (below) comes on top of
+  nothing.
+- **The wings are extruded for their own layers** (not squeezed: they keep their width), and
+  every point of the arm for the gap it's actually in.
+- **On the owner's sphere:** the wings run 9.4 mm below to 7.4 mm above the wall, the arm climbs
+  at most 10°, and nothing gets under 69 % of its layer. A check says where something gets under
+  half.
 
 ### How the thread keeps its pitch
 

@@ -47,6 +47,7 @@ fn points(e: &Evaluation) -> Vec<P3> {
 /// The sketcher's "Angled" file: a 500 mm cone with a corner at the opening, five entries.
 fn angled() -> Vec<(&'static str, Literal)> {
     vec![
+        ("wing_shape", text("sketcher")),
         ("height", num(300.0)),
         (
             "profile",
@@ -91,9 +92,10 @@ fn the_template_prints_as_it_ships() {
     assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
     assert_eq!(e.project.as_deref(), Some("Thread pendant"));
     let p = &e.prints[0];
-    // 79 layers (200 mm at 2.5 mm), rising a layer a turn (no seam): the first starts on the
-    // bed and climbs a layer as it goes round, each move extruded for the gap over the bed.
-    assert_eq!(p.stats.layers, 79);
+    // 82 layers (200 mm at 2.5 mm, 79, and 3 more the wall gives the leaf's wings, which lean
+    // more than it), rising a layer a turn (no seam): the first starts on the bed and climbs a
+    // layer as it goes round, each move extruded for the gap over the bed.
+    assert_eq!(p.stats.layers, 82);
     let first = p.path.points[1];
     assert!(first[2] < 0.1, "{first:?}");
     for i in 1..p.path.points.len() {
@@ -142,6 +144,7 @@ fn the_sketchers_angled_cone() {
 fn compensation_stays_out_of_the_thread() {
     // The sketcher's "halfsphere" file: a 500 mm half globe.
     let v = vec![
+        ("wing_shape", text("sketcher")),
         ("height", num(237.5)),
         (
             "profile",
@@ -277,8 +280,18 @@ fn a_thinner_wall_on_the_angled_cone() {
     let thick = pendant(&v);
     v.extend([("wall_line", num(3.2)), ("wall_layer", num(1.5))]);
     let thin = pendant(&v);
-    // Nothing the thick one doesn't say (the wings stepping more than half a line at 70°).
-    assert_eq!(warnings(&thin), warnings(&thick));
+    // What the thick one says (the wings stepping more than half a line at 70°), and that the
+    // arm climbs steeply: the 70° wings far from the thin wall's heights (their own
+    // compensation), and the thread far ahead of them (16°).
+    let extra: Vec<String> = warnings(&thin)
+        .into_iter()
+        .filter(|w| !warnings(&thick).contains(w))
+        .collect();
+    assert!(warnings(&thick).iter().all(|w| warnings(&thin).contains(w)));
+    assert!(
+        extra.len() == 1 && extra[0].contains("steeper than 15°"),
+        "{extra:?}"
+    );
     let (a, b) = (&thin.prints[0].stats, &thick.prints[0].stats);
     assert!(
         a.volume_mm3 < 0.7 * b.volume_mm3,
@@ -320,7 +333,8 @@ fn a_thinner_wall_on_the_angled_cone() {
             (3.2 - 1e-9..=5.0 + 1e-9).contains(&w) && h <= 2.5 + 1e-9,
             "{i} {w} {h}"
         );
-        if (w - 3.2).abs() < 1e-9 && (h - 1.5).abs() < 1e-9 {
+        // (The wall's own bead: its layer, or less where it gives the wings layers.)
+        if (w - 3.2).abs() < 1e-9 && h <= 1.5 + 1e-9 {
             walls += 1;
         }
     }
