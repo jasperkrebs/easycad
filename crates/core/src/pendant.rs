@@ -51,6 +51,9 @@ pub struct Settings {
     pub neck_gap: f64,
     pub wall_gap: f64,
     pub pin_gap: f64,
+    /// The gap between the wing lines closes again before the grip (as it opens from none where
+    /// the wings start): none all over the socket, so each gap is a closed pocket.
+    pub pockets: bool,
     /// Turns the entries round, degrees (`wingRot`).
     pub rotation: f64,
     /// The socket barrel's diameter, how far the thread digs into it, the grip's height and
@@ -148,6 +151,9 @@ pub struct Info {
     pub min_ring_gap: f64,
     /// Each point's bead: the line width and layer height to extrude the move to it for.
     pub bead: Vec<[f64; 2]>,
+    /// Each layer with wings: the thread's height there, the inner and middle rings' radii and
+    /// the gap between them.
+    pub rings: Vec<[f64; 4]>,
     /// Each layer's outer radius and the height of its top (for the wall shown).
     pub wall: Vec<(f64, f64)>,
 }
@@ -738,8 +744,9 @@ fn thread_offsets(s: &Settings, plan: &mut [Layer]) {
     }
 }
 
-/// How much of the thread's offset a point at radius `r` takes: all of it on the inner ring in
-/// the grip (`lo`), none from a line inside the outer wall outwards (`hi`), smoothly between.
+/// How much of the thread's offset (and bead) a point at radius `r` takes: all of it from `lo`
+/// in (the middle ring, with wings), none from a line inside the outer wall outwards (`hi`),
+/// smoothly between.
 fn bridge(r: f64, lo: f64, hi: f64) -> f64 {
     let t = ((hi - r) / (hi - lo).max(1e-9)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -798,8 +805,93 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
     info.grip_r = r_grip;
     // The inner ring furthest out: inside the wall, its gap, the middle ring and its gap (`wi`,
     // `wm` the inner and middle rings' widths).
-    let wall_ri_of =
-        |ro: f64, wi: f64, wm: f64| ro - (bw + wm) / 2.0 - s.wall_gap - (wm + wi) / 2.0 - s.pin_gap;
+    let wall_ri_of = |ro: f64, wi: f64, wm: f64, gap: f64| {
+        ro - (bw + wm) / 2.0 - s.wall_gap - (wm + wi) / 2.0 - gap
+    };
+    // The inner and middle rings' widths for a layer: both the thread's bead, as far as the
+    // layer is a thread. The change from the wall's bead happens along the straight arm (the
+    // slot) only, so every ring of the wings (and the turns at their tips) prints the same bead.
+    let widths = |l: &Layer, _gap: f64| -> (f64, f64) {
+        let w = bw + (tw - bw) * l.f;
+        (w, w)
+    };
+    // Where the inner ring wants to be, at the thread's height `zc_r`: on the socket in the
+    // grip; below it along the path from the socket (0) out to the wall (1); above it (or with
+    // no path) leaning out at the max overhang; never further out than `wall_ri`.
+    let ring_target = |zc_r: f64, wall_ri: f64| -> f64 {
+        let r = if zc_r >= z_gb && zc_r <= z_gt {
+            r_grip
+        } else if zc_r < z_gb && s.path_len > 0.0 {
+            let t = (z_gb - zc_r) / s.path_len;
+            match &path_fn {
+                Some(pf) if t < 1.0 => r_grip + pf.at(t).clamp(0.0, 1.0) * (wall_ri - r_grip),
+                _ => wall_ri,
+            }
+        } else {
+            r_grip + (z_gb - zc_r).max(zc_r - z_gt).max(0.0) * tan_over
+        };
+        r.min(wall_ri)
+    };
+    // The gap between the wing lines (`pin_gap`): none where the wings start, so the first
+    // turn at each tip is a line wide and hangs at most half a line off the slot under it. It
+    // opens a layer at a time, up to the setting, by what's left of a ring's step (at most half a
+    // line, and what the max overhang allows) after the inner ring's own move that layer, so the
+    // middle ring never steps out further than that. With `pockets` it closes again before the
+    // grip, as fast as the max overhang allows on top of the inner ring's move: none all over
+    // the socket, the rings there solid. It only opens as far as it can close in time.
+    let over = |l: &Layer| (l.rise * tan_over).max(0.0);
+    let held: Vec<f64> = plan
+        .iter()
+        .map(|l| {
+            let zc = l.z0 + lh;
+            let (wi, wm) = widths(l, s.pin_gap);
+            ring_target(zc + l.d, wall_ri_of(radius.at(zc), wi, wm, s.pin_gap))
+        })
+        .collect();
+    // What's left for the gap each layer, opening (`.0`) and closing (`.1`). (A tenth kept back:
+    // `held` is where the ring would be with the whole gap, and with less it sits a little
+    // differently.)
+    let budget: Vec<(f64, f64)> = plan
+        .iter()
+        .enumerate()
+        .map(|(k, l)| {
+            let moved = match (k.checked_sub(1).and_then(|j| held.get(j)), held.get(k)) {
+                (Some(a), Some(b)) => (b - a).abs(),
+                _ => 0.0,
+            };
+            (
+                0.9 * (over(l).min(bw / 2.0) - moved).max(0.0),
+                0.9 * (over(l) - moved).max(0.0),
+            )
+        })
+        .collect();
+    let mut gap_cap = vec![f64::INFINITY; plan.len()];
+    if s.pockets {
+        // On the socket (the inner ring's height in the grip, and the layer under it): none;
+        // below it, no more than it can close by on the way up.
+        let on_socket = |l: &Layer| {
+            let zc_r = l.z0 + lh + l.d;
+            zc_r >= z_gb - lh && zc_r <= z_gt
+        };
+        if let Some(first) = plan.iter().position(on_socket) {
+            let mut c = 0.0;
+            for k in (0..first).rev() {
+                c += budget.get(k + 1).map_or(0.0, |b| b.1);
+                if let Some(slot) = gap_cap.get_mut(k) {
+                    *slot = c;
+                }
+            }
+            for (slot, l) in gap_cap.iter_mut().zip(plan.iter()).skip(first) {
+                if on_socket(l) {
+                    *slot = 0.0;
+                }
+            }
+        }
+    }
+    let mut gap_prev = 0.0;
+    let mut rm_prev = 0.0;
+    // The middle ring on the socket: two thread lines and the gap there.
+    let rm_grip = r_grip + tw + if s.pockets { 0.0 } else { s.pin_gap.max(0.0) };
     // Per layer, for the checks: its height, outer radius, the innermost face, whether it has
     // wings on the socket.
     let mut checks: Vec<(f64, f64, f64, bool)> = Vec::new();
@@ -824,33 +916,23 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         }
         prev_ro = Some((zc, ro));
         let in_zone = n > 0 && zc >= z_start && zc <= z_end;
-        // The bridge to the thread, out to a line inside this layer's outer wall (see `bridge`):
-        // the line's width follows its height there, from the wall's bead to the thread's, so
-        // the rings are as wide as their layers are tall. The inner and middle rings' widths
-        // (taken where they'd be in the grip; the line itself takes them where it is).
         let hi_l = (radius.at(zc) - bw).max(r_grip + bw);
-        let width_at = |r: f64| bw + (tw - bw) * layer.f * bridge(r, r_grip, hi_l);
-        let wi = width_at(r_grip);
-        let wm = width_at(r_grip + (wi + width_at(r_grip + wi + s.pin_gap)) / 2.0 + s.pin_gap);
+        let gap = if l_prev > 0.0 {
+            (gap_prev + budget.get(k).map_or(0.0, |b| b.0))
+                .min(s.pin_gap)
+                .min(gap_cap.get(k).copied().unwrap_or(0.0))
+                .max(0.0)
+        } else {
+            0.0
+        };
+        let (wi, wm) = widths(layer, gap);
         let (mut rm, mut ri) = (0.0, 0.0);
         let mut ri_wanted: Option<f64> = None;
         if in_zone {
-            let wall_ri = wall_ri_of(ro, wi, wm);
-            ri = if zc_r >= z_gb && zc_r <= z_gt {
-                r_grip
-            } else if zc_r < z_gb && s.path_len > 0.0 {
-                // Below the grip: the path from the socket (0) out to the wall (1).
-                let t = (z_gb - zc_r) / s.path_len;
-                match &path_fn {
-                    Some(pf) if t < 1.0 => r_grip + pf.at(t).clamp(0.0, 1.0) * (wall_ri - r_grip),
-                    _ => wall_ri,
-                }
-            } else {
-                r_grip + (z_gb - zc_r).max(zc_r - z_gt).max(0.0) * tan_over
-            };
-            ri = ri.min(wall_ri);
+            let wall_ri = wall_ri_of(ro, wi, wm, gap);
+            ri = ring_target(zc_r, wall_ri);
             ri_wanted = Some(ri);
-            rm = ri + (wi + wm) / 2.0 + s.pin_gap;
+            rm = ri + (wi + wm) / 2.0 + gap;
             let req = rm + (wm + bw) / 2.0 + s.wall_gap;
             if ro < req - 1e-6 {
                 ro = req;
@@ -865,9 +947,9 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
                 .and_then(|j| plan.get(j))
                 .map_or(rise, |b| b.rise + layer.d - b.d);
             let grow_r = own.max(0.0) * tan_over;
-            let wall_ri = wall_ri_of(ro, wi, wm);
+            let wall_ri = wall_ri_of(ro, wi, wm, gap);
             ri = wall_ri.min((ri_prev - grow_r).max((ri_prev + grow_r).min(ri)));
-            rm = ri + (wi + wm) / 2.0 + s.pin_gap;
+            rm = ri + (wi + wm) / 2.0 + gap;
             if let Some(w) = ri_wanted
                 && (ri - w).abs() > 0.5
             {
@@ -919,18 +1001,24 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
             && ri_prev > 0.0
             && let Some(below) = k.checked_sub(1).and_then(|j| plan.get(j))
         {
-            info.max_wing_step = info.max_wing_step.max((ri - ri_prev).abs());
+            info.max_wing_step = info
+                .max_wing_step
+                .max((ri - ri_prev).abs())
+                .max((rm - rm_prev).abs());
             // The inner ring over the one below: the wall's rise and the change in the lead
-            // each carries (by its radius; see `bridge`).
-            let hi = |z: f64| (radius.at(z) - bw).max(r_grip + bw);
-            let lead = |d: f64, r: f64, z: f64| d * bridge(r, r_grip, hi(z));
-            let gap = below.rise + lead(layer.d, ri, zc) - lead(below.d, ri_prev, below.z0 + lh);
+            // (the rings carry all of it).
+            let gap = below.rise + layer.d - below.d;
             info.min_ring_gap = info.min_ring_gap.min(gap);
         }
         d_prev = if in_zone { d } else { 0.0 };
         l_prev = if kind == 2 { l } else { 0.0 };
         rt_prev = (rm + ri) / 2.0;
         ri_prev = if kind == 2 { ri } else { 0.0 };
+        rm_prev = rm;
+        gap_prev = if kind == 2 { gap } else { 0.0 };
+        if kind == 2 {
+            info.rings.push([zc_r, ri, rm, gap]);
+        }
         let mut cur = th_s;
         if kind > 0 {
             for i in 0..n {
@@ -947,7 +1035,7 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         // changing shape leaves no step at the seam; the rings only move with it where they
         // follow the wall.
         let clamped_layer = (ro - radius.at(zc)).abs() > 1e-9;
-        let wall_ri_l = wall_ri_of(ro, wi, wm);
+        let wall_ri_l = wall_ri_of(ro, wi, wm, gap);
         let follow_all = kind == 0
             || (kind == 2 && (ri - wall_ri_l).abs() < 1e-6 && (ri - r_grip).abs() >= 1e-6);
         let r_in = match kind {
@@ -978,12 +1066,14 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
                 d: layer.d,
                 d_next: d_at(k + 1),
                 d_after: d_at(k + 2),
-                // The bridge: the thread's offset fades out from the grip's inner ring to a
-                // line inside this layer's outer wall, so the wall stays on its own
-                // (compensated) layers. The wall moves in or out a little from layer to layer,
-                // and the bridge with it: a point sits a hair off the same point below (the
-                // offset × that share, a tenth of a mm or so).
-                lo: r_grip,
+                // The bridge: along the straight arm only, from the middle ring on the socket
+                // (all of the thread's height and bead from there in: in the grip both rings
+                // and the turns at their tips) out to a line inside this layer's outer wall
+                // (none: the wall on its own, compensated layers). It starts at the same radius
+                // in every layer, so a point of the arm sits on the same point below even where
+                // the rings move (below the grip they're wall layers anyway); the wall moves in
+                // or out a little, and the arm's end with it (a hair, the offset × that share).
+                lo: rm_grip.min(hi_l - 1.0),
                 hi: hi_l,
                 bead: Bead {
                     f: layer.f,
@@ -1282,6 +1372,9 @@ fn check(s: &Settings) -> Result<(), String> {
     if s.wall_line < 0.0 || (s.wall_line > 0.0 && s.wall_line < 0.2) || s.wall_layer < 0.0 {
         return Err("thread_shade: `wall_line` must be 0 (the thread's) or at least 0.2 mm, `wall_layer` 0 (the pitch) or more".into());
     }
+    if s.wall_line > 20.0 || s.line > 20.0 {
+        return Err("thread_shade: `line` and `wall_line` must be at most 20 mm".into());
+    }
     if s.wall_layer > 0.0 && s.wall_layer < 0.1 {
         return Err("thread_shade: `wall_layer` must be 0 (the pitch) or at least 0.1 mm".into());
     }
@@ -1336,6 +1429,7 @@ mod tests {
             neck_gap: 0.0,
             wall_gap: 5.0,
             pin_gap: 5.0,
+            pockets: false,
             rotation: 0.0,
             socket_d: 40.0,
             engagement: 0.0,
@@ -1825,9 +1919,10 @@ mod tests {
             let least = if crease_top { 0.5 } else { 0.45 };
             assert!(lo > least * 1.5, "{layers:?} {crease_top} {lo} {hi}");
             assert!(info.min_ring_gap > least * 1.5, "{}", info.min_ring_gap);
-            // A narrow shade (a 47 mm wall round a 22.5 mm thread at the grip's top) climbs
-            // steeply; the check in the recipe says so.
-            assert!(info.max_bridge_slope < 40.0, "{}", info.max_bridge_slope);
+            // A narrow shade (a 47 mm wall round a 22.5 mm thread at the grip's top, the arm
+            // between them under 20 mm) climbs steeply; the check in the recipe says so. (The
+            // owner's straight shade, a 72.5 mm wall: 19°.)
+            assert!(info.max_bridge_slope < 50.0, "{}", info.max_bridge_slope);
         }
     }
 
@@ -1922,6 +2017,68 @@ mod tests {
                 );
             }
             assert_true_helix(&pts, &s, &info);
+        }
+    }
+
+    /// The owner's photo: the first turn at each wing tip hung a whole line off the slot under
+    /// it (with a 5 mm gap it was 10 mm across). The gap now opens from none: the first turn is a
+    /// line across; it grows by at most half a line a layer, and the middle ring never steps
+    /// further than the inner ring or half a line. With pockets (the default) it closes again
+    /// before the grip: none on any layer on the socket.
+    #[test]
+    fn the_wing_gap_opens_from_none_and_closes_on_the_socket() {
+        for (pockets, line, max_overhang) in [
+            (true, 0.0, 45.0),
+            (true, 3.2, 45.0),
+            (false, 0.0, 45.0),
+            (true, 0.0, 70.0),
+        ] {
+            let s = Settings {
+                pockets,
+                wall_line: line,
+                wall_layer: if line > 0.0 { 1.5 } else { 0.0 },
+                max_overhang,
+                pin_gap: 5.0,
+                ..leaning()
+            };
+            let w = wall_line(&s);
+            let (_, info) = thread_shade(&s).unwrap();
+            let rings = &info.rings;
+            assert!(rings.len() > 20, "{}", rings.len());
+            // The first: no gap, the turn a line across.
+            let [_, ri, rm, gap] = rings[0];
+            assert!(gap == 0.0 && (rm - ri - w).abs() < 1e-9, "{:?}", rings[0]);
+            // It opens to the setting.
+            assert!(rings.iter().any(|r| (r[3] - 5.0).abs() < 1e-9), "{rings:?}");
+            // Opening: at most half a line a layer, the middle ring stepping out no further
+            // than the inner ring or that. Closing: as fast as the max overhang allows (over the
+            // tallest layer), the middle ring no further than the inner ring or that. (The plan
+            // is from where the rings would be with the whole gap: a hair over.)
+            let over = s.layer * s.max_overhang.to_radians().tan();
+            for p in rings.windows(2) {
+                let (a, b) = (p[0], p[1]);
+                let (di, dm) = ((b[1] - a[1]).abs(), (b[2] - a[2]).abs());
+                if b[3] > a[3] {
+                    assert!(b[3] - a[3] <= w / 2.0 + 1e-9, "{a:?} {b:?}");
+                    assert!(dm <= di.max(w / 2.0) * 1.03 + 1e-6, "{a:?} {b:?}");
+                } else {
+                    assert!(a[3] - b[3] <= over + 1e-9, "{a:?} {b:?}");
+                    assert!(dm <= di.max(over) * 1.03 + 1e-6, "{a:?} {b:?}");
+                }
+            }
+            // On the socket.
+            let on: Vec<&[f64; 4]> = rings
+                .iter()
+                .filter(|r| r[0] >= info.grip_bottom && r[0] <= info.grip_top)
+                .collect();
+            assert!(on.len() > 5, "{}", on.len());
+            for r in on {
+                if pockets {
+                    assert!(r[3] == 0.0, "{r:?}");
+                } else {
+                    assert!((r[3] - 5.0).abs() < 1e-9, "{r:?}");
+                }
+            }
         }
     }
 

@@ -1274,6 +1274,12 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "the outer wall's and the wings' layer height, at most the pitch (0: the pitch); the thread grows from it into the pitch over the layers before the grip",
             ),
+            opt(
+                "pockets",
+                "Bool",
+                1.0,
+                "the gap between the wing lines (which opens from none where the wings start) closes again before the grip, none all over the socket: closed pockets (the default)",
+            ),
         ],
         output: "Curve | List",
         doc: "A pendant shade whose wings thread onto the lampholder, as one line: the Thread Lampshade Sketcher's pendant, point for point, with overhang compensation by layer height on the outer wall (the thread keeps its pitch) and, if set, a thinner wall and wings than the thread (`wall_line`, `wall_layer`). The outer wall follows the profile; at each entry the line turns in (a crease at first, deepening by at most the overhang a layer), then runs out as two wings, out along a middle ring and back along an inner ring; in the grip the inner rings sit on the socket's barrel. The layers are flat except the thread: the inner rings in the grip are a true helix one `layer` a turn, easing in and out over 4 layers (with `z_by: \"angle\"`, every point's height comes from its angle, every ring a helix: the sketcher's). The line carries its own bead (each move's width and layer, the first layer's for the gap over the bed): print it with `toolpath(…, width: line, layer: layer)`. Where the thread rises faster than the wall it pulls ahead of it, and in each layer the slot and the wings climb from the wall's height to the thread's. Heights are from the bed: the first layer's nozzle rises from 0 to a layer.",

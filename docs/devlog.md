@@ -7,6 +7,28 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-19 (later): Thread pendant: wing gaps that open from none and close on the socket; the bead changes along the arm (recipe-developer)
+
+**Why:** the owner's photo: the first turn at each wing tip hung a whole line off the slot
+under it (with a 5 mm gap it was 10 mm across). They want the gap to open from none, as fast as
+it can, and none on the socket ("closed pockets"). And, from their view of line widths: the
+change from the wall's bead to the thread's should happen along the straight arm only, every
+ring in the grip at the thread's bead.
+
+**What landed:**
+- **The wing gap** opens from none: the first turn is a line across (half a line overhang). It
+  grows by what's left of half a line after the inner ring's own move each layer, and (pockets,
+  `thread_shade`'s `pockets`, on by default) closes again before the grip, as fast as the max
+  overhang allows on top of the inner ring's move, planned so it only opens as far as it can
+  close in time. The wing-step check now counts the middle ring too. Tested.
+- **The bead and the thread's height change along the arm only**: from the middle ring on the
+  socket (both rings and their turns at 5 × 2.5 mm in the grip; before, the middle ring was
+  4.95 × 2.47) out to the wall. On the owner's straight shade the arm climbs 19° at most (17°
+  before).
+- **A curve's own bead is checked** as a toolpath's width and layer are (0.05–20 mm,
+  0.02–10 mm): a fuzzed 100 m wall line hung the checks after it; now `toolpath` says which
+  point. And `thread_shade` refuses a line over 20 mm.
+
 ## 2026-11-19: Thread pendant: layers rise a layer a turn again, no seam (recipe-developer)
 
 **Why:** the owner's print: flat layers (the default since 17 Nov) step up to the next layer
