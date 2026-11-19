@@ -92,10 +92,10 @@ fn the_template_prints_as_it_ships() {
     assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
     assert_eq!(e.project.as_deref(), Some("Thread pendant"));
     let p = &e.prints[0];
-    // 82 layers (200 mm at 2.5 mm, 79, and 3 more the wall gives the leaf's wings, which lean
-    // more than it), rising a layer a turn (no seam): the first starts on the bed and climbs a
-    // layer as it goes round, each move extruded for the gap over the bed.
-    assert_eq!(p.stats.layers, 82);
+    // 79 layers (200 mm at 2.5 mm; the leaf's wings lean in only 14°, hardly thinner), rising
+    // a layer a turn (no seam): the first starts on the bed and climbs a layer as it goes
+    // round, each move extruded for the gap over the bed.
+    assert_eq!(p.stats.layers, 79);
     let first = p.path.points[1];
     assert!(first[2] < 0.1, "{first:?}");
     for i in 1..p.path.points.len() {

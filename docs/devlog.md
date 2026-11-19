@@ -8,6 +8,27 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
 
+
+## 2026-11-19 (night): Thread pendant: the wings compensated for their radial lean, even along the leaf (recipe-developer)
+
+**Why:** the owner: on the sphere the leaf (one straight thing) had different layer heights
+along it, and the lean to compensate is the wings coming in towards the socket, not the leaf's
+tips growing. And in their straight file compensation seemed to change nothing.
+
+**What landed:**
+- The wings' lean is radial only (the rings coming in or going out).
+- Where the wings run, the wall and the wings both rise the thinner of the two (each at least as
+  compensated as it needs), eased in and out at 0.04 mm per mm: the leaf's layers even (tested),
+  no drift between the wings' heights and the wall's, so no arm climb for it. This replaces the
+  balanced stretches and the 7° drift of the evening; the lead is the thread's alone again.
+- The gap under each point averages this layer's rise and the one below's (a ring on the socket
+  came out 2.525 mm where neighbouring layers differ).
+- Info: item 21 is the thinnest gap in mm again (old recipes compare it with half a wall layer);
+  the share of its layer is item 22, which the template checks.
+- The owner's straight file: 171 layers with compensation, 165 without (it changes now; if the
+  app showed no change it was the version before #53).
+
+
 ## 2026-11-19 (late): Thread pendant: the wings compensated on their own, and the leaf (recipe-developer)
 
 **Why:** the owner's sphere: the wings and the outer shape lean differently, so each needs its
