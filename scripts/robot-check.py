@@ -158,8 +158,11 @@ def surface_points(part):
     return np.vstack(pts)
 
 
-def material_clearance(bodies, xyz, along, printing, width, recent, stride=1, limit=40.0):
-    """Each body's smallest distance to the printed bead's surface over the poses, and where."""
+def material_clearance(bodies, xyz, along, printing, width, recent, stride=1, limit=25.0):
+    """Each body's smallest distance to the printed bead's surface over the poses, and where.
+
+    Exact distances only where material is within `limit` mm of the body's bounding box (a
+    cheap test first); farther counts as `limit` (reported as at least that)."""
     # The material: the printed path (the sampled tip positions while printing), every 2 mm.
     pts, s = [], []
     for i in range(1, len(xyz)):
@@ -181,17 +184,18 @@ def material_clearance(bodies, xyz, along, printing, width, recent, stride=1, li
     for idx, key in enumerate(map(tuple, keys)):
         grid.setdefault(key, []).append(idx)
     grid = {k: np.array(v) for k, v in grid.items()}
+    reach = limit + width / 2
     out = []
     for b in bodies:
         local = surface_points(b)
-        best = (np.inf, -1)
+        best = (limit, -1)
         below = 0
         for i in range(0, len(xyz), stride):
             if along[i] <= recent:
                 continue
-            world = local @ b["r"][i].T + b["t"][i]
-            lo = np.floor((world.min(0) - limit) / cell).astype(int)
-            hi = np.floor((world.max(0) + limit) / cell).astype(int)
+            lo_box, hi_box = b["lo"][i], b["hi"][i]
+            lo = np.floor((lo_box - reach) / cell).astype(int)
+            hi = np.floor((hi_box + reach) / cell).astype(int)
             cand = [grid[(x, y, z)] for x in range(lo[0], hi[0] + 1) for y in range(lo[1], hi[1] + 1)
                     for z in range(lo[2], hi[2] + 1) if (x, y, z) in grid]
             if not cand:
@@ -201,13 +205,19 @@ def material_clearance(bodies, xyz, along, printing, width, recent, stride=1, li
             if not len(idx):
                 continue
             m = mat[idx]
+            # The cheap test: distance from each material point to the body's box.
+            gap = np.linalg.norm(np.maximum(0, np.maximum(lo_box - m, m - hi_box)), axis=1)
+            m = m[gap < reach]
+            if not len(m):
+                continue
+            world = local @ b["r"][i].T + b["t"][i]
             d = np.sqrt(((world[:, None, :] - m[None, :, :]) ** 2).sum(-1)).min() - width / 2
             if d < 5.0:
                 below += 1
             if d < best[0]:
                 best = (d, i)
-        if best[1] >= 0:
-            out.append(dict(part=b["part"]["name"], minClearanceMm=round(float(best[0]), 2), sample=best[1], posesBelow5mm=below))
+        out.append(dict(part=b["part"]["name"], minClearanceMm=round(float(best[0]), 2), sample=best[1], posesBelow5mm=below,
+                        atLeast=best[1] < 0))
     out.sort(key=lambda r: r["minClearanceMm"])
     return out
 
@@ -278,18 +288,21 @@ def main():
     mat = material_clearance(near, xyz, along, printing, args.width, args.recent, max(1, args.stride))
     for r in mat:
         i = r.pop("sample")
+        if r.pop("atLeast"):
+            r["minClearanceMm"] = f">= {r['minClearanceMm']}"
+            continue
         r["line"] = int(lines[i])
         r["tcpWorld"] = xyz[i].round(1).tolist()
         r["tiltDeg"] = round(float(np.degrees(np.arccos(np.clip(rotation[i, 2, 2], -1, 1)))), 1)
     report["materialStride"] = max(1, args.stride)
     report["materialClearanceTargetMm (fans)"] = 5.0
     report["materialClearances"] = mat
-    report["materialCollisions"] = [r for r in mat if r["minClearanceMm"] < 0]
+    report["materialCollisions"] = [r for r in mat if not isinstance(r["minClearanceMm"], str) and r["minClearanceMm"] < 0]
     report["maxTiltDeg"] = round(float(np.degrees(np.arccos(np.clip(rotation[:, 2, 2], -1, 1))).max()), 2)
 
     ok = (report["jointLimitViolations"] == 0 and not report["toolVsArm"] and not report["armSelf"]
           and not report["pedestal"] and not report["bedViolationsExcludingNozzle"] and not report["materialCollisions"])
-    fans_ok = all(r["minClearanceMm"] >= 5.0 for r in mat if "fan" in r["part"].lower())
+    fans_ok = all(isinstance(r["minClearanceMm"], str) or r["minClearanceMm"] >= 5.0 for r in mat if "fan" in r["part"].lower())
     report["verdict"] = ("no modelled collisions or limit violations" if ok else "PROBLEMS: see above") + ("" if fans_ok else "; a fan comes within 5 mm of the print")
     text = json.dumps(report, indent=2)
     if args.output:
