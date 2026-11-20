@@ -46,6 +46,7 @@ HANDOVER = Path(__file__).resolve().parent.parent / "SPHR_Full_Print_Handover-2"
 
 
 def load_handover(folder):
+    sys.dont_write_bytecode = True  # leave the handover folder as it is
     sys.path.insert(0, str(folder))
     import kinematics  # noqa: E402
     import proxy_collision  # noqa: E402
