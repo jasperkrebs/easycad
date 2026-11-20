@@ -187,6 +187,9 @@ What's EasyCAD's own:
 | Extruder | screw command = `robot.screw` (30) × mm³/s laid down (bead × extrusion × speed × multiplier), changed only when it moves more than 2 %. 30 comes from the handover's wall (300 per mm/s with a 4.5 × 2.5 mm bead, 9.91 mm²): **calibrate it** with a measured purge |
 | Points | within a stretch of one speed and command, a point is left out where the straight line past it stays within `robot.tolerance` (0.2 mm) and the nozzle within 0.5°; the spline runs smoothly through the rest |
 | Blocks | at most `robot.block` (1000) segments per SPLINE block, joined with `ENDSPLINE C_SPL` |
+| Joints | every pose (the purge, the approach, each kept point and three between each two, the lift) is worked out on the handover's kinematics (`kuka.rs`, a port of its `kinematics.py`, tested against it): out of reach, or a joint (A1–A6, A1, A4 and A6 counted on continuously from the handover's start pose) closer than 3° to its limit, and the program is refused |
+| Tool roll | the handover's roll keeps world −Y across the nozzle; the tool is mounted at 90° to the flange, so that roll decides how far the wrist (A5) bends. Where a joint would come within `robot.wristMargin` (10°) of its limit, the tool turns about the nozzle (the roll nearest the handover's that keeps the margin, up to ±90°, changing at most `robot.rollRate`, 1.5 °/mm of path) |
+| Tilt relief | where even rolling can't keep a joint 3° inside its limit, the tilt is eased back there (to 75 % at the point, blending back over 40 mm each way) until it can, as the handover's own "local tilt relief". The bead isn't recomputed for the eased tilt (a little thinner along the nozzle there) |
 | Test print | `robot.stopAt` (mm): stops at the first point above it, then the normal end. The handover's short test is 30 layers |
 
 **Not on the robot yet** (the program is refused): travel moves (it prints one continuous line),

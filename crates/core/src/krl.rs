@@ -23,6 +23,10 @@
 //!   the straight line past it stays within `tolerance` mm of it and the nozzle within 0.5° (the
 //!   spline then runs smoothly through the rest); `tolerance` 0 keeps every point.
 //! - **Blocks:** at most `block` segments per SPLINE block, blocks joined with `C_SPL`.
+//! - **Joints:** every pose is worked out on the handover's kinematics (`kuka`): where a joint
+//!   would come within `wrist_margin` of its limit, the tool rolls about the nozzle (smoothly,
+//!   at most `roll_rate` °/mm); where even that leaves a joint within 3° of its limit, the tilt
+//!   is eased back there. A program with a pose out of reach or still that close is refused.
 //!
 //! Before writing, the toolpath is checked: one continuous line (no travels, no machine
 //! events: not on the robot yet), every point above the bed and inside the bed's world
@@ -30,6 +34,7 @@
 
 use crate::gcode::fixed;
 use crate::geom::{P3, dot3};
+use crate::kuka;
 use crate::toolpath::Toolpath;
 use serde::Deserialize;
 
@@ -80,6 +85,11 @@ pub struct Robot {
     /// The lift at the end (mm), and how fast the nozzle turns upright there (°/s).
     pub lift: f64,
     pub upright_speed: f64,
+    /// Keep every joint (A1–A5) at least this far inside its limits (°), rolling the tool about
+    /// the nozzle where the wrist would come closer.
+    pub wrist_margin: f64,
+    /// How fast that roll may change along the path (°/mm).
+    pub roll_rate: f64,
 }
 
 impl Default for Robot {
@@ -111,6 +121,8 @@ impl Default for Robot {
             stop_at: 0.0,
             lift: 50.0,
             upright_speed: 30.0,
+            wrist_margin: 10.0,
+            roll_rate: 1.5,
         }
     }
 }
@@ -124,6 +136,14 @@ pub struct Program {
     /// Segments, extruder changes and the print's time (s), for the app.
     pub segments: usize,
     pub seconds: f64,
+    /// The joints' least distance to their limits over the program (°), and which (1: A1).
+    pub joint_margin: f64,
+    pub joint: usize,
+    /// How many points the tool is rolled at to keep the wrist inside its limits, and the most.
+    pub rolled: usize,
+    pub max_roll: f64,
+    /// How many points have their tilt eased back to keep the joints inside their limits.
+    pub relieved: usize,
 }
 
 /// The most the nozzle may lean from upright (°).
@@ -140,6 +160,14 @@ const MOVE_SPEED: f64 = 50.0;
 /// Left-out points: at most this many in a row, and the nozzle within this of a straight turn.
 const MAX_SKIP: usize = 32;
 const ANGLE_TOLERANCE: f64 = 0.5;
+/// Tilt relief: how far along the path each way (mm), how much tilt is kept at the point, and
+/// how many times it may be applied.
+const RELIEF: f64 = 40.0;
+const RELIEF_FACTOR: f64 = 0.75;
+const MAX_RELIEF: usize = 30;
+/// The least any joint may come to its limit anywhere in the program (°): closer, the tilt is
+/// eased back there.
+const MIN_MARGIN: f64 = 3.0;
 
 /// Writes the KRL program for `path` (`multiplier`: the printer's extrusion multiplier).
 /// The bed of the SPHR cell (1200 × 2800 mm, 1000 mm of build height assumed) and where the
@@ -233,74 +261,50 @@ pub fn write(
         }
     }
 
-    // Each move's speed and extruder command.
-    let mut speed = vec![0.0; end];
-    let mut command = vec![0i64; end];
-    for i in 1..end {
-        let s = path.settings(i);
-        let area = path.area(i);
-        let seg = dist(path.points[i - 1], path.points[i]);
-        let mut v = (s.feed_for(area) / 60.0 * path.speed_factor(i)).min(robot.max_speed);
-        let turn = angle(axes[i - 1], axes[i]);
-        if turn > 1e-9 {
-            v = v.min(robot.max_turn * seg / turn);
-        }
-        // To 0.1 mm/s, rounded down (never faster than allowed), at least 0.1.
-        let v = ((v * 10.0 + 1e-9).floor() / 10.0).max(0.1);
-        speed[i] = v;
-        let volume = area * path.flow.get(i).copied().unwrap_or(1.0) * v * multiplier;
-        command[i] = (volume * robot.screw + 0.5).floor() as i64;
-    }
-    // The extruder changes only when the command moves more than `step` %.
-    let mut held = vec![0i64; end];
-    let mut cur = command[1];
-    for i in 1..end {
-        if (command[i] - cur).abs() as f64 > cur as f64 * robot.step / 100.0 {
-            cur = command[i];
-        }
-        held[i] = cur;
-    }
-    // The part fan comes on with the second layer: its first point, or (one line climbing
-    // through layers) the first point a layer above the first.
-    let fan_at = path
-        .layer_starts
-        .get(1)
-        .copied()
-        .filter(|&k| k > 0 && k < end)
-        .or_else(|| {
-            let z0 = path.points[1][2];
-            (1..end).find(|&i| path.points[i][2] >= z0 + path.settings(i).layer - 1e-9)
-        });
-
-    // The points the program keeps: every change of speed or command, the fan, the end, and
-    // wherever leaving one out would move the line more than `tolerance`.
-    let mut keep: Vec<usize> = Vec::new();
-    let mut a = 0;
-    while a + 1 < end {
-        let mut j = a + 1;
-        if robot.tolerance > 0.0 {
-            while j + 1 < end
-                && j + 1 - a <= MAX_SKIP
-                && speed[j + 1] == speed[a + 1]
-                && held[j + 1] == held[a + 1]
-                && fan_at != Some(j)
-                && covers(path, &axes, a, j + 1, robot.tolerance)
-            {
-                j += 1;
+    // The motion: where a pose would be past a joint limit even with the tool rolled, the tilt
+    // is eased back around it (to 75 % of itself at the point, less with distance, over
+    // `RELIEF` mm of path each way) and the motion worked out again.
+    let mut axes = axes;
+    let mut relieved = vec![false; end];
+    let mut attempts = 0;
+    let Plan {
+        rolls,
+        speed,
+        held,
+        fan_at,
+        keep,
+        least,
+    } = loop {
+        match plan(path, &axes, end, robot, &world, multiplier) {
+            Ok(p) => break p,
+            Err(failures) => {
+                attempts += 1;
+                if attempts > MAX_RELIEF {
+                    let first = failures.into_iter().next().map(|f| f.1);
+                    return Err(first.unwrap_or_default());
+                }
+                // Each failing point once (several poses between two kept points fail together).
+                let mut done = std::collections::BTreeSet::new();
+                for (at, _) in failures {
+                    if done.insert(at) {
+                        relieve(path, &mut axes, &mut relieved, at, end);
+                    }
+                }
             }
         }
-        keep.push(j);
-        a = j;
-    }
-    if keep.last() != Some(&(end - 1)) {
-        keep.push(end - 1);
-    }
+    };
+    let orientation = |i: usize| tool_rotation(axes[i], rolls[i]);
+    let purge_pose = (robot.purge_at, tool_rotation(UP, 0.0));
+    let first = world(0);
+    let above = [first[0], first[1], first[2] + APPROACH_HEIGHT];
+    let last = world(end - 1);
+    let lifted = [last[0], last[1], last[2] + robot.lift];
 
     let prog = robot.program.as_str();
     let ch = robot.channel.as_str();
     let send = |payload: String| format!("RET = EKI_SEND(\"{ch}\", \"{payload}#\")");
     let set = |c: i64| send(format!("CHANGE_SPEED1 {c}"));
-    let pose = |i: usize| frame(robot, world(i), axes[i]);
+    let pose = |i: usize| frame(robot, world(i), &orientation(i));
     let mut src: Vec<String> = Vec::with_capacity(keep.len() * 2 + 100);
     src.push("&ACCESS RVP".into());
     src.push(format!("DEF {prog}()"));
@@ -349,23 +353,15 @@ pub fn write(
     src.push("HALT".into());
     // The purge, upright; then onto the print, the extruder running at the first command.
     src.push(format!("$VEL.CP = {}", mps(MOVE_SPEED)));
-    src.push(format!("LIN {}", frame(robot, robot.purge_at, UP)));
+    src.push(format!("LIN {}", frame(robot, purge_pose.0, &purge_pose.1)));
     src.push("HALT".into());
     src.push("WAIT SEC 0".into());
     src.push(set(int(robot.purge_command)));
     src.push(send("START_EXTRUDE".into()));
     src.push(format!("WAIT SEC {}", int(robot.purge_seconds)));
     src.push(set(held[1]));
-    let first = world(0);
     src.push(format!("$VEL.CP = {}", mps(robot.transfer_speed)));
-    src.push(format!(
-        "LIN {}",
-        frame(
-            robot,
-            [first[0], first[1], first[2] + APPROACH_HEIGHT],
-            axes[0]
-        )
-    ));
+    src.push(format!("LIN {}", frame(robot, above, &orientation(0))));
     src.push(format!("$VEL.CP = {}", mps(robot.approach_speed)));
     src.push(format!("LIN {}", pose(0)));
     src.push("EC_MODE = $SPL_VEL_MODE".into());
@@ -430,15 +426,19 @@ pub fn write(
     for k in 0..3 {
         src.push(send(format!("SET_TEMP T{k} 0")));
     }
-    let last = world(end - 1);
-    let lifted = [last[0], last[1], last[2] + robot.lift];
     src.push(";LIFT".into());
     src.push(format!("$VEL.CP = {}", mps(MOVE_SPEED)));
-    src.push(format!("LIN {}", frame(robot, lifted, axes[end - 1])));
+    src.push(format!(
+        "LIN {}",
+        frame(robot, lifted, &orientation(end - 1))
+    ));
     src.push(";UPRIGHT".into());
     src.push(format!("$VEL.ORI1 = {}", fixed(robot.upright_speed, 1)));
     src.push(format!("$VEL.ORI2 = {}", fixed(robot.upright_speed, 1)));
-    src.push(format!("LIN {}", frame(robot, lifted, UP)));
+    src.push(format!(
+        "LIN {}",
+        frame(robot, lifted, &tool_rotation(UP, 0.0))
+    ));
     src.push("WAIT SEC 0".into());
     src.push(send("SET_FAN1 0".into()));
     src.push(send("SET_FAN2 0".into()));
@@ -476,6 +476,11 @@ pub fn write(
         dat: crlf(dat),
         segments: keep.len(),
         seconds,
+        joint_margin: least.0,
+        joint: least.1 + 1,
+        rolled: rolls.iter().filter(|r| r.abs() > 1e-9).count(),
+        max_roll: rolls.iter().fold(0.0, |m: f64, r| m.max(r.abs())),
+        relieved: relieved.iter().filter(|r| **r).count(),
     })
 }
 
@@ -540,6 +545,8 @@ fn check_settings(r: &Robot, multiplier: f64) -> Result<(), String> {
     within("stop height", r.stop_at, 0.0, 5000.0)?;
     within("lift", r.lift, 0.0, 500.0)?;
     within("upright turn speed", r.upright_speed, 1.0, 200.0)?;
+    within("joint margin", r.wrist_margin, 0.0, 45.0)?;
+    within("roll rate", r.roll_rate, 0.1, 30.0)?;
     within("mass", r.mass, 0.0, 50.0)?;
     within("extrusion multiplier", multiplier, 0.01, 5.0)?;
     if r.load_data == 0 || r.load_data > 16 {
@@ -553,7 +560,7 @@ fn check_settings(r: &Robot, multiplier: f64) -> Result<(), String> {
 
 /// Whether the straight segment from point a to point b (and the nozzle turning evenly between
 /// them) passes within `tol` mm of every point between (and within 0.5° of its nozzle).
-fn covers(path: &Toolpath, axes: &[P3], a: usize, b: usize, tol: f64) -> bool {
+fn covers(path: &Toolpath, axes: &[P3], rolls: &[f64], a: usize, b: usize, tol: f64) -> bool {
     let (pa, pb) = (path.points[a], path.points[b]);
     let ab = sub(pb, pa);
     let len2 = dot3(ab, ab);
@@ -573,22 +580,361 @@ fn covers(path: &Toolpath, axes: &[P3], a: usize, b: usize, tol: f64) -> bool {
             axes[a][1] + (axes[b][1] - axes[a][1]) * t,
             axes[a][2] + (axes[b][2] - axes[a][2]) * t,
         ];
-        if angle(n, axes[k]) > ANGLE_TOLERANCE {
+        if angle(n, axes[k]) > ANGLE_TOLERANCE
+            || (rolls[a] + (rolls[b] - rolls[a]) * t - rolls[k]).abs() > ANGLE_TOLERANCE
+        {
             return false;
         }
     }
     true
 }
 
-/// The pose `{X …,Y …,Z …,A …,B …,C …}` in the base frame for the nozzle tip at world `p`,
-/// pointing along `n` (from the tip into the tool), with world −Y across it.
-fn frame(robot: &Robot, p: P3, n: P3) -> String {
+/// What `plan` works out: each point's roll, each move's speed and held screw command, where the
+/// part fan comes on, the points kept, and the joints' least margin (degrees, joint index).
+struct Plan {
+    rolls: Vec<f64>,
+    speed: Vec<f64>,
+    held: Vec<i64>,
+    fan_at: Option<usize>,
+    keep: Vec<usize>,
+    least: (f64, usize),
+}
+
+/// The motion for the nozzle directions `axes`: rolls, speeds, commands, the points kept, and
+/// every pose checked on the robot's kinematics. Fails with every point where a pose is out of
+/// reach or past a joint limit.
+fn plan(
+    path: &Toolpath,
+    axes: &[P3],
+    end: usize,
+    robot: &Robot,
+    world: &dyn Fn(usize) -> P3,
+    multiplier: f64,
+) -> Result<Plan, Vec<(usize, String)>> {
+    // The tool's roll about the nozzle at each point (0: world −Y across it), where the wrist
+    // would otherwise come closer than `wrist_margin` to a joint limit.
+    let rolls = wrist_rolls(path, axes, end, robot, world);
+    let orientation = |i: usize| tool_rotation(axes[i], rolls[i]);
+    let purge_pose = (robot.purge_at, tool_rotation(UP, 0.0));
+    let first = world(0);
+    let above = [first[0], first[1], first[2] + APPROACH_HEIGHT];
+    let last = world(end - 1);
+    let lifted = [last[0], last[1], last[2] + robot.lift];
+
+    // Each move's speed and extruder command.
+    let mut speed = vec![0.0; end];
+    let mut command = vec![0i64; end];
+    for i in 1..end {
+        let s = path.settings(i);
+        let area = path.area(i);
+        let seg = dist(path.points[i - 1], path.points[i]);
+        let mut v = (s.feed_for(area) / 60.0 * path.speed_factor(i)).min(robot.max_speed);
+        let turn = turn_between(&orientation(i - 1), &orientation(i));
+        if turn > 1e-9 {
+            v = v.min(robot.max_turn * seg / turn);
+        }
+        // To 0.1 mm/s, rounded down (never faster than allowed), at least 0.1.
+        let v = ((v * 10.0 + 1e-9).floor() / 10.0).max(0.1);
+        speed[i] = v;
+        let volume = area * path.flow.get(i).copied().unwrap_or(1.0) * v * multiplier;
+        command[i] = (volume * robot.screw + 0.5).floor() as i64;
+    }
+    // The extruder changes only when the command moves more than `step` %.
+    let mut held = vec![0i64; end];
+    let mut cur = command[1];
+    for i in 1..end {
+        if (command[i] - cur).abs() as f64 > cur as f64 * robot.step / 100.0 {
+            cur = command[i];
+        }
+        held[i] = cur;
+    }
+    // The part fan comes on with the second layer: its first point, or (one line climbing
+    // through layers) the first point a layer above the first.
+    let fan_at = path
+        .layer_starts
+        .get(1)
+        .copied()
+        .filter(|&k| k > 0 && k < end)
+        .or_else(|| {
+            let z0 = path.points[1][2];
+            (1..end).find(|&i| path.points[i][2] >= z0 + path.settings(i).layer - 1e-9)
+        });
+
+    // The points the program keeps: every change of speed or command, the fan, the end, and
+    // wherever leaving one out would move the line more than `tolerance`.
+    let mut keep: Vec<usize> = Vec::new();
+    let mut a = 0;
+    while a + 1 < end {
+        let mut j = a + 1;
+        if robot.tolerance > 0.0 {
+            while j + 1 < end
+                && j + 1 - a <= MAX_SKIP
+                && speed[j + 1] == speed[a + 1]
+                && held[j + 1] == held[a + 1]
+                && fan_at != Some(j)
+                && covers(path, axes, &rolls, a, j + 1, robot.tolerance)
+            {
+                j += 1;
+            }
+        }
+        keep.push(j);
+        a = j;
+    }
+    if keep.last() != Some(&(end - 1)) {
+        keep.push(end - 1);
+    }
+
+    // Every pose the robot takes, in order, on the handover's kinematics: the purge, the
+    // approach, each kept point and three between each two (the nozzle and its roll turning
+    // evenly), the lift and the turn upright. Each must be reachable and inside the limits,
+    // with A1, A4 and A6 counted on from the pose before (the robot turns them continuously),
+    // the first from the handover's start pose.
+    let mut least = (f64::INFINITY, 0usize);
+    let mut joints = kuka::SEED;
+    let mut failures: Vec<(usize, String)> = Vec::new();
+    let mut check = |at: usize, what: &dyn Fn() -> String, p: P3, r: &kuka::M3| {
+        let Some(j) = kuka::inverse(p, r, &robot.tool) else {
+            failures.push((at, format!("{} is out of the robot's reach", what())));
+            return;
+        };
+        joints = kuka::unwrap_near(j, &joints);
+        let (m, axis) = kuka::margin(&joints);
+        if m < MIN_MARGIN {
+            failures.push((
+                at,
+                format!(
+                    "at {} A{} would be {}° from its limit (at least {MIN_MARGIN}°), even with the tool rolled and the tilt eased: lower the tilt there",
+                    what(),
+                    axis + 1,
+                    fixed(m, 1)
+                ),
+            ));
+        }
+        if m < least.0 {
+            least = (m, axis);
+        }
+    };
+    let at = |i: usize| move || format!("point {} ({} mm up)", i + 1, fixed(path.points[i][2], 1));
+    check(0, &|| "the purge point".into(), purge_pose.0, &purge_pose.1);
+    check(
+        0,
+        &|| "above the first point".into(),
+        above,
+        &orientation(0),
+    );
+    check(0, &at(0), world(0), &orientation(0));
+    let mut from = 0;
+    for &k in &keep {
+        for f in [0.25, 0.5, 0.75] {
+            let (a, b) = (world(from), world(k));
+            let p = [
+                a[0] + (b[0] - a[0]) * f,
+                a[1] + (b[1] - a[1]) * f,
+                a[2] + (b[2] - a[2]) * f,
+            ];
+            let (na, nb) = (axes[from], axes[k]);
+            let n = [
+                na[0] + (nb[0] - na[0]) * f,
+                na[1] + (nb[1] - na[1]) * f,
+                na[2] + (nb[2] - na[2]) * f,
+            ];
+            let roll = rolls[from] + (rolls[k] - rolls[from]) * f;
+            check(k, &at(k), p, &tool_rotation(n, roll));
+        }
+        check(k, &at(k), world(k), &orientation(k));
+        from = k;
+    }
+    check(
+        end - 1,
+        &|| "the lift at the end".into(),
+        lifted,
+        &orientation(end - 1),
+    );
+    check(
+        end - 1,
+        &|| "upright at the end".into(),
+        lifted,
+        &tool_rotation(UP, 0.0),
+    );
+    if !failures.is_empty() {
+        return Err(failures);
+    }
+    Ok(Plan {
+        rolls,
+        speed,
+        held,
+        fan_at,
+        keep,
+        least,
+    })
+}
+
+/// Eases the tilt back around point `at`: each point within `RELIEF` mm of path leans
+/// `RELIEF_FACTOR` of its tilt at `at`, blending to all of it at `RELIEF` mm (a cosine).
+fn relieve(path: &Toolpath, axes: &mut [P3], relieved: &mut [bool], at: usize, end: usize) {
+    let at = at.min(end - 1);
+    let mut reach = |range: &mut dyn Iterator<Item = usize>, step: &dyn Fn(usize) -> usize| {
+        let mut s = 0.0;
+        for i in range {
+            if i != at {
+                s += dist(path.points[i], path.points[step(i)]);
+            }
+            if s > RELIEF {
+                break;
+            }
+            let t = 0.5 - 0.5 * (std::f64::consts::PI * s / RELIEF).cos(); // 0 at `at`, 1 at RELIEF
+            let keep = RELIEF_FACTOR + (1.0 - RELIEF_FACTOR) * t;
+            let n = axes[i];
+            let lean = n[2].clamp(-1.0, 1.0).acos() * keep;
+            let across = n[0].hypot(n[1]);
+            if across > 1e-12 {
+                let (sl, cl) = lean.sin_cos();
+                axes[i] = [n[0] / across * sl, n[1] / across * sl, cl];
+                relieved[i] = true;
+            }
+        }
+    };
+    reach(&mut (at..end), &|i| i.saturating_sub(1).max(at));
+    reach(&mut (0..at).rev(), &|i| i + 1);
+}
+
+/// The tool's world rotation (columns x, y, z) pointing along `n` (from the tip into the tool):
+/// world −Y made square to the nozzle is x (the handover's roll), turned `roll` degrees about
+/// the nozzle.
+fn tool_rotation(n: P3, roll: f64) -> kuka::M3 {
     let z = unit(n).unwrap_or(UP);
     let y_down = [0.0, -1.0, 0.0];
-    let x = unit(sub(y_down, scale(z, dot3(z, y_down)))).unwrap_or([1.0, 0.0, 0.0]);
+    let x0 = unit(sub(y_down, scale(z, dot3(z, y_down)))).unwrap_or([1.0, 0.0, 0.0]);
+    let y0 = cross(z, x0);
+    let (s, c) = roll.to_radians().sin_cos();
+    let x = [
+        x0[0] * c + y0[0] * s,
+        x0[1] * c + y0[1] * s,
+        x0[2] * c + y0[2] * s,
+    ];
     let y = cross(z, x);
-    // World rotation (columns x, y, z), then into the base frame.
-    let world = [[x[0], y[0], z[0]], [x[1], y[1], z[1]], [x[2], y[2], z[2]]];
+    [[x[0], y[0], z[0]], [x[1], y[1], z[1]], [x[2], y[2], z[2]]]
+}
+
+/// The angle between two orientations (degrees).
+fn turn_between(a: &kuka::M3, b: &kuka::M3) -> f64 {
+    let trace: f64 = (0..3)
+        .map(|i| (0..3).map(|k| a[k][i] * b[k][i]).sum::<f64>())
+        .sum();
+    ((trace - 1.0) / 2.0).clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// The tool's roll (degrees) at each of the first `end` points: as close to 0 (the handover's)
+/// as it can be while every joint stays at least `wrist_margin` inside its limits, changing at
+/// most `roll_rate` °/mm of path.
+///
+/// Each point gets the rolls (in 5° steps from −90° to 90°) that keep the margin: the run of
+/// them around 0, or, where 0 doesn't, the run nearest 0. A pass from the end back narrows each
+/// point's range to what the points after it can still reach at `roll_rate`; a pass forward
+/// then takes the roll nearest 0 within it and within `roll_rate` of the point before. Where no
+/// roll keeps the margin, the one with the most room (`write` checks the limits themselves).
+fn wrist_rolls(
+    path: &Toolpath,
+    axes: &[P3],
+    end: usize,
+    robot: &Robot,
+    world: &dyn Fn(usize) -> P3,
+) -> Vec<f64> {
+    const STEP: f64 = 5.0;
+    const STEPS: i32 = 18; // ±90°
+    // The joints at each point without a roll, A1, A4 and A6 counted on from the point before
+    // (from the purge point's, counted from the handover's start pose): a roll's joints are
+    // counted from these.
+    let ik = |p: P3, n: P3, roll: f64| kuka::inverse(p, &tool_rotation(n, roll), &robot.tool);
+    let mut near = ik(robot.purge_at, UP, 0.0)
+        .map(|j| kuka::unwrap_near(j, &kuka::SEED))
+        .unwrap_or(kuka::SEED);
+    let mut plain = Vec::with_capacity(end);
+    for (i, &n) in axes.iter().enumerate().take(end) {
+        if let Some(j) = ik(world(i), n, 0.0) {
+            near = kuka::unwrap_near(j, &near);
+        }
+        plain.push(near);
+    }
+    let room = |i: usize, roll: f64| {
+        ik(world(i), axes[i], roll)
+            .map(|j| kuka::margin(&kuka::unwrap_near(j, &plain[i])).0)
+            .unwrap_or(f64::NEG_INFINITY)
+    };
+    // Each point's range of rolls.
+    let mut range = Vec::with_capacity(end);
+    for i in 0..end {
+        let rolls: Vec<f64> = (-STEPS..=STEPS).map(|k| f64::from(k) * STEP).collect();
+        let rooms: Vec<f64> = rolls.iter().map(|&r| room(i, r)).collect();
+        let ok: Vec<bool> = rooms.iter().map(|&m| m >= robot.wrist_margin).collect();
+        // Runs of rolls that keep the margin; the one holding 0, else the nearest 0.
+        let mut runs: Vec<(usize, usize)> = Vec::new();
+        let mut k = 0;
+        while k < ok.len() {
+            if ok[k] {
+                let first = k;
+                while k + 1 < ok.len() && ok[k + 1] {
+                    k += 1;
+                }
+                runs.push((first, k));
+            }
+            k += 1;
+        }
+        let distance = |&(a, b): &(usize, usize)| {
+            let (lo, hi) = (rolls[a], rolls[b]);
+            if lo <= 0.0 && hi >= 0.0 {
+                0.0
+            } else {
+                lo.abs().min(hi.abs())
+            }
+        };
+        let r = match runs
+            .iter()
+            .min_by(|x, y| distance(x).total_cmp(&distance(y)))
+        {
+            Some(&(a, b)) => [rolls[a], rolls[b]],
+            None => {
+                let best = (0..rolls.len())
+                    .max_by(|&x, &y| rooms[x].total_cmp(&rooms[y]))
+                    .unwrap_or(STEPS as usize);
+                [rolls[best], rolls[best]]
+            }
+        };
+        range.push(r);
+    }
+    let reach = |i: usize| robot.roll_rate * dist(path.points[i - 1], path.points[i]);
+    // Back from the end: what each point may take so the points after it stay reachable.
+    let mut allowed = range.clone();
+    for i in (0..end.saturating_sub(1)).rev() {
+        let r = reach(i + 1);
+        let (lo, hi) = (allowed[i + 1][0] - r, allowed[i + 1][1] + r);
+        let narrowed = [allowed[i][0].max(lo), allowed[i][1].min(hi)];
+        // Where the two can't both be met, the point's own range (it then turns faster there,
+        // and the move slows for it).
+        if narrowed[0] <= narrowed[1] {
+            allowed[i] = narrowed;
+        }
+    }
+    // Forward: nearest 0 within the allowed range and within reach of the point before.
+    let mut rolls = vec![0.0; end];
+    for i in 0..end {
+        let [mut lo, mut hi] = allowed[i];
+        if i > 0 {
+            let r = reach(i);
+            let (plo, phi) = (rolls[i - 1] - r, rolls[i - 1] + r);
+            if plo.max(lo) <= phi.min(hi) {
+                lo = lo.max(plo);
+                hi = hi.min(phi);
+            }
+        }
+        rolls[i] = 0.0f64.clamp(lo, hi);
+    }
+    rolls
+}
+
+/// The pose `{X …,Y …,Z …,A …,B …,C …}` in the base frame for the nozzle tip at world `p` with
+/// the tool's world rotation `world` (`tool_rotation`).
+fn frame(robot: &Robot, p: P3, world: &kuka::M3) -> String {
     let b = rot(robot.base[3], robot.base[4], robot.base[5]);
     let d = sub(p, [robot.base[0], robot.base[1], robot.base[2]]);
     // Rᵀ·d and Rᵀ·R_world.
@@ -924,6 +1270,69 @@ mod tests {
             ..robot()
         };
         assert!(program(&square(), &bad).is_err());
+    }
+
+    /// A ring 200 mm up, the nozzle tilted 45° in towards its centre all the way round (the
+    /// Sphere's closing top): with the handover's roll alone the wrist (A5) goes past its limit
+    /// on one side. The tool rolls there, and where that's not enough the tilt eases back; every
+    /// pose then keeps 3° from every limit.
+    #[test]
+    fn rolls_the_tool_to_keep_the_wrist_inside_its_limits() {
+        let n = 360;
+        let pts: Vec<P3> = (0..=n)
+            .map(|k| {
+                let a = std::f64::consts::TAU * k as f64 / n as f64;
+                [150.0 * a.cos(), 150.0 * a.sin(), 200.0]
+            })
+            .collect();
+        let axis: Vec<P3> = pts
+            .iter()
+            .map(|p| {
+                let r = p[0].hypot(p[1]);
+                let s = 45f64.to_radians().sin();
+                [-p[0] / r * s, -p[1] / r * s, 45f64.to_radians().cos()]
+            })
+            .collect();
+        let curve = Curve {
+            points: pts,
+            closed: false,
+            circle: None,
+            winding: None,
+            bead: None,
+        };
+        let mut path =
+            from_curves(&[&curve], Settings::new(5.0, 2.5, 10.0).unwrap(), 1000).unwrap();
+        path.axis = axis;
+        // The handover's roll alone: past A5's limit somewhere on the ring.
+        let tool = Robot::default().tool;
+        let o = Robot::default().origin;
+        let worst = path
+            .points
+            .iter()
+            .zip(&path.axis)
+            .map(|(p, n)| {
+                let j = kuka::inverse(
+                    [o[0] + p[0], o[1] + p[1], o[2] + p[2]],
+                    &tool_rotation(*n, 0.0),
+                    &tool,
+                )
+                .unwrap();
+                kuka::margin(&j).0
+            })
+            .fold(f64::INFINITY, f64::min);
+        assert!(worst < 0.0, "{worst}");
+        let ours = program(&path, &Robot::default()).unwrap();
+        assert!(
+            ours.joint_margin >= MIN_MARGIN - 1e-9,
+            "{}",
+            ours.joint_margin
+        );
+        assert!(
+            ours.rolled > 0 && ours.max_roll > 10.0,
+            "{} {}",
+            ours.rolled,
+            ours.max_roll
+        );
     }
 
     #[test]

@@ -40,6 +40,15 @@ compensating overhangs for a Cartesian printer.
   (fans 25 mm off the bed); the test then passes every check.
 - **`scripts/robot-viewer.py`:** the program animated in the handover's own viewer (its
   `viewer_template.html`), from the same kind of replay.
+- **The whole Sphere** showed the wrist (A5) up to 5.7° past its limit in 1,249 poses, in the
+  closing top where the nozzle leans in (the 40 mm test never got there). Now the writer works
+  every pose out on the handover's kinematics (`kuka.rs`, ported and tested against
+  `kinematics.py`), **rolls the tool about the nozzle** where a joint would come within 10° of
+  its limit (smooth, at most 1.5 °/mm), and **eases the tilt back** where even that isn't enough
+  (the handover's "local tilt relief"); it refuses a program with any joint closer than 3°. The
+  Sphere: 9,483 points rolled (up to 90°), 4,968 with the tilt eased (4 % of the line), every
+  joint at least 3° inside, confirmed by the handover's Python; 49,641 spline segments, 14.9 h at
+  60 mm³/s. A4 is counted continuously (it reached −192° once rolled, which the wrapped angle hid).
 
 **Open:** run it on the controller (it must compile: `C_SPL`, 1000 segments a block); the
 checks in the engine (they're a script for now); calibrate the screw; travels and machine events on the

@@ -64,7 +64,8 @@ so in the dev log); when something new comes up, add it here, not only in the de
   a test set of real requests.
 - **Code health:** `viewport.js` (1,400 lines) and `app.js` (1,600) want splitting.
 - **The robot (KUKA KR50):** not yet run on the controller (it must compile: `C_SPL` between
-  SPLINE blocks, 1000 segments a block); reach, joint-limit and collision checks are a script
+  SPLINE blocks, 1000 segments a block); reach and joint limits are checked in the writer
+  (it rolls the tool and eases the tilt to keep them); collisions are a script
   (`scripts/robot-check.py`, on the handover's model), not in the app; the screw calibration (30
   per mm³/s) is from the handover's numbers, not measured; no travels or machine events on the
   robot; the print time estimate doesn't know the robot's speed cap.
