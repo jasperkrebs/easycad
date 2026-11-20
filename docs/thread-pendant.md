@@ -105,21 +105,28 @@ What the sketcher leaves out, added here:
 
 ### The wings compensated on their own
 
-With compensation on, the wall and the wings are compensated each for its own lean (since 19
-Nov): the wall for the shape's, the wings for theirs in towards the socket (radially; not the
-leaf's edges growing along the rings). Each layer is still one line, so over any stretch the
-wings and the wall have the same number of layers: the wings can't keep more layers than the
-wall, only fall behind it for a while and catch up. So where the wings run, **both rise the
-thinner of the two**:
+With compensation on, the wall and the wings are compensated each at its own rate (since 20
+Nov): the wall for the shape's lean, the wings for theirs in towards the socket (radially; not
+the leaf's edges growing along the rings). Each layer is still one line, so where one rises more
+than the other the wings' heights part from the wall's, and the arm between them takes up the
+difference, its angle changing layer by layer: on a sphere, where the wall stands upright at the
+equator and the wings lean in, the wings fall behind; where the wall leans more than them (the
+top), it catches up.
 
-- Each is compensated at least as much as its own lean asks; the extra thinning (the wall's
-  layers beside steeper wings, say) is extruded for, not squeezed.
-- Along a straight leaf the wings' layers are even (tested on the owner's sphere).
-- The band eases in and out (the layer height changes by at most 0.04 mm per mm of height), so
-  it doesn't show as a line on the outside.
-- The wings' heights stay the wall's, so the arm only climbs for the thread's own lead (below).
-- **On the owner's sphere:** 186 layers instead of 131 without compensation (164 with the wall
-  compensated alone), 40.8 h; the arm climbs at most 7.7°, nothing under 67 % of its layer.
+- The arm blends the wings' heights into the wall's evenly along its length (a straight climb
+  from the middle ring out to inside the wall), so it's no steeper anywhere than on average.
+- Both have the same number of layers, so if the wings fell so far behind that they couldn't
+  finish the grip before the wall reaches the top, the difference is scaled back (each wing
+  layer between its own and the wall's), as little as it takes.
+- With a crease above the grip, the difference left closes there faster: as fast as leaves each
+  crease layer at least 75 % of its height.
+- Where the wings move in while far below the wall's heights, the arm just outside the middle
+  ring sits a little high on the one below (a straight arm whose low end moves in): each move is
+  extruded for the gap it's in, and a check warns where that's over 1.5 times its layer. So does
+  the one for the arm steeper than 15°.
+- **On the owner's Sphere20test** (its sketcher wings, 70°): the wall keeps a whole 2.5 mm layer
+  at the equator (before, the wings' 2 mm), the wings their own ~2 mm; the wings end some 25 mm
+  below the wall's heights; 147 layers, 37 h.
 
 ### How the thread keeps its pitch
 

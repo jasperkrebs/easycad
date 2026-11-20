@@ -73,7 +73,7 @@ wlayer   = pick(wall_layer, min(wall_layer, pitch), pitch)
 # top, wing zone short, length, widest Ø, bottom Ø, thinnest layer, the wing rings' biggest step
 # in or out from one layer to the next, the steepest the arm climbs between the wings' heights
 # and the wall's (°), the thinnest the wings and the arm get (mm), and for their layer (1: as
-# planned)].
+# planned), the thickest for it].
 # The line carries its own bead: each move's width and layer.
 shade_line = thread_shade(profile, height, wing_curve, path, path_len: path_len, entries: entries, wing_zone: wing_zone, max_overhang: max_overhang, tip_gap: tip_gap, neck_gap: neck_gap, wall_gap: wall_gap, pin_gap: pin_gap, rotation: rotation, socket_d: sock_d, engagement: engagement, grip: grip, hide: hide, socket_h: sock_h, top: top, crease: crease, z_by: z_by, line: line, layer: pitch, step: step_len, strength: comp * strength, steep: steep, pivot: pivot, wall_line: wall_line, wall_layer: wall_layer, pockets: pockets, leaf: leaf, output: "path")
 shade_wall = thread_shade(profile, height, wing_curve, path, path_len: path_len, entries: entries, wing_zone: wing_zone, max_overhang: max_overhang, tip_gap: tip_gap, neck_gap: neck_gap, wall_gap: wall_gap, pin_gap: pin_gap, rotation: rotation, socket_d: sock_d, engagement: engagement, grip: grip, hide: hide, socket_h: sock_h, top: top, crease: crease, z_by: z_by, line: line, layer: pitch, step: step_len, strength: comp * strength, steep: steep, pivot: pivot, wall_line: wall_line, wall_layer: wall_layer, pockets: pockets, leaf: leaf, output: "wall")
@@ -94,6 +94,7 @@ checked = shade_line
   |> require(comp + leaf + less(item(info, 6), max_overhang + 0.5), "The outer wall leans more than the max overhang: turn on the overhang compensation", warn: true)
   |> require(less(item(info, 20), 15), "The arm climbs steeper than 15° in places (the wings' heights and the wall's far apart): the nozzle may drag on the layer below. A thicker wall layer, a shorter grip, a wider shade or less compensation", warn: true)
   |> require(greater(item(info, 22), 0.5), "The wings' or the arm's layers get under half their height in places (they move in or out while their heights and the wall's part): a thicker wall layer, less compensation or a gentler leaf", warn: true)
+  |> require(less(item(info, 23), 1.5), "The arm's layers get over 1.5 times their height in places (the wings moving in while far below or above the wall's heights): a gentler leaf, a longer wing zone or less compensation", warn: true)
   |> require(1 - less(abs(index_of(["flat", "angle", "length"], z_by) - 2), 0.5), "Layers by length: the grip isn't a true helix (about ±0.2–0.4 mm off). Use flat or angle before screwing it onto a socket", warn: true)
 
 # ---- Printed as it hangs, the opening on the bed; each move extruded for the line's own bead
