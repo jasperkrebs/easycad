@@ -355,8 +355,8 @@ fn the_sphere_on_the_robot() {
     let lean = |v: &P3| v[2].clamp(-1.0, 1.0).acos().to_degrees();
     let floor = path.points[1][2];
     for (p, v) in path.points.iter().zip(axes) {
-        // At most 45°, growing from upright on the bed over the first 45 mm.
-        let most = 45.0 * ((p[2] - floor) / 45.0).clamp(0.0, 1.0);
+        // At most 45°, growing from upright on the bed over the first 60 mm.
+        let most = 45.0 * ((p[2] - floor) / 60.0).clamp(0.0, 1.0);
         assert!(lean(v) <= most + 1e-6, "{} at z {}", lean(v), p[2]);
     }
     assert!((print.stats.max_tilt_deg - 45.0).abs() < 1e-6);

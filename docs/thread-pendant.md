@@ -195,8 +195,8 @@ the toolpath is the same (overhang compensation by layer height steps each wall 
 along the wall), and `tilt` holds the nozzle along the wall: at most **Most nozzle tilt** (45°)
 from upright, averaged over **Tilt smoothed over** (20 mm of line, so the wrist turns gently where
 the line runs in from the wall to the wings and back), and growing from upright on the bed to
-the most at **Full tilt from this high** (45 mm: the tool's fans hang about 35 mm below the
-nozzle at 45°). Each move then gets its full bead back along the nozzle. Choose the KUKA KR50 in
+the most at **Full tilt from this high** (60 mm: tilted 45°, the tool's fans hang about 42 mm
+below the nozzle; 60 keeps them 18 mm off the bed, `scripts/robot-check.py` checks it). Each move then gets its full bead back along the nozzle. Choose the KUKA KR50 in
 the Print tab; its **Stop at this height** makes a short test. The owner's Sphere on the robot is
 `fixtures/recipes/sphere-robot.easycad` (60 mm³/s: about 1800 screw command, the handover's own
 wall at 6 mm/s; the first 40 mm take about an hour).

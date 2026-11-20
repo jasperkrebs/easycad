@@ -32,9 +32,15 @@ compensating overhangs for a Cartesian printer.
   (`fixtures/recipes/sphere-robot.easycad`): its first 40 mm make 1,621 spline segments, about
   an hour at 60 mm³/s.
 - The Thread pendant template's **Robot** group (off by default: nothing changes for the G1).
+- **`scripts/robot-check.py`:** replays a program on the handover's robot model (its
+  `kinematics.py`, `proxy_collision.py`, CAD proxies and fan housings): joint limits and reach,
+  tool/arm/pedestal collisions, 10 mm bed clearance, and the tool against the material already
+  printed (the program's own bead). Its first run showed the nozzle fans 7 mm off the bed in the
+  Sphere's 40 mm test (full tilt at 45 mm up was too soon): the tilt now reaches 45° at 60 mm
+  (fans 25 mm off the bed); the test then passes every check.
 
-**Open:** run it on the controller (it must compile: `C_SPL`, 1000 segments a block); reach,
-joint-limit and tool-collision checks; calibrate the screw; travels and machine events on the
+**Open:** run it on the controller (it must compile: `C_SPL`, 1000 segments a block); the
+checks in the engine (they're a script for now); calibrate the screw; travels and machine events on the
 robot ([roadmap.md](roadmap.md), Open).
 
 

@@ -196,17 +196,41 @@ and the recipe's machine events (fans, pauses, temperatures).
 and whether one SPLINE block may hold 1000 segments: KUKA's manual for the exact version is the
 authority); reach and joint limits (EasyCAD doesn't check them yet: the handover's
 `kinematics.py` and `rough_checks.py` do, for its globe); the tool's clearance to the bed and the
-print (the handover's fan proxies: at 45° the fans hang about 35 mm below the nozzle, so the
-Thread pendant's tilt grows from upright on the bed to 45° at 45 mm up); and the screw
+print (`scripts/robot-check.py` replays the program on the handover's model, below); and the screw
 calibration.
 
 ### Printing on the robot
 
-A recipe ends its toolpath with `tilt(max: 45 deg, smooth: 20 mm, bed: 45 mm)`
+A recipe ends its toolpath with `tilt(max: 45 deg, smooth: 20 mm, bed: 60 mm)`
 ([definition-language.md](definition-language.md)): the nozzle along the wall (from the bead
 underneath), averaged over 20 mm of path so the wrist turns gently, at most 45° and less near
-the bed. Keep overhang compensation by layer height on: on a Cartesian printer it squeezes a
+the bed. Tilted 45°, the tool's lowest point (a nozzle fan, the handover's proxies, at the worst
+roll) hangs about 42 mm below the nozzle tip; growing the tilt evenly from upright on the bed to
+45° at 60 mm keeps every part but the nozzle at least 18 mm off the bed (55 mm is the least that
+keeps the handover's 10 mm). Keep overhang compensation by layer height on: on a Cartesian printer it squeezes a
 leaning wall's layers to the layer height × cos(lean), which is the same as stepping one layer
 along the wall; `tilt` then gives each move its full bead back along the nozzle. The Thread
 pendant has this as its **Robot** setting.
+
+### Checking a program on the handover's model
+
+`scripts/robot-check.py` replays a program EasyCAD wrote on the handover's own robot model, as
+the handover's `rough_checks.py` does for its globe (which reads its replay from the globe's
+HTML and models the printed material from the globe's profile, so it can't take another print):
+
+```sh
+python3 -m pip install -r SPHR_Full_Print_Handover-2/Globe_E27_30_Layers/requirements.txt
+python3 scripts/robot-check.py EASYCAD.SRC --width 5 --output report.json
+```
+
+Every LIN and SPL target, and three samples between each two (straight, and slerp for the
+nozzle), are turned into joint angles with the handover's `kinematics.py`; then: joint limits
+(A1–A5) and reach; tool against arm, arm against itself and everything against the pedestal
+(`proxy_collision.py`, `cad_proxy.json`, the fan housings from `fan_pair_coordinates.json`, the
+heater barrel left out as the handover does); every part but the nozzle at least 10 mm off the
+bed; and every tool part and the wrist against the material already printed: the program's own
+bead (its targets every 2 mm, a round bead of `--width`), leaving out the last 20 mm behind the
+nozzle; the fans should keep 5 mm. It exits non-zero on a problem. Like the handover's, it
+doesn't see the controller's spline, cables, fixtures or the start pose. `--stride` checks the
+material on every Nth sample (a whole print's program takes long).
 
