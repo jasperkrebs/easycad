@@ -1,0 +1,616 @@
+{
+  "excludedToolParts": [
+    "Heater barrel"
+  ],
+  "samples": 91413,
+  "movingSegments": 22469,
+  "intermediateFractions": [
+    0.25,
+    0.5,
+    0.75
+  ],
+  "toolVsRobot": [],
+  "nonadjacentRobotLinks": [],
+  "pedestalBoundsWorldMm": [
+    {
+      "name": "Robot pedestal",
+      "minimum": [
+        -370.8336,
+        -239.7726,
+        -800.0
+      ],
+      "maximum": [
+        239.821,
+        239.8113,
+        0.0
+      ]
+    }
+  ],
+  "pedestalCollisions": [],
+  "pedestalClearances": [
+    {
+      "part": "Arm link 1, section 1",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 169.988,
+      "line": 32
+    },
+    {
+      "part": "Angled feed inlet",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 252.752,
+      "line": 975
+    },
+    {
+      "part": "Intake housing",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 255.42,
+      "line": 975
+    },
+    {
+      "part": "Drive enclosure",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 278.518,
+      "line": 976
+    },
+    {
+      "part": "Arm link 5, section 1",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 291.55,
+      "line": 976
+    },
+    {
+      "part": "Arm link 1, section 2",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 293.38,
+      "line": 32
+    },
+    {
+      "part": "Arm link 5, section 2",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 294.754,
+      "line": 976
+    },
+    {
+      "part": "Feed trunk",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 311.013,
+      "line": 975
+    },
+    {
+      "part": "Arm link 5, section 3",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 321.877,
+      "line": 976
+    },
+    {
+      "part": "Drive mounting block",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 354.099,
+      "line": 976
+    },
+    {
+      "part": "Arm link 4, section 4",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 365.076,
+      "line": 976
+    },
+    {
+      "part": "Robot mounting disc",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 370.412,
+      "line": 976
+    },
+    {
+      "part": "Barrel guard",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 372.427,
+      "line": 976
+    },
+    {
+      "part": "Arm link 6, section 1",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 382.44,
+      "line": 976
+    },
+    {
+      "part": "Arm link 6, section 2",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 383.098,
+      "line": 976
+    },
+    {
+      "part": "Arm link 2, section 1",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 390.838,
+      "line": 1846
+    },
+    {
+      "part": "Mounting spine",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 393.059,
+      "line": 976
+    },
+    {
+      "part": "Left blower housing",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 418.812,
+      "line": 975
+    },
+    {
+      "part": "Arm link 1, section 3",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 418.986,
+      "line": 32
+    },
+    {
+      "part": "Arm link 2, section 2",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 428.525,
+      "line": 976
+    },
+    {
+      "part": "Arm link 4, section 3",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 434.243,
+      "line": 976
+    },
+    {
+      "part": "Left cooling duct",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 460.659,
+      "line": 975
+    },
+    {
+      "part": "Front cooling duct",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 504.0,
+      "line": 975
+    },
+    {
+      "part": "Legacy side connection",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 511.724,
+      "line": 976
+    },
+    {
+      "part": "Right blower housing",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 520.199,
+      "line": 975
+    },
+    {
+      "part": "Right cooling duct",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 571.237,
+      "line": 975
+    },
+    {
+      "part": "Arm link 2, section 3",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 580.675,
+      "line": 977
+    },
+    {
+      "part": "Arm link 1, section 4",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 588.413,
+      "line": 32
+    },
+    {
+      "part": "Arm link 4, section 2",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 605.095,
+      "line": 976
+    },
+    {
+      "part": "Left nozzle fan",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 636.467,
+      "line": 1180
+    },
+    {
+      "part": "Fan pair 2 housing envelope",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 646.824,
+      "line": 1179
+    },
+    {
+      "part": "Front nozzle fan",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 683.557,
+      "line": 1030
+    },
+    {
+      "part": "Fan pair 1 housing envelope",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 689.542,
+      "line": 1057
+    },
+    {
+      "part": "Right nozzle fan",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 722.236,
+      "line": 989
+    },
+    {
+      "part": "Fan pair 3 housing envelope",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 733.06,
+      "line": 989
+    },
+    {
+      "part": "Heater collar",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 740.775,
+      "line": 1221
+    },
+    {
+      "part": "Nozzle",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 746.605,
+      "line": 1248
+    },
+    {
+      "part": "Arm link 4, section 1",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 793.904,
+      "line": 975
+    },
+    {
+      "part": "Arm link 3, section 4",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 869.979,
+      "line": 975
+    },
+    {
+      "part": "Arm link 3, section 3",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 917.225,
+      "line": 974
+    },
+    {
+      "part": "Arm link 2, section 4",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 937.093,
+      "line": 977
+    },
+    {
+      "part": "Arm link 3, section 2",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 967.468,
+      "line": 974
+    },
+    {
+      "part": "Arm link 3, section 1",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 1087.692,
+      "line": 815
+    },
+    {
+      "part": "Arm link 2, section 5",
+      "pedestal": "Robot pedestal",
+      "lowerBoundMm": 1158.425,
+      "line": 717
+    }
+  ],
+  "bedSurfaceZMm": -659.0,
+  "closestBed": [
+    {
+      "part": "Nozzle",
+      "marginMm": 0.15,
+      "line": 416
+    },
+    {
+      "part": "Left nozzle fan",
+      "marginMm": 11.82,
+      "line": 705
+    },
+    {
+      "part": "Front nozzle fan",
+      "marginMm": 12.2,
+      "line": 708
+    },
+    {
+      "part": "Right nozzle fan",
+      "marginMm": 12.59,
+      "line": 712
+    },
+    {
+      "part": "Fan pair 2 housing envelope",
+      "marginMm": 17.6,
+      "line": 691
+    }
+  ],
+  "toolBedClearanceTargetMm": 10.0,
+  "toolBedClearances": [
+    {
+      "part": "Nozzle",
+      "minMm": 0.15,
+      "line": 416,
+      "posesBelowTarget": 5610
+    },
+    {
+      "part": "Left nozzle fan",
+      "minMm": 11.8185,
+      "line": 705,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Front nozzle fan",
+      "minMm": 12.2041,
+      "line": 708,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Right nozzle fan",
+      "minMm": 12.5915,
+      "line": 712,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Fan pair 2 housing envelope",
+      "minMm": 17.6043,
+      "line": 691,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Fan pair 1 housing envelope",
+      "minMm": 17.9203,
+      "line": 694,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Fan pair 3 housing envelope",
+      "minMm": 18.1243,
+      "line": 712,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Heater collar",
+      "minMm": 23.4032,
+      "line": 416,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Barrel guard",
+      "minMm": 57.5993,
+      "line": 690,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Right cooling duct",
+      "minMm": 68.3706,
+      "line": 710,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Left cooling duct",
+      "minMm": 71.0747,
+      "line": 707,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Mounting spine",
+      "minMm": 95.9278,
+      "line": 714,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Front cooling duct",
+      "minMm": 171.6654,
+      "line": 708,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Legacy side connection",
+      "minMm": 176.8131,
+      "line": 705,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Left blower housing",
+      "minMm": 217.0771,
+      "line": 708,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Right blower housing",
+      "minMm": 217.4152,
+      "line": 711,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Drive mounting block",
+      "minMm": 251.1009,
+      "line": 704,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Feed trunk",
+      "minMm": 259.391,
+      "line": 708,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Robot mounting disc",
+      "minMm": 294.4303,
+      "line": 714,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Drive enclosure",
+      "minMm": 423.4002,
+      "line": 714,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Intake housing",
+      "minMm": 464.9805,
+      "line": 708,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Angled feed inlet",
+      "minMm": 541.7472,
+      "line": 708,
+      "posesBelowTarget": 0
+    }
+  ],
+  "toolBedClearanceViolationsExcludingNozzle": [],
+  "bedBoundsWorldMm": {
+    "xMin": 713.304936,
+    "xMax": 1913.304936,
+    "yMin": -1865.143158,
+    "yMax": 934.856842,
+    "z": -659.0,
+    "sectionSeamsY": [
+      -1165.143158,
+      -465.143158,
+      234.856842
+    ]
+  },
+  "brimBeadEnvelopeWorldMm": {
+    "xMin": 1039.654936,
+    "xMax": 1136.954936,
+    "yMin": -163.793158,
+    "yMax": -66.493158
+  },
+  "brimOverhangMm": {
+    "xMin": 0.0,
+    "xMax": 0.0,
+    "yMin": 0.0,
+    "yMax": 0.0
+  },
+  "brimBedSectionYRangesMm": [
+    [
+      -465.143158,
+      234.856842
+    ]
+  ],
+  "printedPartEnvelope": [],
+  "exclusions": [
+    "Initial PTP, cell fixtures, cables and controller blending",
+    "Intended flange attachment and adjacent robot link pairs",
+    "Nozzle contact with print, newest turn and brim before completion in part envelope check"
+  ],
+  "fanMaterialClearanceTargetMm": 5.0,
+  "fanMaterialClearances": [
+    {
+      "part": "Left cooling duct",
+      "minSampledMaterialClearanceMm": 25.0,
+      "finishMinimumSampledClearanceMm": 267.369,
+      "sourceLine": 706,
+      "material": "wall",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Left nozzle fan",
+      "minSampledMaterialClearanceMm": 6.889,
+      "finishMinimumSampledClearanceMm": 7.32,
+      "sourceLine": 1674,
+      "material": "wall",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Left blower housing",
+      "minSampledMaterialClearanceMm": 308.205,
+      "finishMinimumSampledClearanceMm": 440.736,
+      "sourceLine": 416,
+      "material": "brim",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Right cooling duct",
+      "minSampledMaterialClearanceMm": 25.0,
+      "finishMinimumSampledClearanceMm": 263.514,
+      "sourceLine": 696,
+      "material": "wall",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Right nozzle fan",
+      "minSampledMaterialClearanceMm": 7.065,
+      "finishMinimumSampledClearanceMm": 7.341,
+      "sourceLine": 1654,
+      "material": "wall",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Right blower housing",
+      "minSampledMaterialClearanceMm": 308.71,
+      "finishMinimumSampledClearanceMm": 440.722,
+      "sourceLine": 59,
+      "material": "brim",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Front cooling duct",
+      "minSampledMaterialClearanceMm": 240.225,
+      "finishMinimumSampledClearanceMm": 377.375,
+      "sourceLine": 416,
+      "material": "brim",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Front nozzle fan",
+      "minSampledMaterialClearanceMm": 6.845,
+      "finishMinimumSampledClearanceMm": 7.332,
+      "sourceLine": 1657,
+      "material": "wall",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Fan pair 1 housing envelope",
+      "minSampledMaterialClearanceMm": 11.217,
+      "finishMinimumSampledClearanceMm": 11.733,
+      "sourceLine": 1657,
+      "material": "wall",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Fan pair 2 housing envelope",
+      "minSampledMaterialClearanceMm": 11.286,
+      "finishMinimumSampledClearanceMm": 11.726,
+      "sourceLine": 1674,
+      "material": "wall",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    },
+    {
+      "part": "Fan pair 3 housing envelope",
+      "minSampledMaterialClearanceMm": 11.434,
+      "finishMinimumSampledClearanceMm": 11.56,
+      "sourceLine": 1645,
+      "material": "wall",
+      "posesBelow5mm": 0,
+      "violationLines": []
+    }
+  ],
+  "minimumSampledAxisMarginsDeg": [
+    157.54024696350098,
+    57.39060401916504,
+    28.303604125976562,
+    40.53955078125,
+    1.6522140502929688
+  ],
+  "jointLimitViolations": 0,
+  "finishSamples": 1164,
+  "finishMinimumSampledAxisMarginsDeg": [
+    168.8169059753418,
+    72.38816261291504,
+    33.040621536075406,
+    63.188377380371094,
+    16.60021209716797
+  ],
+  "maximumSampledTiltDeg": 40.549137852436324,
+  "verifiedSourceSha256": "1e26c91b2abdbe681af37e26b009d0a3889aa52aea2671562ccd6b21e82ad676"
+}

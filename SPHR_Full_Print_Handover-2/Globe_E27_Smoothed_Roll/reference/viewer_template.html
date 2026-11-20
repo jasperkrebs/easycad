@@ -1,0 +1,516 @@
+<!doctype html>
+
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>E27 216 mm Trumpet | Robot printing simulation</title>
+
+<style>
+
+:root{color-scheme:light dark;--bg:light-dark(#f4f6f8,#10141c);--panel:light-dark(#fff,#191f29);--fg:light-dark(#172231,#e2eaf5);--muted:light-dark(#536277,#98a8bf);--border:light-dark(#d5dce5,#303c4c);--accent:light-dark(#087e98,#54d4e9)}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}main{max-width:1500px;margin:auto;padding:24px}header{display:flex;align-items:center;justify-content:space-between;gap:18px}h1{font-size:23px;margin:0;font-weight:600;letter-spacing:-.6px}p{margin:4px 0;color:var(--muted)}.tag{color:var(--accent);font-size:12px;letter-spacing:.08em;text-transform:uppercase}.toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:20px 0 14px}label{display:grid;gap:4px;color:var(--muted);font-size:12px}button,select{font:inherit;border:1px solid var(--border);border-radius:7px;padding:9px 12px;background:var(--panel);color:var(--fg)}button{cursor:pointer}button.primary{background:var(--fg);color:var(--bg);min-width:90px}.grow{flex:1}.scene{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden}canvas{display:block;width:100%;height:min(67vh,720px);min-height:360px;touch-action:none;cursor:grab}.overlay{position:absolute;top:16px;left:18px;pointer-events:none}.overlay b{font-size:18px;font-weight:500}.overlay span{display:block;color:var(--muted);font-size:12px}.hint{position:absolute;bottom:13px;right:16px;color:var(--muted);font-size:12px;pointer-events:none}.legend{display:flex;gap:16px;color:var(--muted);font-size:12px;padding:10px 4px;flex-wrap:wrap}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}.timeline{padding:16px 0 8px}.timeline-head{display:flex;justify-content:space-between;gap:12px}.timeline-head output{font-variant-numeric:tabular-nums;color:var(--muted)}input[type=range]{width:100%;accent-color:var(--accent);margin:14px 0}.readouts{display:grid;grid-template-columns:1fr 1fr;gap:12px}.readout{padding:14px 16px;background:var(--panel);border:1px solid var(--border);border-radius:9px;font-variant-numeric:tabular-nums}.readout small{display:block;color:var(--muted);margin-bottom:5px}.detail{font-size:12px;color:var(--muted);margin-top:8px}.note{font-size:12px;color:var(--muted);max-width:1100px;margin-top:14px}[hidden]{display:none!important}#error{color:#ef7965;white-space:pre-wrap}.status{font-size:12px;color:var(--muted)}@media(max-width:700px){main{padding:14px}.readouts{grid-template-columns:1fr}header{align-items:start;flex-direction:column}h1{font-size:20px}.toolbar{gap:7px}canvas{height:54vh;min-height:330px}.timeline-head{flex-direction:column;gap:2px}}
+
+.purge-marker{position:absolute;width:26px;height:26px;border:3px solid #e446a7;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;background:radial-gradient(circle,#e446a7 0 3px,transparent 4px);box-shadow:0 0 0 4px var(--panel),0 0 0 6px #e446a7;z-index:3}.purge-label{position:absolute;left:35px;top:-28px;width:224px;padding:7px 10px;background:var(--panel);color:var(--fg);border:2px solid #e446a7;border-radius:7px;font-size:12px;line-height:1.5;white-space:nowrap;box-shadow:0 2px 12px #0003}.purge-label strong{color:#e446a7;font-weight:600}.purge-marker.left .purge-label{left:auto;right:35px}@media(max-width:700px){.purge-label{width:184px;font-size:11px;white-space:normal}}
+
+.layer-progress-panel{margin-top:10px;padding-top:14px;border-top:1px solid var(--border)}.layer-progress-panel input{margin-bottom:3px}
+
+#seam-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:hidden}.seam-hit{pointer-events:all;cursor:pointer}.seam-label{font:11px system-ui,sans-serif;paint-order:stroke;stroke:var(--panel);stroke-width:4px;stroke-linejoin:round;fill:var(--fg)}.seam-legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--muted);margin:0 0 8px}.seam-legend b{font-weight:600}.seam-status{font-size:12px;color:var(--muted)}#seam-event{max-width:260px}@media(max-width:700px){#seam-event{max-width:210px}}
+
+.coordinate-copy{margin:8px 0;color:var(--muted);font-size:12px}.coordinate-copy textarea{display:block;width:min(100%,540px);margin:8px 0;padding:9px;font:13px/1.5 ui-monospace,monospace;color:var(--fg);background:var(--panel);border:1px solid var(--border);border-radius:6px;resize:vertical}.coordinate-copy textarea[hidden]{display:none}
+
+#coordinate-axes{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:hidden}
+#coordinate-axes text{font:600 12px system-ui,sans-serif;paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round}
+#coordinate-axes .axes-caption{font-weight:500;fill:var(--fg)}
+#coordinate-axes .axis-x{color:light-dark(#b82730,#ff666d)}
+#coordinate-axes .axis-y{color:light-dark(#117634,#52d87c)}
+#coordinate-axes .axis-z{color:light-dark(#2458bd,#72a8ff)}
+</style></head><body><main>
+
+<header><div><h1>E27 Globe - inferred profile</h1><p>Tilt held steady per turn, up to 45 deg | fan to part 5 mm | fan to bed 10 mm</p></div><div class="status" id="load">Loading toolpath</div></header>
+
+<div class="toolbar"><button id="play" class="primary" disabled>Play</button><label>Playback<select id="rate"><option value="1">1×</option><option value="5" selected>5×</option><option value="10">10×</option><option value="50">50×</option><option value="200">200×</option><option value="500">500×</option><option value="1800">1,800×</option><option value="7200">7,200×</option></select></label><label>View<select id="view"><option value="iso">3D / orbit</option><option value="top">Top / XY</option><option value="front">Front / XZ</option><option value="side">Side / YZ</option></select></label><label>Frame<select id="frame"><option value="arm">Whole robot</option><option value="path">Print area</option></select></label><label>Travel moves<select id="travel"><option value="0">Hidden</option><option value="1">Visible</option></select></label><label>Path display<select id="isolate"><option value="0">All layers</option><option value="1">Current layer only</option></select></label><label>Seam markers<select id="seams"><option value="walls" selected>Wall seams</option><option value="all">All extrusion starts / ends</option><option value="off">Hidden</option></select></label><label>Jump to marker<select id="seam-event"><option value="">Select a start or end</option></select></label><label>Review geometry<select id="review-feature"><option value="">Choose an edited feature</option></select></label><label>Robot<input type="checkbox" id="robot-visible" checked></label><label>Tool<input type="checkbox" id="tool-visible" checked></label><label>TCP<input type="checkbox" id="tcp-visible" checked></label><div class="grow"></div><button id="copy-coordinate" disabled>Copy current coordinate</button><button id="show-purge">Show purge point</button><button id="fit">Fit view</button></div>
+
+<div class="scene"><canvas id="canvas" aria-label="Interactive articulated KR50 robot and non planar demo toolpath; drag to rotate and scroll to zoom"></canvas><svg id="coordinate-axes" role="img" aria-label="TCP X and Y directions and world X, Y, and Z view axes"></svg><svg id="seam-overlay" role="img" aria-label="Wall seam and extrusion start/end markers on the selected layer"></svg><div id="purge-marker" class="purge-marker" role="img" aria-label="Example purge point"><span class="purge-label"><strong>LOWER PURGE POINT</strong><br>Position loads with the simulation</span></div><div class="overlay"><b id="stage">Preparing preview</b><span id="substage"></span></div><div class="hint">Drag to orbit · scroll to zoom</div></div>
+
+<div class="legend"><span><i class="dot" style="background:#21b4c9"></i>Deposited path</span><span><i class="dot" style="background:#748dbd"></i>Extrusion off</span><span><i class="dot" style="background:#f5a948"></i>TCP / nozzle position</span><span>CAD-derived articulated robot and tool · faint lines show future path</span></div>
+
+<div class="seam-legend"><span><b style="color:#16834b">●</b> Outer start</span><span><b style="color:#c87808">■</b> Outer end</span><span><b style="color:#087fbb">▲</b> Inner start</span><span><b style="color:#c13783">◆</b> Inner end</span><span id="seam-status" class="seam-status"></span></div><section class="timeline"><div class="timeline-head"><span>Whole print</span><output id="clock">—</output></div><input id="position" type="range" min="0" max="100000" value="89000" step="1" aria-label="Routine playback position"><div style="display:flex;gap:14px;align-items:center"><label for="layer" style="min-width:95px">Jump to layer <output id="layer-val">—</output></label><input id="layer" type="range" min="1" max="__LAYER_COUNT__" value="1" step="1" aria-label="Jump to source layer"></div><div class="layer-progress-panel"><div class="timeline-head"><label for="layer-position">Selected layer toolpath</label><output id="layer-progress">Loading layer...</output></div><input id="layer-position" type="range" min="0" max="100000" value="0" step="1" aria-label="Toolpath progress within selected layer"><div class="detail">Choose a layer above, then drag this slider or scroll over it to inspect that layer. Arrow keys make fine adjustments.</div></div></section>
+
+<div class="coordinate-copy"><span id="copy-status" role="status" aria-live="polite"></span><textarea id="coordinate-report" readonly hidden rows="1" aria-label="Current layer and XYZ coordinate; select and copy this text if clipboard access is unavailable"></textarea></div><div class="readouts"><div class="readout"><small>TCP / process</small><div id="xyz">—</div><div class="detail" id="process">—</div><div class="detail" id="heat">—</div><div class="detail" id="tool-bed">—</div></div><div class="readout"><small>Robot joints / source</small><div id="joints">—</div><div class="detail" id="source">—</div><div class="detail" id="reach">—</div></div></div>
+
+<p class="note">Nominal KRL replay from the first known Cartesian pose. Startup PTP motion, heat-up time, acceleration, blending and physical clearance verification are outside this preview. The tool-to-bed readout uses the modeled tool geometry. The yellow marker is the calibrated TCP. The nozzle points toward the previous spiral turn with a 45° tilt cap and local tilt relief. The corrected OBJ nozzle coincides with the calibrated TCP. Robot skins follow the XML/DH joint frames.</p><pre id="error" role="alert"></pre>
+
+</main><script>
+
+'use strict';
+
+const META=__METADATA__;
+
+const PACKED='__PACKED_DATA__';
+
+(async()=>{try{
+
+const $=id=>document.getElementById(id),canvas=$('canvas'),gl=canvas.getContext('webgl',{antialias:true,alpha:false});if(!gl)throw Error('WebGL is unavailable in this browser. Enable graphics acceleration and reopen this file.');
+
+const bytes=Uint8Array.from(atob(PACKED),c=>c.charCodeAt(0));const raw=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+
+const rows=new Float32Array(raw),S=25,N=rows.length/S;if(N!==META.pointCount)throw Error('Motion data length mismatch');
+
+const v=(i,c)=>rows[i*S+c],rad=Math.PI/180;const PURGE=META.purgeXYZ;
+
+const purgeLabel=document.querySelector?document.querySelector('.purge-label'):null;if(purgeLabel)purgeLabel.innerHTML='<strong>LOWER PURGE POINT</strong><br>X '+PURGE[0].toFixed(3)+' / Y '+PURGE[1].toFixed(3)+'<br>Z '+PURGE[2].toFixed(3)+' mm / 5-second purge';
+
+$('purge-marker').setAttribute?.('aria-label','Lower purge point, X '+PURGE[0]+', Y '+PURGE[1]+', Z '+PURGE[2]+' millimetres');let purgeIndex=1;for(let j=0;j<N;j++)if(v(j,8)===3){purgeIndex=j;break;}
+
+const seamNames={'outer-start':'Outer start','outer-end':'Outer end','inner-start':'Inner start','inner-end':'Inner end','wall-start':'Wall start','wall-end':'Wall end',start:'Extrusion start',end:'Extrusion end'};
+
+const seamColors={'outer-start':'#16834b','outer-end':'#c87808','inner-start':'#087fbb','inner-end':'#c13783','wall-start':'#16834b','wall-end':'#c13783',start:'#16834b',end:'#c13783'};
+
+const seamLayers=Array.from({length:META.layers+1},()=>[]),allEndLayers=Array.from({length:META.layers+1},()=>[]),point=i=>[v(i,0),v(i,1),v(i,2)],pointKey=p=>p.map(x=>Math.round(x*1000)).join(','),linkKey=(a,b)=>pointKey(a)+'/'+pointKey(b);
+
+const links=new Map(META.wallConnections.map(c=>[linkKey(c.outerEnd,c.innerStart),c]));let activeRun=null,matchedWallPairs=0,extrusionRuns=0;
+
+const gapFillRuns=new Set(META.gapFillRuns??[]), gapFillRows=new Uint8Array(N);
+
+if(gapFillRuns.size){
+
+ const legend=document.createElement('span');
+
+ legend.innerHTML='<b style="color:#e55b18">━</b> Gap fill';
+
+ $('seam-status').before(legend);
+
+}
+
+for(let i=1;i<N;i++){
+
+ const on=!!v(i,7),wasOn=!!v(i-1,7),l=Math.round(v(i,9));
+
+ if(on&&!wasOn&&v(i,10)>=0&&l>0){activeRun={start:point(i),startTime:v(i,3),layer:l,links:[]};extrusionRuns++;allEndLayers[l].push({kind:'start',xyz:point(i),time:v(i,3),pair:extrusionRuns})}
+
+ if(on&&activeRun&&gapFillRuns.has(extrusionRuns))gapFillRows[i]=1;
+
+ if(on&&activeRun&&pointKey(point(i))!==pointKey(point(i-1))){const c=links.get(linkKey(point(i-1),point(i)));if(c)activeRun.links.push({...c,outerTime:v(i-1,3),innerTime:v(i,3)})}
+
+ if(!on&&wasOn&&activeRun){
+
+  const r=activeRun;allEndLayers[r.layer].push({kind:'end',xyz:point(i),time:v(i,3),pair:extrusionRuns});
+
+  for(const c of r.links){const localPair=1+Math.floor(seamLayers[c.layer].filter(m=>!m.standalone).length/4);seamLayers[c.layer].push({kind:'outer-start',xyz:r.start,time:r.startTime,pair:localPair},{kind:'outer-end',xyz:c.outerEnd,time:c.outerTime,pair:localPair},{kind:'inner-start',xyz:c.innerStart,time:c.innerTime,pair:localPair},{kind:'inner-end',xyz:point(i),time:v(i,3),pair:localPair});matchedWallPairs++}
+
+  if(!r.links.length&&META.wallRunKinds?.[extrusionRuns-1]){const kind=META.wallRunKinds[extrusionRuns-1];seamLayers[r.layer].push({kind:kind+'-start',xyz:r.start,time:r.startTime,pair:'run '+extrusionRuns,standalone:true},{kind:kind+'-end',xyz:point(i),time:v(i,3),pair:'run '+extrusionRuns,standalone:true});}
+
+  activeRun=null;
+
+ }
+
+}
+
+if(matchedWallPairs!==META.wallConnections.length)throw Error('Wall seam data mismatch: '+matchedWallPairs+' of '+META.wallConnections.length);
+
+let markerCache='',selectedMarker=-1,currentMarkers=[];
+
+function chooseMarker(index){const m=currentMarkers[index];if(!m)return;pause();lockedLayer=true;selectedMarker=index;time=m.time;draw()}
+
+function updateSeamMarkers(layer,rect,dot,right,up,units){
+
+ const mode=$('seams').value,cache=layer+':'+mode;
+
+ currentMarkers=mode==='walls'?seamLayers[layer]:mode==='all'?allEndLayers[layer]:[];
+
+ if(cache!==markerCache){markerCache=cache;selectedMarker=-1;$('seam-event').innerHTML='<option value="">Select a start or end</option>'+currentMarkers.map((m,i)=>'<option value="'+i+'">'+(mode==='walls'?(m.standalone?m.pair:'Pair '+m.pair)+' / ':'')+seamNames[m.kind]+'</option>').join('');$('seam-event').value='';$('seam-event').disabled=!currentMarkers.length}
+
+ const svg=$('seam-overlay');svg.setAttribute?.('viewBox','0 0 '+rect.width+' '+rect.height);
+
+ const screen=p=>[rect.width/2+dot(p,right)/units,rect.height/2-dot(p,up)/units];let markup='',visible=0;const boxes=[];
+
+ for(let i=0;i<currentMarkers.length;i++){
+
+  const m=currentMarkers[i],[x,y]=screen(m.xyz);if(x<0||y<0||x>rect.width||y>rect.height)continue;visible++;
+
+  const c=seamColors[m.kind],r=selectedMarker===i?8:6;let shape='';
+
+  if(m.kind==='outer-end')shape='<rect x="'+(x-r)+'" y="'+(y-r)+'" width="'+2*r+'" height="'+2*r+'" fill="none" stroke="'+c+'" stroke-width="2"/>';
+
+  else if(m.kind==='inner-start')shape='<path d="M '+x+' '+(y-r-2)+' L '+(x+r+2)+' '+(y+r)+' L '+(x-r-2)+' '+(y+r)+' Z" fill="none" stroke="'+c+'" stroke-width="2"/>';
+
+  else if(m.kind==='inner-end')shape='<path d="M '+x+' '+(y-r-2)+' L '+(x+r+2)+' '+y+' L '+x+' '+(y+r+2)+' L '+(x-r-2)+' '+y+' Z" fill="none" stroke="'+c+'" stroke-width="2"/>';
+
+  else shape='<circle cx="'+x+'" cy="'+y+'" r="'+r+'" fill="none" stroke="'+c+'" stroke-width="2"/>';
+
+  let label='';
+
+  if(mode==='walls'||selectedMarker===i){
+
+   const slot=mode==='walls'?i%4:0,pair=mode==='walls'?Math.floor(i/4):0;let lx=Math.max(8,Math.min(rect.width-155,x+(pair%2?-165:30))),ly=Math.max(20,Math.min(rect.height-70,y-38))+slot*17;
+
+   for(let k=0;k<14&&boxes.some(b=>Math.abs(b[0]-lx)<150&&Math.abs(b[1]-ly)<15);k++)ly=ly+17>rect.height-10?20:ly+17;
+
+   boxes.push([lx,ly]);label='<path d="M '+x+' '+y+' L '+lx+' '+(ly-4)+'" stroke="'+c+'" stroke-width="1" opacity=".65"/><text x="'+(lx+3)+'" y="'+ly+'" class="seam-label">'+(mode==='walls'?m.pair+' ':'')+seamNames[m.kind]+'</text>';
+
+  }
+
+  markup+='<g class="seam-hit" data-marker="'+i+'" role="button" aria-label="Jump to '+seamNames[m.kind]+'"><circle cx="'+x+'" cy="'+y+'" r="12" fill="transparent"/>'+shape+label+'</g>';
+
+ }
+
+ svg.innerHTML=markup;$('seam-status').textContent=mode==='off'?'Markers hidden':(mode==='walls'?currentMarkers.length+' wall endpoints':currentMarkers.length+' extrusion endpoints')+' on layer '+layer+' / click a marker or use Jump to marker';
+
+ return {mode,total:currentMarkers.length,visible,matchedWallPairs,extrusionRuns,selectedMarker};
+
+}
+
+const identity=()=>[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+
+function mul(a,b){const out=Array(16).fill(0);for(let i=0;i<4;i++)for(let j=0;j<4;j++)for(let k=0;k<4;k++)out[i*4+j]+=a[i*4+k]*b[k*4+j];return out}
+
+function forward(js){let m=identity(),nodes=[[0,0,0]];for(let i=0;i<6;i++){let q=-js[i]*rad+(i===2?Math.PI/2:0),c=Math.cos(q),s=Math.sin(q),ca=Math.cos(META.alpha[i]),sa=Math.sin(META.alpha[i]);m=mul(m,[c,-s*ca,s*sa,META.a[i]*c,s,c*ca,-c*sa,META.a[i]*s,0,sa,ca,META.d[i],0,0,0,1]);nodes.push([m[3],m[7],m[11]])}return nodes}
+
+const mins=[Infinity,Infinity,Infinity],maxs=[-Infinity,-Infinity,-Infinity],armmin=[0,0,0],armmax=[0,0,0];const layerTimes=Array(META.layers+1).fill(null);
+
+for(let i=0;i<N;i++){if(v(i,10)>=0&&v(i,8)===1&&v(i,7)){for(let k=0;k<3;k++){mins[k]=Math.min(mins[k],v(i,k));maxs[k]=Math.max(maxs[k],v(i,k))}if(v(i,7)&&layerTimes[v(i,9)]===null)layerTimes[v(i,9)]=v(i,3)}if(i%200===0){for(const p of forward(Array.from({length:6},(_,j)=>v(i,j+15))))for(let k=0;k<3;k++){mins[k]=mins[k];maxs[k]=maxs[k];armmin[k]=Math.min(armmin[k],p[k]);armmax[k]=Math.max(armmax[k],p[k])}}}
+
+for(let k=0;k<3;k++){mins[k]=mins[k];maxs[k]=maxs[k];armmin[k]=Math.min(armmin[k],mins[k])-345;armmax[k]=Math.max(armmax[k],maxs[k])+240}
+
+const VERT=`attribute vec3 aP;attribute float aT;attribute float aKind;attribute float aLayer;uniform vec3 uC,uR,uU,uD;uniform vec2 uScale;varying float t,kind,layer;void main(){vec3 p=aP-uC;gl_Position=vec4(dot(p,uR)*uScale.x,dot(p,uU)*uScale.y,dot(p,uD)/8000.0,1.0);t=aT;kind=aKind;layer=aLayer;}`;
+
+const FRAG=`precision highp float;varying float t,kind,layer;uniform float uTime,uTravel,uIsolate,uLayer,uArm;uniform vec3 uColor;void main(){if(uArm>.5){gl_FragColor=vec4(uColor,1.);return;}if(uTravel<.5&&kind<.5)discard;if(uIsolate>.5&&abs(layer-uLayer)>.1)discard;bool gapFill=kind>1.5;vec3 c=gapFill?vec3(.90,.36,.09):(kind>.5?vec3(.13,.71,.79):vec3(.46,.55,.74));float alpha=gapFill?(t<=uTime?1.:.55):(t<=uTime?.8:.08);gl_FragColor=vec4(c,alpha);}`;
+
+function shader(type,text){let s=gl.createShader(type);gl.shaderSource(s,text);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s}
+
+const prog=gl.createProgram();gl.attachShader(prog,shader(gl.VERTEX_SHADER,VERT));gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,FRAG));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(prog));gl.useProgram(prog);
+
+const attrib=Object.fromEntries(['aP','aT','aKind','aLayer'].map(n=>[n,gl.getAttribLocation(prog,n)]));const U=Object.fromEntries(['uC','uR','uU','uD','uScale','uTime','uTravel','uIsolate','uLayer','uArm','uColor'].map(n=>[n,gl.getUniformLocation(prog,n)]));
+
+const pathData=new Float32Array((N-1)*12);for(let i=1;i<N;i++)for(let end=0;end<2;end++){const j=((i-1)*2+end)*6;for(let k=0;k<3;k++)pathData[j+k]=v(i-1+end,k);pathData[j+3]=v(i-1+end,3);pathData[j+4]=gapFillRows[i]?2:v(i,7);pathData[j+5]=v(i,9)}
+
+const pathBuffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,pathBuffer);gl.bufferData(gl.ARRAY_BUFFER,pathData,gl.STATIC_DRAW);const robotBuffer=gl.createBuffer();
+
+function bind(buffer){gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(attrib.aP);gl.vertexAttribPointer(attrib.aP,3,gl.FLOAT,false,24,0);for(const [a,offset]of [['aT',12],['aKind',16],['aLayer',20]]){gl.enableVertexAttribArray(attrib[a]);gl.vertexAttribPointer(attrib[a],1,gl.FLOAT,false,24,offset)}}
+
+document.querySelectorAll('.seam-legend,label:has(#seams),label:has(#seam-event),label:has(#review-feature)').forEach(el=>el.hidden=true);let showPurge=false;let time=0,playing=false,last=0,theta=-.55,phi=.45,zoom=1,drag=null,qaFrames=0,selectedLayer=1,lockedLayer=false;
+
+const clock=s=>{s=Math.round(s);return Math.floor(s/3600)+':'+String(Math.floor(s/60)%60).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
+
+function pose(){let lo=0,hi=N-1;while(lo<hi){const m=Math.ceil((lo+hi)/2);if(v(m,3)<=time)lo=m;else hi=m-1}const i=lo,j=Math.min(N-1,i+1),dt=v(j,3)-v(i,3),f=dt>0?Math.max(0,Math.min(1,(time-v(i,3))/dt)):0;return{i,j,f,xyz:[0,1,2].map(k=>v(i,k)+(v(j,k)-v(i,k))*f),joints:[0,1,2,3,4,5].map(k=>v(i,k+15)+(v(j,k+15)-v(i,k+15))*f)}}
+
+function pause(){playing=false;$('play').textContent='Play';last=0}
+
+function selectLayer(target,progress=0){pause();selectedLayer=Math.max(1,Math.min(META.layers,target));lockedLayer=true;const r=META.layerRanges[selectedLayer];time=r[0]+Math.max(0,Math.min(1,progress))*(r[1]-r[0]);draw()}
+
+function syncLayerScrubber(){const r=META.layerRanges[selectedLayer],fraction=Math.max(0,Math.min(1,(time-r[0])/(r[1]-r[0])));$('layer-position').value=Math.round(fraction*100000);$('layer-progress').textContent='Layer '+selectedLayer+' / '+META.layers+' | '+(fraction*100).toFixed(1)+'% | '+clock(Math.max(0,Math.min(r[1]-r[0],time-r[0])))+' / '+clock(r[1]-r[0]);return fraction}
+
+
+
+function interpolatedRotation({i,j,f}){
+
+  const a=[21,22,23,24].map(k=>v(i,k)),b=[21,22,23,24].map(k=>v(j,k));
+
+  const dot=a.reduce((sum,x,k)=>sum+x*b[k],0),sign=dot<0?-1:1;
+
+  const angle=Math.acos(Math.min(1,Math.abs(dot)));
+
+  const s=Math.sin(angle);
+
+  const wa=s>1e-5?Math.sin((1-f)*angle)/s:1-f;
+
+  const wb=s>1e-5?Math.sin(f*angle)/s:f;
+
+  const q=a.map((x,k)=>wa*x+sign*wb*b[k]);
+
+  const length=Math.hypot(...q);
+
+  const [w,x,y,z]=q.map(value=>value/length);
+
+  return [[1-2*(y*y+z*z),2*(x*y-w*z),2*(x*z+w*y)],
+
+          [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)],
+
+          [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]];
+
+}
+
+function solveIK(xyz,near,rotation){
+
+const fr=rotation.map(row=>META.tool.slice(0,3).map(col=>row.reduce((sum,x,k)=>sum+x*col[k],0)));
+
+const w=xyz.map((x,i)=>x-fr[i].reduce((sum,value,k)=>sum+value*META.tool[k][3],0)-185*fr[i][2]),r=Math.hypot(w[0],w[1])-175,z=w[2]-575,l2=Math.hypot(50,1035),delta=Math.atan2(-1035,50),co=(r*r+z*z-1290*1290-l2*l2)/(2*1290*l2),f=-Math.acos(Math.max(-1,Math.min(1,co))),q2=f-delta,q1=Math.atan2(z,r)-Math.atan2(l2*Math.sin(f),1290+l2*Math.cos(f));let j=[-Math.atan2(w[1],w[0])/rad,-q1/rad,90-q2/rad,0,0,0],m=identity();for(let i=0;i<3;i++){const q=-j[i]*rad+(i===2?Math.PI/2:0),c=Math.cos(q),ss=Math.sin(q),ca=Math.cos(META.alpha[i]),sa=Math.sin(META.alpha[i]);m=mul(m,[c,-ss*ca,ss*sa,META.a[i]*c,ss,c*ca,-c*sa,META.a[i]*ss,0,sa,ca,META.d[i],0,0,0,1])}const rr=Array.from({length:3},()=>Array(3).fill(0));for(let a=0;a<3;a++)for(let b=0;b<3;b++)for(let k=0;k<3;k++)rr[a][b]+=m[k*4+a]*fr[k][b];j[3]=-Math.atan2(rr[1][2],rr[0][2])/rad;j[4]=-Math.acos(Math.max(-1,Math.min(1,rr[2][2])))/rad;j[5]=-Math.atan2(rr[2][1],-rr[2][0])/rad;return j.map((x,i)=>x+Math.round((near[i]-x)/360)*360)}
+
+function cylinder(vertices,a,b,r,n=12){let d=b.map((x,i)=>x-a[i]),len=Math.hypot(...d);if(len<.001)return;d=d.map(x=>x/len);let e=Math.abs(d[2])<.9?[0,0,1]:[0,1,0];const cross=(x,y)=>[x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]];let u=cross(d,e),l=Math.hypot(...u);u=u.map(x=>x/l);let w=cross(d,u);const vertex=(p,j)=>p.map((x,k)=>x+r*(Math.cos(j*2*Math.PI/n)*u[k]+Math.sin(j*2*Math.PI/n)*w[k]));const emit=p=>vertices.push(...p,0,0,0);for(let j=0;j<n;j++){const x=vertex(a,j),y=vertex(a,j+1),z=vertex(b,j),q=vertex(b,j+1);for(const p of [x,y,z,y,q,z,a,y,x,b,z,q])emit(p)}}
+
+function frames(joints){
+
+  let m=identity();
+
+  const result=[m];
+
+  joints.forEach((joint,i)=>{
+
+    const q=-joint*rad+(i===2?Math.PI/2:0),c=Math.cos(q),s=Math.sin(q);
+
+    const ca=Math.cos(META.alpha[i]),sa=Math.sin(META.alpha[i]);
+
+    m=mul(m,[c,-s*ca,s*sa,META.a[i]*c,s,c*ca,-c*sa,META.a[i]*s,0,sa,ca,META.d[i],0,0,0,1]);
+
+    result.push(m);
+
+  });
+
+  return result;
+
+}
+
+
+
+function transform(m,p){
+
+  return [0,4,8].map(i=>m[i]*p[0]+m[i+1]*p[1]+m[i+2]*p[2]+m[i+3]);
+
+}
+
+
+
+function addSkin(part,m,buckets){
+
+  const vertices=part.vertices.map(p=>transform(m,p));
+
+  for(const face of part.faces){
+
+    const [a,b,c]=face.map(i=>vertices[i]);
+
+    const u=b.map((x,i)=>x-a[i]),v=c.map((x,i)=>x-a[i]);
+
+    const normal=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+
+    const light=Math.abs((normal[0]*.30-normal[1]*.48+normal[2]*.82)/Math.max(Math.hypot(...normal),1.e-9));
+
+    const shade=.65+.07*Math.round(5*light);
+
+    const key=part.color.join(',')+':'+shade;
+
+    if(!buckets.has(key))buckets.set(key,{rgb:part.color.map(x=>x*shade),verts:[]});
+
+    const bucket=buckets.get(key);
+
+    for(const p of [a,b,c])bucket.verts.push(...p,0,0,0);
+
+  }
+
+}
+
+
+
+function drawMachine(p,whole){
+
+  const f=frames(p.joints), buckets=new Map();
+
+  gl.uniform1f(U.uArm,1);
+
+  gl.disable(gl.BLEND);
+
+  gl.enable(gl.DEPTH_TEST);
+
+  bind(robotBuffer);
+
+  if(whole&&$('robot-visible').checked){
+
+    for(const part of META.cad.robotShapes)addSkin(part,f[part.frame],buckets);
+
+  }
+
+  if($('tool-visible').checked){
+
+    const tcp=mul(f[6],META.tool.flat());
+
+    for(const part of META.cad.toolShapes)addSkin(part,tcp,buckets);
+
+  }
+
+  for(const {rgb,verts} of buckets.values()){
+
+    gl.uniform3f(U.uColor,...rgb);
+
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(verts),gl.DYNAMIC_DRAW);
+
+    gl.drawArrays(gl.TRIANGLES,0,verts.length/6);
+
+  }
+
+  if($('tcp-visible').checked){
+
+    gl.disable(gl.DEPTH_TEST);
+
+    const tip=[];
+
+    const halfHeight=whole?5:.7;
+
+    cylinder(tip,[p.xyz[0],p.xyz[1],p.xyz[2]-halfHeight],
+
+      [p.xyz[0],p.xyz[1],p.xyz[2]+halfHeight],whole?13:1.7,16);
+
+    gl.uniform3f(U.uColor,.98,.83,.25);
+
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(tip),gl.DYNAMIC_DRAW);
+
+    gl.drawArrays(gl.TRIANGLES,0,tip.length/6);
+
+  }
+
+}
+
+
+
+function drawBedEdges() {
+  const bed = META.bedBoundsWorldMm;
+  if (!bed) return;
+  const {xMin, xMax, yMin, yMax, z} = bed;
+  const far = yMax ?? Math.max(armmax[1], maxs[1]) + 3000;
+  const segments = [
+    [[xMin,yMin,z],[xMax,yMin,z]],
+    [[xMin,yMin,z],[xMin,far,z]],
+    [[xMax,yMin,z],[xMax,far,z]],
+  ];
+  if (yMax !== null) segments.push([[xMin,far,z],[xMax,far,z]]);
+  for (const y of bed.sectionSeamsY ?? []) segments.push([[xMin,y,z],[xMax,y,z]]);
+  const data = new Float32Array(segments.flatMap(segment =>
+    segment.flatMap(point => [...point,0,0,0])));
+  bind(robotBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER,data,gl.STREAM_DRAW);
+  gl.uniform1f(U.uArm,1);
+  gl.uniform3f(U.uColor,.78,.50,.13);
+  gl.disable(gl.BLEND);
+  gl.drawArrays(gl.LINES,0,segments.length*2);
+}
+
+function updateToolBedClearance(tcp, orientation) {
+  const bed = META.bedBoundsWorldMm;
+  const bound = META.bedClearanceTargetMm;
+  const excluded=new Set(META.collisionExcludedToolParts ?? []);
+  const allParts = [...META.cad.toolShapes,...META.bedExtraToolProxies].filter(part=>!excluded.has(part.name));
+  let best = Infinity, name = '', nozzle = Infinity;
+  for (const part of allParts) {
+    const lo = [Infinity,Infinity,Infinity], hi = [-Infinity,-Infinity,-Infinity];
+    for (const v of part.vertices) {
+      for (let i=0; i<3; i++) {
+        const r = orientation[i];
+        const coordinate = tcp[i]+r[0]*v[0]+r[1]*v[1]+r[2]*v[2];
+        lo[i]=Math.min(lo[i],coordinate);
+        hi[i]=Math.max(hi[i],coordinate);
+      }
+    }
+    const dx=Math.max(0,bed.xMin-hi[0],lo[0]-bed.xMax);
+    const dy=Math.max(0,bed.yMin-hi[1],lo[1]-bed.yMax);
+    const dz=lo[2]-bed.z;
+    const gap=dx===0 && dy===0 && dz<0 ? dz : Math.hypot(dx,dy,Math.max(0,dz));
+    if (part.name==='Nozzle') nozzle=gap;
+    else if (gap<best) {best=gap;name=part.name;}
+  }
+  const readout=$('tool-bed');
+  const below=best<bound-.0001;
+  readout.textContent='Tool to bed '+best.toFixed(1)+' mm ('+name+') · '+(below?'below ':'target ')+bound+' mm · nozzle '+nozzle.toFixed(1)+' mm';
+  readout.style.color=below || nozzle<-.0001 ? 'light-dark(#b82730,#ff666d)' : '';
+}
+
+function drawCoordinateAxes(rect, right, up, orientation, tcp) {
+  const svg = $('coordinate-axes');
+  svg.setAttribute('viewBox', '0 0 '+rect.width+' '+rect.height);
+  const screenComponent = (a,b) => a.reduce((sum,value,k)=>sum+value*b[k],0);
+  const xyz = [[1,0,0],[0,1,0],[0,0,1]];
+  const labels = ['X','Y','Z'];
+  function group(origin, directions, scale, caption, captionAt) {
+    const [ox,oy] = origin;
+    let markup = '<circle cx="'+ox+'" cy="'+oy+'" r="2.5" fill="var(--fg)"/>';
+    directions.forEach((direction,i) => {
+      const dx = scale*screenComponent(direction,right);
+      const dy = -scale*screenComponent(direction,up);
+      const x = ox+dx, y=oy+dy;
+      const length = Math.hypot(dx,dy);
+      const ux = length>=3 ? dx/length : [-1,1,0][i];
+      const uy = length>=3 ? dy/length : [0,0,-1][i];
+      const lx = x+10*ux, ly = y+10*uy+4;
+      markup += '<g class="axis-'+labels[i].toLowerCase()+'">';
+      if (length>=3) {
+        const backX=x-6*ux, backY=y-6*uy;
+        markup += '<line x1="'+ox+'" y1="'+oy+'" x2="'+x+'" y2="'+y+'" stroke="currentColor" stroke-width="2.5"/>';
+        markup += '<polygon points="'+x+','+y+' '+(backX-3*uy)+','+(backY+3*ux)+' '+(backX+3*uy)+','+(backY-3*ux)+'" fill="currentColor"/>';
+      }
+      markup += '<text x="'+lx+'" y="'+ly+'" text-anchor="middle" fill="currentColor">'+labels[i]+'</text></g>';
+    });
+    return markup+'<text class="axes-caption" x="'+captionAt[0]+'" y="'+captionAt[1]+'">'+caption+'</text>';
+  }
+  let markup = group([55,rect.height-57],xyz,28,'World',[20,rect.height-13]);
+  if ($('tcp-visible').checked && tcp[0]>=0 && tcp[0]<=rect.width && tcp[1]>=0 && tcp[1]<=rect.height) {
+    const localAxes = [0,1].map(j=>orientation.map(row=>row[j]));
+    const weight=1/Math.min(2,devicePixelRatio||1);
+    localAxes.forEach((direction,i)=>{
+      const x=tcp[0]+34*screenComponent(direction,right);
+      const y=tcp[1]-34*screenComponent(direction,up);
+      markup+='<line class="axis-'+labels[i].toLowerCase()+'" x1="'+tcp[0]+'" y1="'+tcp[1]+'" x2="'+x+'" y2="'+y+'" stroke="currentColor" stroke-width="'+weight+'"/>';
+    });
+  }
+  svg.innerHTML = markup;
+}
+
+function draw(){const rect=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1);canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);gl.viewport(0,0,canvas.width,canvas.height);const dark=matchMedia('(prefers-color-scheme:dark)').matches;gl.clearColor(...(dark?[.098,.122,.161,1]:[1,1,1,1]));gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+let right,up,depth;if($('view').value==='top'){right=[1,0,0];up=[0,1,0];depth=[0,0,-1]}else if($('view').value==='front'){right=[1,0,0];up=[0,0,1];depth=[0,1,0]}else if($('view').value==='side'){right=[0,1,0];up=[0,0,1];depth=[1,0,0]}else{right=[Math.cos(theta),-Math.sin(theta),0];up=[Math.sin(theta)*Math.sin(phi),Math.cos(theta)*Math.sin(phi),Math.cos(phi)];depth=[Math.sin(theta)*Math.cos(phi),Math.cos(theta)*Math.cos(phi),-Math.sin(phi)]}
+
+const whole=$('frame').value==='arm',mi=whole?armmin:mins.map((x,k)=>showPurge?Math.min(x,PURGE[k]-20):x-10),ma=whole?armmax:maxs.map((x,k)=>showPurge?Math.max(x,PURGE[k]+20):x+10),center=mi.map((x,i)=>(x+ma[i])/2),dot=(p,b)=>p.reduce((s,x,k)=>s+(x-center[k])*b[k],0),xs=[],ys=[];for(let i=0;i<8;i++){const p=[0,1,2].map(k=>(i>>k)&1?ma[k]:mi[k]);xs.push(dot(p,right));ys.push(dot(p,up))}const units=Math.max((Math.max(...xs)-Math.min(...xs))/(rect.width-64),(Math.max(...ys)-Math.min(...ys))/(rect.height-54))/zoom;
+
+const purgeScreen=[rect.width/2+dot(PURGE,right)/units,rect.height/2-dot(PURGE,up)/units];const marker=$('purge-marker');marker.style.left=purgeScreen[0]+'px';marker.style.top=purgeScreen[1]+'px';marker.className='purge-marker'+(purgeScreen[0]>rect.width-270?' left':'');marker.style.display=(showPurge&&purgeScreen[0]>=12&&purgeScreen[0]<=rect.width-12&&purgeScreen[1]>=12&&purgeScreen[1]<=rect.height-12)?'block':'none';gl.uniform3fv(U.uC,center);gl.uniform3fv(U.uR,right);gl.uniform3fv(U.uU,up);gl.uniform3fv(U.uD,depth);gl.uniform2f(U.uScale,2/(rect.width*units),2/(rect.height*units));gl.uniform1f(U.uTime,time);gl.uniform1f(U.uTravel,+$('travel').value);gl.uniform1f(U.uIsolate,+$('isolate').value);
+
+const p=pose();const orientation=interpolatedRotation(p);p.joints=solveIK(p.xyz,p.joints,orientation);
+drawCoordinateAxes(rect,right,up,orientation,[rect.width/2+dot(p.xyz,right)/units,rect.height/2-dot(p.xyz,up)/units]);
+updateToolBedClearance(p.xyz,orientation);
+
+const tilt=Math.acos(Math.max(-1,Math.min(1,orientation[2][2])))/rad;const i=p.i,actualLayer=Math.round(v(i,9));if(!lockedLayer&&actualLayer>0)selectedLayer=Math.min(META.layers,actualLayer);const layer=selectedLayer;gl.uniform1f(U.uLayer,layer);gl.uniform1f(U.uArm,0);gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);bind(pathBuffer);gl.drawArrays(gl.LINES,0,(N-1)*2);
+
+drawMachine(p,whole);
+drawBedEdges();
+
+gl.uniform1f(U.uArm,0);gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);bind(pathBuffer);
+
+gl.drawArrays(gl.LINES,0,(N-1)*2);
+
+$('position').value=Math.round(time/META.nominalSeconds*100000);$('clock').textContent=clock(time)+' / '+clock(META.nominalSeconds)+' nominal';$('layer').value=Math.max(1,layer);$('layer-val').textContent=Math.max(1,layer)+' / '+META.layers;
+
+const seamQA=updateSeamMarkers(layer,rect,dot,right,up,units);const layerProgress=syncLayerScrubber();const phases=['Approach','Printing','Travel / wipe','Stationary purge','Withdrawal','Stationary wait'];$('stage').textContent=actualLayer?'Layer '+layer+' / '+META.layers:phases[v(i,8)];$('substage').textContent=phases[v(i,8)]+' · extrusion '+(v(i,7)?'ON':'OFF');$('xyz').textContent='X '+p.xyz[0].toFixed(2)+' · Y '+p.xyz[1].toFixed(2)+' · Z '+p.xyz[2].toFixed(2)+' mm · tool tilt '+tilt.toFixed(1)+'°';$('process').textContent=v(i,4).toFixed(1)+' mm/s · screw command '+Math.round(v(i,5))+' · fan 1 '+v(i,6)+'/255';$('heat').textContent='Setpoints T0 '+v(i,11)+'°C · T1 '+v(i,12)+'°C · T2 '+v(i,13)+'°C · fan 2 '+v(i,14)+'/255';$('joints').textContent=p.joints.map((x,j)=>'A'+(j+1)+' '+x.toFixed(1)+'°').join(' · ');$('source').textContent='SPHR.SRC · line '+v(i,10);$('reach').textContent=META.jointLimitViolationVertices?META.jointLimitViolationVertices+' vertices exceed inherited joint limits':'Vertex reach check: all solved vertices within inherited joint limits';
+
+qaFrames++;window.__robotQA={frames:qaFrames,time,index:i,layer,actualLayer,selectedLayer,layerProgress,layerRange:META.layerRanges[selectedLayer],lockedLayer,seams:seamQA,xyz:p.xyz,joints:p.joints,points:N,glError:gl.getError(),purgeXYZ:PURGE,purgeIndex,purgeScreen,purgeMarkerVisible:marker.style.display!=='none',meta:META};}
+
+function tick(now){if(!playing)return;if(last)time=Math.min(META.nominalSeconds,time+(now-last)/1000*+$('rate').value);last=now;draw();if(time>=META.nominalSeconds){playing=false;$('play').textContent='Play'}else requestAnimationFrame(tick)}
+
+$('copy-coordinate').onclick=async()=>{
+
+ pause();draw();const q=window.__robotQA;
+
+ const layerText=q.actualLayer>0?String(q.actualLayer):'Not printing a layer';
+
+ const report='Layer: '+layerText+' | X: '+q.xyz[0].toFixed(3)+'  Y: '+q.xyz[1].toFixed(3)+'  Z: '+q.xyz[2].toFixed(3)+' mm';
+
+ const field=$('coordinate-report');field.value=report;field.hidden=true;
+
+ window.__lastCoordinateReport=report;
+
+ try{if(!globalThis.navigator?.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(report);$('copy-status').textContent='Copied layer and XYZ. Paste here to report the geometry.'}
+
+ catch(error){field.hidden=false;field.focus();field.select();$('copy-status').textContent='Clipboard access is unavailable. Press Ctrl+C to copy the selected layer and XYZ below.'}
+
+};
+
+$('play').onclick=()=>{lockedLayer=false;playing=!playing;$('play').textContent=playing?'Pause':'Play';if(playing){if(time>=META.nominalSeconds)time=0;last=0;requestAnimationFrame(tick)}};
+
+$('position').oninput=()=>{pause();lockedLayer=false;time=+$('position').value/100000*META.nominalSeconds;draw()};$('layer').oninput=()=>{$('isolate').value='1';selectLayer(+$('layer').value)};$('layer-position').oninput=()=>selectLayer(selectedLayer,+$('layer-position').value/100000);for(const id of ['position','layer-position'])$(id).addEventListener('wheel',e=>{e.preventDefault();const control=$(id);control.value=Math.max(0,Math.min(100000,+control.value+(e.deltaY>0?200:-200)));control.oninput()},{passive:false});$('seams').onchange=()=>draw();$('seam-event').onchange=()=>{if($('seam-event').value!=='')chooseMarker(+$('seam-event').value)};$('seam-overlay').onclick=e=>{const target=e.target.closest?.('[data-marker]');if(target)chooseMarker(+target.getAttribute('data-marker'))};for(const id of ['view','frame','travel','isolate','robot-visible','tool-visible','tcp-visible'])$(id).onchange=()=>{if(id==='view'||id==='frame')zoom=1;draw()};$('show-purge').onclick=()=>{showPurge=!showPurge;lockedLayer=false;playing=false;$('play').textContent='Play';time=(v(Math.max(0,purgeIndex-1),3)+v(purgeIndex,3))/2;$('frame').value='path';$('view').value='iso';$('isolate').value='0';$('travel').value='1';zoom=1;theta=-.55;phi=.45;draw()};$('fit').onclick=()=>{zoom=1;theta=-.55;phi=.45;draw()};
+
+canvas.onpointerdown=e=>{if($('view').value!=='iso')return;drag=[e.clientX,e.clientY,theta,phi];canvas.setPointerCapture(e.pointerId)};canvas.onpointermove=e=>{if(!drag)return;theta=drag[2]+(e.clientX-drag[0])*.008;phi=Math.max(-1.3,Math.min(1.4,drag[3]+(e.clientY-drag[1])*.008));draw()};canvas.onpointerup=()=>drag=null;canvas.onpointercancel=()=>drag=null;canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.3,Math.min(8,zoom*Math.exp(-e.deltaY*.001)));draw()},{passive:false});new ResizeObserver(draw).observe(canvas);matchMedia('(prefers-color-scheme:dark)').addEventListener('change',draw);
+
+if(META.reviewFeatures){$('review-feature').innerHTML='<option value="">Choose an edited feature</option>'+META.reviewFeatures.map((f,i)=>'<option value="'+i+'">'+f.name+'</option>').join('');$('review-feature').onchange=()=>{if($('review-feature').value==='')return;const f=META.reviewFeatures[+$('review-feature').value];pause();selectedLayer=f.layer;lockedLayer=true;let best=Infinity,hit=-1;for(let i=0;i<N;i++){if(v(i,9)!==f.layer||!v(i,7)||v(i,10)<0)continue;const dist=(v(i,0)-f.xyz[0])**2+(v(i,1)-f.xyz[1])**2+(v(i,2)-f.xyz[2])**2;if(dist<best){best=dist;hit=i}}if(hit>=0)time=v(hit,3);$('frame').value='path';$('view').value='top';$('isolate').value='1';$('copy-status').textContent=f.note;draw()};}
+
+if(location.hash==='#print'){
+
+  $('frame').value='path';$('tool-visible').checked=false;time=META.layerRanges[META.layers][1]-.001;
+
+}
+
+$('play').disabled=false;$('copy-coordinate').disabled=false;$('load').textContent=META.modelMotions.toLocaleString()+' model segments · '+META.srcCount+' SRC files';draw();
+
+}catch(error){document.getElementById('error').textContent='Preview could not start: '+error.message;console.error(error)}})();
+
+</script></body></html>
+

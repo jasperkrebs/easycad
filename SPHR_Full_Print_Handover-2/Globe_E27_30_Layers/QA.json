@@ -1,0 +1,662 @@
+{
+  "orientationAccelerationDegS2": [
+    150.0,
+    150.0
+  ],
+  "blendDistanceMm": 0.15,
+  "robot": "KR50 R2500",
+  "pointCount": 8363,
+  "modelMotions": 725,
+  "brimMotions": 353,
+  "spiralMotions": 372,
+  "taperMotions": 0,
+  "collisionExcludedToolParts": [
+    "Heater barrel"
+  ],
+  "bedClearanceTargetMm": 10.0,
+  "bedExtraToolProxies": [
+    {
+      "name": "Fan pair 1",
+      "vertices": [
+        [
+          30.8768,
+          -41.3418,
+          56.0287
+        ],
+        [
+          78.0796,
+          -41.0315,
+          38.3776
+        ],
+        [
+          77.591671,
+          41.209417,
+          38.51854
+        ],
+        [
+          30.388871,
+          40.899117,
+          56.16964
+        ],
+        [
+          40.683856,
+          -41.328556,
+          82.255068
+        ],
+        [
+          87.886656,
+          -41.018256,
+          64.60396800000001
+        ],
+        [
+          87.39872700000001,
+          41.222661,
+          64.74490800000001
+        ],
+        [
+          40.195927,
+          40.912361,
+          82.396008
+        ]
+      ]
+    },
+    {
+      "name": "Fan pair 2",
+      "vertices": [
+        [
+          -74.5816,
+          -47.1113,
+          38.3747
+        ],
+        [
+          -3.2155,
+          -88.0251,
+          38.4232
+        ],
+        [
+          20.252429,
+          -47.068967,
+          56.082807
+        ],
+        [
+          -51.113671,
+          -6.155167,
+          56.034307
+        ],
+        [
+          -79.474684,
+          -55.615263999999996,
+          64.59949999999999
+        ],
+        [
+          -8.108584,
+          -96.52906399999999,
+          64.648
+        ],
+        [
+          15.359345,
+          -55.572931,
+          82.307607
+        ],
+        [
+          -56.006755,
+          -14.659130999999999,
+          82.259107
+        ]
+      ]
+    },
+    {
+      "name": "Fan pair 3",
+      "vertices": [
+        [
+          -74.6072,
+          46.8135,
+          38.4253
+        ],
+        [
+          -50.7566,
+          6.1058,
+          56.0762
+        ],
+        [
+          20.223142,
+          47.633542,
+          55.939631
+        ],
+        [
+          -3.627458,
+          88.341242,
+          38.288731
+        ],
+        [
+          -79.524112,
+          55.303771999999995,
+          64.650072
+        ],
+        [
+          -55.673512,
+          14.596072,
+          82.300972
+        ],
+        [
+          15.30623,
+          56.123813999999996,
+          82.164403
+        ],
+        [
+          -8.54437,
+          96.831514,
+          64.513503
+        ]
+      ]
+    }
+  ],
+  "bedBoundsWorldMm": {
+    "xMin": 713.304936,
+    "xMax": 1913.304936,
+    "yMin": -1865.143158,
+    "yMax": 934.856842,
+    "z": -659.0,
+    "sectionSeamsY": [
+      -1165.143158,
+      -465.143158,
+      234.856842
+    ]
+  },
+  "brimWidthMm": 23.4,
+  "brimRings": 6,
+  "brimTrimArcMm": 10.0,
+  "brimTrimFrom": "start",
+  "brimRadialPitchMm": 3.9,
+  "lastBrimRingToWallMm": 3.9,
+  "seamWorldDirection": "+Y",
+  "wallStartAboveBedMm": 0.15,
+  "wallZOffsetMm": -0.85,
+  "brimRampArcMm": 10.0,
+  "brimRampScrewCommands": [
+    1000,
+    836,
+    672,
+    508,
+    344,
+    180
+  ],
+  "startRampScrewCommands": [
+    180,
+    300,
+    420,
+    540,
+    660,
+    780,
+    900,
+    1020,
+    1140,
+    1260,
+    1380,
+    1500,
+    1620
+  ],
+  "startRampCompletedMoves": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60
+  ],
+  "layerStartScrewCommands": {
+    "2": 1620,
+    "3": 1646,
+    "4": 1671,
+    "5": 1697,
+    "6": 1723,
+    "7": 1749,
+    "8": 1774,
+    "9": 1800
+  },
+  "startRampFullFlowLayer": 9,
+  "startRampPathLengthMm": 144.4688718074607,
+  "brimSpeedMmS": 10.0,
+  "brimScrewCommand": 1000,
+  "printSpeedRangeMmS": [
+    6.0,
+    21.0
+  ],
+  "wallFlowMultiplier": 3.0,
+  "purgeSeconds": 20,
+  "purgeToBrimSpeedMmS": 100.0,
+  "brimApproachSpeedMmS": 20.0,
+  "firecapTemperatureC": 70,
+  "firecapFanCommand": 5,
+  "partFanAtSpiralStart": 255,
+  "printScrewCommandRange": [
+    1800,
+    6300
+  ],
+  "baseOffsetMm": [
+    0.0,
+    50.0,
+    -0.3
+  ],
+  "maximumNozzleTiltDeg": 45.0,
+  "tiltStrategy": "Constant per turn with smooth seam transitions",
+  "nominalSeconds": 800.3692016601562,
+  "bedZ": -658.0,
+  "layers": 30,
+  "layerRanges": [
+    [
+      22.393857955932617,
+      160.7778778076172
+    ],
+    [
+      160.7778778076172,
+      184.86458667394595
+    ],
+    [
+      184.86458667394595,
+      208.95122503153272
+    ],
+    [
+      208.95122503153272,
+      233.03786340539324
+    ],
+    [
+      233.03786340539324,
+      257.1245018575228
+    ],
+    [
+      257.1245018575228,
+      281.21114030965214
+    ],
+    [
+      281.21114030965214,
+      305.2977787617532
+    ],
+    [
+      305.2977787617532,
+      329.38441736110525
+    ],
+    [
+      329.38441736110525,
+      353.47105506066407
+    ],
+    [
+      353.47105506066407,
+      377.567398998217
+    ],
+    [
+      377.567398998217,
+      401.73063695595977
+    ],
+    [
+      401.73063695595977,
+      426.0431923556727
+    ],
+    [
+      426.0431923556727,
+      450.6149771905871
+    ],
+    [
+      450.6149771905871,
+      475.5797305659937
+    ],
+    [
+      475.5797305659937,
+      501.10616121854844
+    ],
+    [
+      501.10616121854844,
+      527.4054295197748
+    ],
+    [
+      527.4054295197748,
+      550.8228985589847
+    ],
+    [
+      550.8228985589847,
+      573.4120081747263
+    ],
+    [
+      573.4120081747263,
+      594.469413067305
+    ],
+    [
+      594.469413067305,
+      614.6761615962964
+    ],
+    [
+      614.6761615962964,
+      633.9243960483725
+    ],
+    [
+      633.9243960483725,
+      652.1578638505707
+    ],
+    [
+      652.1578638505707,
+      669.7581615648121
+    ],
+    [
+      669.7581615648121,
+      686.8613395199869
+    ],
+    [
+      686.8613395199869,
+      703.3437422373943
+    ],
+    [
+      703.3437422373943,
+      719.4879228152167
+    ],
+    [
+      719.4879228152167,
+      735.328104809953
+    ],
+    [
+      735.328104809953,
+      750.8116874132112
+    ],
+    [
+      750.8116874132112,
+      766.0471585887539
+    ],
+    [
+      766.0471585887539,
+      781.6231458033635
+    ],
+    [
+      781.6231458033635,
+      797.8192002223655
+    ]
+  ],
+  "srcCount": 1,
+  "purgeXYZ": [
+    1088.304936,
+    134.856842,
+    -590.0
+  ],
+  "wallConnections": [],
+  "a": [
+    175.0,
+    1290.0,
+    50.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "d": [
+    575.0,
+    0.0,
+    0.0,
+    1035.0,
+    0.0,
+    185.0
+  ],
+  "alpha": [
+    1.5707963267948966,
+    0.0,
+    1.5707963267948966,
+    -1.5707963267948966,
+    1.5707963267948966,
+    0.0
+  ],
+  "tool": [
+    [
+      -6.123233995736766e-17,
+      1.2246467991473532e-16,
+      1.0,
+      -508.0
+    ],
+    [
+      -7.498798913309288e-33,
+      -1.0,
+      1.2246467991473532e-16,
+      3.5
+    ],
+    [
+      1.0,
+      0.0,
+      6.123233995736766e-17,
+      139.34
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "printCentreWorldMm": [
+    1088.304936,
+    -115.143158,
+    -658.0
+  ],
+  "heightMm": 59.01,
+  "spiralPitchMm": 2.5,
+  "pitchDefinition": "arc length along the RZ wall profile",
+  "profileLengthMm": 224.81787026073118,
+  "straightThroatMm": 20.0,
+  "flareHeightMm": 172.0,
+  "initialFilletRadiusMm": null,
+  "jointLimitViolationVertices": 0,
+  "jointLimitViolationSamples": 0,
+  "maxVertexPositionErrorMm": 1.6299794605106021e-12,
+  "minimumWristBendDeg": 52.82356129051077,
+  "peakSampledAxisSpeedDegS": 39.134766761328486,
+  "peakSampledSpeedPerAxisDegS": [
+    13.836021903829483,
+    11.176596233032509,
+    12.4784093563904,
+    28.151195606746967,
+    24.336355621403793,
+    39.134766761328486
+  ],
+  "orientationMatrixError": 1.1379786002407855e-15,
+  "a6AngleLimitDeg": null,
+  "minimumJointMarginsDeg": [
+    158.44863912291945,
+    57.55496524443964,
+    29.440478327846563,
+    41.30361790822093,
+    1.7173244896807773
+  ],
+  "largestVertexJointStepDeg": 9.669313429936238,
+  "cad": {
+    "toolPrimitives": 20,
+    "robotPrimitives": 26,
+    "toolTriangles": 720,
+    "robotTriangles": 824,
+    "tcpOBJmm": [
+      0.0,
+      -236.57482948,
+      0.0
+    ],
+    "toolCADToTCP": [
+      [
+        0.0,
+        0.0,
+        1.0
+      ],
+      [
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ]
+    ],
+    "robotCADEulerRestDeg": [
+      0.0,
+      -90.0,
+      90.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "robotCADToZUp": [
+      [
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ]
+    ],
+    "robotJointOriginsMM": [
+      [
+        175.0,
+        0.0,
+        575.0
+      ],
+      [
+        175.0,
+        0.0,
+        1865.0
+      ],
+      [
+        175.0,
+        0.0,
+        1915.0
+      ],
+      [
+        1210.0,
+        0.0,
+        1915.0
+      ],
+      [
+        1210.0,
+        0.0,
+        1915.0
+      ],
+      [
+        1395.0,
+        0.0,
+        1915.0
+      ]
+    ],
+    "flangeCentreAgreementMm": 7.347880794884118e-15,
+    "cadJointAxisChecks": {
+      "A1": {
+        "centreOffsetMm": 1.9719083129204946e-08,
+        "vertices": 42
+      },
+      "A2": {
+        "centreOffsetMm": 1.507798495383004e-06,
+        "vertices": 37
+      },
+      "A3": {
+        "centreOffsetMm": 0.006480219360661126,
+        "vertices": 43
+      },
+      "A4": {
+        "centreOffsetMm": 0.008105324102647336,
+        "vertices": 34
+      },
+      "A5": {
+        "centreOffsetMm": 1.6999611021863488e-16,
+        "vertices": 42
+      },
+      "A6": {
+        "centreOffsetMm": 1.1079639879031114e-05,
+        "vertices": 43
+      }
+    },
+    "oldOBJToCycloneAxes": [
+      1,
+      2,
+      0
+    ],
+    "oldOBJToCycloneOffsetMm": [
+      0.0,
+      272.0,
+      -126.5
+    ],
+    "sharedBarrelBoundsAgreementMm": 2.200927731621505e-06,
+    "method": "OBJ geometry fit. Tool roll places the bracket toward flange, based on CAD landmarks. Robot sections bind to XML/DH frames. The XML site elevation is separate from the OBJ robot-origin frame."
+  },
+  "initialDiameterMm": 46.0,
+  "nominalBeadWidthMm": 4.5,
+  "targetCrestIDMm": 41.5,
+  "flareProfile": "inferred sphere R95 with cubic throat blend",
+  "maximumRadiusMm": 95.0,
+  "inferredDimensions": true,
+  "inferredSphereRadiusMm": 95.0,
+  "sourceHashes": {
+    "SPHR.SRC": "777790d56d2fd4d6a30529af8fa15b18f15824c55fbba08dee8e3558fc935a81",
+    "SPHR.DAT": "94432b52813f409e415d6f9020df079412c1bef5afa384ec78968ad53d9c0f34",
+    "Non_Planar_Demo.gcode": "47b67498a763a8ee313d07239ddedd90d547e8a09488c4086798a70a35bf41d0"
+  },
+  "finishWipe": false,
+  "motionModel": "Offline natural cubic XYZ and quaternion fit",
+  "rollStrategy": "Fixed world -Y reference projected into the nozzle plane",
+  "splineTargets": 372,
+  "originalWallTargets": 1800,
+  "layerCommandedSpeedMmS": [
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    6.0,
+    7.0,
+    7.6,
+    8.6,
+    9.5,
+    10.6,
+    11.9,
+    13.1,
+    14.3,
+    15.7,
+    16.9,
+    18.1,
+    19.4,
+    20.6,
+    21.0,
+    21.0
+  ],
+  "finishLiftWorldZMm": 50.0,
+  "printEndpointWorldMm": [
+    1088.300048828125,
+    -59.97999954223633,
+    -599.8400268554688
+  ],
+  "finishFansOff": true,
+  "splineFit": {
+    "maximumDroppedWaypointErrorMm": 0.01874067979030981,
+    "maximumDroppedOrientationErrorDeg": 0.4611960210316977,
+    "maximumDroppedTiltErrorDeg": 0.39796012133835745,
+    "shortestSplineChordMm": 2.3997407240305617,
+    "extraOrientationWaypoints": 0
+  },
+  "a6RangeDeg": [
+    -91.13259862322661,
+    40.99908533787276
+  ]
+}

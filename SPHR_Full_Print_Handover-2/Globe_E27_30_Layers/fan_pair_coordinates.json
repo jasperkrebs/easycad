@@ -1,0 +1,126 @@
+{
+  "frameAssumption": "Coordinates interpreted in the exported OBJ frame, millimetres, nozzle tip at origin. Confirm before using for simulations.",
+  "providedPairs": [
+    {
+      "pair": 1,
+      "cornersMm": [
+        [
+          30.8768,
+          -41.3418,
+          56.0287
+        ],
+        [
+          78.0796,
+          -41.0315,
+          38.3776
+        ],
+        [
+          77.591671,
+          41.209417,
+          38.51854
+        ],
+        [
+          30.388871,
+          40.899117,
+          56.16964
+        ]
+      ],
+      "centerMm": [
+        54.2342,
+        -0.0662,
+        47.2736
+      ],
+      "edgeLengthsMm": [
+        50.396,
+        82.242
+      ],
+      "inwardNormal": [
+        -0.350252,
+        -0.000473,
+        -0.936656
+      ],
+      "planeDeviationMm": 0.0
+    },
+    {
+      "pair": 2,
+      "cornersMm": [
+        [
+          -74.5816,
+          -47.1113,
+          38.3747
+        ],
+        [
+          -3.2155,
+          -88.0251,
+          38.4232
+        ],
+        [
+          20.252429,
+          -47.068967,
+          56.082807
+        ],
+        [
+          -51.113671,
+          -6.155167,
+          56.034307
+        ]
+      ],
+      "centerMm": [
+        -27.1646,
+        -47.0901,
+        47.2288
+      ],
+      "edgeLengthsMm": [
+        82.262,
+        50.399
+      ],
+      "inwardNormal": [
+        0.174753,
+        0.303713,
+        -0.9366
+      ],
+      "planeDeviationMm": 0.0
+    },
+    {
+      "pair": 3,
+      "cornersMm": [
+        [
+          -74.6072,
+          46.8135,
+          38.4253
+        ],
+        [
+          -50.7566,
+          6.1058,
+          56.0762
+        ],
+        [
+          20.223142,
+          47.633542,
+          55.939631
+        ],
+        [
+          -3.627458,
+          88.341242,
+          38.288731
+        ]
+      ],
+      "centerMm": [
+        -27.192,
+        47.2235,
+        47.1825
+      ],
+      "edgeLengthsMm": [
+        50.374,
+        82.236
+      ],
+      "inwardNormal": [
+        0.175604,
+        -0.303224,
+        -0.936599
+      ],
+      "planeDeviationMm": 0.0
+    }
+  ],
+  "faceType": "Air outlet faces confirmed by user."
+}
