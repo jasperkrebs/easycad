@@ -21,6 +21,18 @@ place on the socket, the inner ring the gap inside it; the gap opens and closes 
 ring moving. On the half sphere the middle ring's steps stay 3.1–3.5 mm while the inner ring
 slows to 1.1–2.6 mm (it was 5.6 for the middle one). The sketcher's wings unchanged. Tested.
 
+## 2026-11-20: a bigger 3D view on the phone (claude/eager-maxwell-ph399i, the general manager's files with the owner's leave)
+
+**Why:** the owner: on the phone the 3D view was a strip; they want it about half the screen,
+pinned, the settings scrolling under it.
+
+**What landed** (`web/styles.css`, phones up to 700 px wide): the view itself 38 % of the
+screen's height (at least 180 px); its controls tighter (smaller buttons, the colour sliders side
+by side in one row); a smaller header. On an iPhone-sized screen (664 px seen) the view went from
+92 px to 252 px, its controls from 205 px to 130 px; the settings scroll in the remaining 209 px
+under the pinned view and tabs. Desktop unchanged. Smoke and agent tests pass; checked with the
+owner's half sphere.
+
 
 ## 2026-11-19 (night): Thread pendant: the wings compensated for their radial lean, even along the leaf (recipe-developer)
 

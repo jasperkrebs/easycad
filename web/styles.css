@@ -2028,3 +2028,67 @@ body[data-plan] .view-legend {
   border-color: var(--accent);
   color: var(--on-accent);
 }
+
+/* A phone: the 3D view gets a fixed share of the screen (about the top half with its controls,
+   which tighten up), and the settings scroll in the rest under it. */
+@media (max-width: 700px) {
+  .top {
+    padding: 8px 12px 4px;
+  }
+  .brand h1 {
+    font-size: 1.15rem;
+  }
+  .brand .sub {
+    margin: 0;
+    font-size: 0.75rem;
+  }
+  .status {
+    font-size: 0.72rem;
+    padding: 2px 8px;
+  }
+  .layout {
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 8px;
+    padding: 0 8px 8px;
+  }
+  .view-stage {
+    flex: none;
+    height: 38vh;
+    height: 38dvh;
+    min-height: 180px;
+  }
+  .view-tools {
+    gap: 2px;
+    padding: 4px 6px;
+  }
+  .view-bar .seg {
+    padding: 2px;
+  }
+  .view-bar .seg button,
+  .view-bar .seg select {
+    padding: 3px 8px;
+    font-size: 0.78rem;
+  }
+  /* The colours: a part's, the highlights and the shadows side by side. */
+  .view-colors {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px 8px;
+    padding-top: 2px;
+    font-size: 0.66rem;
+  }
+  .color-row,
+  .color-row:nth-last-child(-n + 2) {
+    grid-template-columns: minmax(0, auto) minmax(36px, 1fr);
+    gap: 4px;
+  }
+  .color-row:has(input[type="color"]) {
+    grid-template-columns: minmax(0, auto) auto minmax(36px, 1fr);
+  }
+  .color-row input[type="color"] {
+    width: 22px;
+    height: 18px;
+  }
+  .color-row input[type="range"] {
+    min-width: 36px;
+  }
+}
