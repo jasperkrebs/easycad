@@ -113,15 +113,20 @@ fn the_template_prints_as_it_ships() {
 }
 
 /// The sketcher's "Angled" cone: it prints, its grip is full and on the socket, and the cone's
-/// lean (31°) is within its max overhang (70°), so nothing to say.
+/// lean (31°) is within its max overhang (70°).
 #[test]
 fn the_sketchers_angled_cone() {
     // At its 70° max overhang the wings step in up to 6.9 mm a layer: more than a line, nothing
     // under the new ring. It says so. At 45° they step half a line at most, but then this wide
     // cone needs a longer wing zone and path to bring them in to the socket: it says that.
+    // Its wings, compensated for their own 70° lean, fall far behind the wall's heights (the
+    // cone leans 31°): the arm climbs steeply, and where the wings move in fast its layers just
+    // outside them get thick. It says those too.
     let e = pendant(&angled());
-    assert_eq!(warnings(&e).len(), 1, "{:?}", warnings(&e));
+    assert_eq!(warnings(&e).len(), 3, "{:?}", warnings(&e));
     assert!(warnings(&e)[0].contains("half a line"));
+    assert!(warnings(&e)[1].contains("steeper than 15°"));
+    assert!(warnings(&e)[2].contains("over 1.5 times"));
     let mut v = angled();
     v.retain(|(k, _)| *k != "max_overhang");
     v.push(("max_overhang", num(45.0)));
@@ -280,18 +285,9 @@ fn a_thinner_wall_on_the_angled_cone() {
     let thick = pendant(&v);
     v.extend([("wall_line", num(3.2)), ("wall_layer", num(1.5))]);
     let thin = pendant(&v);
-    // What the thick one says (the wings stepping more than half a line at 70°), and that the
-    // arm climbs steeply: the 70° wings far from the thin wall's heights (their own
-    // compensation), and the thread far ahead of them (16°).
-    let extra: Vec<String> = warnings(&thin)
-        .into_iter()
-        .filter(|w| !warnings(&thick).contains(w))
-        .collect();
-    assert!(warnings(&thick).iter().all(|w| warnings(&thin).contains(w)));
-    assert!(
-        extra.len() == 1 && extra[0].contains("steeper than 15°"),
-        "{extra:?}"
-    );
+    // What the thick one says (the wings stepping more than half a line at 70°, and the arm
+    // climbing steeply: the 70° wings far from the wall's heights), and nothing more.
+    assert_eq!(warnings(&thin), warnings(&thick));
     let (a, b) = (&thin.prints[0].stats, &thick.prints[0].stats);
     assert!(
         a.volume_mm3 < 0.7 * b.volume_mm3,
@@ -330,7 +326,10 @@ fn a_thinner_wall_on_the_angled_cone() {
         }
         let (w, h) = path.bead_of(i);
         assert!(
-            (3.2 - 1e-9..=5.0 + 1e-9).contains(&w) && h <= 2.5 + 1e-9,
+            // (The arm extruded for the gap it's in: up to some 1.6 pitches just outside the
+            // middle ring, where the 70° wings move in 3 mm a layer far below the wall's heights;
+            // the recipe warns over 1.5 times a layer.)
+            (3.2 - 1e-9..=5.0 + 1e-9).contains(&w) && h <= 2.0 * 2.5,
             "{i} {w} {h}"
         );
         // (The wall's own bead: its layer, or less where it gives the wings layers.)

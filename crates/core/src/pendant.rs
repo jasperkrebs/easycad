@@ -155,6 +155,9 @@ pub struct Info {
     /// the one below.
     pub min_ring_gap: f64,
     pub min_ring_share: f64,
+    /// The thickest they get for their layer's rise (where the wings move in far below the
+    /// wall's heights, the arm just outside them sits a little high on the one below).
+    pub max_ring_share: f64,
     /// Each point's bead: the line width and layer height to extrude the move to it for.
     pub bead: Vec<[f64; 2]>,
     /// Each layer with wings: the thread's height there, the inner and middle rings' radii and
@@ -625,6 +628,28 @@ impl<'a> Geo<'a> {
         r.min(wall_ri)
     }
 
+    /// The leaf's middle ring at the rings' height `z` (off the socket): a straight line from
+    /// the wall where the wings start to its place on the socket (two thread lines and the gap
+    /// there out from the barrel) below the grip, and (full wings) another back out to the wall
+    /// at the top above it; never further out than `rm_wall`.
+    fn middle(&self, z: f64, rm_wall: f64) -> f64 {
+        let s = self.s;
+        let at_wall = |z: f64| self.radius.at(z) - self.bw - s.wall_gap;
+        let on_socket = self.r_grip + s.line + if s.pockets { 0.0 } else { s.pin_gap.max(0.0) };
+        let (from, to) = if z < self.z_gb {
+            (self.z_start, self.z_gb)
+        } else {
+            (self.z_end, self.z_gt)
+        };
+        let r = if (to - from).abs() < 1e-6 {
+            on_socket
+        } else {
+            let t = ((to - z) / (to - from)).clamp(0.0, 1.0);
+            on_socket + t * (at_wall(from) - on_socket)
+        };
+        r.min(rm_wall)
+    }
+
     /// Where along the wing zone the height `z` is, 0..1 (for the leaf's width).
     fn along(&self, z: f64) -> f64 {
         (z - self.z_start) / (self.z_end - self.z_start).max(1e-6)
@@ -672,16 +697,9 @@ impl<'a> Geo<'a> {
     }
 }
 
-/// How fast the layers' height may change, per mm of height, where the wings need thinner ones
-/// than the wall (or the other way round): they ease in and out, so the band doesn't show as a
-/// line on the outside.
-const EASE: f64 = 0.04;
-
-/// The wall's layers: its own layer height, less where it leans (layer-height compensation),
-/// and no more than `limit` at each height (the wings' own, eased; see `layer_plan`). Each
-/// layer's bead is the wall's own layer (squeezed as compensation squeezes it), less as far as
-/// it's thinner than its own compensation (that's extruded for).
-fn wall_layers(s: &Settings, radius: &Radius, limit: &dyn Fn(f64) -> f64) -> Vec<Layer> {
+/// The wall's layers: its own layer height, less where it leans (layer-height compensation).
+/// Each layer's bead is the wall's own layer (squeezed as compensation squeezes it).
+fn wall_layers(s: &Settings, radius: &Radius) -> Vec<Layer> {
     let lh = s.layer;
     let lw = wall_layer(s);
     let top_target = (s.height / lh).round().max(3.0) * lh;
@@ -689,7 +707,7 @@ fn wall_layers(s: &Settings, radius: &Radius, limit: &dyn Fn(f64) -> f64) -> Vec
     let mut z = 0.0;
     let comp = s.strength > 0.0;
     while out.len() < 100_000 {
-        let own = if comp {
+        let rise = if comp {
             let (a, b) = (z, z + lw);
             let lean = (radius.at(b) - radius.at(a)).abs().atan2(lw).to_degrees();
             let curve = s.strength * (lean.min(89.0) / s.pivot.max(1.0)).powf(s.steep);
@@ -697,7 +715,6 @@ fn wall_layers(s: &Settings, radius: &Radius, limit: &dyn Fn(f64) -> f64) -> Vec
         } else {
             lw
         };
-        let rise = own.min(limit(z)).max(0.05 * lw);
         // The sketcher's layers: their tops up to a pitch below the top.
         if z + lw > top_target - lh + 1e-6 && !out.is_empty() {
             break;
@@ -707,7 +724,7 @@ fn wall_layers(s: &Settings, radius: &Radius, limit: &dyn Fn(f64) -> f64) -> Vec
             rise,
             d: 0.0,
             f: 0.0,
-            bead: lw * rise / own,
+            bead: lw,
             t: 0.0,
         });
         z += rise;
@@ -716,56 +733,74 @@ fn wall_layers(s: &Settings, radius: &Radius, limit: &dyn Fn(f64) -> f64) -> Vec
 }
 
 /// The layers. The outer wall rises its own layer height (`wall_layer`, the pitch unless set),
-/// less where it leans (layer-height compensation, see `Geo::compensated`); the wings need their
-/// own, compensated for how far they lean in towards the socket. Each layer is one line, so over
-/// any stretch the wings and the wall have the same number of layers: where the wings run, both
-/// rise the thinner of the two (each compensated at least as much as its own lean asks; the
-/// wings, along a straight leaf, evenly), easing into and out of that (`EASE`) so the band
-/// doesn't show on the outside. The thread keeps its own heights (see `thread_offsets`): a pitch
-/// a layer on the socket, so the grip stays a true helix.
+/// less where it leans (layer-height compensation, see `Geo::compensated`); the wings rise
+/// their own, compensated for how far they lean in towards the socket. Each layer is one line,
+/// so where one rises more than the other the wings' heights part from the wall's (falling
+/// behind where the wings lean more, catching up where the wall does) and the arm between them
+/// takes up the difference, its angle changing layer by layer. The thread keeps its own heights
+/// (see `thread_offsets`): a pitch a layer on the socket, so the grip stays a true helix.
+///
+/// Both have the same number of layers, so if the wings fell so far behind that they couldn't
+/// finish the grip before the wall reaches the top, the difference is scaled back (each wing
+/// layer between its own and the wall's), as little as it takes.
 fn layer_plan(s: &Settings, radius: &Radius) -> Vec<Layer> {
     let lh = s.layer;
     let comp = s.strength > 0.0;
-    let mut plan = wall_layers(s, radius, &|_| f64::INFINITY);
-    if comp {
-        // A couple of rounds: the wings' heights hang on the top, which hangs on the layers.
-        for _ in 0..2 {
-            let geo = Geo::new(s, radius, top_of(&plan, s));
-            // What the wings ask for at each height (on a fine grid), then eased: never more
-            // than they ask, changing by at most `EASE` a mm.
-            let dz = 0.25;
-            let top = top_of(&plan, s) + lh;
-            let n = (top / dz).ceil().clamp(1.0, 1e6) as usize + 1;
-            let mut need: Vec<f64> = (0..n)
-                .map(|i| {
-                    // (The wall's layer starting at `z` carries the wings' at about `z` + a layer.)
-                    let z = i as f64 * dz + lh;
-                    if geo.rings_at(z) {
-                        geo.compensated(geo.lean(z))
-                    } else {
-                        f64::INFINITY
-                    }
-                })
-                .collect();
-            for i in 1..n {
-                need[i] = need[i].min(need[i - 1] + EASE * dz);
-            }
-            for i in (0..n.saturating_sub(1)).rev() {
-                need[i] = need[i].min(need[i + 1] + EASE * dz);
-            }
-            let limit = |z: f64| -> f64 {
-                let i = (z / dz).round().clamp(0.0, (n - 1) as f64) as usize;
-                need.get(i).copied().unwrap_or(f64::INFINITY)
-            };
-            plan = wall_layers(s, radius, &limit);
+    let wall = wall_layers(s, radius);
+    let geo = Geo::new(s, radius, top_of(&wall, s));
+    // The wings' own rise each layer, `share` of the way from the wall's to their own, at their
+    // own heights (the wall's, and how far they've parted).
+    let own_of = |share: f64| -> Vec<f64> {
+        let mut d = 0.0;
+        wall.iter()
+            .map(|l| {
+                let z = l.z0 + lh + d;
+                let o = if comp && geo.rings_at(z) {
+                    l.rise + share * (geo.compensated(geo.lean(z)) - l.rise)
+                } else {
+                    l.rise
+                };
+                d += o - l.rise;
+                o
+            })
+            .collect()
+    };
+    let plan_with = |own: &[f64]| -> Vec<Layer> {
+        let mut plan = wall.clone();
+        // (How much of the lead the crease above the grip takes at a height: its depth's share of
+        // the arm there, from the middle ring on the socket out to inside the wall.)
+        let crease_share = |z: f64| -> f64 {
+            let bw = wall_line(s);
+            let arm = radius.at(z) - bw - (geo.r_grip + s.line);
+            ((s.crease - bw).max(0.0) / arm.max(1.0)).clamp(0.05, 1.0)
+        };
+        thread_offsets(s, &mut plan, own, &crease_share);
+        let mut drift = 0.0;
+        for (l, o) in plan.iter_mut().zip(own) {
+            l.t = l.d - drift;
+            drift += o - l.rise;
+        }
+        plan
+    };
+    // Whether the thread gets through the grip: its rings up past the grip's top by the end.
+    let z_gt = top_of(&wall, s) - s.hide;
+    let finishes =
+        |plan: &[Layer]| !comp || plan.iter().any(|l| l.z0 + lh + l.d > z_gt + lh - 1e-6);
+    let full = own_of(1.0);
+    let plan = plan_with(&full);
+    if finishes(&plan) {
+        return plan;
+    }
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..12 {
+        let mid = (lo + hi) / 2.0;
+        if finishes(&plan_with(&own_of(mid))) {
+            lo = mid;
+        } else {
+            hi = mid;
         }
     }
-    let own: Vec<f64> = plan.iter().map(|l| l.rise).collect();
-    thread_offsets(s, &mut plan, &own);
-    for l in plan.iter_mut() {
-        l.t = l.d;
-    }
-    plan
+    plan_with(&own_of(lo))
 }
 
 /// The top of the print in the sketcher's terms (its `zEnd`): a pitch over the last layer's top.
@@ -791,7 +826,12 @@ fn top_of(plan: &[Layer], s: &Settings) -> f64 {
 /// climbs least. To start lower, the rings rise less for a while below the grip; above it, they
 /// rise less or more until the wall has caught up (as far as there are layers). Never more than
 /// `SLOW` of their own rise less or more, easing in and out of that by a twentieth of it a layer.
-fn thread_offsets(s: &Settings, plan: &mut [Layer], own: &[f64]) {
+fn thread_offsets(
+    s: &Settings,
+    plan: &mut [Layer],
+    own: &[f64],
+    crease_share: &dyn Fn(f64) -> f64,
+) {
     let lh = s.layer;
     let lw = wall_layer(s);
     let n = plan.len();
@@ -970,19 +1010,28 @@ fn thread_offsets(s: &Settings, plan: &mut [Layer], own: &[f64]) {
         k += 1;
     }
     // Above: the wall catches up (from a layer level with it), whichever side the rings are.
+    // With a crease there are no rings left, only the crease by the wall, taking its share of the
+    // lead: it closes as fast as leaves each crease layer at least 75 % of its height (the rest
+    // left for the wall moving in or out under it).
     let mut c = -0.05 * own_at(k.min(n.saturating_sub(1)));
     for (j, l) in plan.iter_mut().enumerate().skip(k) {
         l.d = d;
         let w = own.get(j).copied().unwrap_or(l.rise);
+        let most = if s.crease_top {
+            (0.25 / crease_share(l.z0 + lh)).clamp(SLOW, 0.8)
+        } else {
+            SLOW
+        };
         let mag = d.abs();
-        // Easing in, and out again in time to stop at none.
-        let step = 0.05 * w;
+        // Easing in, and out again in time to stop at none (with a crease, where there are no
+        // rings left to step, four times as fast).
+        let step = if s.crease_top { 0.2 } else { 0.05 } * w;
         c = if mag > 1e-9 {
             let tail = c * (c / step + 1.0) / 2.0;
             let next = if mag <= tail {
                 (c - step).max(step.min(mag))
             } else {
-                (c + step).min(SLOW * w)
+                (c + step).min(most * w)
             };
             next.min(mag)
         } else {
@@ -995,10 +1044,9 @@ fn thread_offsets(s: &Settings, plan: &mut [Layer], own: &[f64]) {
 
 /// How much of the thread's offset (and bead) a point at radius `r` takes: all of it from `lo`
 /// in (the middle ring, with wings), none from a line inside the outer wall outwards (`hi`),
-/// smoothly between.
+/// evenly between: the arm a straight climb, its angle no steeper anywhere than on average.
 fn bridge(r: f64, lo: f64, hi: f64) -> f64 {
-    let t = ((hi - r) / (hi - lo).max(1e-9)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+    ((hi - r) / (hi - lo).max(1e-9)).clamp(0.0, 1.0)
 }
 
 /// The line, as points (x, y, z) with z one layer below the nozzle (as `toolpath` wants it:
@@ -1034,6 +1082,7 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         min_rise: lh,
         min_ring_gap: lh,
         min_ring_share: 1.0,
+        max_ring_share: 1.0,
         ..Info::default()
     };
     let mut out: Vec<P3> = Vec::new();
@@ -1180,10 +1229,20 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         let (mut rm, mut ri) = (0.0, 0.0);
         let mut ri_wanted: Option<f64> = None;
         if in_zone {
-            let wall_ri = wall_ri_of(ro, wi, wm, gap);
-            ri = ring_target(zc_r, wall_ri);
-            ri_wanted = Some(ri);
-            rm = ri + (wi + wm) / 2.0 + gap;
+            if s.leaf && !(zc_r >= z_gb && zc_r <= z_gt) {
+                // The leaf: the middle ring (the one the arm runs into) on its straight line,
+                // the inner ring the gap inside it, so the gap opens and closes by the inner ring
+                // moving (closing before the grip, it comes in more slowly, not the middle ring
+                // swinging in onto it).
+                let rm_wall = ro - (bw + wm) / 2.0 - s.wall_gap;
+                rm = geo.middle(zc_r, rm_wall);
+                ri = rm - (wi + wm) / 2.0 - gap;
+            } else {
+                let wall_ri = wall_ri_of(ro, wi, wm, gap);
+                ri = ring_target(zc_r, wall_ri);
+                ri_wanted = Some(ri);
+                rm = ri + (wi + wm) / 2.0 + gap;
+            }
             let req = rm + (wm + bw) / 2.0 + s.wall_gap;
             if ro < req - 1e-6 {
                 ro = req;
@@ -1370,6 +1429,7 @@ pub fn thread_shade(s: &Settings) -> Result<(Vec<P3>, Info), String> {
         info.max_bridge_slope = info.max_bridge_slope.max(slope);
         info.min_ring_gap = info.min_ring_gap.min(thin[0]);
         info.min_ring_share = info.min_ring_share.min(thin[1]);
+        info.max_ring_share = info.max_ring_share.max(thin[2]);
         lo_prev = lo_l;
         below = Some((layer.d, layer.t, lo_l, hi_l, rise));
         if out.len() > 3_000_000 {
@@ -1477,7 +1537,7 @@ fn finish(
     out: &mut Vec<P3>,
     beads: &mut Vec<[f64; 2]>,
     adj: impl Fn(f64, f64, f64) -> (f64, f64),
-) -> (f64, f64, [f64; 2]) {
+) -> (f64, f64, [f64; 3]) {
     let (z, len) = heights(rv, &h);
     // Each point's share of the thread's lead (0 where there's none).
     let mut lead = vec![0.0; z.len()];
@@ -1525,7 +1585,7 @@ fn finish(
         }
     }
     // The thinnest gap under the bridge (the wings and the arm): in mm, and for its layer's rise.
-    let mut thin = [f64::INFINITY; 2];
+    let mut thin = [f64::INFINITY, f64::INFINITY, 0.0];
     for ((&x, &y), &zj) in rv.xs.iter().zip(&rv.ys).zip(&z).skip(skip) {
         let b = &t.bead;
         let r = x.hypot(y);
@@ -1552,6 +1612,9 @@ fn finish(
         if tall > 0.01 {
             thin[0] = thin[0].min(gap);
             thin[1] = thin[1].min(gap / wall_gap.max(1e-9));
+            // (Against the layer it should be: the wall's, blending into the wings' own.)
+            let planned = wall_gap + tall * (t.d_next - t.below.map_or(t.d, |b| b.0)) / 2.0;
+            thin[2] = f64::max(thin[2], gap / planned.max(0.05 * wall_gap));
         }
         // The wall's bead out by the wall (its layer, squeezed where it leans); the wings' for
         // the gap they're in (theirs aren't squeezed), blending along the arm.
@@ -1684,6 +1747,11 @@ fn check(s: &Settings) -> Result<(), String> {
     }
     if s.wall_line < 0.0 || (s.wall_line > 0.0 && s.wall_line < 0.2) || s.wall_layer < 0.0 {
         return Err("thread_shade: `wall_line` must be 0 (the thread's) or at least 0.2 mm, `wall_layer` 0 (the pitch) or more".into());
+    }
+    // (Found by the fuzz test: a 4 × 10⁹ mm gap sent the rings far off and the line with them.)
+    let gaps = [s.tip_gap, s.neck_gap, s.wall_gap, s.pin_gap, s.crease];
+    if gaps.iter().any(|g| !(0.0..=1000.0).contains(g)) {
+        return Err("thread_shade: the gaps and the crease must be 0 to 1000 mm".into());
     }
     if s.wall_line > 20.0 || s.line > 20.0 {
         return Err("thread_shade: `line` and `wall_line` must be at most 20 mm".into());
@@ -2170,7 +2238,8 @@ mod tests {
             // the wall's layer.
             let (lo, _) = bridge_gaps(&pts, &s, &radius, 2.0 * s.layer);
             assert!(lo > 0.5 * plan[0].rise, "{layers:?} {lo}");
-            assert!(info.max_bridge_slope < 15.0, "{}", info.max_bridge_slope);
+            // (A narrow cone with its wings leaning in steeply: the arm climbs; the check says.)
+            assert!(info.max_bridge_slope < 30.0, "{}", info.max_bridge_slope);
         }
     }
 
@@ -2235,8 +2304,13 @@ mod tests {
             let (lo, hi) = bridge_gaps(&pts, &s, &radius, 2.0 * s.layer);
             // (With full wings the rings move back out above the grip while the wall catches
             // up: a little closer.)
+            // (Against the thinnest wall layer it has, compensation squeezing them.)
             let least = if crease_top { 0.5 } else { 0.45 };
-            assert!(lo > least * 1.5, "{layers:?} {crease_top} {lo} {hi}");
+            let thinnest = plan.iter().map(|l| l.rise).fold(f64::INFINITY, f64::min);
+            assert!(
+                lo > least * thinnest,
+                "{layers:?} {crease_top} {lo} {hi} {thinnest}"
+            );
             assert!(info.min_ring_share > 0.5, "{}", info.min_ring_share);
             // A narrow shade (a 47 mm wall round a 22.5 mm thread at the grip's top, the arm
             // between them under 20 mm) climbs steeply; the check in the recipe says so. (The
@@ -2468,55 +2542,94 @@ mod tests {
         }
     }
 
-    /// The wings and the wall compensated each for its own lean (the wings' coming in towards
-    /// the socket): on a sphere the wings lean more than the wall, so where they run both take
-    /// the wings' thinner layers (more layers); along the straight leaf they're even, and no
-    /// layer is thicker than either needs; the thread still a true helix.
+    /// The owner's Sphere20test: the wall and the wings compensated each at its own rate, the
+    /// arm between them taking up the difference. At the equator the wall hardly leans and keeps
+    /// its own layers while the wings, leaning in, take thinner ones and fall behind; the thread
+    /// still a true helix through the whole grip, the arm under 15°.
     #[test]
     fn the_wings_and_the_wall_compensated_each_their_own() {
-        let s = owners_sphere();
+        let prof = [
+            [0.0, 90.5],
+            [0.115748, 136.821236],
+            [0.270994, 168.06927],
+            [0.448634, 180.801597],
+            [0.629097, 173.615533],
+            [0.792504, 147.302746],
+            [0.920851, 104.762039],
+            [1.0, 50.68],
+        ];
+        let s = Settings {
+            profile: prof.iter().map(|p| h(p[0], p[1])).collect(),
+            height: 330.0,
+            entries: 5,
+            wing_zone: 202.5,
+            wing: vec![
+                h(0.0, 0.0),
+                h(0.29919, 0.930769),
+                h(0.527585, 1.0),
+                h(1.0, 1.0),
+            ],
+            wall_gap: 5.0,
+            pin_gap: 0.0,
+            grip: 28.5,
+            hide: 35.0,
+            crease: 15.0,
+            layers: Layers::Angle,
+            strength: 0.83,
+            steep: 0.8,
+            pivot: 73.0,
+            pockets: true,
+            leaf: true,
+            ..straight()
+        };
         let radius = Radius::new(&s.profile, s.height, s.scale);
-        let plain = layer_plan(
-            &Settings {
-                strength: 0.0,
-                ..owners_sphere()
-            },
-            &radius,
-        );
         let plan = layer_plan(&s, &radius);
-        assert!(
-            plan.len() > plain.len() + 20,
-            "{} {}",
-            plan.len(),
-            plain.len()
-        );
         let (pts, info) = thread_shade(&s).unwrap();
         assert!(info.grip_full);
         assert_true_helix(&pts, &s, &info);
-        let geo = Geo::new(&s, &radius, top_of(&plan, &s));
-        // Where the wings run, well inside the band (its easing in and out left out): every
-        // layer no thicker than the wings ask, and all of them alike (the leaf straight).
-        let core: Vec<&Layer> = plan
+        // At the equator (the wall upright there), the wall its own: a whole layer.
+        let equator = plan
             .iter()
-            .filter(|l| {
-                let z = l.z0 + s.layer;
-                geo.rings_at(z - 25.0) && geo.rings_at(z) && geo.rings_at(z + 25.0)
-            })
-            .collect();
-        assert!(core.len() > 20, "{}", core.len());
-        for l in &core {
-            let z = l.z0 + s.layer;
-            assert!(
-                l.rise <= geo.compensated(geo.lean(z)) + 1e-6,
-                "{z} {}",
-                l.rise
-            );
-        }
-        let lo = core.iter().map(|l| l.rise).fold(f64::INFINITY, f64::min);
-        let hi = core.iter().map(|l| l.rise).fold(0.0, f64::max);
-        assert!(hi - lo < 0.02 * hi, "{lo} {hi}");
+            .find(|l| (l.z0 + s.layer - 150.0).abs() < 1.5)
+            .unwrap();
+        assert!((equator.rise - s.layer).abs() < 0.02, "{}", equator.rise);
+        // The wings their own there: thinner, so they fall behind the wall (their own part of
+        // the lead, `d − t`, below zero), by up to some 20 mm before the socket.
+        let k = plan.iter().position(|l| std::ptr::eq(l, equator)).unwrap();
+        let own = equator.rise + (plan[k + 1].d - plan[k + 1].t) - (equator.d - equator.t);
+        assert!(own < s.layer - 0.3, "{own}");
+        let behind = plan.iter().map(|l| l.d - l.t).fold(0.0, f64::min);
+        assert!(behind < -15.0 && behind > -30.0, "{behind}");
         assert!(info.max_bridge_slope < 15.0, "{}", info.max_bridge_slope);
         assert!(info.min_ring_share > 0.5, "{}", info.min_ring_share);
+    }
+
+    /// The owner's half sphere: with a gap closing before the socket, the leaf's middle ring
+    /// (the one the arm runs into) keeps to its straight line and the inner ring moves out to it,
+    /// coming in more slowly (the middle ring swung in onto it, 5.6 mm a layer).
+    #[test]
+    fn the_leaf_closes_its_gap_with_the_inner_ring() {
+        let s = Settings {
+            pin_gap: 5.0,
+            ..owners_sphere()
+        };
+        let (_, info) = thread_shade(&s).unwrap();
+        let mut closing = 0;
+        for w in info.rings.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if b[3] < a[3] - 1e-9 && b[0] < info.grip_bottom {
+                closing += 1;
+                let (di, dm) = ((b[1] - a[1]).abs(), (b[2] - a[2]).abs());
+                assert!(di < dm, "{a:?} {b:?}");
+            }
+        }
+        assert!(closing > 0);
+        assert!(
+            info.rings
+                .iter()
+                .filter(|r| r[0] >= info.grip_bottom && r[0] <= info.grip_top)
+                .all(|r| r[3] == 0.0)
+        );
     }
 
     /// Found by the fuzz test: a radius of 4 × 10⁹ mm in the profile took a minute to say it
@@ -2528,6 +2641,19 @@ mod tests {
         let t = std::time::Instant::now();
         assert!(thread_shade(&s).is_err_and(|e| e.contains("too many points")));
         assert!(t.elapsed().as_secs_f64() < 1.0);
+    }
+
+    /// Found by the fuzz test: a wall gap of 4 × 10⁹ mm ran out of memory; now it's said.
+    #[test]
+    fn huge_gaps_are_errors() {
+        for leaf in [false, true] {
+            let s = Settings {
+                wall_gap: 4_294_967_296.0,
+                leaf,
+                ..straight()
+            };
+            assert!(thread_shade(&s).is_err_and(|e| e.contains("gaps")));
+        }
     }
 
     #[test]

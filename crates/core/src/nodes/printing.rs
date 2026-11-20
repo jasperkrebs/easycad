@@ -353,6 +353,7 @@ pub(super) fn thread_shade(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
                 info.max_bridge_slope,
                 info.min_ring_gap,
                 info.min_ring_share,
+                info.max_ring_share,
             ];
             Value::list(nums.iter().map(|&x| Value::Number(x)).collect())
         }

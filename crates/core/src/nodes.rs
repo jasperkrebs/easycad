@@ -1260,7 +1260,7 @@ pub static NODES: &[Node] = &[
                 "output",
                 "Text",
                 0.0,
-                "\"path\": the line (a layer below the nozzle, for `toolpath`); \"wall\": the outer wall, radius against height; \"info\": [top, layers, wall pushed out, too many entries, wings slowed, path slowed, steepest wall lean (°), grip bottom, grip top, grip radius, grip full, socket shows (mm), room to the socket above the grip, room at the top opening, wing zone short, line length, widest Ø, bottom Ø, thinnest layer, the most the wing rings move in or out a layer, the steepest the arm climbs between the wings' heights and the wall's (°), the thinnest the wings and the arm get (mm), the same for their layer's rise (1: as planned)]",
+                "\"path\": the line (a layer below the nozzle, for `toolpath`); \"wall\": the outer wall, radius against height; \"info\": [top, layers, wall pushed out, too many entries, wings slowed, path slowed, steepest wall lean (°), grip bottom, grip top, grip radius, grip full, socket shows (mm), room to the socket above the grip, room at the top opening, wing zone short, line length, widest Ø, bottom Ø, thinnest layer, the most the wing rings move in or out a layer, the steepest the arm climbs between the wings' heights and the wall's (°), the thinnest the wings and the arm get (mm), the same for their layer's rise (1: as planned), the thickest for it]",
             ),
             opt(
                 "wall_line",

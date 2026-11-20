@@ -10,6 +10,44 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+
+## 2026-11-20 (later): Thread pendant: the wall and the wings compensated each at its own rate (recipe-developer)
+
+**Why:** the owner's sketch and Sphere20test: since #54 the whole layer took the wings' rate, so
+the sphere's wall was squeezed flat at the equator where it stands upright. They want the wall at
+its rate, the wings at theirs, the arms (the bridges) changing angle between them.
+
+**What landed** (`pendant.rs`):
+- The wall rises its own compensated layer, the wings theirs (radial lean); their heights part
+  and the arm takes up the difference (its own part of the lead fading from each layer's middle
+  ring, the thread's from the socket's). Scaled back only if the wings couldn't finish the grip.
+- The arm's blend is now a straight line (no steeper anywhere than on average): on the owner's
+  sphere the leaf's arm 14° at most instead of 23°.
+- With a crease, the lead left above the grip closes faster, as fast as leaves each crease layer
+  75 % of its height (from the crease's share of the arm).
+- A new check: the arm's layers over 1.5 times their height (info 23), where the wings move in
+  far below the wall's heights (a straight arm whose low end moves in sits high on the one below).
+- `thread_shade` refuses gaps (and the crease) over 1000 mm: a fuzzed 4 × 10⁹ mm wall gap ran
+  out of memory. Tested.
+- Measured, the owner's files: Sphere20test 147 layers, the wall a whole layer at the equator;
+  the arm over 15° on the 70° sketcher wings and the half sphere (they warn), its tallest beads
+  2.7–4.4 mm where the wings move in fast.
+
+**Open:** whether to limit how far the wings may part from the wall (trading their own
+compensation for a gentler arm), and a test print.
+
+
+## 2026-11-20: Thread pendant: the leaf's pocket closes with the inner ring (recipe-developer)
+
+**Why:** the owner's half sphere: closing the gap before the socket, the middle ring (joined to
+the arm) swung in onto the inner ring, a harsh overhang where the layer height, the width and the
+thread are all changing.
+
+**What landed:** with the leaf the middle ring keeps to a straight line from the wall to its
+place on the socket, the inner ring the gap inside it; the gap opens and closes by the inner
+ring moving. On the half sphere the middle ring's steps stay 3.1–3.5 mm while the inner ring
+slows to 1.1–2.6 mm (it was 5.6 for the middle one). The sketcher's wings unchanged. Tested.
+
 ## 2026-11-20: a bigger 3D view on the phone (claude/eager-maxwell-ph399i, the general manager's files with the owner's leave)
 
 **Why:** the owner: on the phone the 3D view was a strip; they want it about half the screen,
