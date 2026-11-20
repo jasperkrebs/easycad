@@ -48,7 +48,7 @@ group "Robot"
 param robot        = false                           "Robot arm: the nozzle along the wall"
 param tilt_max     = 45 deg  in 0..60 step 1        "Most nozzle tilt"  when robot
 param tilt_smooth  = 20 mm   in 0..100 step 1       "Tilt smoothed over"  when robot
-param tilt_bed     = 45 mm   in 0..200 step 2.5     "Full tilt from this high (the fans clear the bed)"  when robot
+param tilt_bed     = 60 mm   in 0..200 step 2.5     "Full tilt from this high (the fans clear the bed)"  when robot
 
 group "Overhangs"
 param compensation = "layer height" of ["layer height", "off"] "Compensation (the wall and the wings each their own; the thread keeps its pitch)"
