@@ -234,3 +234,14 @@ nozzle; the fans should keep 5 mm. It exits non-zero on a problem. Like the hand
 doesn't see the controller's spline, cables, fixtures or the start pose. `--stride` checks the
 material on every Nth sample (a whole print's program takes long).
 
+To **watch** a program, `scripts/robot-viewer.py` replays it the way the handover's
+`build_trumpet.py` replays its own and fills the handover's viewer
+(`Globe_E27_Smoothed_Roll/reference/viewer_template.html`): the arm, the tool and the print as it
+grows, play and scrub, "Whole robot" or the print area, layer by layer, with the tool-to-bed
+readout. Nominal, as the handover's: straight at the programmed speed between targets; layers are
+counted by turns around the print's centre.
+
+```sh
+python3 scripts/robot-viewer.py EASYCAD.SRC --title "Sphere: first 40 mm" --output sphere.html
+```
+

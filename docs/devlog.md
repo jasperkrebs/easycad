@@ -38,6 +38,8 @@ compensating overhangs for a Cartesian printer.
   printed (the program's own bead). Its first run showed the nozzle fans 7 mm off the bed in the
   Sphere's 40 mm test (full tilt at 45 mm up was too soon): the tilt now reaches 45° at 60 mm
   (fans 25 mm off the bed); the test then passes every check.
+- **`scripts/robot-viewer.py`:** the program animated in the handover's own viewer (its
+  `viewer_template.html`), from the same kind of replay.
 
 **Open:** run it on the controller (it must compile: `C_SPL`, 1000 segments a block); the
 checks in the engine (they're a script for now); calibrate the screw; travels and machine events on the
