@@ -281,7 +281,11 @@ fn to_js(source: &str, e: &Evaluation, wall: bool) -> Result<Object, JsError> {
             .paths
             .iter()
             .flat_map(|p| {
-                let ups = easycad_core::wall::up_the_wall(p);
+                // A tilted toolpath (`tilt`) carries the nozzle's own direction.
+                let ups = match p.axes() {
+                    Some(a) => a.to_vec(),
+                    None => easycad_core::wall::up_the_wall(p),
+                };
                 match &p.view {
                     Some(x) => ups.into_iter().map(|v| x.apply_vector(v)).collect(),
                     None => ups,

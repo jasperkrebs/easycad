@@ -10,7 +10,7 @@ import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
 import { layoutKey, renderSettings } from './settings.js';
 import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutValues } from './templates.js';
-import { PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
+import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch } from './parts.js';
@@ -298,9 +298,10 @@ function renderExports(result) {
   // One G-code file per part: the project's name, and the part's when there are several.
   prints.forEach((part, i) => {
     const several = prints.length > 1;
-    const text = `G-code for the ${PRINTERS[state.printer].name}${several ? `: ${part.name}` : ''}`;
+    const kind = isRobot(state.printer) ? 'Robot program' : 'G-code';
+    const text = `${kind} for the ${PRINTERS[state.printer].name}${several ? `: ${part.name}` : ''}`;
     const b = el('button', { className: 'btn primary', type: 'button', text });
-    const name = `${slug(projectName())}${several ? `-${slug(part.name)}` : ''}.gcode`;
+    const name = `${slug(projectName())}${several ? `-${slug(part.name)}` : ''}${printExtension()}`;
     b.addEventListener('click', () => saveFile(i ? `print:${i}` : 'print', name, true));
     host.append(b);
   });
@@ -309,6 +310,11 @@ function renderExports(result) {
     b.addEventListener('click', () => saveFile(String(i), x.file));
     host.append(b);
   });
+}
+
+/** The printed file's extension: G-code, or a robot program's ZIP (its .SRC and .DAT). */
+function printExtension() {
+  return isRobot(state.printer) ? '.zip' : '.gcode';
 }
 
 /**
@@ -1150,8 +1156,9 @@ function renderPrintsView(result) {
         card.append(flip);
       }
       const several = prints.length > 1;
-      const file = `${slug(projectName())}${several ? `-${slug(p.name)}` : ''}.gcode`;
-      const gcode = el('button', { type: 'button', className: 'print-gcode', text: 'G-code', title: `G-code for the ${PRINTERS[state.printer].name}: ${p.name}` });
+      const file = `${slug(projectName())}${several ? `-${slug(p.name)}` : ''}${printExtension()}`;
+      const kind = isRobot(state.printer) ? 'Program' : 'G-code';
+      const gcode = el('button', { type: 'button', className: 'print-gcode', text: kind, title: `${kind} for the ${PRINTERS[state.printer].name}: ${p.name}` });
       gcode.addEventListener('click', () => saveFile(i ? `print:${i}` : 'print', file, true));
       card.append(gcode);
       return card;

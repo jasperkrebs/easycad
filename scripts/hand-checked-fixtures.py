@@ -300,6 +300,195 @@ def filament_machine():
     return lines, closest
 
 
+# ---- A robot program (KRL) for the KUKA cell of the SPHR handover (crates/core/src/krl.rs).
+
+KRL_ORIGIN = (Q("1088.304936"), Q("-115.143158"), Q(-659))
+KRL_BASE = (Q(0), Q(50), Q("-0.3"))
+KRL_SCREW = 30  # screw units per mm^3/s
+KRL_MAX_TURN = 30  # deg/s
+
+
+def krl_two(v):
+    """Two decimals, half away from zero, never -0.00 (v a float: its exact value)."""
+    d = Decimal(v).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return "0.00" if d == 0 else str(d)
+
+
+def krl_pose(p, n):
+    """The pose of the nozzle tip at world p (exact), pointing along n (floats): z along n, x
+    world -Y made square to it, y = z cross x; A, B, C as KUKA's ZYX angles of that matrix, in
+    the base frame (a pure shift here: the handover's TR_BASE has no rotation)."""
+    import math
+    z = n
+    yd = (0.0, -1.0, 0.0)
+    k = sum(a * b for a, b in zip(z, yd))
+    x = tuple(a - k * b for a, b in zip(yd, z))
+    lx = math.sqrt(sum(a * a for a in x))
+    x = tuple(a / lx for a in x)
+    y = (z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0])
+    r00, r10, r20 = x
+    r21, r22 = y[2], z[2]
+    a = math.degrees(math.atan2(r10, r00))
+    b = math.degrees(math.atan2(-r20, math.hypot(r00, r10)))
+    c = math.degrees(math.atan2(r21, r22))
+    pos = [dec(p[i] - KRL_BASE[i]) for i in range(3)]
+    parts = [str(v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) for v in pos]
+    parts = ["0.00" if Decimal(v) == 0 else v for v in parts]
+    angles = [krl_two(v) for v in (a, b, c)]
+    return "{X %s,Y %s,Z %s,A %s,B %s,C %s}" % tuple(parts + angles), [*pos], [a, b, c]
+
+
+def robot_square():
+    """A square on the bed, then up a layer onto a second one, the nozzle tilting on the way.
+
+    The toolpath (built in krl.rs's test, not from a recipe): a line of width 5 and layer 2.5
+    at 10 mm/s through the points below (as drawn; the nozzle is a layer higher), the nozzle
+    upright for the first four and then along the axes given. The program's rules (krl.rs):
+    - each point is the origin's world position plus the point, written less the base frame;
+    - each move at 10 mm/s, at most 25, and at most 30 deg/s of wrist turn: speed <= 30 * length
+      / turn, written to 0.1 mm/s rounded down;
+    - the screw command is round(bead area * speed * 30), bead area (w - h) h + pi (h/2)^2;
+    - the part fan (255) comes on at the first point a layer above the first;
+    - tolerance 0: every point is kept.
+    """
+    import math
+    h = Q(5, 2)
+    drawn = [(0, 0, 0), (20, 0, 0), (20, 20, 0), (0, 20, 0), (0, 0, h), (20, 0, h), (20, Q(41, 10), h)]
+    pts = [(Q(x), Q(y), Q(z) + h) for x, y, z in drawn]
+    s30, c30 = 0.5, math.sqrt(3) / 2
+    s20, c20 = math.sin(math.radians(20)), math.cos(math.radians(20))
+    up = (0.0, 0.0, 1.0)
+    axes = [up, up, up, up, (s30, 0.0, c30), (0.0, s30, c30), (0.0, -s20, c20)]
+    # The turn between the nozzle's directions, worked out by hand (all in the XZ or YZ planes,
+    # or with the cosine of the angle between two 30-degree leans 90 degrees apart: cos^2 30).
+    turns = [None, 0, 0, 0, 30, math.degrees(math.acos(0.75)), 50]
+    area = bead_area(5, h)
+    world = [tuple(KRL_ORIGIN[i] + p[i] for i in range(3)) for p in pts]
+    speed, command, notes = [None], [None], [None]
+    for i in range(1, len(pts)):
+        length = math.sqrt(sum(float(pts[i][k] - pts[i - 1][k]) ** 2 for k in range(3)))
+        v = 10.0
+        if turns[i]:
+            v = min(v, KRL_MAX_TURN * length / turns[i])
+        v = math.floor(v * 10 + 1e-9) / 10
+        speed.append(v)
+        c = area * Decimal(str(v)) * KRL_SCREW
+        command.append(int(c.quantize(Decimal(1), rounding=ROUND_HALF_UP)))
+        notes.append(f"length {length:.4f}, turn {turns[i] or 0:.3f} deg, speed {v} mm/s, command {c:.3f}")
+    send = lambda s: f'RET = EKI_SEND("EthernetKRL_Config", "{s}#")'
+    pose = lambda i: krl_pose(world[i], axes[i])[0]
+    lines = [
+        "&ACCESS RVP",
+        "DEF EASYCAD()",
+        "; EasyCAD: Robot square",
+        "DECL EKI_STATUS RET",
+        "DECL SPL_VEL_MODE EC_MODE",
+        "DECL SPL_VEL_RESTR_STRUC EC_SAVED, EC_RESTR",
+        "BAS (#INITMOV,0)",
+        "$ACC.ORI1 = 150.0",
+        "$ACC.ORI2 = 150.0",
+        "$VEL.ORI1 = 200.0",
+        "$VEL.ORI2 = 200.0",
+        "$ADVANCE = 3",
+        send("STOP_EXTRUDE"),
+        "$TOOL = TR_TOOL",
+        "; Reuse tool 6 inertia and inertia-axis orientation; override mass and COM XYZ.",
+        "$LOAD = LOAD_DATA[6]",
+        "$LOAD.M = TR_MASS",
+        "$LOAD.CM.X = TR_COM.X",
+        "$LOAD.CM.Y = TR_COM.Y",
+        "$LOAD.CM.Z = TR_COM.Z",
+        "$BASE = TR_BASE",
+        "$IPO_MODE = #BASE",
+        "$ORI_TYPE = #VAR",
+        "; SIMULATION ONLY - verify cell, cables and controller.",
+        "PTP $AXIS_ACT",
+        send("SET_TEMP T0 220"),
+        send("SET_TEMP T1 190"),
+        send("SET_TEMP T2 70"),
+        send("SET_FAN1 0"),
+        send("SET_FAN2 5"),
+        "HALT",
+        "$VEL.CP = 0.05000",
+        "LIN " + krl_pose((Q("1088.304936"), Q("134.856842"), Q(-590)), up)[0],
+        "HALT",
+        "WAIT SEC 0",
+        send("CHANGE_SPEED1 12000"),
+        send("START_EXTRUDE"),
+        "WAIT SEC 20",
+        send(f"CHANGE_SPEED1 {command[1]}"),
+        "$VEL.CP = 0.10000",
+        "LIN " + krl_pose((world[0][0], world[0][1], world[0][2] + 5), up)[0],
+        "$VEL.CP = 0.02000",
+        "LIN " + pose(0),
+        "EC_MODE = $SPL_VEL_MODE",
+        "EC_SAVED = $SPL_VEL_RESTR",
+        "EC_RESTR = EC_SAVED",
+        "$SPL_VEL_MODE = #OPT",
+        "EC_RESTR.ORI_VEL = #ON",
+        "EC_RESTR.ORI_ACC = #ON",
+        "EC_RESTR.CART_ACC = #ON",
+        "$SPL_VEL_RESTR = EC_RESTR",
+        "SPLINE WITH $ACC={CP 0.050, ORI1 150.0, ORI2 150.0}",
+    ]
+    helpers = []
+    def trigger(instruction):
+        if instruction not in helpers:
+            helpers.append(instruction)
+        n = helpers.index(instruction) + 1
+        lines.append(f"  TRIGGER WHEN PATH=0 ONSTART DELAY=0 DO EASYCAD_EVT_{n}() PRIO=-1")
+    current = command[1]
+    fan_at = next(i for i in range(1, len(pts)) if pts[i][2] >= pts[1][2] + h)
+    for i in range(1, len(pts)):
+        if command[i] != current:  # 3348 -> 803: far more than 2 %
+            current = command[i]
+            trigger(send(f"CHANGE_SPEED1 {current}"))
+        if i == fan_at:
+            trigger(send("SET_FAN1 255"))
+        lines.append(f"  SPL {pose(i)} WITH $VEL.CP={Decimal(str(speed[i])) / 1000:.5f}")
+    last = world[-1]
+    lifted = (last[0], last[1], last[2] + 50)
+    lines += [
+        "ENDSPLINE",
+        ";END PRINT",
+        "WAIT SEC 0",
+        send("STOP_EXTRUDE"),
+        send("CHANGE_SPEED1 0"),
+        send("SET_TEMP T0 0"),
+        send("SET_TEMP T1 0"),
+        send("SET_TEMP T2 0"),
+        ";LIFT",
+        "$VEL.CP = 0.05000",
+        "LIN " + krl_pose(lifted, axes[-1])[0],
+        ";UPRIGHT",
+        "$VEL.ORI1 = 30.0",
+        "$VEL.ORI2 = 30.0",
+        "LIN " + krl_pose(lifted, up)[0],
+        "WAIT SEC 0",
+        send("SET_FAN1 0"),
+        send("SET_FAN2 0"),
+        "$SPL_VEL_RESTR = EC_SAVED",
+        "$SPL_VEL_MODE = EC_MODE",
+        "END",
+    ]
+    for n, h_ in enumerate(helpers, 1):
+        lines += ["", f"DEF EASYCAD_EVT_{n}()", "DECL EKI_STATUS RET", h_, "END"]
+    # How close the angles came to a rounding boundary (in units of the last digit).
+    closest = min(
+        margin(Decimal(v), 2)
+        for i in range(len(pts))
+        for v in krl_pose(world[i], axes[i])[2]
+    )
+    header = [
+        ";; Hand-checked fixture: a robot program (KRL) for the SPHR cell (scripts/hand-checked-fixtures.py).",
+        ";; The toolpath is built in crates/core/src/krl.rs's test; the robot's settings are the",
+        ";; handover's defaults with tolerance 0. Lines starting ';;' aren't part of the program.",
+        *[f";; move {i}: {notes[i]}" for i in range(1, len(pts))],
+        f";; bead area (w - h) h + pi (h/2)^2 = {area:.6f} mm^2",
+    ]
+    return "\n".join(header + lines) + "\n", closest
+
+
 def main():
     lines, count, closest = tilted_diamond()
     header = [
@@ -337,7 +526,9 @@ def main():
             *filament,
         ]
     ) + "\n"
+    robot, robot_closest = robot_square()
     files = {
+        OUT / "robot-square.src": robot,
         OUT / "spiralize-tilted.gcode": text,
         OUT / "machine-events.gcode": events_text,
         OUT / "filament-machine.gcode": filament_text,
@@ -354,6 +545,7 @@ def main():
         target.write_text(content)
     print(f"wrote spiralize-tilted.gcode ({count} printing moves); closest call to a rounding boundary: {closest:.3e} of a digit")
     print(f"wrote machine-events.gcode; closest call to a rounding boundary: {events_closest:.3e} of a digit")
+    print(f"wrote robot-square.src; closest call to a rounding boundary: {robot_closest:.3e} of a digit")
     print(f"wrote filament-machine.gcode; closest call to a rounding boundary: {filament_closest:.3e} of a digit")
 
 

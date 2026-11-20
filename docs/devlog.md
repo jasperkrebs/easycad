@@ -7,6 +7,36 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-20 (evening): the robot arm: nozzle tilt in the toolpath and a KUKA program (claude/amazing-newton-9qraf8)
+
+**Why:** the owner wants the Sphere (the Thread pendant) printed on the KUKA KR50 of the SPHR
+handover (`SPHR_Full_Print_Handover-2/`), with the nozzle along the wall instead of
+compensating overhangs for a Cartesian printer.
+
+**What landed:**
+- **The nozzle's direction in the toolpath** (`Toolpath::axis`), and the step
+  `tilt(path, max, smooth, bed, bead)` (`tilt.rs`): up the wall from the bead underneath,
+  averaged over `smooth` mm, at most `max`, growing from upright on the bed; each move's bead
+  becomes its gap along the nozzle (layer height ÷ cos lean × cos(lean − tilt)), so the
+  compensated wall gets its full bead back. The view's nozzle shows it; stats give the most tilt.
+- `wall::up_the_wall` finds the bead underneath on a hand-built line with neither turns nor
+  layers (`thread_shade`'s) too: the nearest earlier extruding move a quarter to three layers
+  lower within two widths across. Before, such a line was all upright.
+- **The KUKA program** (`krl.rs`): the handover's start, purge, spline settings, triggers and end;
+  poses in the base frame with the handover's roll; speed per move (flow ÷ bead, at most 25 mm/s,
+  wrist at most 30 °/s); screw command per mm³/s; points left out within 0.2 mm; SPLINE blocks of
+  1000; a test print's stop height. Refuses travels, machine events, a nozzle past 60°, points
+  off the bed. A ZIP of `.SRC` and `.DAT` from the Print tab (printer **KUKA KR50**).
+- **A hand-checked fixture** (`fixtures/hand-checked/robot-square.src`, worked out in
+  `scripts/hand-checked-fixtures.py`), and the owner's Sphere on the robot as a test recipe
+  (`fixtures/recipes/sphere-robot.easycad`): its first 40 mm make 1,621 spline segments, about
+  an hour at 60 mm³/s.
+- The Thread pendant template's **Robot** group (off by default: nothing changes for the G1).
+
+**Open:** run it on the controller (it must compile: `C_SPL`, 1000 segments a block); reach,
+joint-limit and tool-collision checks; calibrate the screw; travels and machine events on the
+robot ([roadmap.md](roadmap.md), Open).
+
 
 
 

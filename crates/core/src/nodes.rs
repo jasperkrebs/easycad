@@ -1849,6 +1849,40 @@ pub static NODES: &[Node] = &[
         run: Run::Op(curve_tools::bead),
     },
     Node {
+        name: "tilt",
+        group: "Toolpaths",
+        inputs: &[
+            req("path", "Toolpath", ""),
+            opt(
+                "max",
+                "Angle",
+                45.0,
+                "the most the nozzle leans from upright; 0: upright (nothing changes)",
+            ),
+            opt(
+                "smooth",
+                "Length",
+                20.0,
+                "the lean averaged over this much path, so the wrist turns gently",
+            ),
+            opt(
+                "bed",
+                "Length",
+                0.0,
+                "the most grows from 0 on the bed to `max` this high up (the tool's fans clear the bed)",
+            ),
+            opt(
+                "bead",
+                "Bool",
+                1.0,
+                "false: keep each move's bead (it's already the full layer, as `vase_revolve`'s `bead_layer`)",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "For a robot arm: the nozzle held along the wall instead of upright, each bead laid on the one underneath. The direction at each point is up the wall (from the bead underneath), averaged over `smooth` mm of path, at most `max` from upright (less near the bed with `bed`). Nothing moves; each move's bead becomes its gap along the nozzle (layer height ÷ cos(lean) × cos(lean − tilt), at most the part's layer height), so a wall sliced with overhang compensation by layer height gets its full bead again. Put it last: steps after it that build a new toolpath drop the tilt. Only the robot's program uses it (G-code stays upright); the view's nozzle shows it.",
+        run: Run::Op(printing::tilt),
+    },
+    Node {
         name: "adjust",
         group: "Toolpaths",
         inputs: &[

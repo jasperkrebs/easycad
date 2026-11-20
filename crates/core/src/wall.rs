@@ -21,6 +21,7 @@ pub fn up_the_wall(path: &Toolpath) -> Vec<P3> {
     let mut below: Vec<Option<P3>> = vec![None; n];
     under_on_spirals(path, &mut below);
     under_by_layers(path, &mut below);
+    under_nearby(path, &mut below);
     // Where the bead underneath is (almost) the same point, as on a flat closing turn that runs
     // round on top of the spiral's end, the direction carries on from the point before.
     let mut out = Vec::with_capacity(n);
@@ -163,6 +164,73 @@ fn under_by_layers(path: &Toolpath, below: &mut [Option<P3>]) {
                 }
             }
             *slot = best.map(|(_, q)| q);
+        }
+    }
+}
+
+/// Last, for points still without one (a line built by hand that climbs through many layers,
+/// as `thread_shade`'s, has neither turns nor layers): the nearest point, across the bed, of an
+/// extruding move printed earlier that lies a quarter to three of this move's layer heights
+/// lower and within two of its bead widths across. Found through a grid over the print, filled
+/// as the line goes, so only what's already printed counts.
+fn under_nearby(path: &Toolpath, below: &mut [Option<P3>]) {
+    let n = path.points.len();
+    if below.iter().all(|b| b.is_some()) || n < 2 {
+        return;
+    }
+    let printed = |k: usize| k > 0 && !path.travel.get(k).copied().unwrap_or(true);
+    let cell = (1..n)
+        .filter(|&k| printed(k))
+        .map(|k| {
+            let (w, h) = path.bead_of(k);
+            w.max(3.0 * h)
+        })
+        .fold(0.0, f64::max)
+        .max(0.5);
+    let key = |p: P3| {
+        (
+            (p[0] / cell).floor() as i64,
+            (p[1] / cell).floor() as i64,
+            (p[2] / cell).floor() as i64,
+        )
+    };
+    let mut grid: HashMap<(i64, i64, i64), Vec<usize>> = HashMap::new();
+    for (i, slot) in below.iter_mut().enumerate() {
+        let p = path.points[i];
+        if slot.is_none() && printed(i) {
+            let (w, h) = path.bead_of(i);
+            let reach = 2.0 * w;
+            let (lo, hi) = (p[2] - 3.0 * h, p[2] - 0.25 * h);
+            let (cx, cy, _) = key(p);
+            let r = (reach / cell).ceil() as i64;
+            let (z0, z1) = ((lo / cell).floor() as i64, (hi / cell).floor() as i64);
+            let mut best: Option<(f64, P3)> = None;
+            for dx in -r..=r {
+                for dy in -r..=r {
+                    for cz in z0..=z1 {
+                        let cellkey = (cx.saturating_add(dx), cy.saturating_add(dy), cz);
+                        for &k in grid.get(&cellkey).into_iter().flatten() {
+                            let q = nearest_on_segment(path.points[k - 1], path.points[k], p);
+                            if q[2] < lo || q[2] > hi {
+                                continue;
+                            }
+                            let d = (p[0] - q[0]).hypot(p[1] - q[1]);
+                            if d <= reach && best.is_none_or(|(bd, _)| d < bd) {
+                                best = Some((d, q));
+                            }
+                        }
+                    }
+                }
+            }
+            *slot = best.map(|(_, q)| q);
+        }
+        // This move is printed now: later points may lie on it.
+        if printed(i) {
+            let (ka, kb) = (key(path.points[i - 1]), key(p));
+            grid.entry(ka).or_default().push(i);
+            if kb != ka {
+                grid.entry(kb).or_default().push(i);
+            }
         }
     }
 }

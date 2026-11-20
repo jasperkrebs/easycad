@@ -1,12 +1,14 @@
 # Printers
 
-EasyCAD writes G-code for two machines. G-code drives real machines, so this page says what
-EasyCAD knows about each printer, where that comes from, and what it does with it.
+EasyCAD writes G-code for two machines, and a KUKA robot program (KRL) for a robot arm. Both
+drive real machines, so this page says what EasyCAD knows about each one, where that comes from,
+and what it does with it.
 
 | Printer | Recipe line | Kind | Start and end G-code |
 |---|---|---|---|
 | **Ginger Additive G1** | `printer "Ginger G1"` (older projects: `"Klipper pellet"`, same printer) | pellets, Klipper; E in mm³ | EasyGCode's, calling Ginger's own macros |
 | **Bambu P1P** | `printer "Bambu P1P 0.4"` | filament, 0.4 mm nozzle; E in mm of filament | EasyGCode's |
+| **KUKA KR50 (SPHR cell)** | `printer "KUKA KR50"` | pellets on a robot arm; a KRL program (`.SRC` + `.DAT` in a ZIP), extruder over EthernetKRL | the SPHR handover's (below) |
 
 The settings live in `web/js/print.js` (the Print tab, and the agent's `set_printer`); the
 heater limits also go to the engine (`gcode::Pellet`), which refuses G-code that would ask a
@@ -146,3 +148,65 @@ with the owner's OK and a hand-checked fixture (CLAUDE.md, G-code safety).
 A filament printer (1.75 mm, a 0.4 mm nozzle, a 256 × 256 × 256 mm bed), with EasyGCode's
 Marlin-style start and end blocks. Its hotend manages about 20 mm³/s with PLA (the max-flow
 check). Line widths between 1 and 2 times the nozzle pass the check.
+
+## The KUKA KR50 (the SPHR cell)
+
+A KUKA KR 50 R2500 (KRC5, KSS 8.7.9) carrying a pellet extruder, on a 1200 × 2800 mm table. Its
+extruder, heaters and fans are driven over EthernetKRL (`EKI_SEND` to `EthernetKRL_Config`:
+`START_EXTRUDE`, `STOP_EXTRUDE`, `CHANGE_SPEED1 <screw command>`, `SET_TEMP T0..T2`,
+`SET_FAN1/2`). Everything here comes from the **SPHR handover** in the repo,
+`SPHR_Full_Print_Handover-2/` (20 Nov 2026): its `HANDOVER.md`, its 30-layer test program
+(`Globe_E27_30_Layers/SPHR.SRC`, `SPHR.DAT`) and the scripts that build it (`build_spline.py`,
+`Globe_E27_Smoothed_Roll/reference/build_trumpet.py`, `kinematics.py`). The handover's programs
+were checked in its own simulation (collisions, joint limits), not yet on the controller.
+
+The writer is `easycad_core::krl`; the Print tab's printer **KUKA KR50** (`web/js/print.js`,
+`KR50`) holds the cell's settings. The program it writes is the handover's, line for line where
+they do the same thing:
+
+1. **Start:** frames from the DAT (`TR_TOOL`, `TR_BASE`), the load (`LOAD_DATA[6]` with the
+   tool's mass and centre of mass), orientation limits, `$IPO_MODE = #BASE`, `$ORI_TYPE = #VAR`;
+   heaters T0 220, T1 190, T2 70 °C, part fan off, firecap fan 5; **HALT** (heat up).
+2. **Purge:** to the purge point (world 1088.30, 134.86, −590) upright, **HALT**, `WAIT SEC 0`,
+   screw 12000 for 20 s, then the print's first command; to 5 mm above the first point at
+   100 mm/s and down onto it at 20 mm/s.
+3. **The print:** the spline restrictions on (orientation speed and acceleration, Cartesian
+   acceleration; the old ones saved), `SPLINE WITH $ACC={CP 0.050, ORI1 150.0, ORI2 150.0}`,
+   one `SPL` per kept point with its own `$VEL.CP`; extruder changes and the part fan as
+   `TRIGGER WHEN PATH=0 ONSTART` calling a small subroutine each (`<PROGRAM>_EVT_n`).
+4. **End:** `WAIT SEC 0`, extruder stopped, screw 0, heaters 0; lift 50 mm, the nozzle turned
+   upright at 30 °/s, fans off, the spline settings put back.
+
+What's EasyCAD's own:
+
+| | In EasyCAD |
+|---|---|
+| Where | each point is the recipe origin's world position (`robot.origin`: the handover's print centre, its z the measured bed −659) plus the toolpath point, written less `TR_BASE`. The Print tab's bed (1200 × 2800, the origin at 375, 1750 on it) is the cell's table: every point must be over it |
+| Nozzle | along the toolpath's `axis` (the `tilt` step; upright without it), with the handover's roll: world −Y kept across the nozzle. At most 60° from upright, or the program is refused |
+| Speed | each move's own (at a set flow, the flow ÷ its bead), at most 25 mm/s (`robot.maxSpeed`; the handover peaks at 21.3) and slow enough that the wrist turns at most 30 °/s (`robot.maxTurn`), to 0.1 mm/s rounded down |
+| Extruder | screw command = `robot.screw` (30) × mm³/s laid down (bead × extrusion × speed × multiplier), changed only when it moves more than 2 %. 30 comes from the handover's wall (300 per mm/s with a 4.5 × 2.5 mm bead, 9.91 mm²): **calibrate it** with a measured purge |
+| Points | within a stretch of one speed and command, a point is left out where the straight line past it stays within `robot.tolerance` (0.2 mm) and the nozzle within 0.5°; the spline runs smoothly through the rest |
+| Blocks | at most `robot.block` (1000) segments per SPLINE block, joined with `ENDSPLINE C_SPL` |
+| Test print | `robot.stopAt` (mm): stops at the first point above it, then the normal end. The handover's short test is 30 layers |
+
+**Not on the robot yet** (the program is refused): travel moves (it prints one continuous line),
+and the recipe's machine events (fans, pauses, temperatures).
+
+**To check on the controller first:** that it compiles (KSS 8.7: the `C_SPL` between blocks,
+and whether one SPLINE block may hold 1000 segments: KUKA's manual for the exact version is the
+authority); reach and joint limits (EasyCAD doesn't check them yet: the handover's
+`kinematics.py` and `rough_checks.py` do, for its globe); the tool's clearance to the bed and the
+print (the handover's fan proxies: at 45° the fans hang about 35 mm below the nozzle, so the
+Thread pendant's tilt grows from upright on the bed to 45° at 45 mm up); and the screw
+calibration.
+
+### Printing on the robot
+
+A recipe ends its toolpath with `tilt(max: 45 deg, smooth: 20 mm, bed: 45 mm)`
+([definition-language.md](definition-language.md)): the nozzle along the wall (from the bead
+underneath), averaged over 20 mm of path so the wrist turns gently, at most 45° and less near
+the bed. Keep overhang compensation by layer height on: on a Cartesian printer it squeezes a
+leaning wall's layers to the layer height × cos(lean), which is the same as stepping one layer
+along the wall; `tilt` then gives each move its full bead back along the nozzle. The Thread
+pendant has this as its **Robot** setting.
+

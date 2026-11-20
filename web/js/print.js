@@ -77,6 +77,43 @@ function bedCentre(bed) {
   return [bed[0] / 2, bed[1] / 2];
 }
 
+/**
+ * The KUKA KR50 R2500 pellet cell of the SPHR handover (KRC5, KSS 8.7.9, extruder over
+ * EthernetKRL). Its program is KRL (`easycad_core::krl`), not G-code; these are the handover's
+ * settings (docs/printers.md). The bed is the cell's 1200 × 2800 mm table with the recipe origin
+ * at the handover's print centre (world X 1088.30, Y −115.14); `robot.origin` is that centre in
+ * world mm, its z the measured bed.
+ */
+export const KR50 = {
+  robot: {
+    program: 'EASYCAD',
+    channel: 'EthernetKRL_Config',
+    origin: [1088.304936, -115.143158, -659],
+    base: [0, 50, -0.3, 0, 0, 0],
+    tool: [-508, 3.5, 139.34, -180, -90, 0],
+    loadData: 6,
+    mass: 18,
+    com: [-90.65, 5.95, 164.92],
+    heat: [220, 190, 70],
+    partFan: 255,
+    firecapFan: 5,
+    purgeAt: [1088.304936, 134.856842, -590],
+    purgeSeconds: 20,
+    purgeCommand: 12000,
+    transferSpeed: 100,
+    approachSpeed: 20,
+    screw: 30,
+    step: 2,
+    maxSpeed: 25,
+    maxTurn: 30,
+    tolerance: 0.2,
+    block: 1000,
+    stopAt: 0,
+    lift: 50,
+    uprightSpeed: 30,
+  },
+};
+
 // maxFlow: the most volumetric flow (mm³/s) the printer melts reliably, for the Print tab's check
 // (0: not checked). The P1P's hotend manages about 20 mm³/s with PLA; Ginger's profiles run the
 // G1 at 200. recipeName: what a recipe's `printer "…"` line says for it. limits: ranges the
@@ -105,7 +142,31 @@ export const PRINTERS = {
       pellet: { ...EASYGCODE.pellet, minExtrudeTemp, maxTemp, maxBed },
     },
   },
+  robot: {
+    name: 'KUKA KR50 (SPHR cell)',
+    recipeName: 'KUKA KR50',
+    nozzle: null,
+    robot: true,
+    defaults: { ...EASYGCODE, mode: 'pellet', bed: [1200, 2800, 1000], center: [375, 1750], maxFlow: 0, robot: structuredClone(KR50.robot) },
+  },
 };
+
+/** What a field applies to: a robot's own settings, or a printer's mode. */
+function kindOf(profile) {
+  return profile.robot ? 'robot' : profile.mode;
+}
+
+/** Whether a field is a setting of this printer. */
+function applies(f, profile) {
+  const kind = kindOf(profile);
+  if (f.not === kind) return false;
+  return !f.only || f.only === kind;
+}
+
+/** Whether the printer is a robot arm, whose file is a program (a ZIP of KRL), not G-code. */
+export function isRobot(id) {
+  return Boolean(PRINTERS[id]?.robot);
+}
 
 /** The bed the pellet printer had before it was the G1, replaced when found in saved settings. */
 const OLD_PELLET_BED = [400, 400, 400];
@@ -131,11 +192,11 @@ const FIELDS = [
   { key: 'bed.2', label: 'Build height', unit: 'mm', min: 1, max: 5000 },
   { key: 'center.0', label: 'Recipe origin at X', unit: 'mm', min: -5000, max: 5000 },
   { key: 'center.1', label: 'Recipe origin at Y', unit: 'mm', min: -5000, max: 5000 },
-  { key: 'travelSpeed', label: 'Travel speed', unit: 'mm/s', min: 1, max: 2000 },
+  { key: 'travelSpeed', label: 'Travel speed', unit: 'mm/s', min: 1, max: 2000, not: 'robot' },
   { key: 'maxFlow', label: 'Max flow (0: no check)', unit: 'mm³/s', min: 0, max: 2000 },
   { key: 'multiplier', label: 'Extrusion multiplier', unit: '×', min: 0.01, max: 5 },
-  { key: 'endLift', label: 'Lift at the end', unit: 'mm', min: 0, max: 1000 },
-  { key: 'includeStartEnd', label: 'Start and end G-code', kind: 'toggle' },
+  { key: 'endLift', label: 'Lift at the end', unit: 'mm', min: 0, max: 1000, not: 'robot' },
+  { key: 'includeStartEnd', label: 'Start and end G-code', kind: 'toggle', not: 'robot' },
   { key: 'filament.diameter', label: 'Filament diameter', unit: 'mm', min: 0.6, max: 4.9, only: 'filament' },
   { key: 'filament.nozzle', label: 'Nozzle temperature', unit: '°C', min: 0, max: 350, only: 'filament' },
   { key: 'filament.bed', label: 'Bed temperature', unit: '°C', min: 0, max: 150, only: 'filament' },
@@ -147,6 +208,22 @@ const FIELDS = [
   { key: 'pellet.pa', label: 'Pressure advance', unit: '', min: 0, max: 2, only: 'pellet' },
   { key: 'pellet.purge', label: 'Purge amount', unit: '', min: 0, max: 100000, only: 'pellet' },
   { key: 'pellet.fan', label: 'Part fan', unit: '%', min: 0, max: 100, only: 'pellet' },
+  { key: 'robot.stopAt', label: 'Stop at this height (a test print; 0: all)', unit: 'mm', min: 0, max: 5000, only: 'robot' },
+  { key: 'robot.screw', label: 'Screw command per mm³/s', unit: '', min: 0.01, max: 1000, only: 'robot' },
+  { key: 'robot.maxSpeed', label: 'Fastest print move', unit: 'mm/s', min: 0.5, max: 250, only: 'robot' },
+  { key: 'robot.maxTurn', label: 'Fastest wrist turn', unit: '°/s', min: 1, max: 200, only: 'robot' },
+  { key: 'robot.tolerance', label: 'Points left out within (0: keep all)', unit: 'mm', min: 0, max: 5, only: 'robot' },
+  { key: 'robot.block', label: 'Segments per SPLINE block', unit: '', min: 2, max: 10000, only: 'robot' },
+  { key: 'robot.heat.0', label: 'Heater T0', unit: '°C', min: 0, max: 300, only: 'robot' },
+  { key: 'robot.heat.1', label: 'Heater T1', unit: '°C', min: 0, max: 300, only: 'robot' },
+  { key: 'robot.heat.2', label: 'Heater T2 (firecap)', unit: '°C', min: 0, max: 300, only: 'robot' },
+  { key: 'robot.partFan', label: 'Part fan (FAN1, from layer 2)', unit: '/255', min: 0, max: 255, only: 'robot' },
+  { key: 'robot.firecapFan', label: 'Firecap fan (FAN2)', unit: '/255', min: 0, max: 255, only: 'robot' },
+  { key: 'robot.purgeSeconds', label: 'Purge time', unit: 's', min: 0, max: 600, only: 'robot' },
+  { key: 'robot.purgeCommand', label: 'Purge screw command', unit: '', min: 0, max: 20000, only: 'robot' },
+  { key: 'robot.origin.0', label: 'Print centre, world X', unit: 'mm', min: -5000, max: 5000, only: 'robot' },
+  { key: 'robot.origin.1', label: 'Print centre, world Y', unit: 'mm', min: -5000, max: 5000, only: 'robot' },
+  { key: 'robot.origin.2', label: 'Bed, world Z', unit: 'mm', min: -5000, max: 5000, only: 'robot' },
 ];
 
 const storageKey = (id) => `easycad.printer.${id}`;
@@ -187,7 +264,7 @@ export function loadProfile(id) {
     const oldCenter = id === 'pellet' && JSON.stringify(saved.center) === JSON.stringify(OLD_PELLET_CENTER);
     if (oldCenter) delete saved.center;
     for (const f of FIELDS) {
-      if (f.only && f.only !== profile.mode) continue;
+      if (!applies(f, profile)) continue;
       const v = getPath(saved, f.key);
       if (typeof v !== typeof getPath(profile, f.key) || (typeof v === 'number' && !Number.isFinite(v))) continue;
       if (typeof v === 'number') {
@@ -212,6 +289,7 @@ function saveProfile(id, profile) {
  * pellet"; it's the only Klipper printer so far.
  */
 export function printerFor(name) {
+  if (/kuka|\bkr ?50\b|robot/i.test(name || '')) return 'robot';
   return /ginger|\bg1\b|pellet|klipper/i.test(name || '') ? 'pellet' : 'p1p';
 }
 
@@ -254,7 +332,7 @@ export function changeSettings(id, profile, patch) {
   const notes = [];
   for (const [key, raw] of Object.entries(patch)) {
     const f = FIELDS.find((x) => x.key === key);
-    if (!f || (f.only && f.only !== profile.mode)) {
+    if (!f || !applies(f, profile)) {
       notes.push(`\`${key}\` is not a setting of the ${PRINTERS[id].name}`);
       continue;
     }
@@ -287,8 +365,8 @@ export function changeSettings(id, profile, patch) {
  * @param {any} profile
  */
 export function describePrinter(id, profile) {
-  const all = Object.entries(PRINTERS).map(([k, p]) => `${k} (${p.name}, ${p.defaults.mode})`);
-  const fields = FIELDS.filter((f) => !f.only || f.only === profile.mode).map(
+  const all = Object.entries(PRINTERS).map(([k, p]) => `${k} (${p.name}, ${p.robot ? 'robot arm, KRL program' : p.defaults.mode})`);
+  const fields = FIELDS.filter((f) => applies(f, profile)).map(
     (f) => `${f.key} = ${getPath(profile, f.key)}${f.unit ? ` ${f.unit}` : ''} (${f.label})`,
   );
   const material = PRINTERS[id].machine ? ` Material preset: ${materialOf(id, profile)?.name ?? 'none (own settings)'}.` : '';
@@ -304,7 +382,8 @@ export function machineGuide() {
 - Flow: Ginger's profiles run 200 mm³/s (up to 500 on big nozzles with the right material). Below about ${G1.lowFlow} mm³/s (and really around 100) the barrel inlet can plug, because the passing pellets are what cool it: at low flow, run the upper (feeding) zone 10–40 °C below the other two, never hotter. Layer time, not flow, is usually what limits a good print: thick beads need time to cool.
 - Zones: upper (feeding, Klipper's \`extruder\`), middle (melting, \`extruder1\`), lower (nozzle, \`extruder2\`), each ${minExtrudeTemp}–${maxTemp} °C (Klipper won't extrude below ${minExtrudeTemp}); bed up to ${maxBed} °C. Material presets (set_printer \`material\`, from Ginger Slicer): ${G1.materials.map((m) => `${m.name} ${m.up}/${m.mid}/${m.down}, bed ${m.bed}, ${m.maxFlow} mm³/s`).join('; ')}.
 - Pressure advance 0 for vase-mode spirals (otherwise a repeating texture on the wall). Part fan at most about ${G1.maxFan} %. Travel up to ${maxSpeed} mm/s.
-- If it stops with "stepper too far in past", the G-code has too many tiny segments: raise the recipe's chord tolerance.`;
+- If it stops with "stepper too far in past", the G-code has too many tiny segments: raise the recipe's chord tolerance.
+The robot (\`robot\`) is the SPHR handover's KUKA KR50 pellet cell: its file is a KRL program (a ZIP of .SRC and .DAT), not G-code. It prints one continuous line (no travels, no machine events). For the arm to hold the nozzle along the wall, the toolpath ends with \`tilt(max: 45 deg, smooth: 20 mm, bed: 45 mm)\` (keep overhang compensation by layer height on: it steps each layer along the wall; \`tilt\` gives each move its full bead back). \`robot.stopAt\` makes a test print that stops at that height; \`robot.screw\` (screw command per mm³/s, 30 from the handover's wall) needs calibrating.`;
 }
 
 /**
@@ -332,7 +411,7 @@ export function renderPrinterSettings(host, id, profile, onChange) {
     host.append(el('div', { className: 'setting choice' }, [el('label', { htmlFor: 'printer-material', text: 'Material (Ginger Slicer’s profiles)' }), select]));
   }
   for (const f of FIELDS) {
-    if (f.only && f.only !== profile.mode) continue;
+    if (!applies(f, profile)) continue;
     const fieldId = `printer-${f.key.replace('.', '-')}`;
     const row = el('div', { className: `setting ${f.kind || 'number'}` }, [el('label', { htmlFor: fieldId, text: f.label })]);
     if (f.kind === 'toggle') {
@@ -448,6 +527,17 @@ export function printChecks(st, printerId, profile) {
   if (printer.nozzle) {
     const ratio = st.widthMm / printer.nozzle;
     checks.push([ratio >= 1 && ratio <= 2 ? 'ok' : 'warn', `Line width is ${fmt(ratio, 1)}× the ${fmt(printer.nozzle, 1)} mm nozzle`]);
+  }
+  if (printer.robot) {
+    const tilt = st.maxTiltDeg || 0;
+    checks.push(
+      tilt > 0
+        ? [tilt <= 45 ? 'ok' : 'warn', `Nozzle along the wall, up to ${fmt(tilt, 1)}° from upright`]
+        : ['warn', 'Nozzle upright everywhere: add `tilt` to the toolpath for the arm to follow the wall'],
+    );
+    if (st.travelLengthMm > 0) checks.push(['bad', 'Travel moves: the robot prints one continuous line for now']);
+    const stop = profile.robot?.stopAt || 0;
+    if (stop > 0) checks.push(['warn', `A test print: stops ${fmt(stop)} mm above the bed`]);
   }
   if (machine) {
     if (continuous && profile.pellet.pa > 0) {

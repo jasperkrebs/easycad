@@ -339,3 +339,57 @@ fn a_thinner_wall_on_the_angled_cone() {
     }
     assert!(walls * 10 > pts.len() * 6, "{walls} of {}", pts.len());
 }
+
+/// The owner's Sphere (a 330 mm pendant, the opening 181 mm across on the bed) on the SPHR
+/// handover's KUKA arm: the nozzle follows the wall, at most 45° and upright on the bed, and the
+/// program for a short test (the first 40 mm) writes. `fixtures/recipes/sphere-robot.easycad`.
+#[test]
+fn the_sphere_on_the_robot() {
+    use crate::krl;
+    let recipe = include_str!("../../../fixtures/recipes/sphere-robot.easycad");
+    let e = evaluate(recipe, Quality::Final);
+    assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
+    let print = &e.prints[0];
+    let path = &print.path;
+    let axes = path.axes().expect("the nozzle tilts");
+    let lean = |v: &P3| v[2].clamp(-1.0, 1.0).acos().to_degrees();
+    let floor = path.points[1][2];
+    for (p, v) in path.points.iter().zip(axes) {
+        // At most 45°, growing from upright on the bed over the first 45 mm.
+        let most = 45.0 * ((p[2] - floor) / 45.0).clamp(0.0, 1.0);
+        assert!(lean(v) <= most + 1e-6, "{} at z {}", lean(v), p[2]);
+    }
+    assert!((print.stats.max_tilt_deg - 45.0).abs() < 1e-6);
+    // Leaning out at the bottom: well up the first stretch the nozzle leans out (radially).
+    let i = path.points.iter().position(|p| p[2] > 50.0).unwrap();
+    let (p, v) = (path.points[i], axes[i]);
+    assert!(lean(&v) > 20.0 && p[0] * v[0] + p[1] * v[1] > 0.0);
+    // The test program: the first 40 mm.
+    let robot = krl::Robot {
+        stop_at: 40.0,
+        ..krl::Robot::default()
+    };
+    let program = krl::write(path, &robot, krl::BED, krl::CENTER, 1.0, "Sphere").unwrap();
+    assert!(program.segments > 500, "{}", program.segments);
+    assert!(program.src.contains("SET_FAN1 255"));
+    assert!(program.src.ends_with("END\r\n"));
+    // Without the robot: no tilt, the same toolpath as the Ginger G1 prints.
+    let flat = evaluate(
+        &set_values(recipe, &[("robot".to_string(), Literal::Bool(false))]).unwrap(),
+        Quality::Final,
+    );
+    let flat_path = &flat.prints[0].path;
+    assert!(flat_path.axes().is_none());
+    assert_eq!(flat_path.points, path.points);
+    // Tilting gives the squeezed wall its bead back, never more than a full layer (2.5 mm).
+    let mut grown = 0;
+    for i in 1..path.points.len() {
+        let (before, after) = (flat_path.bead_of(i).1, path.bead_of(i).1);
+        assert!(
+            after >= before - 1e-9 && after <= before.max(2.5) + 1e-9,
+            "{i}: {before} → {after}"
+        );
+        grown += usize::from(after > before + 1e-6);
+    }
+    assert!(grown > path.points.len() / 4, "{grown}");
+}

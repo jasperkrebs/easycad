@@ -1,0 +1,126 @@
+#| EasyCAD project (http://localhost:8080/). This file is the whole project: the recipe, with each setting's
+#| value in its `param` line.
+#| For an AI: change the recipe text and give back the whole file. A `param` line is a slider in
+#| the settings window; `group` lines sort them; comments start with #. For the language and
+#| every step with its inputs, paste in the text from "Copy for AI" on EasyCAD's Recipe tab.
+#| To use it: EasyCAD, Settings, Open. (Lines starting with #| are this note; EasyCAD leaves them
+#| out when it opens the file. A line starting with #~ colors holds the 3D view's colours.)
+
+easycad 0.1
+project "Sphere on the robot"
+printer "KUKA KR50"
+note "A pendant shade whose wings thread onto the lampholder (E27 or E14), printed as one line: the Thread Lampshade Sketcher's pendant, point for point (open its settings files here: Open, a .json from the sketcher). The outer wall follows the shape; at each entry point the line turns in, first as a crease, then as two wings running round a middle and an inner ring. In the grip the inner rings sit on the socket's barrel: every ring is a true helix one pitch a turn, so the shade screws on."
+note "Printable on top of the sketch: the first layer sits on the bed, overhangs are compensated by layer height on the outer wall all the way up, while the thread on the socket keeps its pitch (a true helix) and the wings in between climb gently from one to the other, the line width and flow are your own, and the checks say when the wings can't form, the socket shows or the wall leans too far."
+
+group "Socket"
+param socket       = "E27" of ["E27", "E14", "custom"] "Socket"
+param socket_d     = 40 mm   in 20..50 step 0.1     "Socket barrel Ø"  when socket = "custom"
+param socket_pitch = 2.5 mm  in 1.5..3.5 step 0.05  "Thread pitch (= layer height)"  when socket = "custom"
+param socket_h     = 55 mm   in 20..90 step 0.5     "Socket body height"  when socket = "custom"
+param engagement   = 1 mm    in -1..2.5 step 0.1    "Thread engagement onto the socket"
+param grip         = 28.5 mm   in 5..60 step 0.5      "Grip height"
+param hide         = 35 mm   in 0..150 step 2.5     "Grip depth below the top (hides the socket)"
+param top          = "crease" of ["crease", "full"] "Above the grip"
+param crease       = 15 mm    in 1..30 step 0.5      "Crease depth above the grip"  when top = "crease"
+param z_by         = "angle" of ["angle", "flat", "length"] "Layers (angle: rising a layer a turn, no seam; flat: level, stepping up at a seam)"
+
+group "Shade"
+param height       = 330 mm  in 80..3000 step 2.5   "Height"
+param profile      = [[0, 90.5], [0.052019, 115.258918], [0.115748, 136.821236], [0.189421, 154.588944], [0.270994, 168.06927], [0.358204, 176.888351], [0.448634, 180.801597], [0.539774, 179.700478], [0.629097, 173.615533], [0.714127, 162.715522], [0.792504, 147.302746], [0.862055, 127.804664], [0.920851, 104.762039], [0.967262, 78.813935], [1, 50.68]] "Shape: [height 0..1, radius to the bead's middle, 1 for a corner]"
+
+group "Wings"
+param wing_shape   = "sketcher" of ["leaf", "sketcher"] "Wing shape"
+param entries      = 5       in 1..8 step 1         "Entry points (two wings each)"
+param wing_zone    = 202.5 mm in 0..400 step 0.5    "Wing zone (down from the top)"
+param wing_curve   = [[0, 0], [0.29919, 0.930769], [0.527585, 1], [1, 1]] "Leaf: [height 0..1 along the wing zone, width 0..1]"
+param max_overhang = 70 deg  in 10..80 step 1       "Max overhang (from vertical)"  when wing_shape = "sketcher"
+param tip_gap      = 0 mm    in 0..60 step 0.5      "Gap at the wing tips"
+param neck_gap     = 0 mm    in 0..30 step 0.5      "Entry slot width"
+param wall_gap     = 5 mm    in 0..15 step 0.5      "Air gap wall ↔ wing"
+param pin_gap      = 5 mm    in 0..15 step 0.5      "Air gap between wing lines (opens from none where the wings start)"
+param pockets      = true                           "No gap on the socket (closed pockets)"
+param rotation     = 0 deg   in 0..359 step 1       "Wing rotation"
+
+group "Wing path to the socket"
+param path         = [[0, 0], [0.5, 0.5], [1, 1]] "Path: [down from the grip 0..1, out to the wall 0..1]"  when wing_shape = "sketcher"
+param path_len     = 125 mm   in 5..400 step 2.5     "Path height (below the grip)"  when wing_shape = "sketcher"
+
+group "Print"
+param line         = 5 mm    in 1..12 step 0.1      "Line width (the thread's)"
+param wall_line    = 0 mm    in 0..12 step 0.1      "Wall and wings: line width (0: the thread's)"
+param wall_layer   = 0 mm    in 0..3.5 step 0.05    "Wall and wings: layer height (0: the pitch)"
+param flow         = 60      in 1..400              "Flow (mm³/s)"
+param resolution   = "draft" of ["draft", "fine"]   "Resolution"
+
+group "Robot"
+param robot        = true                            "Robot arm: the nozzle along the wall"
+param tilt_max     = 45 deg  in 0..60 step 1        "Most nozzle tilt"  when robot
+param tilt_smooth  = 20 mm   in 0..100 step 1       "Tilt smoothed over"  when robot
+param tilt_bed     = 45 mm   in 0..200 step 2.5     "Full tilt from this high (the fans clear the bed)"  when robot
+
+group "Overhangs"
+param compensation = "layer height" of ["layer height", "off"] "Compensation (the wall and the wings each their own; the thread keeps its pitch)"
+param strength     = 100 %   in 0..100              "Strength"  when compensation = "layer height"
+param steep        = 0       in 0..4 step 0.1       "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
+param pivot        = 45 deg  in 5..85 step 1        "Steep curve pivot (as now at this angle)"  when steep
+
+# The socket: its barrel's diameter, its thread's pitch (the layer height: each layer lays one
+# turn of thread) and its body's height (it should stay hidden in the shade). E14's are the
+# sketcher's placeholders: measure yours.
+row      = index_of(["E27", "E14", "custom"], socket)
+pitch    = item([2.5, 2, socket_pitch], row)
+sock_d   = item([40, 28, socket_d], row)
+sock_h   = item([55, 45, socket_h], row)
+comp     = less(abs(index_of(["layer height", "off"], compensation)), 0.5)
+# The leaf: the wings as drawn (their width from the leaf, a straight path from where they start
+# to the socket, no max overhang); else the sketcher's (its path and max overhang).
+leaf     = less(abs(index_of(["leaf", "sketcher"], wing_shape)), 0.5)
+step_len = pick(index_of(["draft", "fine"], resolution), 1.2, 2.5)
+# The wall's and wings' own bead (0: the thread's): the thread grows from it into its own (the
+# pitch and `line`) over the layers before the grip, and back after.
+wline    = pick(wall_line, wall_line, line)
+wlayer   = pick(wall_layer, min(wall_layer, pitch), pitch)
+
+# ---- The shade, as one line (a layer below the nozzle), its outer wall, and what came out:
+# [top, layers, wall pushed out, too many entries, wings slowed, path slowed, steepest lean,
+# grip bottom, grip top, grip radius, grip full, socket shows, room above the grip, room at the
+# top, wing zone short, length, widest Ø, bottom Ø, thinnest layer, the wing rings' biggest step
+# in or out from one layer to the next, the steepest the arm climbs between the wings' heights
+# and the wall's (°), the thinnest the wings and the arm get (mm), and for their layer (1: as
+# planned), the thickest for it].
+# The line carries its own bead: each move's width and layer.
+shade_line = thread_shade(profile, height, wing_curve, path, path_len: path_len, entries: entries, wing_zone: wing_zone, max_overhang: max_overhang, tip_gap: tip_gap, neck_gap: neck_gap, wall_gap: wall_gap, pin_gap: pin_gap, rotation: rotation, socket_d: sock_d, engagement: engagement, grip: grip, hide: hide, socket_h: sock_h, top: top, crease: crease, z_by: z_by, line: line, layer: pitch, step: step_len, strength: comp * strength, steep: steep, pivot: pivot, wall_line: wall_line, wall_layer: wall_layer, pockets: pockets, leaf: leaf, output: "path")
+shade_wall = thread_shade(profile, height, wing_curve, path, path_len: path_len, entries: entries, wing_zone: wing_zone, max_overhang: max_overhang, tip_gap: tip_gap, neck_gap: neck_gap, wall_gap: wall_gap, pin_gap: pin_gap, rotation: rotation, socket_d: sock_d, engagement: engagement, grip: grip, hide: hide, socket_h: sock_h, top: top, crease: crease, z_by: z_by, line: line, layer: pitch, step: step_len, strength: comp * strength, steep: steep, pivot: pivot, wall_line: wall_line, wall_layer: wall_layer, pockets: pockets, leaf: leaf, output: "wall")
+info       = thread_shade(profile, height, wing_curve, path, path_len: path_len, entries: entries, wing_zone: wing_zone, max_overhang: max_overhang, tip_gap: tip_gap, neck_gap: neck_gap, wall_gap: wall_gap, pin_gap: pin_gap, rotation: rotation, socket_d: sock_d, engagement: engagement, grip: grip, hide: hide, socket_h: sock_h, top: top, crease: crease, z_by: z_by, line: line, layer: pitch, step: step_len, strength: comp * strength, steep: steep, pivot: pivot, wall_line: wall_line, wall_layer: wall_layer, pockets: pockets, leaf: leaf, output: "info")
+
+# ---- What the sketcher checks, and what printing adds.
+checked = shade_line
+  |> require(item(info, 10), "The wings aren't fully formed over the whole grip: make the wing zone longer, or let the wing curve reach full length earlier", warn: true)
+  |> require(less(item(info, 11), 0.5), "The socket sticks out above the shade: set the grip deeper below the top", warn: true)
+  |> require(greater(item(info, 12), 0.5), "The wings going back out above the grip touch the socket body: move the grip (the sketcher's wings: or raise the max overhang)", warn: true)
+  |> require(greater(item(info, 13), 15), "Less than 15 mm between the socket and the top opening: tight for fingers holding the socket while screwing", warn: true)
+  |> require(1 - item(info, 5), "The wing path is steeper than the max overhang in places, so the wings follow it as fast as they can: a longer path, a gentler curve or a larger max overhang", warn: true)
+  |> require(1 - item(info, 14), "The wing zone is too short for the wings to come in from the wall before the grip (the sketcher's: shorter than the grip depth + grip + path height): make it longer", warn: true)
+  |> require(1 - item(info, 2), "The outer shape is narrower than the wings need, so the outer wall was pushed out in the wing zone", warn: true)
+  |> require(1 - item(info, 3), "Too many entry points for this diameter, so the wings can only be stubs", warn: true)
+  |> require(1 - item(info, 4), "The wing curve grows faster than the max overhang allows, so it was slowed down", warn: true)
+  |> require(less(item(info, 19), wline / 2 + 0.01), "The wings step in or out more than half a line a layer in places, so their new rings hang off the ones below: a longer wing zone or a gentler leaf (the sketcher's wings: a lower max overhang)", warn: true)
+  |> require(comp + leaf + less(item(info, 6), max_overhang + 0.5), "The outer wall leans more than the max overhang: turn on the overhang compensation", warn: true)
+  |> require(less(item(info, 20), 15), "The arm climbs steeper than 15° in places (the wings' heights and the wall's far apart): the nozzle may drag on the layer below. A thicker wall layer, a shorter grip, a wider shade or less compensation", warn: true)
+  |> require(greater(item(info, 22), 0.5), "The wings' or the arm's layers get under half their height in places (they move in or out while their heights and the wall's part): a thicker wall layer, less compensation or a gentler leaf", warn: true)
+  |> require(less(item(info, 23), 1.5), "The arm's layers get over 1.5 times their height in places (the wings moving in while far below or above the wall's heights): a gentler leaf, a longer wing zone or less compensation", warn: true)
+  |> require(1 - less(abs(index_of(["flat", "angle", "length"], z_by) - 2), 0.5), "Layers by length: the grip isn't a true helix (about ±0.2–0.4 mm off). Use flat or angle before screwing it onto a socket", warn: true)
+
+# ---- Printed as it hangs, the opening on the bed; each move extruded for the line's own bead
+# (the wall's, the thread's, or between), on the first layer for the gap over the bed.
+# On a robot arm the nozzle follows the wall (at most tilt_max from upright, less near the bed so
+# the tool's fans clear it), each bead laid on the one underneath: overhang compensation then steps
+# each layer along the wall, and tilt gives each move its full bead back.
+path_out = toolpath([checked], width: line, layer: pitch, flow: flow, layers: item(info, 1))
+  |> tilt(max: pick(robot, tilt_max, 0), smooth: tilt_smooth, bed: tilt_bed)
+wall = revolve(shade_wall)
+
+export wall as "thread-pendant.step"
+
+show wall, path_out
+print path_out
