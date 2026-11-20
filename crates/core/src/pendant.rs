@@ -1044,10 +1044,23 @@ fn thread_offsets(
 
 /// How much of the thread's offset (and bead) a point at radius `r` takes: all of it from `lo`
 /// in (the middle ring, with wings), none from a line inside the outer wall outwards (`hi`),
-/// evenly between: the arm a straight climb, its angle no steeper anywhere than on average.
+/// evenly between, the arm a straight climb, except where it leaves the wall: over the arm's
+/// outer `EASE` it starts level and curves into that climb (a parabola, so no corner), the
+/// rest a little steeper to make up for it. Each layer's arm is its own curve, so it doesn't
+/// sit exactly on the one below; each point is extruded for the gap it's in.
 fn bridge(r: f64, lo: f64, hi: f64) -> f64 {
-    ((hi - r) / (hi - lo).max(1e-9)).clamp(0.0, 1.0)
+    let u = ((hi - r) / (hi - lo).max(1e-9)).clamp(0.0, 1.0);
+    let a = EASE;
+    let w = if u < a {
+        u * u / (2.0 * a)
+    } else {
+        u - a / 2.0
+    };
+    w / (1.0 - a / 2.0)
 }
+
+/// How much of the arm, from the wall in, curves into its climb (see `bridge`).
+const EASE: f64 = 0.3;
 
 /// The line, as points (x, y, z) with z one layer below the nozzle (as `toolpath` wants it:
 /// it prints a layer above its curve), and what came out.
@@ -1539,6 +1552,8 @@ fn finish(
     adj: impl Fn(f64, f64, f64) -> (f64, f64),
 ) -> (f64, f64, [f64; 3]) {
     let (z, len) = heights(rv, &h);
+    // (The wall's own heights: what the points follow the profile by, not the lead's.)
+    let z_wall = z.clone();
     // Each point's share of the thread's lead (0 where there's none).
     let mut lead = vec![0.0; z.len()];
     // The rings' heights with the whole lead, and with only the wings' own part of it.
@@ -1586,7 +1601,7 @@ fn finish(
     }
     // The thinnest gap under the bridge (the wings and the arm): in mm, and for its layer's rise.
     let mut thin = [f64::INFINITY, f64::INFINITY, 0.0];
-    for ((&x, &y), &zj) in rv.xs.iter().zip(&rv.ys).zip(&z).skip(skip) {
+    for (((&x, &y), &zj), &zw) in rv.xs.iter().zip(&rv.ys).zip(&z).zip(&z_wall).skip(skip) {
         let b = &t.bead;
         let r = x.hypot(y);
         let tall = bridge(r, t.lo, t.hi);
@@ -1622,7 +1637,7 @@ fn finish(
             b.wall[0] + (b.thread - b.wall[0]) * b.f * tall,
             b.wall[1] + (gap - b.wall[1]) * tall,
         ]);
-        let (x, y) = adj(x, y, zj);
+        let (x, y) = adj(x, y, zw);
         out.push([x, y, zj]);
     }
     (len, slope, thin)
@@ -2545,7 +2560,7 @@ mod tests {
     /// The owner's Sphere20test: the wall and the wings compensated each at its own rate, the
     /// arm between them taking up the difference. At the equator the wall hardly leans and keeps
     /// its own layers while the wings, leaning in, take thinner ones and fall behind; the thread
-    /// still a true helix through the whole grip, the arm under 15°.
+    /// still a true helix through the whole grip, the arm about 15° at its steepest.
     #[test]
     fn the_wings_and_the_wall_compensated_each_their_own() {
         let prof = [
@@ -2600,7 +2615,8 @@ mod tests {
         assert!(own < s.layer - 0.3, "{own}");
         let behind = plan.iter().map(|l| l.d - l.t).fold(0.0, f64::min);
         assert!(behind < -15.0 && behind > -30.0, "{behind}");
-        assert!(info.max_bridge_slope < 15.0, "{}", info.max_bridge_slope);
+        // (A little over 15°: the arm leaves the wall level, so it climbs steeper further in.)
+        assert!(info.max_bridge_slope < 16.5, "{}", info.max_bridge_slope);
         assert!(info.min_ring_share > 0.5, "{}", info.min_ring_share);
     }
 
@@ -2630,6 +2646,74 @@ mod tests {
                 .filter(|r| r[0] >= info.grip_bottom && r[0] <= info.grip_top)
                 .all(|r| r[3] == 0.0)
         );
+    }
+
+    /// The owner's half sphere: the leaf far behind the wall (compensated each its own), so the
+    /// arm climbs a long way from the thread up to the wall. The arm follows the shade's profile
+    /// at the wall's height, not its own (lower down the sphere is wider: it was pushed out and
+    /// squeezed against the wall, dropping almost straight down there); it leaves the wall level
+    /// and curves into its climb; and the crease above the grip sits on the arm below it (it
+    /// floated over it, a lip).
+    #[test]
+    fn the_arm_leaves_the_wall_level_and_the_crease_sits_on_it() {
+        let prof = [
+            [0.0, 247.5],
+            [0.190441, 243.328579],
+            [0.374463, 230.95493],
+            [0.545862, 210.796148],
+            [0.69886, 183.531754],
+            [0.828302, 150.08079],
+            [0.929822, 111.570835],
+            [1.0, 69.3],
+        ];
+        let s = Settings {
+            profile: prof.iter().map(|p| h(p[0], p[1])).collect(),
+            height: 237.5,
+            wing_zone: 215.0,
+            wing: vec![h(0.0, 0.0), h(0.367, 0.965), h(0.651, 1.0), h(1.0, 1.0)],
+            pin_gap: 5.0,
+            layers: Layers::Flat,
+            ..owners_sphere()
+        };
+        let radius = Radius::new(&s.profile, s.height, s.scale);
+        let (pts, info) = thread_shade(&s).unwrap();
+        assert!(info.grip_full);
+        // The line's steepest climb inside the wall: no steeper than the lead makes it.
+        let mut steepest: f64 = 0.0;
+        for w in pts.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let run = (b[0] - a[0]).hypot(b[1] - a[1]);
+            let inside = |p: &P3| p[0].hypot(p[1]) < radius.at(p[2] + 1.5 * s.layer) - 1.5 * s.line;
+            if run > 0.3 && inside(&a) && inside(&b) {
+                steepest = steepest.max((b[2] - a[2]).abs().atan2(run).to_degrees());
+            }
+        }
+        assert!(
+            steepest < info.max_bridge_slope + 3.0,
+            "{steepest} {}",
+            info.max_bridge_slope
+        );
+        // Level where it leaves the wall: the climb's share there a parabola's.
+        assert!(bridge(99.9, 40.0, 100.0) < 0.001);
+        assert!(bridge(40.0, 40.0, 100.0) > 0.999);
+        assert!((bridge(85.0, 40.0, 100.0) - bridge(85.1, 40.0, 100.0)).abs() < 0.01);
+        // The crease above the grip: each point a layer or so over what's under it (the highest
+        // point of an earlier turn within 0.6 of a line sideways), not hanging over the arm.
+        let mut crease = 0;
+        for (i, p) in pts.iter().enumerate() {
+            let r = p[0].hypot(p[1]);
+            if p[2] < info.grip_top || r > radius.at(p[2] + 1.5 * s.layer) - 1.5 * s.line {
+                continue;
+            }
+            let under = pts[..i.saturating_sub(50)]
+                .iter()
+                .filter(|q| q[2] < p[2] && (p[0] - q[0]).hypot(p[1] - q[1]) < 0.6 * s.line)
+                .map(|q| q[2])
+                .fold(f64::NEG_INFINITY, f64::max);
+            crease += 1;
+            assert!(p[2] - under < 1.5 * s.layer, "{p:?} {under}");
+        }
+        assert!(crease > 50, "{crease}");
     }
 
     /// Found by the fuzz test: a radius of 4 × 10⁹ mm in the profile took a minute to say it

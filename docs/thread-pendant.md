@@ -114,7 +114,14 @@ equator and the wings lean in, the wings fall behind; where the wall leans more 
 top), it catches up.
 
 - The arm blends the wings' heights into the wall's evenly along its length (a straight climb
-  from the middle ring out to inside the wall), so it's no steeper anywhere than on average.
+  from the middle ring out to inside the wall), except where it leaves the wall: over the arm's
+  outer 30 % it starts level and curves into the climb (no corner there; the rest a little
+  steeper for it). Each layer's arm is its own curve, so it doesn't sit exactly on the one
+  below; each point is extruded for the gap it's in. A crease above the grip follows the same
+  blend, so it sits on the arm under it.
+- Every point follows the shade's profile at the wall's height, not its own (on a sphere the
+  shape lower down is wider: an arm far below the wall was pushed out against it, dropping
+  almost straight down there, and the crease above it floated, a lip; fixed 20 Nov).
 - Both have the same number of layers, so if the wings fell so far behind that they couldn't
   finish the grip before the wall reaches the top, the difference is scaled back (each wing
   layer between its own and the wall's), as little as it takes.
