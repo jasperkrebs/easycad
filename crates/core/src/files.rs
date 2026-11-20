@@ -48,6 +48,30 @@ pub fn make(e: &Evaluation, which: Which, profile: &Profile) -> Result<File, Str
                 .prints
                 .get(i)
                 .ok_or("this recipe has no such part to print")?;
+            // A robot arm: its program's two files in a ZIP, named after the part.
+            if let Some(robot) = &profile.robot {
+                let title = if e.prints.len() == 1 {
+                    title.to_string()
+                } else {
+                    format!("{title} — {}", print.name)
+                };
+                let program = crate::krl::write(
+                    &print.path,
+                    robot,
+                    profile.bed,
+                    profile.center,
+                    profile.multiplier,
+                    &title,
+                )?;
+                return Ok(File {
+                    name: if e.prints.len() == 1 {
+                        String::new()
+                    } else {
+                        print.name.clone()
+                    },
+                    bytes: crate::krl::zip(&program),
+                });
+            }
             // One part: the project's file. Several: each named after its part.
             let (name, text) = if e.prints.len() == 1 {
                 (
@@ -69,6 +93,9 @@ pub fn make(e: &Evaluation, which: Which, profile: &Profile) -> Result<File, Str
         Which::Export(i) => {
             let export = e.exports.get(i).ok_or("this recipe has no such export")?;
             let bytes = match (&export.kind, &export.value) {
+                (ExportKind::Gcode, Value::Toolpath(_)) if profile.robot.is_some() => {
+                    return Err("on the robot, save the printed toolpath's program instead".into());
+                }
                 (ExportKind::Gcode, Value::Toolpath(p)) => {
                     gcode::write(p, profile, title)?.text.into_bytes()
                 }

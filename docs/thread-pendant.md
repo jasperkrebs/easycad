@@ -188,8 +188,23 @@ thread's and back: through the slot and along the wing rings (the bridge).
   (65–70°) do that; at 45° they don't, but a wide shade then needs a longer wing zone and path to
   bring the wings in to the socket.
 
+### On the robot arm
+
+The **Robot** settings print it on the SPHR handover's KUKA arm ([printers.md](printers.md)):
+the toolpath is the same (overhang compensation by layer height steps each wall layer one layer
+along the wall), and `tilt` holds the nozzle along the wall: at most **Most nozzle tilt** (45°)
+from upright, averaged over **Tilt smoothed over** (20 mm of line, so the wrist turns gently where
+the line runs in from the wall to the wings and back), and growing from upright on the bed to
+the most at **Full tilt from this high** (45 mm: the tool's fans hang about 35 mm below the
+nozzle at 45°). Each move then gets its full bead back along the nozzle. Choose the KUKA KR50 in
+the Print tab; its **Stop at this height** makes a short test. The owner's Sphere on the robot is
+`fixtures/recipes/sphere-robot.easycad` (60 mm³/s: about 1800 screw command, the handover's own
+wall at 6 mm/s; the first 40 mm take about an hour).
+
 ## Open
 
+- On the robot: a test print, and the arm's reach and tool clearance over the sphere's closing
+  top (not checked in EasyCAD yet).
 - A test print, E27 (the E14 barrel is the sketcher's placeholder, 28 mm: measure one).
 - The wing rings' step: the check says when; maybe a pace like the Wings' (at most half a line a
   layer) instead of the max overhang, for the wings only.

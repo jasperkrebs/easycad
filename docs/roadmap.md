@@ -17,6 +17,8 @@ archives ([October](devlog-2026-10.md), [November 1–14](devlog-2026-11.md)).
   [thread-pendant.md](thread-pendant.md)).
 - **G-code** for the G1 and the P1P with EasyGCode's start/end blocks; the EasyGCode projects
   golden-tested command for command; speeds as volumetric flow; bed, height and heater checks.
+- **A robot program** (KUKA KRL) for the SPHR handover's KR50 pellet cell, the nozzle along the
+  wall (`tilt`), with the handover's start and end ([printers.md](printers.md)).
 - **The views:** shape, toolpath, both, the **Plan** (a cut through the axis: tap a part, its
   marks lead to their settings, add and remove shades), the **Prints** overview (each part on its
   own bed); colour modes, beads at their real size or simulated, the nozzle upright or along the
@@ -33,7 +35,7 @@ archives ([October](devlog-2026-10.md), [November 1–14](devlog-2026-11.md)).
 | Stack | Rust engine compiled to WebAssembly + plain HTML/JS app (no framework, no bundler); phone-first; a PWA. |
 | Projects | Own text format, `.easycad`: the recipe is the single source of truth; every change (slider, agent, printer) is an edit to it. |
 | Making things | General steps, not one generator per project: a new project is a recipe; a new step only when no combination of steps can do it. |
-| Printers | Ginger G1 (Klipper, pellets) and Bambu P1P, EasyGCode's proven start/end G-code ([printers.md](printers.md)). |
+| Printers | Ginger G1 (Klipper, pellets) and Bambu P1P, EasyGCode's proven start/end G-code; the KUKA KR50 of the SPHR handover, its program's start and end ([printers.md](printers.md)). |
 | G-code safety | Nothing printable unless golden-tested against EasyGCode or a hand-checked fixture. |
 | Speeds | Always volumetric flow (mm³/s). |
 | AI | Optional: tuning, exports and printing never need it. The owner's own key, never on the site ([api-key.md](api-key.md)). |
@@ -61,6 +63,11 @@ so in the dev log); when something new comes up, add it here, not only in the de
 - **The agent:** not tried on the Lamp yet; still to do: the chat box as a command line, skills,
   a test set of real requests.
 - **Code health:** `viewport.js` (1,400 lines) and `app.js` (1,600) want splitting.
+- **The robot (KUKA KR50):** not yet run on the controller (it must compile: `C_SPL` between
+  SPLINE blocks, 1000 segments a block); no reach, joint-limit or tool-collision checks yet (the
+  handover's `kinematics.py` and `rough_checks.py` have the model); the screw calibration (30
+  per mm³/s) is from the handover's numbers, not measured; no travels or machine events on the
+  robot; the print time estimate doesn't know the robot's speed cap.
 
 ### Recipes and projects (recipe-developer)
 
@@ -105,10 +112,8 @@ so in the dev log); when something new comes up, add it here, not only in the de
   (`easycad_core::deposit`) while printing, so each move's extrusion fits the gap it actually
   has. Needs the simulation in the toolpath steps, a hand-checked fixture, and a cap on how far
   extrusion may move from the plan.
-- **Robot-arm printing:** a third printer kind whose lines follow the surface with the nozzle
-  square to the wall. Started: slicing along the surface (`vase_revolve(surface: true)`) and the
-  view's nozzle along the wall. Missing: the nozzle direction in the toolpath, the arm's own
-  output (KUKA KRL, ABB RAPID or G-code with tool axes), reach checks, a golden test.
+- **Robot-arm printing, more:** other arms (ABB RAPID, G-code with tool axes); reach checks in
+  the engine (see Open, the robot).
 - **Send to the printer** (Klipper/Moonraker; Bambu LAN later), probably through a small desktop
   helper.
 - A project library on the device; presets. (List settings of points have a graph to drag

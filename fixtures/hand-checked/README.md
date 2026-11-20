@@ -12,6 +12,7 @@ by command.
 
 | Fixture | What it covers |
 |---|---|
+| `robot-square.src` | The robot program (`krl.rs`): a 20 mm square on the bed and a step up onto a second layer, the nozzle tilting 30° and then turning so fast that the wrist limit slows the last move (and its screw command). Every pose, speed and command worked out from the handover's rules; lines starting `;;` are notes. |
 | `spiralize-tilted.gcode` | `spiralize` through tilted layers. A diamond (corners on the axes, 10 mm out) has its top cut by the plane z = 2 + 0.1·x, with three layers tweened in between. It prints at 5 mm³/s on the pellet printer, with no start/end blocks. Each move is extruded for its own layer height, and its speed follows from the flow. |
 
 Regenerate them, or check that they're up to date (CI does):

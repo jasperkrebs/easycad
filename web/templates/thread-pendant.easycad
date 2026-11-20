@@ -44,6 +44,12 @@ param wall_layer   = 0 mm    in 0..3.5 step 0.05    "Wall and wings: layer heigh
 param flow         = 20      in 1..400              "Flow (mm³/s)"
 param resolution   = "draft" of ["draft", "fine"]   "Resolution"
 
+group "Robot"
+param robot        = false                           "Robot arm: the nozzle along the wall"
+param tilt_max     = 45 deg  in 0..60 step 1        "Most nozzle tilt"  when robot
+param tilt_smooth  = 20 mm   in 0..100 step 1       "Tilt smoothed over"  when robot
+param tilt_bed     = 45 mm   in 0..200 step 2.5     "Full tilt from this high (the fans clear the bed)"  when robot
+
 group "Overhangs"
 param compensation = "layer height" of ["layer height", "off"] "Compensation (the wall and the wings each their own; the thread keeps its pitch)"
 param strength     = 100 %   in 0..100              "Strength"  when compensation = "layer height"
@@ -99,7 +105,11 @@ checked = shade_line
 
 # ---- Printed as it hangs, the opening on the bed; each move extruded for the line's own bead
 # (the wall's, the thread's, or between), on the first layer for the gap over the bed.
+# On a robot arm the nozzle follows the wall (at most tilt_max from upright, less near the bed so
+# the tool's fans clear it), each bead laid on the one underneath: overhang compensation then steps
+# each layer along the wall, and tilt gives each move its full bead back.
 path_out = toolpath([checked], width: line, layer: pitch, flow: flow, layers: item(info, 1))
+  |> tilt(max: pick(robot, tilt_max, 0), smooth: tilt_smooth, bed: tilt_bed)
 wall = revolve(shade_wall)
 
 export wall as "thread-pendant.step"

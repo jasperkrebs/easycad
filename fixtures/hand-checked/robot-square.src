@@ -1,0 +1,101 @@
+;; Hand-checked fixture: a robot program (KRL) for the SPHR cell (scripts/hand-checked-fixtures.py).
+;; The toolpath is built in crates/core/src/krl.rs's test; the robot's settings are the
+;; handover's defaults with tolerance 0. Lines starting ';;' aren't part of the program.
+;; move 1: length 20.0000, turn 0.000 deg, speed 10.0 mm/s, command 3347.622
+;; move 2: length 20.0000, turn 0.000 deg, speed 10.0 mm/s, command 3347.622
+;; move 3: length 20.0000, turn 0.000 deg, speed 10.0 mm/s, command 3347.622
+;; move 4: length 20.1556, turn 30.000 deg, speed 10.0 mm/s, command 3347.622
+;; move 5: length 20.0000, turn 41.410 deg, speed 10.0 mm/s, command 3347.622
+;; move 6: length 4.1000, turn 50.000 deg, speed 2.4 mm/s, command 803.429
+;; bead area (w - h) h + pi (h/2)^2 = 11.158739 mm^2
+&ACCESS RVP
+DEF EASYCAD()
+; EasyCAD: Robot square
+DECL EKI_STATUS RET
+DECL SPL_VEL_MODE EC_MODE
+DECL SPL_VEL_RESTR_STRUC EC_SAVED, EC_RESTR
+BAS (#INITMOV,0)
+$ACC.ORI1 = 150.0
+$ACC.ORI2 = 150.0
+$VEL.ORI1 = 200.0
+$VEL.ORI2 = 200.0
+$ADVANCE = 3
+RET = EKI_SEND("EthernetKRL_Config", "STOP_EXTRUDE#")
+$TOOL = TR_TOOL
+; Reuse tool 6 inertia and inertia-axis orientation; override mass and COM XYZ.
+$LOAD = LOAD_DATA[6]
+$LOAD.M = TR_MASS
+$LOAD.CM.X = TR_COM.X
+$LOAD.CM.Y = TR_COM.Y
+$LOAD.CM.Z = TR_COM.Z
+$BASE = TR_BASE
+$IPO_MODE = #BASE
+$ORI_TYPE = #VAR
+; SIMULATION ONLY - verify cell, cables and controller.
+PTP $AXIS_ACT
+RET = EKI_SEND("EthernetKRL_Config", "SET_TEMP T0 220#")
+RET = EKI_SEND("EthernetKRL_Config", "SET_TEMP T1 190#")
+RET = EKI_SEND("EthernetKRL_Config", "SET_TEMP T2 70#")
+RET = EKI_SEND("EthernetKRL_Config", "SET_FAN1 0#")
+RET = EKI_SEND("EthernetKRL_Config", "SET_FAN2 5#")
+HALT
+$VEL.CP = 0.05000
+LIN {X 1088.30,Y 84.86,Z -589.70,A -90.00,B 0.00,C 0.00}
+HALT
+WAIT SEC 0
+RET = EKI_SEND("EthernetKRL_Config", "CHANGE_SPEED1 12000#")
+RET = EKI_SEND("EthernetKRL_Config", "START_EXTRUDE#")
+WAIT SEC 20
+RET = EKI_SEND("EthernetKRL_Config", "CHANGE_SPEED1 3348#")
+$VEL.CP = 0.10000
+LIN {X 1088.30,Y -165.14,Z -651.20,A -90.00,B 0.00,C 0.00}
+$VEL.CP = 0.02000
+LIN {X 1088.30,Y -165.14,Z -656.20,A -90.00,B 0.00,C 0.00}
+EC_MODE = $SPL_VEL_MODE
+EC_SAVED = $SPL_VEL_RESTR
+EC_RESTR = EC_SAVED
+$SPL_VEL_MODE = #OPT
+EC_RESTR.ORI_VEL = #ON
+EC_RESTR.ORI_ACC = #ON
+EC_RESTR.CART_ACC = #ON
+$SPL_VEL_RESTR = EC_RESTR
+SPLINE WITH $ACC={CP 0.050, ORI1 150.0, ORI2 150.0}
+  SPL {X 1108.30,Y -165.14,Z -656.20,A -90.00,B 0.00,C 0.00} WITH $VEL.CP=0.01000
+  SPL {X 1108.30,Y -145.14,Z -656.20,A -90.00,B 0.00,C 0.00} WITH $VEL.CP=0.01000
+  SPL {X 1088.30,Y -145.14,Z -656.20,A -90.00,B 0.00,C 0.00} WITH $VEL.CP=0.01000
+  TRIGGER WHEN PATH=0 ONSTART DELAY=0 DO EASYCAD_EVT_1() PRIO=-1
+  SPL {X 1088.30,Y -165.14,Z -653.70,A -90.00,B 0.00,C -30.00} WITH $VEL.CP=0.01000
+  SPL {X 1108.30,Y -165.14,Z -653.70,A -90.00,B -30.00,C 0.00} WITH $VEL.CP=0.01000
+  TRIGGER WHEN PATH=0 ONSTART DELAY=0 DO EASYCAD_EVT_2() PRIO=-1
+  SPL {X 1108.30,Y -161.04,Z -653.70,A -90.00,B 20.00,C 0.00} WITH $VEL.CP=0.00240
+ENDSPLINE
+;END PRINT
+WAIT SEC 0
+RET = EKI_SEND("EthernetKRL_Config", "STOP_EXTRUDE#")
+RET = EKI_SEND("EthernetKRL_Config", "CHANGE_SPEED1 0#")
+RET = EKI_SEND("EthernetKRL_Config", "SET_TEMP T0 0#")
+RET = EKI_SEND("EthernetKRL_Config", "SET_TEMP T1 0#")
+RET = EKI_SEND("EthernetKRL_Config", "SET_TEMP T2 0#")
+;LIFT
+$VEL.CP = 0.05000
+LIN {X 1108.30,Y -161.04,Z -603.70,A -90.00,B 20.00,C 0.00}
+;UPRIGHT
+$VEL.ORI1 = 30.0
+$VEL.ORI2 = 30.0
+LIN {X 1108.30,Y -161.04,Z -603.70,A -90.00,B 0.00,C 0.00}
+WAIT SEC 0
+RET = EKI_SEND("EthernetKRL_Config", "SET_FAN1 0#")
+RET = EKI_SEND("EthernetKRL_Config", "SET_FAN2 0#")
+$SPL_VEL_RESTR = EC_SAVED
+$SPL_VEL_MODE = EC_MODE
+END
+
+DEF EASYCAD_EVT_1()
+DECL EKI_STATUS RET
+RET = EKI_SEND("EthernetKRL_Config", "SET_FAN1 255#")
+END
+
+DEF EASYCAD_EVT_2()
+DECL EKI_STATUS RET
+RET = EKI_SEND("EthernetKRL_Config", "CHANGE_SPEED1 803#")
+END

@@ -114,6 +114,8 @@ pub struct Profile {
     pub bed: [f64; 3],
     pub filament: Filament,
     pub pellet: Pellet,
+    /// A robot arm instead of a printer: no G-code, a KUKA program (`krl`) for this cell.
+    pub robot: Option<crate::krl::Robot>,
 }
 
 impl Default for Profile {
@@ -128,6 +130,7 @@ impl Default for Profile {
             bed: [1000.0, 1000.0, 1000.0],
             filament: Filament::default(),
             pellet: Pellet::default(),
+            robot: None,
         }
     }
 }
@@ -325,6 +328,9 @@ pub struct Output {
 /// Writes the toolpath as G-code for `profile`. `title` names the project in the header.
 /// Refuses a toolpath or profile that isn't safe to print (see [`check`]).
 pub fn write(path: &Toolpath, profile: &Profile, title: &str) -> Result<Output, String> {
+    if profile.robot.is_some() {
+        return Err("the robot takes a robot program, not G-code".into());
+    }
     check(path, profile)?;
     emit(path, profile, title)
 }

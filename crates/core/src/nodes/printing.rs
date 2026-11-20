@@ -124,6 +124,13 @@ pub(super) fn adjust(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     Ok(Value::Toolpath(Rc::new(out)))
 }
 
+pub(super) fn tilt(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let path = a.toolpath(0)?;
+    ctx.spend(path.points.len().saturating_mul(4))?;
+    let out = crate::tilt::tilt(path, a.num(1)?, a.num(2)?, a.num(3)?, a.flag(4)?)?;
+    Ok(Value::Toolpath(Rc::new(out)))
+}
+
 pub(super) fn accelerate(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let path = a.toolpath(0)?;
     let out = toolpath_ops::accelerate(path, a.num(1)?, ctx.remaining().min(MAX_PATH_POINTS))?;

@@ -148,6 +148,11 @@ pub struct Toolpath {
     /// Where it's shown, when that isn't where it prints (`place`: a part in its place in an
     /// assembly). The G-code and every check use the points as they are.
     pub view: Option<Xform>,
+    /// The nozzle's direction at each point (a unit vector from the nozzle tip into the tool:
+    /// straight up is upright), for a robot arm that tilts the nozzle (`tilt`). Empty: upright
+    /// everywhere (a Cartesian printer's). Steps that add points after `tilt` add upright ones;
+    /// steps that build a new toolpath leave it empty, so `tilt` comes last.
+    pub axis: Vec<P3>,
 }
 
 /// Something the machine does between two moves.
@@ -228,6 +233,8 @@ pub struct ToolpathStats {
     pub samples_per_turn: usize,
     /// The highest part-fan level the toolpath's own events set, 0–100 % (0: it sets none).
     pub max_fan_pct: f64,
+    /// The most the nozzle leans from upright (`tilt`), in degrees; 0 upright everywhere.
+    pub max_tilt_deg: f64,
     pub path_points: usize,
     pub width_mm: f64,
     pub layer_mm: f64,
@@ -271,6 +278,7 @@ impl Toolpath {
             samples_per_turn: 0,
             layers: 1,
             view: None,
+            axis: Vec::new(),
         }
     }
 
@@ -315,6 +323,14 @@ impl Toolpath {
         self.height.push(if travel { 0.0 } else { height });
         self.width.push(0.0);
         self.speed.push(1.0);
+        if !self.axis.is_empty() {
+            self.axis.push([0.0, 0.0, 1.0]);
+        }
+    }
+
+    /// The nozzle's direction at each point, when the toolpath has one for every point (`tilt`).
+    pub fn axes(&self) -> Option<&[P3]> {
+        (!self.axis.is_empty() && self.axis.len() == self.points.len()).then_some(&self.axis[..])
     }
 
     /// EasyGCode's clearance hop (`hopTravel` in its gcode.js) from the last point towards
@@ -445,6 +461,11 @@ impl Toolpath {
         }
         Ok(Toolpath {
             points: self.points.iter().map(|p| x.apply(*p)).collect(),
+            axis: self
+                .axis
+                .iter()
+                .map(|v| crate::geom::unit3(x.apply_vector(*v)).unwrap_or([0.0, 0.0, 1.0]))
+                .collect(),
             ..self.clone()
         })
     }
@@ -521,6 +542,12 @@ impl Toolpath {
                     EventKind::Fan(level) => Some(level),
                     _ => None,
                 })
+                .fold(0.0, f64::max),
+            max_tilt_deg: self
+                .axes()
+                .into_iter()
+                .flatten()
+                .map(|v| v[2].clamp(-1.0, 1.0).acos().to_degrees())
                 .fold(0.0, f64::max),
             path_points: self.points.len(),
             width_mm: first.width,
