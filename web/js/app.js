@@ -24,6 +24,7 @@ const TEMPLATES = [
   { id: 'thread-pendant', name: 'Thread pendant' },
   { id: 'vessel', name: 'Vessel' },
   { id: 'salt-shaker', name: 'Salt & pepper shaker' },
+  { id: 'nutcracker', name: 'Nutcracker' },
   { id: 'bend-stool', name: 'Bend stool' },
   { id: 'thread-connector', name: 'Thread connector' },
   { id: 'spiral-disc', name: 'Spiral disc' },

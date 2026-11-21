@@ -7,6 +7,22 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-21: the Nutcracker (recipe-developer)
+
+**Why:** the owner made a nutcracker as a Lamp project (an 80 mm threaded tube in a closed cap) and
+asked for its own template: only the cap and a key that screws in, the tube flattening above the
+cap into a large key's handle.
+
+- `nutcracker.easycad`: two prints (cap, key) from one set of settings, general steps only (the
+  salt shaker's way: sections lofted, `contour`, `spiralize`, a ring-fill bottom). The key's tube
+  flattens over its own length (S-curve or straight) into a stadium handle, as long round as the
+  tube by default, two lines thick (solid) by default. Checks: a key too short for the cap, a
+  flattening leaning past 60°.
+- In the template list (and the offline cache), tests in `nutcracker_tests.rs`, doc
+  [nutcracker.md](nutcracker.md).
+
+Open: a test print.
+
 ## 2026-11-21 (later): the Plan's fittings can be hidden (claude/lampshade-light-render-wcvx6x)
 
 A bulb button under the Plan's zoom buttons hides the socket, bulb and cable there and shows
@@ -88,6 +104,24 @@ robot ([roadmap.md](roadmap.md), Open).
 
 
 
+
+
+## 2026-11-20 (evening): Thread pendant: no lip above the grip, a rounded corner at the wall (recipe-developer)
+
+**Why:** the owner's half sphere, after #55: a lip at the top floating over the arm under it,
+and the arm leaving the outer wall in a sharp corner, almost straight down.
+
+**What landed** (`pendant.rs`):
+- A bug: each point followed the shade's profile at its own height, so an arm far below the
+  wall's heights (the wings compensated on their own) took the sphere's radius further down,
+  wider: pushed out against the wall, it dropped up to 60° there, and the crease above the grip,
+  sitting where the arm should have been, floated 9.5 mm over it. Now by the wall's height.
+- The arm leaves the wall level and curves into its climb over its outer 30 % (`bridge`, a
+  parabola): no corner; the rest about 18 % steeper (Sphere20test's arm 15.8° at most, was 14°).
+- Test: `the_arm_leaves_the_wall_level_and_the_crease_sits_on_it` (the half sphere; it fails on
+  the old code).
+
+**Open:** a test print.
 
 
 ## 2026-11-20 (later): Thread pendant: the wall and the wings compensated each at its own rate (recipe-developer)
