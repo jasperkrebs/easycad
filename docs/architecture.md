@@ -414,6 +414,10 @@ takes the top 52 % (at least 260 px). Nothing sits on the 3D view.
   - section plane, measure tool, x-ray;
   - **handles**: point parameters show as draggable dots, and transforms show a gizmo.
     Dragging writes parameter values, no AI involved.
+  - a recipe with a `socket` setting shows the lamp's fittings (holder, bulb, cable) in the 3D
+    view and the Plan; the **Render** view path traces the lamp, light on or off, into a PNG
+    with a transparent background ([rendering.md](rendering.md)). A view: it reads the result
+    and the custom colours, and edits nothing.
 - **Params:** auto-generated from `param` lines:
   - sliders, number fields, toggles and dropdowns, in fold-out groups (one per `group`);
   - lock icons, and "assumed" badges with a one-tap "OK, keep it".

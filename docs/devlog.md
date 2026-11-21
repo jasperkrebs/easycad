@@ -7,6 +7,41 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-21: the Render view: the lamp's light, path traced; socket, bulb and cable (claude/lampshade-light-render-wcvx6x)
+
+**Why:** the owner wants to see how a bulb's light works with the shades (bouncing off solid
+ones, through see-through ones, bent by the layer lines), with the light on and off, as PNGs
+to put on environments afterwards ([rendering.md](rendering.md)).
+
+**What landed:**
+- **The fittings** (`web/js/fixture.js`, `fixture-mesh.js`): for every recipe with a `socket`
+  setting, a standard holder (E27 40 × 55 mm, E14 28 × 45 mm, custom from the recipe), a frosted
+  bulb (A60 pear on E27, P45 round on E14) and a 6 mm cable straight up, in the 3D view and the
+  Plan. Placed on the part whose beads run round the holder; the socket always points down, its
+  face at that section's lower end as the lamp hangs. **Hangs ↓ / ↑** turns the project over
+  (kept with the custom colours, in the file too; the recipe untouched).
+- **The Render view** (`web/js/render.js`, a fifth button by Plan): **Prepare** takes a snapshot
+  (toolpaths swept into solid beads, the fittings, the custom colours, the hidden parts) and
+  builds the BVH, once; it lights up when the project has changed since. Then it path traces
+  (three-gpu-pathtracer 0.0.27 with three-mesh-bvh 0.9.18, MIT, vendored, loaded only when the
+  view opens): light on (a point light in the bulb, lumens and kelvin, the glass glowing, a little
+  room light) or off (sky and floor light only); each part's custom colour and solidity as its
+  material (solid bounces, see-through transmits that much and refracts through the beads);
+  matte, exposure, samples, bounces, resolution. Its **PNG** has a transparent background.
+- **One solid wall:** the faces where a turn sits on the next (`web/js/wall.js`) are rendered
+  as inside the plastic (the same refractive index both sides), so light crosses the wall once in,
+  once out, bending at the beads' round faces. With every bead its own tube, a see-through white
+  shade came out dark brown even at 256 samples (light trapped in each turn).
+- **The 3D view's PNG** leaves the bed grid out.
+- `beadGeometry` moved out of `createViewport` (exported, shared with the render).
+- Tests: `scripts/fixture.test.mjs` (sizes, placement, hanging, outlines, settings read back; in
+  CI); `scripts/render-test.cjs` (the views and a render in headless Chromium, light on and off,
+  the PNG's alpha; not in CI: on a software GPU a 16-sample render of the Lamp takes minutes).
+
+**Open:** a denoiser, the user's own environment (HDRI) for the light off, the light on a wall or
+ceiling as its own layer, the BVH built in a worker (preparing blocks the page), the 3D view
+shown hanging too.
+
 ## 2026-11-20 (evening): the robot arm: nozzle tilt in the toolpath and a KUKA program (claude/amazing-newton-9qraf8)
 
 **Why:** the owner wants the Sphere (the Thread pendant) printed on the KUKA KR50 of the SPHR

@@ -62,6 +62,11 @@ so in the dev log); when something new comes up, add it here, not only in the de
   (as the brim does); a step that gives a toolpath's first point would remove the copy.
 - **The agent:** not tried on the Lamp yet; still to do: the chat box as a command line, skills,
   a test set of real requests.
+- **The Render view** ([rendering.md](rendering.md)): no denoiser yet (clean pictures need
+  hundreds of samples); the light off uses a built-in sky, not your own environment (HDRI); the
+  light the lamp throws on a wall or ceiling isn't a layer of its own; preparing builds the BVH on
+  the page (it blocks while it runs; a worker would not); the 3D view and Plan show the project as
+  it prints, the render as it hangs. The holder and bulb sizes want checking against datasheets.
 - **Code health:** `viewport.js` (1,400 lines) and `app.js` (1,600) want splitting.
 - **The robot (KUKA KR50):** not yet run on the controller (it must compile: `C_SPL` between
   SPLINE blocks, 1000 segments a block); reach, joint-limit and collision checks are a script

@@ -94,6 +94,7 @@ export vase as "twisted-vase.stl"
 | [docs/easygcode-coverage.md](docs/easygcode-coverage.md) | Every EasyGCode project, feature by feature, and the steps that build it |
 | [docs/printers.md](docs/printers.md) | The printers: the Ginger G1 from its wiki, its limits, materials and checks |
 | [docs/lamp-builder.md](docs/lamp-builder.md) | Components and parts: lamps of shades that screw into each other |
+| [docs/rendering.md](docs/rendering.md) | The Render view: socket, bulb and cable, the lamp's light path traced, light on and off |
 | [docs/feature-requests.md](docs/feature-requests.md) | When the AI can't build something: it asks, Claude Code builds the step, the chat carries on |
 | [docs/grasshopper.md](docs/grasshopper.md) | Research: toolpaths and recipes in Grasshopper, Grasshopper files in EasyCAD, building without the AI |
 | [docs/devlog.md](docs/devlog.md) | What landed, what's open |

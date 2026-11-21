@@ -13,7 +13,8 @@ import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColor
 import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
-import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, shadeDefaults, shapeSwitch } from './parts.js';
+import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
+import { cleanRender, fixtureOf } from './fixture.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
 
@@ -131,6 +132,8 @@ async function run(quality, how = {}) {
   }
   $('saveSketcher').hidden = result.project !== 'Thread pendant';
   viewport.show(result, { refit: refitNext });
+  viewport.setFixture(fixtureFor(result));
+  markRenderStale();
   refitNext = false;
   syncScrub();
   renderLegend();
@@ -221,6 +224,7 @@ function renderPartToggles(result) {
         else hiddenParts.add(p.name);
         renderPartToggles(state.last);
         if (state.last) renderPlanView(state.last);
+        markRenderStale();
       });
       return b;
     }),
@@ -391,7 +395,7 @@ const PART_COLORS = ['#4f9dff', '#2bd9a0', '#ffb454', '#b58cff', '#3fd0d4', '#ff
 function customColors() {
   const all = loadJSON(CUSTOM_KEY, {});
   const mine = (all && typeof all === 'object' && all[projectName()]) || {};
-  return { parts: mine.parts || {}, light: mine.light ?? 0.5, shadow: mine.shadow ?? 0.5 };
+  return { parts: mine.parts || {}, light: mine.light ?? 0.5, shadow: mine.shadow ?? 0.5, hang: mine.hang === 'up' ? 'up' : 'down', render: cleanRender(mine.render) };
 }
 
 /**
@@ -418,7 +422,7 @@ function restoreColors(colors) {
     if (look && /^#[0-9a-f]{6}$/i.test(String(look.color))) clean[name] = { color: String(look.color), opacity: Math.min(1, Math.max(0.05, Number(look.opacity) || 1)) };
   }
   const unit = (v) => (Number.isFinite(Number(v)) ? Math.min(1, Math.max(0, Number(v))) : 0.5);
-  saveCustomColors({ parts: clean, light: unit(colors.light), shadow: unit(colors.shadow) });
+  saveCustomColors({ parts: clean, light: unit(colors.light), shadow: unit(colors.shadow), hang: colors.hang === 'up' ? 'up' : 'down', render: cleanRender(colors.render) });
   customLayout = '';
   if (colors.custom) {
     const select = /** @type {HTMLSelectElement} */ ($('viewColor'));
@@ -462,6 +466,7 @@ function renderCustomColors() {
     update(next);
     saveCustomColors(next);
     applyCustomColors();
+    markRenderStale();
     if (state.last && !$('plan').hidden) renderPlanView(state.last);
   };
   const slider = (label, value, onInput) => {
@@ -1003,6 +1008,7 @@ function renderPlanView(result) {
     onOpen: (name) => openPart(name),
     onRemove: (name) => removePart(name),
     offsets: assemblyOffsets,
+    fixture: fixtureFor(result),
   });
 }
 
@@ -1292,11 +1298,197 @@ async function openSketcher(data, name) {
   note(['Opened the sketcher\'s settings as a Thread pendant.', ...notes].join(' '));
 }
 
+// ---- The Render view: the lamp path traced (render.js, loaded when first opened). Prepare
+// takes a snapshot of the project as it is (its toolpaths swept into solid beads, the fittings,
+// the custom colours); changing the project afterwards changes nothing in the render until it's
+// prepared again. The light and the picture's settings only restart the sampling.
+
+/** The fittings for a result (holder, bulb, cable), as the project hangs; null without a socket. */
+function fixtureFor(result) {
+  return result ? fixtureOf(result.params, sections(result), customColors().hang) : null;
+}
+
+const renderView = {
+  /** @type {Awaited<ReturnType<typeof import('./render.js').createRenderer>> | null} */
+  api: null,
+  /** @type {Promise<any> | null} */
+  loading: null,
+  /** What was prepared (the project, its values, colours and hidden parts), to tell when it's out of date. */
+  key: '',
+  busy: false,
+  /** What was prepared: its size and how long it took. */
+  info: '',
+};
+
+const renderOn = () => $('viewRender').getAttribute('aria-pressed') === 'true';
+
+/** What a render is prepared from: changes to any of it make the prepared one out of date. */
+function renderKey() {
+  const c = customColors();
+  return JSON.stringify([state.source, state.values, c.parts, c.hang, [...hiddenParts].sort()]);
+}
+
+/** The Prepare button shows when the prepared render no longer matches the project. */
+function markRenderStale() {
+  const stale = Boolean(renderView.key) && renderView.key !== renderKey();
+  $('renderPrepare').toggleAttribute('data-stale', stale || !renderView.key);
+}
+
+function renderStatus(text) {
+  $('renderStatus').textContent = text;
+}
+
+/**
+ * The project as the render takes it: each printed part's toolpaths (print aids such as a brim
+ * left out, hidden parts too), the parts' custom colours and the fittings.
+ */
+function renderSnapshot(result) {
+  const { points, starts, widths, heights, ups, aids } = result.paths;
+  const owner = result.parts?.paths || [];
+  const prints = printsOf(result);
+  const colors = customColors();
+  const looks = prints.map((p, i) => partLook(colors, p.name, i));
+  const paths = [];
+  for (let k = 0; k + 1 < starts.length; k++) {
+    const part = owner[k] ?? -1;
+    if (part < 0 || !prints[part] || hiddenParts.has(prints[part].name)) continue;
+    const [a, b] = [starts[k], starts[k + 1]];
+    if (b - a < 2) continue;
+    const w = widths ? widths.slice(a, b) : new Float32Array(b - a).fill(1);
+    const h = heights ? heights.slice(a, b) : new Float32Array(b - a).fill(0.5);
+    if (aids) for (let i = a; i < b; i++) if (aids[i]) w[i - a] = 0;
+    paths.push({ points: points.slice(3 * a, 3 * b), widths: w, heights: h, ups: ups ? ups.slice(3 * a, 3 * b) : null, part });
+  }
+  return { paths, looks, fixture: fixtureFor(result) };
+}
+
+/** Loads the renderer (and the path tracer with it) the first time the view opens. */
+async function renderApi() {
+  if (renderView.api) return renderView.api;
+  renderView.loading ||= import('./render.js').then(({ createRenderer }) =>
+    createRenderer(/** @type {HTMLCanvasElement} */ ($('renderCanvas')), {
+      onProgress: (n, target) => renderStatus(`${Math.min(n, target)} / ${target}${renderView.info ? ` · ${renderView.info}` : ''}`),
+    }),
+  );
+  renderView.api = await renderView.loading;
+  renderView.api.setSettings(customColors().render);
+  return renderView.api;
+}
+
+/** Opens or closes the Render view (closing pauses the sampling; the render stays prepared). */
+async function showRender(on) {
+  if (on === renderOn()) return;
+  $('viewRender').setAttribute('aria-pressed', String(on));
+  $('render').hidden = !on;
+  $('viewRenderBar').hidden = !on;
+  document.body.toggleAttribute('data-render', on);
+  if (!on) {
+    renderView.api?.pause();
+    return;
+  }
+  // The render is a view of its own: not the plan, not the prints laid out.
+  if (planOn()) $('viewPlan').click();
+  if ($('viewPrints').getAttribute('aria-pressed') === 'true') showPrints(false);
+  document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+  showRenderSettings();
+  markRenderStale();
+  if (!renderView.key) renderStatus('Prepare to render');
+  try {
+    const api = await renderApi();
+    if (renderOn()) api.resume();
+  } catch (err) {
+    renderStatus(`Can't render here: ${err.message || err}`);
+  }
+}
+
+/** Prepares the project as it is now for rendering. */
+async function prepareRender() {
+  if (!state.last || renderView.busy) return;
+  renderView.busy = true;
+  $('renderPrepare').setAttribute('disabled', '');
+  const t0 = performance.now();
+  try {
+    const api = await renderApi();
+    const key = renderKey();
+    const { triangles } = await api.prepare(renderSnapshot(state.last), viewport.viewDirection(), (what) => renderStatus(`Preparing · ${what}`));
+    renderView.key = key;
+    $('renderSave').removeAttribute('disabled');
+    renderView.info = `${(triangles / 1e6).toFixed(2)} M triangles, prepared in ${fmt((performance.now() - t0) / 1000)} s`;
+    renderStatus(`Prepared · ${renderView.info}`);
+    if (renderOn()) api.resume();
+  } catch (err) {
+    renderStatus(`Can't render here: ${err.message || err}`);
+  } finally {
+    renderView.busy = false;
+    $('renderPrepare').removeAttribute('disabled');
+    markRenderStale();
+  }
+}
+
+/** The render's controls from this project's settings. */
+function showRenderSettings() {
+  const { render: r, hang } = customColors();
+  const set = (id, v) => (/** @type {HTMLInputElement} */ ($(id)).value = String(v));
+  $('renderLight').setAttribute('aria-pressed', String(r.light));
+  $('renderLight').textContent = r.light ? 'Light on' : 'Light off';
+  $('renderHang').textContent = hang === 'up' ? 'Hangs ↑' : 'Hangs ↓';
+  set('renderLumens', r.lumens);
+  set('renderKelvin', r.kelvin);
+  set('renderRoom', Math.round(r.room * 100));
+  set('renderExposure', r.exposure);
+  set('renderMatte', Math.round(r.matte * 100));
+  set('renderSamples', r.samples);
+  set('renderBounces', r.bounces);
+  set('renderScale', r.scale);
+}
+
+/** Changes the render's settings (kept with the project's colours) and restarts the sampling. */
+function changeRender(update) {
+  const colors = customColors();
+  colors.render = cleanRender({ ...colors.render, ...update });
+  saveCustomColors(colors);
+  showRenderSettings();
+  renderView.api?.setSettings(colors.render);
+}
+
+function wireRender() {
+  $('viewRender').addEventListener('click', () => showRender(!renderOn()));
+  $('renderPrepare').addEventListener('click', () => prepareRender());
+  $('renderLight').addEventListener('click', () => changeRender({ light: !customColors().render.light }));
+  $('renderHang').addEventListener('click', () => {
+    const colors = customColors();
+    colors.hang = colors.hang === 'up' ? 'down' : 'up';
+    saveCustomColors(colors);
+    showRenderSettings();
+    if (state.last) {
+      viewport.setFixture(fixtureFor(state.last));
+      renderPlanView(state.last);
+    }
+    markRenderStale();
+  });
+  const num = (id) => Number(/** @type {HTMLInputElement} */ ($(id)).value);
+  $('renderLumens').addEventListener('input', () => changeRender({ lumens: num('renderLumens') }));
+  $('renderKelvin').addEventListener('input', () => changeRender({ kelvin: num('renderKelvin') }));
+  $('renderRoom').addEventListener('input', () => changeRender({ room: num('renderRoom') / 100 }));
+  $('renderExposure').addEventListener('input', () => changeRender({ exposure: num('renderExposure') }));
+  $('renderMatte').addEventListener('input', () => changeRender({ matte: num('renderMatte') / 100 }));
+  $('renderSamples').addEventListener('change', () => changeRender({ samples: num('renderSamples') }));
+  $('renderBounces').addEventListener('change', () => changeRender({ bounces: num('renderBounces') }));
+  $('renderScale').addEventListener('change', () => changeRender({ scale: num('renderScale') }));
+  $('renderSave').addEventListener('click', async () => {
+    if (!renderView.api?.prepared) return;
+    const blob = await (await fetch(renderView.api.capture())).blob();
+    download(`${saveName()}-render.png`, blob, 'image/png');
+  });
+  showRenderSettings();
+}
+
 function wire() {
   for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => selectTab(t));
 
   document.querySelectorAll('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => {
+      showRender(false);
       document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
       $('viewPlan').setAttribute('aria-pressed', 'false');
       if ($('viewPrints').getAttribute('aria-pressed') === 'true') showPrints(false);
@@ -1316,11 +1508,13 @@ function wire() {
   });
   // The plan: the parts cut through their axis, over the 3D view.
   $('viewPrints').addEventListener('click', () => {
+    showRender(false);
     const on = $('viewPrints').getAttribute('aria-pressed') !== 'true';
     if (on && $('viewPlan').getAttribute('aria-pressed') === 'true') $('viewPlan').click();
     showPrints(on);
   });
   $('viewPlan').addEventListener('click', () => {
+    showRender(false);
     if ($('viewPrints').getAttribute('aria-pressed') === 'true') showPrints(false);
     const on = $('viewPlan').getAttribute('aria-pressed') !== 'true';
     $('viewPlan').setAttribute('aria-pressed', String(on));
@@ -1338,6 +1532,7 @@ function wire() {
     const blob = await (await fetch(url)).blob();
     download(`${saveName()}.png`, blob, 'image/png');
   });
+  wireRender();
   $('view').addEventListener('dblclick', () => viewport.focus());
   let lastTap = { t: 0, x: 0, y: 0 };
   let touches = 0;
