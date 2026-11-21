@@ -106,6 +106,24 @@ robot ([roadmap.md](roadmap.md), Open).
 
 
 
+## 2026-11-20 (evening): Thread pendant: no lip above the grip, a rounded corner at the wall (recipe-developer)
+
+**Why:** the owner's half sphere, after #55: a lip at the top floating over the arm under it,
+and the arm leaving the outer wall in a sharp corner, almost straight down.
+
+**What landed** (`pendant.rs`):
+- A bug: each point followed the shade's profile at its own height, so an arm far below the
+  wall's heights (the wings compensated on their own) took the sphere's radius further down,
+  wider: pushed out against the wall, it dropped up to 60° there, and the crease above the grip,
+  sitting where the arm should have been, floated 9.5 mm over it. Now by the wall's height.
+- The arm leaves the wall level and curves into its climb over its outer 30 % (`bridge`, a
+  parabola): no corner; the rest about 18 % steeper (Sphere20test's arm 15.8° at most, was 14°).
+- Test: `the_arm_leaves_the_wall_level_and_the_crease_sits_on_it` (the half sphere; it fails on
+  the old code).
+
+**Open:** a test print.
+
+
 ## 2026-11-20 (later): Thread pendant: the wall and the wings compensated each at its own rate (recipe-developer)
 
 **Why:** the owner's sketch and Sphere20test: since #54 the whole layer took the wings' rate, so
