@@ -10,6 +10,8 @@ to place on top of an environment afterwards.
 Every recipe with a `socket` setting (Lampshade, Lamp, Thread pendant) shows a standard
 lampholder where the shade screws on, a frosted bulb in it and a cable going straight up, in
 the 3D view, the Plan and the render (`web/js/fixture.js`, its meshes `fixture-mesh.js`).
+In the Plan, the bulb button under the zoom buttons hides and shows them (remembered on the
+device).
 
 | Socket | Holder (body Ø × height) | Bulb | Glass Ø | Glass below the cap |
 |---|---|---|---|---|

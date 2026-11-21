@@ -7,6 +7,12 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-21 (later): the Plan's fittings can be hidden (claude/lampshade-light-render-wcvx6x)
+
+A bulb button under the Plan's zoom buttons hides the socket, bulb and cable there and shows
+them again (remembered on the device; the plan's PNG follows it). `scripts/render-test.cjs`
+checks it.
+
 ## 2026-11-21: the Render view: the lamp's light, path traced; socket, bulb and cable (claude/lampshade-light-render-wcvx6x)
 
 **Why:** the owner wants to see how a bulb's light works with the shades (bouncing off solid
