@@ -14,7 +14,8 @@ archives ([October](devlog-2026-10.md), [November 1–14](devlog-2026-11.md)).
   connector, lampshade, bend stool, vessel) plus the salt & pepper shaker, the **Lamp** (shades
   that screw into each other, [lamp-builder.md](lamp-builder.md)) and the **Thread pendant** (the
   Thread Lampshade Sketcher's pendant, printable; it opens the sketcher's settings files,
-  [thread-pendant.md](thread-pendant.md)).
+  [thread-pendant.md](thread-pendant.md)) and the **Nutcracker** (a cap and a key that screws
+  into it, flattening into a handle, [nutcracker.md](nutcracker.md)).
 - **G-code** for the G1 and the P1P with EasyGCode's start/end blocks; the EasyGCode projects
   golden-tested command for command; speeds as volumetric flow; bed, height and heater checks.
 - **A robot program** (KUKA KRL) for the SPHR handover's KR50 pellet cell, the nozzle along the
@@ -102,6 +103,7 @@ so in the dev log); when something new comes up, add it here, not only in the de
 - **Thread pendant** ([thread-pendant.md](thread-pendant.md)): a test print on E27; measure an E14
   barrel; maybe a pace for the wing rings (half a line a layer) instead of the max overhang; the
   floor lamp, linear pendant and screw part if wanted; Plan marks.
+- **Nutcracker** ([nutcracker.md](nutcracker.md)): a test print (fit, how much the handle takes).
 - **The coat hanger** as a template.
 - **Tube with wings** ([tube-with-wings.md](tube-with-wings.md)), in the Lampshade and the Lamp:
   print it (the crease where a wing starts; "same layer length" within 4 %).

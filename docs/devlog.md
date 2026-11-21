@@ -7,6 +7,22 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-21: the Nutcracker (recipe-developer)
+
+**Why:** the owner made a nutcracker as a Lamp project (an 80 mm threaded tube in a closed cap) and
+asked for its own template: only the cap and a key that screws in, the tube flattening above the
+cap into a large key's handle.
+
+- `nutcracker.easycad`: two prints (cap, key) from one set of settings, general steps only (the
+  salt shaker's way: sections lofted, `contour`, `spiralize`, a ring-fill bottom). The key's tube
+  flattens over its own length (S-curve or straight) into a stadium handle, as long round as the
+  tube by default, two lines thick (solid) by default. Checks: a key too short for the cap, a
+  flattening leaning past 60°.
+- In the template list (and the offline cache), tests in `nutcracker_tests.rs`, doc
+  [nutcracker.md](nutcracker.md).
+
+Open: a test print.
+
 ## 2026-11-21 (later): the Plan's fittings can be hidden (claude/lampshade-light-render-wcvx6x)
 
 A bulb button under the Plan's zoom buttons hides the socket, bulb and cable there and shows

@@ -49,6 +49,8 @@ mod golden_tests;
 #[cfg(test)]
 mod lamp_tests;
 #[cfg(test)]
+mod nutcracker_tests;
+#[cfg(test)]
 mod pendant_tests;
 #[cfg(test)]
 mod toolbox_tests;

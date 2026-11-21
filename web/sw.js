@@ -40,6 +40,7 @@ const ASSETS = [
   './templates/lampshade.easycad',
   './templates/vessel.easycad',
   './templates/salt-shaker.easycad',
+  './templates/nutcracker.easycad',
   './templates/lamp.easycad',
   './templates/thread-pendant.easycad',
   './pkg/easycad_wasm.js',

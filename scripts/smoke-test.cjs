@@ -129,7 +129,7 @@ async function saveFrom(page, selector) {
       // Templates replace the project. Only EasyGCode's projects (and the shaker) are offered.
       await page.click('#tab-settings');
       const offered = await page.locator('#template option').evaluateAll((os) => os.map((o) => o.value).filter(Boolean));
-      if (offered.join() !== 'lampshade,lamp,thread-pendant,vessel,salt-shaker,bend-stool,thread-connector,spiral-disc') failures.push(`${name}: templates offered: ${offered.join()}`);
+      if (offered.join() !== 'lampshade,lamp,thread-pendant,vessel,salt-shaker,nutcracker,bend-stool,thread-connector,spiral-disc') failures.push(`${name}: templates offered: ${offered.join()}`);
       if (await page.isVisible('#tab-graph')) failures.push(`${name}: the Graph tab is still there`);
       await page.selectOption('#template', 'vessel');
       // The project was edited, so the page asks before replacing it.
