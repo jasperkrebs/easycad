@@ -7,6 +7,30 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-21: the 3D view comes back after the phone takes its GPU away (general-manager)
+
+**Why:** on the owner's phone the lamps no longer showed in the 3D view (shape, toolpath, both)
+while the Plan, drawn as SVG, showed everything. Not reproducible in desktop Chromium or WebKit
+with the templates; the failure that matches is a lost WebGL context that the browser never gives
+back (Safari on a phone, short of GPU memory: since 21 Nov the Render view's path tracer holds a
+second, large context even when the view is closed). Forced in Chromium, the live site stays
+blank exactly so.
+
+- `viewport.js`: on `webglcontextlost`, waits about a second for the context to come back
+  (three.js picks that up); when it doesn't (and the page is visible), a fresh canvas in the
+  same place with a new renderer; the scene uploads again. Three in a minute: "The 3D view
+  stopped: … Reload the page." `viewport.listen` keeps the app's double-tap listeners on
+  whichever canvas is current.
+- `app.js` / `render.js`: before the rebuild the Render view's path tracer is freed
+  (`dispose()`: the BVH, the beads, the targets, its context); while the Render view is open, it
+  waits until it closes. The render then has to be prepared again.
+- Checked in Chromium on a phone-sized page: lost in the Plan and never given back, lost with a
+  render prepared and open, a render prepared again afterwards, the message after repeated
+  losses.
+
+Open: whether this was the owner's phone's failure: if the lamps still don't show, the next
+step is the phone's own console (Safari's Web Inspector).
+
 ## 2026-11-21: the Nutcracker (recipe-developer)
 
 **Why:** the owner made a nutcracker as a Lamp project (an 80 mm threaded tube in a closed cap) and
