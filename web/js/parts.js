@@ -5,6 +5,7 @@
 // values a new part starts with. Nothing here edits the recipe: every change is handed to app.js,
 // which goes through the engine's commands (addPart, removePart, setting values).
 
+import { fixtureOutline } from './fixture.js';
 import { el } from './dom.js';
 import { applies } from './settings.js';
 
@@ -336,6 +337,7 @@ export function fitPlan() {
  *   onOpen: (name: string) => void,
  *   onRemove: (name: string) => void,
  *   offsets?: Map<string, number>,
+ *   fixture?: ReturnType<typeof import('./fixture.js').fixtureOf>,
  * }} PlanHandlers
  */
 
@@ -592,6 +594,9 @@ function paint() {
   for (const [name, { points, width }] of parts) for (const [r, z] of points) take(r + width / 2, z + (offsets.get(name) || 0));
   for (const m of marks) for (const line of m.lines) for (const [x, , z] of line) take(x, z);
   for (const { port } of free) take(port.value[0], port.value[1]);
+  // The fittings (holder, bulb; the cable runs off the drawing): drawn where the socket is.
+  const fittings = handlers.fixture ? fixtureOutline(handlers.fixture) : null;
+  if (fittings) for (const outline of [fittings.socket, fittings.bulb]) for (const [r, z] of outline) take(r, z);
   if (!Number.isFinite(zmin)) [zmin, zmax, rmax] = [0, 100, 50];
   const inset = { ...INSET, bottom: INSET.bottom + (selected ? BAR : 0) };
   const k0 = Math.min((W - inset.left - inset.right) / (2 * rmax), (H - inset.top - inset.bottom) / Math.max(1, zmax - zmin));
@@ -615,6 +620,13 @@ function paint() {
   };
   const line = (pts) => pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   node('line', { x1: X(0), y1: 0, x2: X(0), y2: H, class: 'plan-axis' });
+  if (fittings) {
+    const g = node('g', { class: 'plan-fixture', 'aria-hidden': 'true' });
+    for (const [name, outline] of [['socket', fittings.socket], ['cap', fittings.cap], ['bulb', fittings.bulb]]) {
+      node('polygon', { points: line(outline.map(([r, z]) => [X(r), Y(z)])), class: `plan-${name}` }, g);
+    }
+    for (const edge of fittings.cable) node('polyline', { points: line(edge.map(([r, z]) => [X(r), Y(z)])), class: 'plan-cable' }, g);
+  }
 
   // The parts, the selected one with a halo; the others a little fainter while one is selected.
   const hit = collidingParts(result.diagnostics);

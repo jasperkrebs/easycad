@@ -18,7 +18,10 @@
       {
         "imports": {
           "three": "./vendor/three/three.module.js",
-          "three/addons/": "./vendor/three/addons/"
+          "three/addons/": "./vendor/three/addons/",
+          "three/examples/jsm/": "./vendor/three/addons/",
+          "three-mesh-bvh": "./vendor/three-mesh-bvh/index.module.js",
+          "three-gpu-pathtracer": "./vendor/three-gpu-pathtracer/index.module.js"
         }
       }
     </script>
@@ -40,6 +43,10 @@
           <div class="view-message" id="viewMessage" hidden></div>
           <div class="plan" id="plan" hidden></div>
           <div class="prints-strip" id="printsStrip" role="toolbar" aria-label="Prints" hidden></div>
+          <div class="render" id="render" hidden>
+            <canvas id="renderCanvas"></canvas>
+            <div class="render-status" id="renderStatus" role="status"></div>
+          </div>
         </div>
         <!-- The view's controls, pinned under it: nothing covers the model. -->
         <div class="view-tools">
@@ -50,6 +57,7 @@
               <button type="button" data-mode="both" aria-pressed="true">Both</button>
               <button type="button" id="viewPlan" aria-pressed="false" title="Plan: the cut through the axis" hidden>Plan</button>
               <button type="button" id="viewPrints" aria-pressed="false" title="Every part as it prints, each on its own bed" hidden>Prints</button>
+              <button type="button" id="viewRender" aria-pressed="false" title="Render: the lamp's light path traced">Render</button>
             </div>
             <div class="seg">
               <select id="viewColor" aria-label="Colour the toolpath by" title="Colour the toolpath by"></select>
@@ -89,6 +97,27 @@
               <input type="range" id="scrubFrom" min="0" max="1000" step="1" value="0" aria-label="Show the print from" />
               <input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Show the print up to" />
             </div>
+          </div>
+          <!-- The render's controls: prepare (a snapshot of the project), the light, the picture. -->
+          <div class="view-render" id="viewRenderBar" hidden>
+            <button type="button" class="render-prepare" id="renderPrepare" title="Prepare the project as it is now for rendering (solid beads; slow, once)">Prepare</button>
+            <button type="button" class="render-toggle" id="renderLight" aria-pressed="true" title="The bulb on (its light the main one) or off (daylight)">Light on</button>
+            <button type="button" class="render-toggle" id="renderHang" title="Which way the shades hang from the socket (the socket always points down)">Hangs ↓</button>
+            <label class="render-field" title="Bulb (lumens)">Bulb <input type="range" id="renderLumens" min="100" max="2500" step="10" aria-label="Bulb output (lumens)"></label>
+            <label class="render-field" title="Bulb colour (kelvin)">K <input type="range" id="renderKelvin" min="1800" max="6500" step="100" aria-label="Bulb colour temperature (kelvin)"></label>
+            <label class="render-field" title="Room light while the bulb is on">Room <input type="range" id="renderRoom" min="0" max="50" step="1" aria-label="Room light while the bulb is on (%)"></label>
+            <label class="render-field" title="Exposure (stops)">Exp <input type="range" id="renderExposure" min="-4" max="4" step="0.25" aria-label="Exposure (stops)"></label>
+            <label class="render-field" title="Surface: glossy ↔ matte">Matte <input type="range" id="renderMatte" min="0" max="100" step="5" aria-label="Surface: glossy to matte (%)"></label>
+            <select id="renderSamples" aria-label="Samples" title="Samples per pixel to stop at">
+              <option value="64">64</option><option value="256">256</option><option value="1024">1024</option><option value="4096">4096</option>
+            </select>
+            <select id="renderBounces" aria-label="Light bounces" title="Light bounces">
+              <option value="4">4 bounces</option><option value="8">8 bounces</option><option value="16">16 bounces</option>
+            </select>
+            <select id="renderScale" aria-label="Resolution" title="Resolution (× the screen's)">
+              <option value="0.5">½×</option><option value="1">1×</option><option value="2">2×</option>
+            </select>
+            <button type="button" class="render-prepare" id="renderSave" title="Save the render as a PNG (transparent background)" disabled>PNG</button>
           </div>
           <!-- The assembly taken apart, a shade at a time (furthest out first), as the print plays. -->
           <div class="view-scrub view-assembly" id="viewAssembly" hidden>

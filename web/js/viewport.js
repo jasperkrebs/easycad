@@ -11,10 +11,204 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { fixtureGroup } from './fixture-mesh.js';
 
 /** @param {string} name CSS custom property, e.g. '--accent' */
 function token(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888888';
+}
+
+/** Steps per half circle of a bead's section by default (more: rounder, heavier). */
+const ROUND = 5;
+/** Points round a bead's section: each half circle's, both ends included. */
+const RING = 2 * (ROUND + 1);
+/** Turns sharper than this get a round joint, the section pivoting round the corner. */
+const SHARP = THREE.MathUtils.degToRad(25);
+/** Pivot steps: one per this much turn. */
+const PIVOT_STEP = THREE.MathUtils.degToRad(15);
+/** Rings in a round end cap. */
+const CAP = 4;
+
+/**
+ * One toolpath as solid beads, like a round nozzle laying plastic along it: each move swept
+ * with its own bead (the G-code's model: a flat top and bottom with a half circle of the
+ * layer height on each side, the line width across, from the nozzle down one layer height).
+ * Where the path bends gently the section follows the bend; at a sharp corner it pivots round
+ * the corner point, so the bead rounds the corner instead of notching it; each run of moves
+ * ends in a round cap. Travel moves leave a gap. Also returns, for each point, how many
+ * indices draw the bead up to that point (to show the print part way).
+ * @param {Float32Array} points
+ * @param {Float32Array} widths
+ * @param {Float32Array} heights
+ * @param {Float32Array} colors
+ * @param {Float32Array | null} [ups] each point's up direction (x, y, z), the beads' sections
+ *   standing along it; straight up when not given
+ * @param {{ kinds?: boolean }} [options] kinds: also say, for each triangle, which face of the
+ *   bead it's on (0 a round side, 1 the flat top, 2 the flat bottom) and at which point (the
+ *   render tells the faces where turns touch from the outside)
+ */
+export function beadGeometry(points, widths, heights, colors, ups = null, options = {}) {
+  const n = points.length / 3;
+  /** @type {number[]} */
+  const pos = [];
+  /** @type {number[]} */
+  const col = [];
+  /** @type {number[]} */
+  const index = [];
+  const upTo = new Uint32Array(n);
+  /** @type {number[]} */
+  const kinds = [];
+  /** @type {number[]} */
+  const triPoint = [];
+  // The section's outline, as (across, up) for a bead `w` wide and `h` tall, centred.
+  const section = (w, h) => {
+    const r = Math.max(1e-6, Math.min(w, h) / 2);
+    const c = Math.max(0, w / 2 - r);
+    const out = [];
+    for (let s = 0; s <= ROUND; s++) {
+      const a = -Math.PI / 2 + (Math.PI * s) / ROUND;
+      out.push([c + r * Math.cos(a), r * Math.sin(a)]);
+    }
+    for (let s = 0; s <= ROUND; s++) {
+      const a = Math.PI / 2 + (Math.PI * s) / ROUND;
+      out.push([-c + r * Math.cos(a), r * Math.sin(a)]);
+    }
+    return out;
+  };
+  let rings = 0;
+  let joined = false;
+  /**
+   * A ring at (x, y, z) across (ax, ay), w wide and h tall, in point i's colour. `inner`
+   * (at a sharp corner): the side of the section inside the turn stays at the corner's inner
+   * mitre point instead of swinging round, so the joint doesn't fold over itself.
+   * @param {{ bx: number, by: number, k: number, side: number } | null} [inner]
+   */
+  const ring = (x, y, z, ax, ay, w, h, i, inner = null) => {
+    // The section's frame: across (A) and up (V). Upright, A is level and V straight up;
+    // tilted, V is the point's up and A the level across direction turned square to it.
+    let [Ax, Ay, Az, Vx, Vy, Vz] = [ax, ay, 0, 0, 0, 1];
+    let [Bx, By, Bz] = inner ? [inner.bx, inner.by, 0] : [0, 0, 0];
+    if (ups) {
+      [Vx, Vy, Vz] = [ups[3 * i], ups[3 * i + 1], ups[3 * i + 2]];
+      const square = (px, py) => {
+        const d = px * Vx + py * Vy;
+        const [qx, qy, qz] = [px - d * Vx, py - d * Vy, -d * Vz];
+        const len = Math.hypot(qx, qy, qz) || 1;
+        return [qx / len, qy / len, qz / len];
+      };
+      [Ax, Ay, Az] = square(ax, ay);
+      if (inner) [Bx, By, Bz] = square(inner.bx, inner.by);
+    }
+    for (const [u, v] of section(w, h)) {
+      const up = v - h / 2;
+      if (inner && u * inner.side > 0) {
+        const d = Math.abs(u) * inner.k;
+        pos.push(x + Bx * d + Vx * up, y + By * d + Vy * up, z + Bz * d + Vz * up);
+      } else {
+        pos.push(x + Ax * u + Vx * up, y + Ay * u + Vy * up, z + Az * u + Vz * up);
+      }
+      col.push(colors[3 * i], colors[3 * i + 1], colors[3 * i + 2]);
+    }
+    if (joined) {
+      const [p, q] = [RING * (rings - 1), RING * rings];
+      for (let c = 0; c < RING; c++) {
+        const d = (c + 1) % RING;
+        index.push(p + c, q + c, q + d, p + c, q + d, p + d);
+        if (options.kinds) {
+          const kind = c === ROUND ? 1 : c === RING - 1 ? 2 : 0;
+          kinds.push(kind, kind);
+          triPoint.push(i, i);
+        }
+      }
+    }
+    rings++;
+    joined = true;
+  };
+  // The direction of move i (into point i) in the layer; the last good one when it's vertical.
+  const dirs = new Float32Array(2 * n);
+  let [dx, dy] = [1, 0];
+  for (let i = 1; i < n; i++) {
+    const tx = points[3 * i] - points[3 * i - 3];
+    const ty = points[3 * i + 1] - points[3 * i - 2];
+    const len = Math.hypot(tx, ty);
+    if (len > 1e-9) [dx, dy] = [tx / len, ty / len];
+    dirs[2 * i] = dx;
+    dirs[2 * i + 1] = dy;
+  }
+  const printing = (i) => i > 0 && i < n && widths[i] > 0;
+  const at = (i) => [points[3 * i], points[3 * i + 1], points[3 * i + 2]];
+  for (let i = 0; i < n; i++) {
+    const into = printing(i);
+    const out = printing(i + 1);
+    if (!into && !out) {
+      joined = false;
+      upTo[i] = index.length;
+      continue;
+    }
+    const [x, y, z] = at(i);
+    if (!into) {
+      // A run starts: a round cap behind the point, the first move's bead.
+      const [ux, uy] = [dirs[2 * i + 2], dirs[2 * i + 3]];
+      const [w, h] = [widths[i + 1], heights[i + 1]];
+      joined = false;
+      for (let c = 0; c <= CAP; c++) {
+        const a = (Math.PI / 2) * (1 - c / CAP);
+        const back = (w / 2) * Math.sin(a);
+        ring(x - ux * back, y - uy * back, z, -uy, ux, w * Math.cos(a), h, i);
+      }
+    } else if (!out) {
+      // A run ends: the last move's bead up to the point, then a round cap ahead of it.
+      const [ux, uy] = [dirs[2 * i], dirs[2 * i + 1]];
+      const [w, h] = [widths[i], heights[i]];
+      for (let c = 0; c <= CAP; c++) {
+        const a = (Math.PI / 2) * (c / CAP);
+        const ahead = (w / 2) * Math.sin(a);
+        ring(x + ux * ahead, y + uy * ahead, z, -uy, ux, w * Math.cos(a), h, i);
+      }
+    } else {
+      // Between two moves: follow a gentle bend, pivot round a sharp one.
+      const [ix, iy] = [dirs[2 * i], dirs[2 * i + 1]];
+      const [ox, oy] = [dirs[2 * i + 2], dirs[2 * i + 3]];
+      const turn = Math.atan2(ix * oy - iy * ox, ix * ox + iy * oy);
+      const [w0, h0, w1, h1] = [widths[i], heights[i], widths[i + 1], heights[i + 1]];
+      if (Math.abs(turn) < SHARP) {
+        const bx = -(iy + oy);
+        const by = ix + ox;
+        const len = Math.hypot(bx, by) || 1;
+        // Mitred, so the bead keeps its width through the bend.
+        const mitre = 1 / Math.max(0.5, Math.cos(turn / 2));
+        ring(x, y, z, bx / len, by / len, ((w0 + w1) / 2) * mitre, (h0 + h1) / 2, i);
+      } else {
+        const steps = Math.ceil(Math.abs(turn) / PIVOT_STEP);
+        const a0 = Math.atan2(iy, ix);
+        // Inside the turn: the bisector of the two moves' sides, out to where they meet.
+        const side = Math.sign(turn);
+        let bx = (-iy - oy) * side;
+        let by = (ix + ox) * side;
+        const blen = Math.hypot(bx, by);
+        if (blen > 1e-9) {
+          bx /= blen;
+          by /= blen;
+        } else {
+          [bx, by] = [-ix, -iy]; // straight back on itself
+        }
+        const inner = { bx, by, k: 1 / Math.max(0.5, Math.cos(turn / 2)), side };
+        for (let s = 0; s <= steps; s++) {
+          const f = s / steps;
+          const a = a0 + turn * f;
+          ring(x, y, z, -Math.sin(a), Math.cos(a), w0 + (w1 - w0) * f, h0 + (h1 - h0) * f, i, inner);
+        }
+      }
+    }
+    upTo[i] = index.length;
+    if (!out) joined = false;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+  g.setIndex(new THREE.BufferAttribute(rings * RING > 65535 ? new Uint32Array(index) : new Uint16Array(index), 1));
+  g.computeVertexNormals();
+  return { geometry: g, upTo, kinds: options.kinds ? new Uint8Array(kinds) : null, at: options.kinds ? new Uint32Array(triPoint) : null };
 }
 
 /**
@@ -82,6 +276,16 @@ export function createViewport(canvas) {
   const curveMaterial = new THREE.LineBasicMaterial();
   const curves = new THREE.Group();
   scene.add(paths, beads, curves);
+
+  // The lamp's fittings (holder, bulb, cable) where the recipe's socket is, when it has one.
+  const fixtureMaterials = {
+    socket: new THREE.MeshStandardMaterial({ color: 0x34363b, roughness: 0.5, metalness: 0, side: THREE.DoubleSide }),
+    cap: new THREE.MeshStandardMaterial({ color: 0xc8c8c8, roughness: 0.3, metalness: 0.8, side: THREE.DoubleSide }),
+    bulb: new THREE.MeshStandardMaterial({ color: 0xfaf6ee, emissive: 0xfff1d6, emissiveIntensity: 0.25, roughness: 0.6, metalness: 0, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+    cable: new THREE.MeshStandardMaterial({ color: 0x1d1e21, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }),
+  };
+  const fixture = new THREE.Group();
+  scene.add(fixture);
 
   /** @type {THREE.GridHelper | null} */
   let grid = null;
@@ -293,186 +497,6 @@ export function createViewport(canvas) {
     applyProgress();
   }
 
-  /** Steps per half circle of a bead's section (more: rounder, heavier). */
-  const ROUND = 5;
-  /** Points round a bead's section: each half circle's, both ends included. */
-  const RING = 2 * (ROUND + 1);
-  /** Turns sharper than this get a round joint, the section pivoting round the corner. */
-  const SHARP = THREE.MathUtils.degToRad(25);
-  /** Pivot steps: one per this much turn. */
-  const PIVOT_STEP = THREE.MathUtils.degToRad(15);
-  /** Rings in a round end cap. */
-  const CAP = 4;
-
-  /**
-   * One toolpath as solid beads, like a round nozzle laying plastic along it: each move swept
-   * with its own bead (the G-code's model: a flat top and bottom with a half circle of the
-   * layer height on each side, the line width across, from the nozzle down one layer height).
-   * Where the path bends gently the section follows the bend; at a sharp corner it pivots round
-   * the corner point, so the bead rounds the corner instead of notching it; each run of moves
-   * ends in a round cap. Travel moves leave a gap. Also returns, for each point, how many
-   * indices draw the bead up to that point (to show the print part way).
-   * @param {Float32Array} points
-   * @param {Float32Array} widths
-   * @param {Float32Array} heights
-   * @param {Float32Array} colors
-   * @param {Float32Array | null} [ups] each point's up direction (x, y, z), the beads' sections
-   *   standing along it; straight up when not given
-   */
-  function beadGeometry(points, widths, heights, colors, ups = null) {
-    const n = points.length / 3;
-    /** @type {number[]} */
-    const pos = [];
-    /** @type {number[]} */
-    const col = [];
-    /** @type {number[]} */
-    const index = [];
-    const upTo = new Uint32Array(n);
-    // The section's outline, as (across, up) for a bead `w` wide and `h` tall, centred.
-    const section = (w, h) => {
-      const r = Math.max(1e-6, Math.min(w, h) / 2);
-      const c = Math.max(0, w / 2 - r);
-      const out = [];
-      for (let s = 0; s <= ROUND; s++) {
-        const a = -Math.PI / 2 + (Math.PI * s) / ROUND;
-        out.push([c + r * Math.cos(a), r * Math.sin(a)]);
-      }
-      for (let s = 0; s <= ROUND; s++) {
-        const a = Math.PI / 2 + (Math.PI * s) / ROUND;
-        out.push([-c + r * Math.cos(a), r * Math.sin(a)]);
-      }
-      return out;
-    };
-    let rings = 0;
-    let joined = false;
-    /**
-     * A ring at (x, y, z) across (ax, ay), w wide and h tall, in point i's colour. `inner`
-     * (at a sharp corner): the side of the section inside the turn stays at the corner's inner
-     * mitre point instead of swinging round, so the joint doesn't fold over itself.
-     * @param {{ bx: number, by: number, k: number, side: number } | null} [inner]
-     */
-    const ring = (x, y, z, ax, ay, w, h, i, inner = null) => {
-      // The section's frame: across (A) and up (V). Upright, A is level and V straight up;
-      // tilted, V is the point's up and A the level across direction turned square to it.
-      let [Ax, Ay, Az, Vx, Vy, Vz] = [ax, ay, 0, 0, 0, 1];
-      let [Bx, By, Bz] = inner ? [inner.bx, inner.by, 0] : [0, 0, 0];
-      if (ups) {
-        [Vx, Vy, Vz] = [ups[3 * i], ups[3 * i + 1], ups[3 * i + 2]];
-        const square = (px, py) => {
-          const d = px * Vx + py * Vy;
-          const [qx, qy, qz] = [px - d * Vx, py - d * Vy, -d * Vz];
-          const len = Math.hypot(qx, qy, qz) || 1;
-          return [qx / len, qy / len, qz / len];
-        };
-        [Ax, Ay, Az] = square(ax, ay);
-        if (inner) [Bx, By, Bz] = square(inner.bx, inner.by);
-      }
-      for (const [u, v] of section(w, h)) {
-        const up = v - h / 2;
-        if (inner && u * inner.side > 0) {
-          const d = Math.abs(u) * inner.k;
-          pos.push(x + Bx * d + Vx * up, y + By * d + Vy * up, z + Bz * d + Vz * up);
-        } else {
-          pos.push(x + Ax * u + Vx * up, y + Ay * u + Vy * up, z + Az * u + Vz * up);
-        }
-        col.push(colors[3 * i], colors[3 * i + 1], colors[3 * i + 2]);
-      }
-      if (joined) {
-        const [p, q] = [RING * (rings - 1), RING * rings];
-        for (let c = 0; c < RING; c++) {
-          const d = (c + 1) % RING;
-          index.push(p + c, q + c, q + d, p + c, q + d, p + d);
-        }
-      }
-      rings++;
-      joined = true;
-    };
-    // The direction of move i (into point i) in the layer; the last good one when it's vertical.
-    const dirs = new Float32Array(2 * n);
-    let [dx, dy] = [1, 0];
-    for (let i = 1; i < n; i++) {
-      const tx = points[3 * i] - points[3 * i - 3];
-      const ty = points[3 * i + 1] - points[3 * i - 2];
-      const len = Math.hypot(tx, ty);
-      if (len > 1e-9) [dx, dy] = [tx / len, ty / len];
-      dirs[2 * i] = dx;
-      dirs[2 * i + 1] = dy;
-    }
-    const printing = (i) => i > 0 && i < n && widths[i] > 0;
-    const at = (i) => [points[3 * i], points[3 * i + 1], points[3 * i + 2]];
-    for (let i = 0; i < n; i++) {
-      const into = printing(i);
-      const out = printing(i + 1);
-      if (!into && !out) {
-        joined = false;
-        upTo[i] = index.length;
-        continue;
-      }
-      const [x, y, z] = at(i);
-      if (!into) {
-        // A run starts: a round cap behind the point, the first move's bead.
-        const [ux, uy] = [dirs[2 * i + 2], dirs[2 * i + 3]];
-        const [w, h] = [widths[i + 1], heights[i + 1]];
-        joined = false;
-        for (let c = 0; c <= CAP; c++) {
-          const a = (Math.PI / 2) * (1 - c / CAP);
-          const back = (w / 2) * Math.sin(a);
-          ring(x - ux * back, y - uy * back, z, -uy, ux, w * Math.cos(a), h, i);
-        }
-      } else if (!out) {
-        // A run ends: the last move's bead up to the point, then a round cap ahead of it.
-        const [ux, uy] = [dirs[2 * i], dirs[2 * i + 1]];
-        const [w, h] = [widths[i], heights[i]];
-        for (let c = 0; c <= CAP; c++) {
-          const a = (Math.PI / 2) * (c / CAP);
-          const ahead = (w / 2) * Math.sin(a);
-          ring(x + ux * ahead, y + uy * ahead, z, -uy, ux, w * Math.cos(a), h, i);
-        }
-      } else {
-        // Between two moves: follow a gentle bend, pivot round a sharp one.
-        const [ix, iy] = [dirs[2 * i], dirs[2 * i + 1]];
-        const [ox, oy] = [dirs[2 * i + 2], dirs[2 * i + 3]];
-        const turn = Math.atan2(ix * oy - iy * ox, ix * ox + iy * oy);
-        const [w0, h0, w1, h1] = [widths[i], heights[i], widths[i + 1], heights[i + 1]];
-        if (Math.abs(turn) < SHARP) {
-          const bx = -(iy + oy);
-          const by = ix + ox;
-          const len = Math.hypot(bx, by) || 1;
-          // Mitred, so the bead keeps its width through the bend.
-          const mitre = 1 / Math.max(0.5, Math.cos(turn / 2));
-          ring(x, y, z, bx / len, by / len, ((w0 + w1) / 2) * mitre, (h0 + h1) / 2, i);
-        } else {
-          const steps = Math.ceil(Math.abs(turn) / PIVOT_STEP);
-          const a0 = Math.atan2(iy, ix);
-          // Inside the turn: the bisector of the two moves' sides, out to where they meet.
-          const side = Math.sign(turn);
-          let bx = (-iy - oy) * side;
-          let by = (ix + ox) * side;
-          const blen = Math.hypot(bx, by);
-          if (blen > 1e-9) {
-            bx /= blen;
-            by /= blen;
-          } else {
-            [bx, by] = [-ix, -iy]; // straight back on itself
-          }
-          const inner = { bx, by, k: 1 / Math.max(0.5, Math.cos(turn / 2)), side };
-          for (let s = 0; s <= steps; s++) {
-            const f = s / steps;
-            const a = a0 + turn * f;
-            ring(x, y, z, -Math.sin(a), Math.cos(a), w0 + (w1 - w0) * f, h0 + (h1 - h0) * f, i, inner);
-          }
-        }
-      }
-      upTo[i] = index.length;
-      if (!out) joined = false;
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
-    g.setIndex(new THREE.BufferAttribute(rings * RING > 65535 ? new Uint32Array(index) : new Uint16Array(index), 1));
-    g.computeVertexNormals();
-    return { geometry: g, upTo };
-  }
 
   /** A part's own bead material in the custom colours: as solid as set for it. */
   function partBeadMaterial(part) {
@@ -776,6 +800,7 @@ export function createViewport(canvas) {
     }
     shapes.visible = !layout && mode !== 'path';
     curves.visible = !layout;
+    fixture.visible = !layout;
     if (grid) grid.visible = !layout;
     requestRender();
   }
@@ -1013,16 +1038,38 @@ export function createViewport(canvas) {
      */
     capture(scale = 2) {
       const ratio = renderer.getPixelRatio();
+      // The picture is the model alone: no bed grid.
+      const gridShown = grid ? grid.visible : false;
+      if (grid) grid.visible = false;
       const [w, h] = [Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight)];
       renderer.setPixelRatio(Math.min(ratio * scale, 4096 / w));
       renderer.setSize(w, h, false);
       render();
       // Read right after drawing, while the drawing buffer still holds the frame.
       const url = renderer.domElement.toDataURL('image/png');
+      if (grid) grid.visible = gridShown;
       renderer.setPixelRatio(ratio);
       renderer.setSize(w, h, false);
       requestRender();
       return url;
+    },
+
+    /**
+     * Shows the lamp's fittings (holder, bulb, cable) where `fx` puts them, or none (null).
+     * @param {ReturnType<typeof import('./fixture.js').fixtureOf>} fx
+     */
+    setFixture(fx) {
+      for (const child of [...fixture.children]) {
+        child.traverse((o) => /** @type {any} */ (o).geometry?.dispose());
+        fixture.remove(child);
+      }
+      if (fx) fixture.add(fixtureGroup(fx, fixtureMaterials));
+      requestRender();
+    },
+
+    /** Where the camera looks from, as a unit vector from what it orbits (for the render). */
+    viewDirection() {
+      return camera.position.clone().sub(controls.target).normalize().toArray();
     },
 
     /** Frames the last result again. */
