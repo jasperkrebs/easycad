@@ -418,6 +418,12 @@ takes the top 52 % (at least 260 px). Nothing sits on the 3D view.
     view and the Plan; the **Render** view path traces the lamp, light on or off, into a PNG
     with a transparent background ([rendering.md](rendering.md)). A view: it reads the result
     and the custom colours, and edits nothing.
+  - **a lost GPU context:** a phone's browser can take the 3D view's WebGL context away (short
+    of memory, or in the background) and not give it back. When none comes back within about a
+    second, the view frees the Render view's path tracer (the other big user of the GPU; while
+    the Render view is open, when it closes) and rebuilds itself on a fresh canvas
+    (`viewport.listen` keeps the app's listeners on it). Three losses in a minute: an error asks
+    to reload.
 - **Params:** auto-generated from `param` lines:
   - sliders, number fields, toggles and dropdowns, in fold-out groups (one per `group`);
   - lock icons, and "assumed" badges with a one-tap "OK, keep it".

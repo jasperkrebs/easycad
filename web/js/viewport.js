@@ -211,12 +211,22 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
   return { geometry: g, upTo, kinds: options.kinds ? new Uint8Array(kinds) : null, at: options.kinds ? new Uint32Array(triPoint) : null };
 }
 
+/** How long the view waits for the browser to give a lost GPU context back (ms). */
+const RESTORE_WAIT = 1200;
+
 /**
  * @param {HTMLCanvasElement} canvas
+ * @param {{ onLost?: () => boolean }} [hooks] onLost: the view's GPU context was taken and not
+ *   given back; return false to hold the rebuild (then call `rebuild()` later)
  */
-export function createViewport(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+export function createViewport(canvas, hooks = {}) {
+  /** @param {HTMLCanvasElement} c */
+  const makeRenderer = (c) => {
+    const r = new THREE.WebGLRenderer({ canvas: c, antialias: true });
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    return r;
+  };
+  let renderer = makeRenderer(canvas);
 
   const scene = new THREE.Scene();
   const persp = new THREE.PerspectiveCamera(35, 1, 1, 20000);
@@ -336,7 +346,78 @@ export function createViewport(canvas) {
     beadEdgeMaterial.resolution.set(w, h);
     requestRender();
   }
-  new ResizeObserver(resize).observe(canvas);
+  const sizes = new ResizeObserver(resize);
+  sizes.observe(canvas);
+
+  // A phone's browser can take the view's GPU context away (short of memory, in the background)
+  // and may never give it back; three.js picks a context that comes back up by itself. One that
+  // doesn't: a fresh canvas in the same place, with a new renderer (the scene uploads again).
+  /** @type {[string, EventListener][]} */
+  const listeners = [];
+  let lost = false;
+  let lostTimer = 0;
+  /** When the view was rebuilt lately (ms): lost again and again, the device can't hold it. */
+  let rebuilt = [];
+  /** @type {(() => void) | null} */
+  let failed = null;
+  const onRestored = () => {
+    lost = false;
+    clearTimeout(lostTimer);
+    requestRender();
+  };
+  const checkLost = () => {
+    clearTimeout(lostTimer);
+    if (!lost || document.hidden) return;
+    lostTimer = window.setTimeout(() => {
+      if (lost && !document.hidden && (hooks.onLost?.() ?? true)) rebuild();
+    }, RESTORE_WAIT);
+  };
+  const onLost = () => {
+    lost = true;
+    checkLost();
+  };
+  document.addEventListener('visibilitychange', checkLost);
+  /** @param {HTMLCanvasElement} c */
+  const watch = (c) => {
+    c.addEventListener('webglcontextlost', onLost);
+    c.addEventListener('webglcontextrestored', onRestored);
+  };
+  watch(canvas);
+
+  /** A new canvas and renderer in place of a lost one. */
+  function rebuild() {
+    if (!lost) return;
+    const now = performance.now();
+    rebuilt = rebuilt.filter((t) => now - t < 60000);
+    if (rebuilt.length >= 3) {
+      failed?.();
+      return;
+    }
+    rebuilt.push(now);
+    const old = canvas;
+    const fresh = /** @type {HTMLCanvasElement} */ (old.cloneNode(false));
+    sizes.unobserve(old);
+    controls.disconnect();
+    try {
+      renderer.dispose();
+    } catch {
+      // A lost context has nothing left to free.
+    }
+    old.replaceWith(fresh);
+    canvas = fresh;
+    try {
+      renderer = makeRenderer(fresh);
+    } catch {
+      failed?.();
+      return;
+    }
+    watch(fresh);
+    for (const [type, fn] of listeners) fresh.addEventListener(type, fn);
+    controls.connect(fresh);
+    sizes.observe(fresh);
+    lost = false;
+    resize();
+  }
 
   function rebuildGrid() {
     if (grid) {
@@ -910,6 +991,29 @@ export function createViewport(canvas) {
   resize();
 
   return {
+    /**
+     * Listens on the view's canvas, also after it's replaced (a lost GPU context).
+     * @param {string} type
+     * @param {EventListener} fn
+     */
+    listen(type, fn) {
+      listeners.push([type, fn]);
+      canvas.addEventListener(type, fn);
+    },
+
+    /** Whether the view's GPU context is gone (and not yet rebuilt). */
+    get lost() {
+      return lost;
+    },
+
+    /** Rebuilds a lost view now (after `onLost` held it). */
+    rebuild,
+
+    /** @param {() => void} fn called when the view can't be rebuilt any more */
+    onFailed(fn) {
+      failed = fn;
+    },
+
     /** WebGL 2 now; whether this device could also run WebGPU later. */
     rendererInfo() {
       const gl = renderer.capabilities.isWebGL2 ? 'WebGL 2' : 'WebGL 1';

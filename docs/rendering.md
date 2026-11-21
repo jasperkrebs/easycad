@@ -106,6 +106,8 @@ anywhere.
   outside is then its beads' round faces, inside and out, where the light bends: the layer lines'
   lensing. The first turn's bottom, the last turn's top and any step where a turn sits out past
   half a bead stay real faces.
+- When the 3D view loses its GPU context (a phone short of memory), the prepared render is
+  freed so the 3D view can be rebuilt (architecture §9.2): Prepare again afterwards.
 - The library's WebGL path tracer is marked deprecated in favour of its WebGPU one; the WebGPU
   one is the upgrade once phones run WebGPU everywhere.
 

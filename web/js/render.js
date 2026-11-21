@@ -112,7 +112,8 @@ export function createRenderer(canvas, hooks = {}) {
       wake();
     }
   }
-  new ResizeObserver(resize).observe(canvas);
+  const sizes = new ResizeObserver(resize);
+  sizes.observe(canvas);
 
   controls.addEventListener('change', () => {
     if (!prepared) return;
@@ -338,6 +339,25 @@ export function createRenderer(canvas, hooks = {}) {
     /** The picture as it is now, a PNG data URL with a transparent background. */
     capture() {
       return canvas.toDataURL('image/png');
+    },
+
+    /**
+     * Frees everything on the GPU (the BVH, the beads, the sampling targets) and gives up the
+     * canvas's context, so the 3D view can have the memory back. The canvas can't be used again.
+     */
+    dispose() {
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      prepared = false;
+      sizes.disconnect();
+      controls.dispose();
+      scene.remove(root);
+      dispose(root);
+      for (const m of Object.values(fittings)) m.dispose();
+      sky.dispose();
+      tracer.dispose();
+      renderer.dispose();
+      renderer.forceContextLoss();
     },
   };
 }

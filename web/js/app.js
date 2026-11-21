@@ -85,7 +85,21 @@ const state = {
 const SEEN_KEY = 'easycad.templateSeen';
 
 const engine = createEngine();
-const viewport = createViewport(/** @type {HTMLCanvasElement} */ ($('view')));
+// The 3D view's GPU context taken away and not given back (a phone short of memory): it's
+// rebuilt, after freeing the Render view's path tracer, the other big user of the GPU; while the
+// Render view is open, when it closes.
+const viewport = createViewport(/** @type {HTMLCanvasElement} */ ($('view')), {
+  onLost: () => {
+    if (renderOn()) return false;
+    freeRender();
+    return true;
+  },
+});
+viewport.onFailed(() => {
+  const msg = $('viewMessage');
+  msg.hidden = false;
+  msg.textContent = 'The 3D view stopped: this device ran out of graphics memory. Reload the page.';
+});
 const editor = /** @type {HTMLTextAreaElement} */ ($('recipe'));
 let refitNext = true;
 // ---------------------------------------------------------------------------------------------
@@ -1383,6 +1397,24 @@ async function renderApi() {
   return renderView.api;
 }
 
+/**
+ * Gives the path tracer's GPU memory back (the 3D view needs it): the render is no longer
+ * prepared, and its canvas is a fresh one for the next.
+ */
+function freeRender() {
+  if (!renderView.api || renderView.busy) return;
+  renderView.api.dispose();
+  renderView.api = null;
+  renderView.loading = null;
+  renderView.key = '';
+  renderView.info = '';
+  const old = $('renderCanvas');
+  old.replaceWith(old.cloneNode(false));
+  $('renderSave').setAttribute('disabled', '');
+  renderStatus('Prepare to render');
+  markRenderStale();
+}
+
 /** Opens or closes the Render view (closing pauses the sampling; the render stays prepared). */
 async function showRender(on) {
   if (on === renderOn()) return;
@@ -1392,6 +1424,10 @@ async function showRender(on) {
   document.body.toggleAttribute('data-render', on);
   if (!on) {
     renderView.api?.pause();
+    if (viewport.lost) {
+      freeRender();
+      viewport.rebuild();
+    }
     return;
   }
   // The render is a view of its own: not the plan, not the prints laid out.
@@ -1541,13 +1577,14 @@ function wire() {
     download(`${saveName()}.png`, blob, 'image/png');
   });
   wireRender();
-  $('view').addEventListener('dblclick', () => viewport.focus());
+  viewport.listen('dblclick', () => viewport.focus());
   let lastTap = { t: 0, x: 0, y: 0 };
   let touches = 0;
-  $('view').addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'touch') touches++;
+  viewport.listen('pointerdown', (e) => {
+    if (/** @type {PointerEvent} */ (e).pointerType === 'touch') touches++;
   });
-  $('view').addEventListener('pointerup', (e) => {
+  viewport.listen('pointerup', (ev) => {
+    const e = /** @type {PointerEvent} */ (ev);
     if (e.pointerType !== 'touch') return;
     const several = touches > 1;
     touches = Math.max(0, touches - 1);
@@ -1563,7 +1600,7 @@ function wire() {
       lastTap = { t: now, x: e.clientX, y: e.clientY };
     }
   });
-  $('view').addEventListener('pointercancel', () => (touches = 0));
+  viewport.listen('pointercancel', () => (touches = 0));
   // Set views, and parallel or perspective (remembered on this device).
   document.querySelectorAll('[data-view]').forEach((b) =>
     b.addEventListener('click', () => viewport.view(/** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.view))),
