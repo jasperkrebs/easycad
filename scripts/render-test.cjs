@@ -67,6 +67,12 @@ async function alphaRange(page, url) {
       await page.click('#viewPlan');
       await page.waitForSelector('.plan-fixture .plan-bulb', { timeout: 10000 }).catch(() => failures.push(`${template}: no bulb in the plan`));
       await shot(`${template}-plan`);
+      // The bulb button hides the fittings and shows them again (remembered).
+      await page.click('.plan-fittings');
+      await page.waitForFunction(() => !document.querySelector('.plan-fixture') && document.querySelector('.plan-fittings')?.getAttribute('aria-pressed') === 'false', null, { timeout: 5000 }).catch(() => failures.push(`${template}: the fittings didn't hide`));
+      await shot(`${template}-plan-hidden`);
+      await page.click('.plan-fittings');
+      await page.waitForSelector('.plan-fixture', { timeout: 5000 }).catch(() => failures.push(`${template}: the fittings didn't come back`));
       await page.click('[data-mode="both"]');
     }
 

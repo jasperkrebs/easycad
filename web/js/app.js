@@ -41,6 +41,8 @@ const OPACITY_KEY = 'easycad.beadOpacity';
 const NOZZLE_KEY = 'easycad.nozzle';
 /** Custom colours (the "Custom" colour mode): per project, each part's colour and opacity, and the light. */
 const CUSTOM_KEY = 'easycad.customColors';
+/** Whether the plan shows the lamp's fittings (socket, bulb, cable): 'on' (or unset) or 'off'. */
+const PLAN_FITTINGS_KEY = 'easycad.planFittings';
 /** What the toolpath is coloured by. */
 const COLOR_KEY = 'easycad.colorMode';
 /** How fast the print plays back. */
@@ -1009,6 +1011,11 @@ function renderPlanView(result) {
     onRemove: (name) => removePart(name),
     offsets: assemblyOffsets,
     fixture: fixtureFor(result),
+    fittingsShown: load(PLAN_FITTINGS_KEY) !== 'off',
+    onFittings: (shown) => {
+      save(PLAN_FITTINGS_KEY, shown ? 'on' : 'off');
+      renderPlanView(result);
+    },
   });
 }
 

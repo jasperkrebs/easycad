@@ -338,6 +338,8 @@ export function fitPlan() {
  *   onRemove: (name: string) => void,
  *   offsets?: Map<string, number>,
  *   fixture?: ReturnType<typeof import('./fixture.js').fixtureOf>,
+ *   fittingsShown?: boolean,
+ *   onFittings?: (shown: boolean) => void,
  * }} PlanHandlers
  */
 
@@ -464,10 +466,10 @@ function wire(host) {
   );
   host.addEventListener('click', (e) => {
     const t = /** @type {HTMLElement} */ (e.target);
-    if (!t.closest('.plan-part[data-part], .plan-mark, .plan-add, .plan-bar, .plan-zoom')) drawn?.handlers.onSelect(null);
+    if (!t.closest('.plan-part[data-part], .plan-mark, .plan-add, .plan-bar, .plan-zoom, .plan-fittings')) drawn?.handlers.onSelect(null);
   });
   host.addEventListener('dblclick', (e) => {
-    if (!(/** @type {HTMLElement} */ (e.target).closest('.plan-part, .plan-mark, .plan-add, .plan-bar, .plan-zoom'))) fitPlan();
+    if (!(/** @type {HTMLElement} */ (e.target).closest('.plan-part, .plan-mark, .plan-add, .plan-bar, .plan-zoom, .plan-fittings'))) fitPlan();
   });
   host.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && drawn?.handlers.selected) drawn.handlers.onSelect(null);
@@ -595,7 +597,9 @@ function paint() {
   for (const m of marks) for (const line of m.lines) for (const [x, , z] of line) take(x, z);
   for (const { port } of free) take(port.value[0], port.value[1]);
   // The fittings (holder, bulb; the cable runs off the drawing): drawn where the socket is.
-  const fittings = handlers.fixture ? fixtureOutline(handlers.fixture) : null;
+  // Hidden with the plan's bulb button (shown unless turned off).
+  const fittingsShown = handlers.fittingsShown !== false;
+  const fittings = handlers.fixture && fittingsShown ? fixtureOutline(handlers.fixture) : null;
   if (fittings) for (const outline of [fittings.socket, fittings.bulb]) for (const [r, z] of outline) take(r, z);
   if (!Number.isFinite(zmin)) [zmin, zmax, rmax] = [0, 100, 50];
   const inset = { ...INSET, bottom: INSET.bottom + (selected ? BAR : 0) };
@@ -759,8 +763,29 @@ function paint() {
     zoom.append(b);
   }
   host.append(zoom);
+  // The fittings (socket, bulb, cable) shown or hidden, when the project has them.
+  if (handlers.fixture) {
+    const label = fittingsShown ? 'Hide the socket and bulb' : 'Show the socket and bulb';
+    const b = el('button', { type: 'button', className: 'plan-fittings', 'aria-pressed': String(fittingsShown), 'aria-label': label, title: label });
+    b.append(bulbIcon());
+    b.addEventListener('click', () => handlers.onFittings?.(!fittingsShown));
+    host.append(b);
+  }
 
   if (selected) host.append(partBar(result, selected, component, handlers));
+}
+
+/** A bulb on its socket, outlined (the fittings' button). */
+function bulbIcon() {
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of ['M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z', 'M9.5 19.5h5M10.5 22h3']) {
+    const path = document.createElementNS(SVG, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
 }
 
 /**
