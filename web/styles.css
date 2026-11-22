@@ -2170,9 +2170,89 @@ body[data-render] .view-legend {
 
 .view-render {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.render-actions,
+.render-pane {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+.render-pane[hidden] {
+  display: none;
+}
+
+.render-tabs {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.view-render .render-tabs button {
+  height: auto;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.view-render .render-tabs button[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.render-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.render-group input[type="range"] {
+  width: 90px;
+  accent-color: var(--accent);
+}
+
+.view-render output {
+  min-width: 3.6em;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.view-render input[type="color"] {
+  width: 34px;
+  height: 30px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card2);
+}
+
+.render-materials {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.render-material {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.render-material:last-child {
+  border-bottom: 0;
+}
+
+.render-material .render-field input {
+  width: 70px;
 }
 
 .view-render[hidden] {
@@ -2193,7 +2273,8 @@ body[data-render] .view-legend {
 }
 
 .view-render button[aria-pressed="true"],
-.view-render .render-prepare[data-stale] {
+.view-render .render-prepare[data-stale],
+.view-render .render-go:not(:disabled) {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);

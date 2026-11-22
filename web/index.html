@@ -98,26 +98,48 @@
               <input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Show the print up to" />
             </div>
           </div>
-          <!-- The render's controls: prepare (a snapshot of the project), the light, the picture. -->
+          <!-- The render's controls: prepare (a snapshot of the project), set up the light, camera,
+               room, materials and quality (nothing renders meanwhile), then Preview or Render. -->
           <div class="view-render" id="viewRenderBar" hidden>
-            <button type="button" class="render-prepare" id="renderPrepare" title="Prepare the project as it is now for rendering (solid beads; slow, once)">Prepare</button>
-            <button type="button" class="render-toggle" id="renderLight" aria-pressed="true" title="The bulb on (its light the main one) or off (daylight)">Light on</button>
-            <button type="button" class="render-toggle" id="renderHang" title="Which way the shades hang from the socket (the socket always points down)">Hangs ↓</button>
-            <label class="render-field" title="Bulb (lumens)">Bulb <input type="range" id="renderLumens" min="100" max="2500" step="10" aria-label="Bulb output (lumens)"></label>
-            <label class="render-field" title="Bulb colour (kelvin)">K <input type="range" id="renderKelvin" min="1800" max="6500" step="100" aria-label="Bulb colour temperature (kelvin)"></label>
-            <label class="render-field" title="Room light while the bulb is on">Room <input type="range" id="renderRoom" min="0" max="50" step="1" aria-label="Room light while the bulb is on (%)"></label>
-            <label class="render-field" title="Exposure (stops)">Exp <input type="range" id="renderExposure" min="-4" max="4" step="0.25" aria-label="Exposure (stops)"></label>
-            <label class="render-field" title="Surface: glossy ↔ matte">Matte <input type="range" id="renderMatte" min="0" max="100" step="5" aria-label="Surface: glossy to matte (%)"></label>
-            <select id="renderSamples" aria-label="Samples" title="Samples per pixel to stop at">
-              <option value="64">64</option><option value="256">256</option><option value="1024">1024</option><option value="4096">4096</option>
-            </select>
-            <select id="renderBounces" aria-label="Light bounces" title="Light bounces">
-              <option value="4">4 bounces</option><option value="8">8 bounces</option><option value="16">16 bounces</option>
-            </select>
-            <select id="renderScale" aria-label="Resolution" title="Resolution (× the screen's)">
-              <option value="0.5">½×</option><option value="1">1×</option><option value="2">2×</option>
-            </select>
-            <button type="button" class="render-prepare" id="renderSave" title="Save the render as a PNG (transparent background)" disabled>PNG</button>
+            <div class="render-actions">
+              <button type="button" class="render-prepare" id="renderPrepare" title="Prepare the project as it is now for rendering (solid beads; slow, once)">Prepare</button>
+              <button type="button" class="render-go" id="renderPreview" title="A quick look: small, few samples" disabled>Preview</button>
+              <button type="button" class="render-go" id="renderFinal" title="Render the picture at its size and samples" disabled>Render</button>
+              <button type="button" id="renderStop" title="Stop rendering (the picture so far stays)" disabled>Stop</button>
+              <button type="button" id="renderSave" title="Save the picture as a PNG (transparent background)" disabled>PNG</button>
+            </div>
+            <div class="seg render-tabs" role="tablist" aria-label="Render settings">
+              <button type="button" role="tab" data-pane="light" aria-selected="true">Light</button>
+              <button type="button" role="tab" data-pane="camera" aria-selected="false">Camera</button>
+              <button type="button" role="tab" data-pane="room" aria-selected="false">Room</button>
+              <button type="button" role="tab" data-pane="materials" aria-selected="false">Materials</button>
+              <button type="button" role="tab" data-pane="quality" aria-selected="false">Quality</button>
+            </div>
+            <div class="render-pane" data-pane="light">
+              <button type="button" class="render-toggle" id="renderLight" aria-pressed="true" title="The bulb on (its light the main one) or off (daylight)">Light on</button>
+              <button type="button" class="render-toggle" id="renderHang" title="Which way the shades hang from the socket (the socket always points down)">Hangs ↓</button>
+              <label class="render-field" title="Bulb (lumens)">Bulb <input type="range" id="renderLumens" min="100" max="2500" step="10" aria-label="Bulb output (lumens)"><output id="renderLumensOut"></output></label>
+              <label class="render-field" title="Bulb colour (kelvin)">K <input type="range" id="renderKelvin" min="1800" max="6500" step="100" aria-label="Bulb colour temperature (kelvin)"><output id="renderKelvinOut"></output></label>
+              <label class="render-field" title="Room light while the bulb is on">Room <input type="range" id="renderRoom" min="0" max="50" step="1" aria-label="Room light while the bulb is on (%)"><output id="renderRoomOut"></output></label>
+              <label class="render-field" title="Exposure (stops)">Exp <input type="range" id="renderExposure" min="-4" max="4" step="0.25" aria-label="Exposure (stops)"><output id="renderExposureOut"></output></label>
+            </div>
+            <div class="render-pane" data-pane="camera" hidden>
+              <select id="renderView" aria-label="Camera view" title="Where the camera looks from (Fit frames it)"></select>
+              <select id="renderLens" aria-label="Lens" title="Lens (mm, as on a full-frame camera)"></select>
+              <button type="button" id="renderFit" title="Frame the lamp from the view">Fit</button>
+            </div>
+            <div class="render-pane" data-pane="room" hidden>
+              <span class="render-group"><button type="button" class="render-toggle" id="renderWall" aria-pressed="false" title="A wall behind the lamp">Wall</button><input type="range" id="renderWallD" min="0" max="2000" step="10" aria-label="Wall: mm from the lamp's axis"><output id="renderWallOut"></output></span>
+              <span class="render-group"><button type="button" class="render-toggle" id="renderFloor" aria-pressed="false" title="A floor or table under the lamp">Floor</button><input type="range" id="renderFloorD" min="0" max="3000" step="10" aria-label="Floor: mm below the lamp"><output id="renderFloorOut"></output></span>
+              <span class="render-group"><button type="button" class="render-toggle" id="renderCeiling" aria-pressed="false" title="A ceiling the cable hangs from">Ceiling</button><input type="range" id="renderCeilingD" min="0" max="3000" step="10" aria-label="Ceiling: mm above the socket"><output id="renderCeilingOut"></output></span>
+              <input type="color" id="renderSurface" aria-label="Wall, floor and ceiling colour" title="Wall, floor and ceiling colour">
+            </div>
+            <div class="render-pane render-materials" data-pane="materials" id="renderMaterials" hidden></div>
+            <div class="render-pane" data-pane="quality" hidden>
+              <select id="renderBounces" aria-label="Light bounces" title="Light bounces (the preview's and the render's)"></select>
+              <span class="render-group">Preview <select id="renderPreviewSize" aria-label="Preview size (pixels)" title="Preview: the longer side in pixels"></select><select id="renderPreviewSamples" aria-label="Preview samples" title="Preview: samples per pixel"></select></span>
+              <span class="render-group">Render <select id="renderFinalSize" aria-label="Render size (pixels)" title="Render: the longer side in pixels"></select><select id="renderFinalSamples" aria-label="Render samples" title="Render: samples per pixel"></select></span>
+            </div>
           </div>
           <!-- The assembly taken apart, a shade at a time (furthest out first), as the print plays. -->
           <div class="view-scrub view-assembly" id="viewAssembly" hidden>

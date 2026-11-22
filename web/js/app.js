@@ -14,7 +14,8 @@ import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, load
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
-import { cleanRender, fixtureOf } from './fixture.js';
+import { CAMERA_VIEWS, LENSES, RENDER_SAMPLES, RENDER_SIZES, cleanRender, fixtureOf } from './fixture.js';
+import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
 
@@ -436,7 +437,10 @@ function restoreColors(colors) {
   const parts = colors.parts && typeof colors.parts === 'object' ? colors.parts : {};
   const clean = {};
   for (const [name, look] of Object.entries(parts)) {
-    if (look && /^#[0-9a-f]{6}$/i.test(String(look.color))) clean[name] = { color: String(look.color), opacity: Math.min(1, Math.max(0.05, Number(look.opacity) || 1)) };
+    if (look && /^#[0-9a-f]{6}$/i.test(String(look.color))) {
+      clean[name] = { color: String(look.color), opacity: Math.min(1, Math.max(0.05, Number(look.opacity) || 1)) };
+      if (look.material) clean[name].material = cleanMaterial(look.material);
+    }
   }
   const unit = (v) => (Number.isFinite(Number(v)) ? Math.min(1, Math.max(0, Number(v))) : 0.5);
   saveCustomColors({ parts: clean, light: unit(colors.light), shadow: unit(colors.shadow), hang: colors.hang === 'up' ? 'up' : 'down', render: cleanRender(colors.render) });
@@ -483,7 +487,7 @@ function renderCustomColors() {
     update(next);
     saveCustomColors(next);
     applyCustomColors();
-    markRenderStale();
+    if (state.last) renderView.api?.setLooks(renderLooks(state.last));
     if (state.last && !$('plan').hidden) renderPlanView(state.last);
   };
   const slider = (label, value, onInput) => {
@@ -1335,7 +1339,7 @@ const renderView = {
   api: null,
   /** @type {Promise<any> | null} */
   loading: null,
-  /** What was prepared (the project, its values, colours and hidden parts), to tell when it's out of date. */
+  /** What was prepared (the project, its values, the way it hangs and hidden parts), to tell when it's out of date. */
   key: '',
   busy: false,
   /** What was prepared: its size and how long it took. */
@@ -1347,7 +1351,7 @@ const renderOn = () => $('viewRender').getAttribute('aria-pressed') === 'true';
 /** What a render is prepared from: changes to any of it make the prepared one out of date. */
 function renderKey() {
   const c = customColors();
-  return JSON.stringify([state.source, state.values, c.parts, c.hang, [...hiddenParts].sort()]);
+  return JSON.stringify([state.source, state.values, c.hang, [...hiddenParts].sort()]);
 }
 
 /** The Prepare button shows when the prepared render no longer matches the project. */
@@ -1360,16 +1364,20 @@ function renderStatus(text) {
   $('renderStatus').textContent = text;
 }
 
+/** Each printed part's look for the render: its custom colour, how solid, its material. */
+function renderLooks(result) {
+  const colors = customColors();
+  return printsOf(result).map((p, i) => partLook(colors, p.name, i));
+}
+
 /**
  * The project as the render takes it: each printed part's toolpaths (print aids such as a brim
- * left out, hidden parts too), the parts' custom colours and the fittings.
+ * left out, hidden parts too), the parts' looks and the fittings.
  */
 function renderSnapshot(result) {
   const { points, starts, widths, heights, ups, aids } = result.paths;
   const owner = result.parts?.paths || [];
   const prints = printsOf(result);
-  const colors = customColors();
-  const looks = prints.map((p, i) => partLook(colors, p.name, i));
   const paths = [];
   for (let k = 0; k + 1 < starts.length; k++) {
     const part = owner[k] ?? -1;
@@ -1381,7 +1389,33 @@ function renderSnapshot(result) {
     if (aids) for (let i = a; i < b; i++) if (aids[i]) w[i - a] = 0;
     paths.push({ points: points.slice(3 * a, 3 * b), widths: w, heights: h, ups: ups ? ups.slice(3 * a, 3 * b) : null, part });
   }
-  return { paths, looks, fixture: fixtureFor(result) };
+  return { paths, looks: renderLooks(result), fixture: fixtureFor(result) };
+}
+
+/** "1 min 05 s", "12 s". */
+const renderTime = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s` : `${Math.round(s)} s`);
+
+/** The status line and the buttons from what the renderer is doing. */
+function showRenderProgress(p) {
+  const what = p.kind === 'final' ? 'Render' : 'Preview';
+  const size = p.width ? ` · ${p.width}×${p.height}` : '';
+  const texts = {
+    empty: 'Prepare to render',
+    draft: `Draft${renderView.info ? ` · ${renderView.info}` : ''}`,
+    compiling: `${what} · compiling the shaders…`,
+    rendering: `${what} · ${p.samples} / ${p.target}${size} · ${renderTime(p.seconds || 0)}`,
+    done: `${what} done · ${p.samples} samples${size} · ${renderTime(p.seconds || 0)}`,
+    stopped: `${what} stopped · ${p.samples} samples`,
+  };
+  renderStatus(texts[p.state] || '');
+  const running = p.state === 'compiling' || p.state === 'rendering';
+  const prepared = Boolean(renderView.api?.prepared);
+  $('renderStop').toggleAttribute('disabled', !running);
+  $('renderPreview').toggleAttribute('disabled', !prepared);
+  $('renderFinal').toggleAttribute('disabled', !prepared);
+  $('renderSave').toggleAttribute('disabled', !(p.state === 'done' || p.state === 'stopped' || p.state === 'rendering'));
+  $('renderPreview').setAttribute('aria-pressed', String(running && p.kind === 'preview'));
+  $('renderFinal').setAttribute('aria-pressed', String(running && p.kind === 'final'));
 }
 
 /** Loads the renderer (and the path tracer with it) the first time the view opens. */
@@ -1389,7 +1423,9 @@ async function renderApi() {
   if (renderView.api) return renderView.api;
   renderView.loading ||= import('./render.js').then(({ createRenderer }) =>
     createRenderer(/** @type {HTMLCanvasElement} */ ($('renderCanvas')), {
-      onProgress: (n, target) => renderStatus(`${Math.min(n, target)} / ${target}${renderView.info ? ` · ${renderView.info}` : ''}`),
+      onProgress: (p) => showRenderProgress(p),
+      // Where the camera was left is kept with the project (nothing else changes).
+      onCamera: (cam) => saveRender({ camera: { ...customColors().render.camera, ...cam } }),
     }),
   );
   renderView.api = await renderView.loading;
@@ -1410,12 +1446,11 @@ function freeRender() {
   renderView.info = '';
   const old = $('renderCanvas');
   old.replaceWith(old.cloneNode(false));
-  $('renderSave').setAttribute('disabled', '');
-  renderStatus('Prepare to render');
+  showRenderProgress({ state: 'empty' });
   markRenderStale();
 }
 
-/** Opens or closes the Render view (closing pauses the sampling; the render stays prepared). */
+/** Opens or closes the Render view (closing stops a render; it stays prepared). */
 async function showRender(on) {
   if (on === renderOn()) return;
   $('viewRender').setAttribute('aria-pressed', String(on));
@@ -1435,11 +1470,13 @@ async function showRender(on) {
   if ($('viewPrints').getAttribute('aria-pressed') === 'true') showPrints(false);
   document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
   showRenderSettings();
+  renderMaterialsPane();
   markRenderStale();
-  if (!renderView.key) renderStatus('Prepare to render');
+  if (!renderView.api?.prepared) showRenderProgress({ state: 'empty' });
   try {
     const api = await renderApi();
     if (renderOn()) api.resume();
+    if (!api.running) api.setSettings(customColors().render);
   } catch (err) {
     renderStatus(`Can't render here: ${err.message || err}`);
   }
@@ -1454,12 +1491,13 @@ async function prepareRender() {
   try {
     const api = await renderApi();
     const key = renderKey();
-    const { triangles } = await api.prepare(renderSnapshot(state.last), viewport.viewDirection(), (what) => renderStatus(`Preparing · ${what}`));
+    renderView.info = '';
+    // This project's settings (another project may have been open since).
+    api.setSettings(customColors().render);
+    const { triangles } = await api.prepare(renderSnapshot(state.last), (what) => renderStatus(`Preparing · ${what}`));
     renderView.key = key;
-    $('renderSave').removeAttribute('disabled');
     renderView.info = `${(triangles / 1e6).toFixed(2)} M triangles, prepared in ${fmt((performance.now() - t0) / 1000)} s`;
-    renderStatus(`Prepared · ${renderView.info}`);
-    if (renderOn()) api.resume();
+    showRenderProgress({ state: 'draft' });
   } catch (err) {
     renderStatus(`Can't render here: ${err.message || err}`);
   } finally {
@@ -1469,35 +1507,144 @@ async function prepareRender() {
   }
 }
 
+/** Fills a select with options ([value, label]) once. */
+function fillSelect(id, options) {
+  const select = /** @type {HTMLSelectElement} */ ($(id));
+  if (select.options.length) return;
+  for (const [value, label] of options) select.append(new Option(label, String(value)));
+}
+
 /** The render's controls from this project's settings. */
 function showRenderSettings() {
   const { render: r, hang } = customColors();
   const set = (id, v) => (/** @type {HTMLInputElement} */ ($(id)).value = String(v));
+  const out = (id, text) => ($(id).textContent = text);
+  fillSelect('renderView', Object.entries(CAMERA_VIEWS).map(([k, v]) => [k, v.label]));
+  fillSelect('renderLens', LENSES.map((l) => [l, `${l} mm`]));
+  fillSelect('renderBounces', [2, 4, 6, 8, 12, 16, 24, 32].map((b) => [b, `${b} bounces`]));
+  for (const id of ['renderPreviewSize', 'renderFinalSize']) fillSelect(id, RENDER_SIZES.map((v) => [v, `${v} px`]));
+  for (const id of ['renderPreviewSamples', 'renderFinalSamples']) fillSelect(id, RENDER_SAMPLES.map((v) => [v, `${v} spp`]));
   $('renderLight').setAttribute('aria-pressed', String(r.light));
   $('renderLight').textContent = r.light ? 'Light on' : 'Light off';
   $('renderHang').textContent = hang === 'up' ? 'Hangs ↑' : 'Hangs ↓';
   set('renderLumens', r.lumens);
+  out('renderLumensOut', `${Math.round(r.lumens)} lm`);
   set('renderKelvin', r.kelvin);
+  out('renderKelvinOut', `${Math.round(r.kelvin)} K`);
   set('renderRoom', Math.round(r.room * 100));
+  out('renderRoomOut', `${Math.round(r.room * 100)} %`);
   set('renderExposure', r.exposure);
-  set('renderMatte', Math.round(r.matte * 100));
-  set('renderSamples', r.samples);
+  out('renderExposureOut', `${r.exposure > 0 ? '+' : ''}${r.exposure}`);
+  set('renderView', r.camera.view);
+  set('renderLens', LENSES.includes(r.camera.lens) ? r.camera.lens : 50);
+  for (const [k, id] of [['wall', 'renderWall'], ['floor', 'renderFloor'], ['ceiling', 'renderCeiling']]) {
+    $(id).setAttribute('aria-pressed', String(r[k].on));
+    set(`${id}D`, r[k].distance);
+    out(`${id}Out`, `${Math.round(r[k].distance)} mm`);
+  }
+  set('renderSurface', r.surface);
   set('renderBounces', r.bounces);
-  set('renderScale', r.scale);
+  set('renderPreviewSize', r.preview.size);
+  set('renderPreviewSamples', r.preview.samples);
+  set('renderFinalSize', r.final.size);
+  set('renderFinalSamples', r.final.samples);
 }
 
-/** Changes the render's settings (kept with the project's colours) and restarts the sampling. */
-function changeRender(update) {
+/** Keeps a change to the render's settings with the project's colours (nothing else). */
+function saveRender(update) {
   const colors = customColors();
   colors.render = cleanRender({ ...colors.render, ...update });
   saveCustomColors(colors);
+  return colors.render;
+}
+
+/** Changes the render's settings: kept, shown, and the renderer stops (Preview or Render again). */
+function changeRender(update) {
+  const next = saveRender(update);
   showRenderSettings();
-  renderView.api?.setSettings(colors.render);
+  renderView.api?.setSettings(next);
+}
+
+/** The parts' looks changed (colour, solid, material): the 3D view and the render follow. */
+function changeLook(name, i, update) {
+  const colors = customColors();
+  colors.parts[name] = { ...partLook(colors, name, i), ...update };
+  saveCustomColors(colors);
+  applyCustomColors();
+  if (state.last) renderView.api?.setLooks(renderLooks(state.last));
+}
+
+/**
+ * The Materials pane: per printed part, its colour, how solid, its plastic, and the plastic's
+ * values (each can be set for the part; ↺ goes back to the plastic's).
+ */
+function renderMaterialsPane() {
+  const host = $('renderMaterials');
+  const prints = printsOf(state.last);
+  const colors = customColors();
+  const slider = (label, value, min, max, step, onInput, fmtValue) => {
+    const input = /** @type {HTMLInputElement} */ (el('input', { type: 'range', min: String(min), max: String(max), step: String(step), value: String(value), 'aria-label': label }));
+    const out = el('output', { text: fmtValue(value) });
+    input.addEventListener('input', () => {
+      out.textContent = fmtValue(Number(input.value));
+      onInput(Number(input.value));
+    });
+    return el('label', { className: 'render-field', title: label }, [label.split(':').pop()?.trim() || label, input, out]);
+  };
+  host.replaceChildren(
+    ...prints.map((p, i) => {
+      const look = partLook(colors, p.name, i);
+      const mat = cleanMaterial(look.material);
+      const v = materialValues(mat);
+      const set = (update) => changeLook(p.name, i, { material: cleanMaterial({ ...cleanMaterial(customColors().parts[p.name]?.material), ...update }) });
+      const color = /** @type {HTMLInputElement} */ (el('input', { type: 'color', value: look.color, 'aria-label': `${p.name}: colour`, title: `${p.name}: colour` }));
+      color.addEventListener('input', () => changeLook(p.name, i, { color: color.value }));
+      const plastic = /** @type {HTMLSelectElement} */ (el('select', { 'aria-label': `${p.name}: plastic`, title: `${p.name}: plastic` }));
+      for (const [key, pl] of Object.entries(PLASTICS)) plastic.append(new Option(pl.label, key));
+      plastic.value = mat.plastic;
+      // A new plastic brings its own values (the part's own go).
+      plastic.addEventListener('change', () => {
+        changeLook(p.name, i, { material: { plastic: plastic.value } });
+        renderMaterialsPane();
+      });
+      const reset = el('button', { type: 'button', text: '↺', title: `${p.name}: the plastic's own values`, 'aria-label': `${p.name}: the plastic's own values` });
+      reset.addEventListener('click', () => {
+        changeLook(p.name, i, { material: { plastic: mat.plastic } });
+        renderMaterialsPane();
+      });
+      const pct = (x) => `${Math.round(x * 100)} %`;
+      return el('div', { className: 'render-material' }, [
+        el('span', { className: 'color-name', text: p.name }),
+        color,
+        slider(`${p.name}: solid`, look.opacity, 0.05, 1, 0.05, (x) => changeLook(p.name, i, { opacity: x }), pct),
+        plastic,
+        slider(`${p.name}: matte`, v.roughness, 0, 1, 0.01, (x) => set({ roughness: x }), pct),
+        slider(`${p.name}: coat`, v.coat, 0, 1, 0.05, (x) => set({ coat: x }), pct),
+        slider(`${p.name}: sheen`, v.sheen, 0, 1, 0.05, (x) => set({ sheen: x }), pct),
+        slider(`${p.name}: silk`, v.metal, 0, 1, 0.05, (x) => set({ metal: x }), pct),
+        slider(`${p.name}: depth`, v.depth, 0.5, 100, 0.5, (x) => set({ depth: x }), (x) => `${x} mm`),
+        slider(`${p.name}: IOR`, v.ior, 1.3, 1.7, 0.01, (x) => set({ ior: x }), (x) => x.toFixed(2)),
+        reset,
+      ]);
+    }),
+  );
 }
 
 function wireRender() {
   $('viewRender').addEventListener('click', () => showRender(!renderOn()));
   $('renderPrepare').addEventListener('click', () => prepareRender());
+  $('renderPreview').addEventListener('click', () => renderView.api?.start('preview'));
+  $('renderFinal').addEventListener('click', () => renderView.api?.start('final'));
+  $('renderStop').addEventListener('click', () => renderView.api?.stop());
+  // The settings panes, one at a time.
+  for (const tab of document.querySelectorAll('.render-tabs [data-pane]')) {
+    tab.addEventListener('click', () => {
+      const pane = /** @type {HTMLElement} */ (tab).dataset.pane;
+      for (const t of document.querySelectorAll('.render-tabs [data-pane]')) t.setAttribute('aria-selected', String(t === tab));
+      for (const p of document.querySelectorAll('.render-pane')) /** @type {HTMLElement} */ (p).hidden = /** @type {HTMLElement} */ (p).dataset.pane !== pane;
+      if (pane === 'materials') renderMaterialsPane();
+    });
+  }
   $('renderLight').addEventListener('click', () => changeRender({ light: !customColors().render.light }));
   $('renderHang').addEventListener('click', () => {
     const colors = customColors();
@@ -1511,16 +1658,30 @@ function wireRender() {
     markRenderStale();
   });
   const num = (id) => Number(/** @type {HTMLInputElement} */ ($(id)).value);
+  const value = (id) => /** @type {HTMLInputElement} */ ($(id)).value;
   $('renderLumens').addEventListener('input', () => changeRender({ lumens: num('renderLumens') }));
   $('renderKelvin').addEventListener('input', () => changeRender({ kelvin: num('renderKelvin') }));
   $('renderRoom').addEventListener('input', () => changeRender({ room: num('renderRoom') / 100 }));
   $('renderExposure').addEventListener('input', () => changeRender({ exposure: num('renderExposure') }));
-  $('renderMatte').addEventListener('input', () => changeRender({ matte: num('renderMatte') / 100 }));
-  $('renderSamples').addEventListener('change', () => changeRender({ samples: num('renderSamples') }));
+  $('renderView').addEventListener('change', () => changeRender({ camera: { ...customColors().render.camera, view: value('renderView'), position: null, target: null } }));
+  $('renderLens').addEventListener('change', () => changeRender({ camera: { ...customColors().render.camera, lens: num('renderLens') } }));
+  $('renderFit').addEventListener('click', () => renderView.api?.fit());
+  for (const [k, id] of /** @type {const} */ ([['wall', 'renderWall'], ['floor', 'renderFloor'], ['ceiling', 'renderCeiling']])) {
+    $(id).addEventListener('click', () => {
+      const r = customColors().render;
+      changeRender({ [k]: { ...r[k], on: !r[k].on } });
+    });
+    // Moving the distance turns the surface on.
+    $(`${id}D`).addEventListener('input', () => changeRender({ [k]: { on: true, distance: num(`${id}D`) } }));
+  }
+  $('renderSurface').addEventListener('input', () => changeRender({ surface: value('renderSurface') }));
   $('renderBounces').addEventListener('change', () => changeRender({ bounces: num('renderBounces') }));
-  $('renderScale').addEventListener('change', () => changeRender({ scale: num('renderScale') }));
+  $('renderPreviewSize').addEventListener('change', () => changeRender({ preview: { ...customColors().render.preview, size: num('renderPreviewSize') } }));
+  $('renderPreviewSamples').addEventListener('change', () => changeRender({ preview: { ...customColors().render.preview, samples: num('renderPreviewSamples') } }));
+  $('renderFinalSize').addEventListener('change', () => changeRender({ final: { ...customColors().render.final, size: num('renderFinalSize') } }));
+  $('renderFinalSamples').addEventListener('change', () => changeRender({ final: { ...customColors().render.final, samples: num('renderFinalSamples') } }));
   $('renderSave').addEventListener('click', async () => {
-    if (!renderView.api?.prepared) return;
+    if (!renderView.api?.rendered) return;
     const blob = await (await fetch(renderView.api.capture())).blob();
     download(`${saveName()}-render.png`, blob, 'image/png');
   });
