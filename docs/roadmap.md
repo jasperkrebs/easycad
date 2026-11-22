@@ -64,8 +64,8 @@ so in the dev log); when something new comes up, add it here, not only in the de
   (as the brim does); a step that gives a toolpath's first point would remove the copy.
 - **The agent:** not tried on the Lamp yet; still to do: the chat box as a command line, skills,
   a test set of real requests.
-- **The Render view** ([rendering.md](rendering.md)): no denoiser yet (clean pictures need
-  hundreds of samples); the light off uses a built-in sky, not your own environment (HDRI); the
+- **The Render view** ([rendering.md](rendering.md)): the denoiser needs WebGPU (elsewhere a
+  lighter smoothing) and softens fine detail on tiny, few-sample pictures; the light off uses a built-in sky, not your own environment (HDRI); the
   room's surfaces are in the picture, not a light-and-shadow layer over a transparent background;
   the picture takes the view's shape; the first render after preparing builds the BVH on the page
   (it blocks while it runs; a worker would not); the hidden faces between turns don't tint the

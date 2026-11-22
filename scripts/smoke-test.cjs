@@ -83,7 +83,7 @@ async function saveFrom(page, selector) {
       const groupNames = await page.evaluate(() =>
         [...document.querySelectorAll('#settings details.group')].filter((d) => d.offsetParent !== null).map((d) => d.querySelector('summary .group-name')?.textContent ?? ''),
       );
-      if (groupNames.join() !== 'Socket,Shade,Print,Overhangs,Brim') failures.push(`${name}: settings groups: ${groupNames.join()}`);
+      if (groupNames.join() !== 'Socket,Shade,Pattern,Print,Overhangs,Brim') failures.push(`${name}: settings groups: ${groupNames.join()}`);
       const openNow = await page.locator('#settings details.group[open] .group-name').allTextContents();
       if (openNow.join() !== 'Socket') failures.push(`${name}: open at first: ${openNow.join()}`);
       if (await page.isVisible('#set-opening')) failures.push(`${name}: a closed group's setting is visible`);
