@@ -332,6 +332,10 @@ export function fitPlan() {
  *   colorOf?: (name: string) => string,
  *   onSelect: (name: string | null) => void,
  *   onMark: (mark: any, part: string | null) => void,
+ *   selectedMark?: string | null,
+ *   onMarkSettings?: (mark: any) => void,
+ *   onMarkClose?: () => void,
+ *   onSetValues?: (values: Record<string, unknown>) => void,
  *   onAdd: (add: { port: any | null, values: Record<string, unknown> }) => void,
  *   onSet: (name: string, values: Record<string, unknown>) => void,
  *   onOpen: (name: string) => void,
@@ -346,7 +350,7 @@ export function fitPlan() {
 /**
  * Draws the plan: the assembly cut through its axis (both halves), each part in its colour (red
  * where it runs into another; faint while hidden), its name on the left, the marks that lead to
- * settings, the add buttons on every free port, and the selected part's bar.
+ * settings, the add buttons on every free port, and the selected part's bar (or the tapped mark's).
  * @param {HTMLElement} host
  * @param {any} result
  * @param {PlanHandlers} handlers
@@ -602,7 +606,10 @@ function paint() {
   const fittings = handlers.fixture && fittingsShown ? fixtureOutline(handlers.fixture) : null;
   if (fittings) for (const outline of [fittings.socket, fittings.bulb]) for (const [r, z] of outline) take(r, z);
   if (!Number.isFinite(zmin)) [zmin, zmax, rmax] = [0, 100, 50];
-  const inset = { ...INSET, bottom: INSET.bottom + (selected ? BAR : 0) };
+  // A mark tapped (a piece of the shape with on/off settings): its own bar.
+  const markOn = handlers.selectedMark ? marks.find((m) => markKey(m) === handlers.selectedMark) ?? null : null;
+  const barred = selected || markOn;
+  const inset = { ...INSET, bottom: INSET.bottom + (barred ? BAR : 0) };
   const k0 = Math.min((W - inset.left - inset.right) / (2 * rmax), (H - inset.top - inset.bottom) / Math.max(1, zmax - zmin));
   const k = Math.max(0.01, k0) * view.zoom;
   // Fitted: the drawing in the middle of the room left round it; then zoomed about the middle.
@@ -671,7 +678,7 @@ function paint() {
   for (const mark of marks) {
     const part = markPart(mark, partNames);
     const what = mark.label || mark.settings[0];
-    const g = node('g', { class: `plan-mark${selected && part !== selected ? ' dim' : ''}`, tabindex: 0, role: 'button', 'aria-label': part ? `${what} · ${part}` : what });
+    const g = node('g', { class: `plan-mark${mark === markOn ? ' selected' : selected && part !== selected ? ' dim' : ''}`, tabindex: 0, role: 'button', 'aria-label': part ? `${what} · ${part}` : what });
     if (part && offsets.get(part)) g.setAttribute('transform', `translate(0 ${(-(offsets.get(part) || 0) * k).toFixed(1)})`);
     node('title', {}, g).textContent = part ? `${what} · ${part}` : what;
     for (const ln of mark.lines) {
@@ -719,7 +726,7 @@ function paint() {
     const ways0 = dirAsk ? [String(dirAsk.value)] : [''];
     pills.push({ port: null, along: 0, ways: ways0, ax: X(0), ay: Y(0), x: X(0) + 14 + BUTTON / 2, y: Y(0) - BUTTON / 2, w: BUTTON, h: BUTTON, side: 1 });
   }
-  spread(pills, W, H - (selected ? BAR : 0));
+  spread(pills, W, H - (barred ? BAR : 0));
   if (pills.length || dots.length) {
     const stems = document.createElementNS(SVG, 'svg');
     stems.setAttribute('class', 'plan-stems');
@@ -772,7 +779,54 @@ function paint() {
     host.append(b);
   }
 
-  if (selected) host.append(partBar(result, selected, component, handlers));
+  if (markOn) host.append(markBar(result, markOn, markPart(markOn, partNames), handlers));
+  else if (selected) host.append(partBar(result, selected, component, handlers));
+}
+
+/**
+ * Which mark is which, from one result to the next: its label and its settings.
+ * @param {{ label?: string | null, settings: string[] }} mark
+ */
+export function markKey(mark) {
+  return `${mark.label || ''}|${mark.settings.join(',')}`;
+}
+
+/**
+ * A mark's on/off settings that apply now (a straight end, a pattern on it, …): a tapped mark
+ * gets a bar of them; a mark without any leads straight to its settings.
+ * @param {any} result
+ * @param {{ settings: string[] }} mark
+ */
+export function markToggles(result, mark) {
+  const values = Object.fromEntries(result.params.map((p) => [p.name, p.value]));
+  return mark.settings
+    .map((n) => result.params.find((p) => p.name === n))
+    .filter((p) => p && p.kind === 'toggle' && !p.attrs.includes('hidden') && applies(p, result.params, values));
+}
+
+/** A tapped mark's bar: its name (its settings), its on/off settings as chips, done. */
+function markBar(result, mark, part, handlers) {
+  const what = mark.label || mark.settings[0];
+  const name = part ? `${what} · ${part}` : what;
+  const bar = el('div', { className: 'plan-bar', role: 'toolbar', 'aria-label': name });
+  const title = el('button', { type: 'button', className: 'plan-bar-name', text: name, title: `${name}: settings`, 'aria-label': `${name}: settings` });
+  title.addEventListener('click', () => handlers.onMarkSettings?.(mark));
+  bar.append(title);
+  const settings = el('button', { type: 'button', className: 'plan-bar-btn settings', title: `${name}: settings`, 'aria-label': `${name}: settings` });
+  settings.append(icon(ICONS.settings));
+  settings.addEventListener('click', () => handlers.onMarkSettings?.(mark));
+  bar.append(settings);
+  for (const p of markToggles(result, mark)) {
+    const on = p.value === true;
+    const b = el('button', { type: 'button', className: 'plan-bar-chip', 'aria-pressed': String(on), 'data-set': p.name, text: shortLabel(p.label), title: p.label });
+    b.addEventListener('click', () => handlers.onSetValues?.({ [p.name]: !on }));
+    bar.append(b);
+  }
+  const close = el('button', { type: 'button', className: 'plan-bar-btn close', title: 'Done', 'aria-label': 'Done' });
+  close.append(icon(ICONS.close));
+  close.addEventListener('click', () => handlers.onMarkClose?.());
+  bar.append(close);
+  return bar;
 }
 
 /** A bulb on its socket, outlined (the fittings' button). */
@@ -903,7 +957,8 @@ function partBar(result, name, component, handlers) {
   bar.append(tool('settings', ICONS.settings, `${name}: settings`, () => handlers.onOpen(name)), tool('remove', ICONS.remove, `Remove ${name}`, () => handlers.onRemove(name)));
   // Its on/off settings that apply (a straight end, …).
   for (const p of params) {
-    if (p.kind !== 'toggle' || p.attrs.includes('hidden') || !applies(p, result.params, values)) continue;
+    // (`@mark` ones are its marks' own: on their bars.)
+    if (p.kind !== 'toggle' || p.attrs.includes('hidden') || p.attrs.includes('mark') || !applies(p, result.params, values)) continue;
     const on = p.value === true;
     const b = el('button', { type: 'button', className: 'plan-bar-chip', 'aria-pressed': String(on), 'data-set': own(p), text: shortLabel(p.label), title: p.label });
     b.addEventListener('click', () => handlers.onSet(name, { [own(p)]: !on }));

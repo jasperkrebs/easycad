@@ -2041,6 +2041,37 @@ pub static NODES: &[Node] = &[
         run: Run::Op(printing::extrusion_override),
     },
     Node {
+        name: "spokes",
+        group: "Toolpaths",
+        inputs: &[
+            req(
+                "path",
+                "Toolpath",
+                "a path round the Z axis: a vase's bottom and wall",
+            ),
+            req(
+                "height",
+                "Length",
+                "where the spokes go in: the first where the path first reaches this height (the nozzle's), the rest spread over the turn after; their legs lie flat at it",
+            ),
+            opt("count", "Number", 4.0, "how many (4: a cross)"),
+            req(
+                "width",
+                "Length",
+                "line width: the legs run half of it either side of the spoke",
+            ),
+            opt(
+                "inner",
+                "Length",
+                0.0,
+                "how far from the axis each spoke turns round (its half circle's middle; 0: 1.25 line widths)",
+            ),
+        ],
+        output: "Toolpath",
+        doc: "Spokes into a path round the Z axis: at each, the line leaves the wall, runs in to the middle half a line to one side, turns round a half circle near the axis and runs back out half a line to the other side, into the wall again. The legs lie flat at `height`, each move with the bead of the wall move it starts from; the bit of wall between the legs is left out (they close it). Put one layer above a flat bottom, they cross its spiral and tie it to the wall: `spokes(join([bottom, wall]), height: 2 * layer, count: 4, width: line)` makes a cross.",
+        run: Run::Op(printing::spokes),
+    },
+    Node {
         name: "spikes",
         group: "Toolpaths",
         inputs: &[

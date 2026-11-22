@@ -23,7 +23,8 @@ archives ([October](devlog-2026-10.md), [November 1–14](devlog-2026-11.md)).
 - **The views:** shape, toolpath, both, the **Plan** (a cut through the axis: tap a part, its
   marks lead to their settings, add and remove shades), the **Prints** overview (each part on its
   own bed); colour modes, beads at their real size or simulated, the nozzle upright or along the
-  wall, playback, the lamp taken apart, PNG export.
+  wall, playback, the lamp taken apart, PNG export. In the Lamp and the Lampshade, a section's
+  mark carries its **pattern** switch ([patterns.md](patterns.md)).
 - **Exports:** G-code per part, STL, **STEP** (exact faces for shapes of revolution).
 - **The AI** (Chat tab): Claude with the owner's key behind a password proxy, writing and editing
   recipes; when no combination of steps can do it, it files a feature request that a Claude Code
@@ -107,6 +108,9 @@ so in the dev log); when something new comes up, add it here, not only in the de
   barrel; maybe a pace for the wing rings (half a line a layer) instead of the max overhang; the
   floor lamp, linear pendant and screw part if wanted; Plan marks.
 - **Nutcracker** ([nutcracker.md](nutcracker.md)): a test print (fit, how much the handle takes).
+- **Patterns** on the Lamp's and the Lampshade's sections ([patterns.md](patterns.md)): a test
+  print (how deep a wave the layers hold, rails against woven); more patterns than the sine
+  wave; on near-flat parts the wave pushes along the wall rather than out of it.
 - **The coat hanger** as a template.
 - **Tube with wings** ([tube-with-wings.md](tube-with-wings.md)), in the Lampshade and the Lamp:
   print it (the crease where a wing starts; "same layer length" within 4 %).

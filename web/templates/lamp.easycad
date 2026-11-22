@@ -103,6 +103,17 @@ component shade "Shade"
   param wing_out_curve = "smooth" of ["linear", "smooth"] "Fade-out curve"  when wings_on and not wing_mode = "curve" and wing_out
   param wing_widen = "same diameter" of ["same diameter", "same layer length"] "Diameter as the wings fade out"  when wings_on and shape = "tube" and wing_mode = "fades" and wing_out
 
+  group "Pattern"
+  param pattern_start = false                        "Pattern on the straight start (no thread then)" @mark  when not wings_on
+  param pattern_fillet = false                       "Pattern on the fillet" @mark  when not shape = "tube"
+  param pattern_shade = false                        "Pattern on the shade" @mark  when not shape = "tube"
+  param pattern_end_fillet = false                   "Pattern on the end fillet" @mark  when end_straight
+  param pattern_end = false                          "Pattern on the straight end (no thread then)" @mark  when end_straight
+  param pattern_waves = 24   in 1..200 step 1        "Waves a turn"
+  param pattern_stack = "rails" of ["rails", "woven"] "Waves stack into"
+  param pattern_depth = 2 mm in 0..30 step 0.1       "Depth (in and out)"
+  param pattern_fade = 20 mm in 0..1000 step 1       "Fade in and out over (along the surface)"
+
   # Where it's mounted, and its straight sections' lengths (the joint setting overrides both).
   m_r      = item(mount, 0)
   m_z      = item(mount, 1)
@@ -385,7 +396,50 @@ component shade "Shade"
   flat_at = smoothstep(clamp((abs(lean_at) - 60) / 30, 0, 1))
   flow_at = pick(surface * greater(flat_flow, 0), flow_sh + flat_at * (flat_flow - flow_sh), flow_sh)
 
-  shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(surface, layer_at, pick(less(abs(comp - 1), 0.5), layer_at, 0)), tolerance: tolerance, flat_top: pick(wing_on, false, flat_top), steady_start: steady, surface: surface)
+  plain_shade = vase_revolve(profile, layer: rise, width: width, flow: flow_at, bead_layer: pick(surface, layer_at, pick(less(abs(comp - 1), 0.5), layer_at, 0)), tolerance: tolerance, flat_top: pick(wing_on, false, flat_top), steady_start: steady, surface: surface)
+
+  # ---- Patterns (docs/patterns.md): waves in and out across the wall, on the sections picked
+  # (in the Plan, tap a section). Over the picked sections, wherever they run on from one another,
+  # the wave fades in and out along the surface; whole waves a turn stack into rails, a half more
+  # shifts each layer half a wave (woven). On the straight start or end the thread is lost.
+  pat_secs = [pick(pattern_start, 1, 0) * (1 - wing_on), pick(pattern_fillet, 1, 0), pick(pattern_shade, 1, 0), pick(pattern_end_fillet, 1, 0), pick(pattern_end, 1, 0)] * (1 - is_tube * [0, 1, 1, 1, 1])
+  pat_on   = greater(sum(pat_secs), 0.5) * greater(pattern_depth, 0)
+  # Each section's ends along the profile (its height from the start), then along the surface.
+  pat_top  = item(full_z, count(full_z) - 1)
+  pat_lo   = pick(lip_on * lip_arc, cur_top - q_z, cur_top) + shift
+  pat_hi   = pick(lip_on * lip_arc, cur_top - z_start2, cur_top) + shift
+  pat_b    = pick(is_tube, [0, pat_top, pat_top, pat_top, pat_top, pat_top], [0, throat, fillet_top, min(pat_lo, pat_top), min(pat_hi, pat_top), pat_top])
+  pat_gn   = count(full_r) - 1
+  pat_sl   = sqrt((item(full_r, series(1, 1, pat_gn)) - item(full_r, series(0, 1, pat_gn))) ^ 2 + (item(full_z, series(1, 1, pat_gn)) - item(full_z, series(0, 1, pat_gn))) ^ 2)
+  pat_fs   = flatten([[0], accumulate(pat_sl)])
+  pat_s    = [graph(full_z, pat_fs, item(pat_b, 0)), graph(full_z, pat_fs, item(pat_b, 1)), graph(full_z, pat_fs, item(pat_b, 2)), graph(full_z, pat_fs, item(pat_b, 3)), graph(full_z, pat_fs, item(pat_b, 4)), graph(full_z, pat_fs, item(pat_b, 5))]
+  # Runs: a picked section runs on into its neighbour when that's picked too (or empty: no fillet,
+  # no lip), so the wave only fades where the run of picked sections starts and ends.
+  pat_link = max(pat_secs, less(item(pat_s, series(1, 1, 5)) - item(pat_s, series(0, 1, 5)), 0.000001))
+  lo_1     = item(pat_s, 0)
+  lo_2     = pick(item(pat_link, 0), lo_1, item(pat_s, 1))
+  lo_3     = pick(item(pat_link, 1), lo_2, item(pat_s, 2))
+  lo_4     = pick(item(pat_link, 2), lo_3, item(pat_s, 3))
+  lo_5     = pick(item(pat_link, 3), lo_4, item(pat_s, 4))
+  hi_5     = item(pat_s, 5)
+  hi_4     = pick(item(pat_link, 4), hi_5, item(pat_s, 4))
+  hi_3     = pick(item(pat_link, 3), hi_4, item(pat_s, 3))
+  hi_2     = pick(item(pat_link, 2), hi_3, item(pat_s, 2))
+  hi_1     = pick(item(pat_link, 1), hi_2, item(pat_s, 1))
+  pat_los  = [lo_1, lo_2, lo_3, lo_4, lo_5]
+  pat_his  = [hi_1, hi_2, hi_3, hi_4, hi_5]
+  # Where a point of the print is along the surface: its height on the profile (as the turns read
+  # it), then the distance up the profile to there.
+  pat_h    = pick(is_closed, top_z + cap_dl - z, pick(wide_eff, top_z - z, z))
+  pat_at   = graph(full_z, pat_fs, pat_h)
+  pat_f    = max(pattern_fade, 0.000001)
+  pat_in   = (1 - less(pat_at, item(pat_s, series(0, 1, 5)))) * less(pat_at, flatten([item(pat_s, series(1, 1, 4)), [item(pat_s, 5) + 1]]))
+  pat_env  = pat_secs * pat_in * smoothstep(clamp((pat_at - pat_los) / pat_f, 0, 1)) * smoothstep(clamp((pat_his - pat_at) / pat_f, 0, 1))
+  pat_amp  = pattern_depth * (item(pat_env, 0) + item(pat_env, 1) + item(pat_env, 2) + item(pat_env, 3) + item(pat_env, 4))
+  pat_n    = pattern_waves + 0.5 * less(abs(index_of(["rails", "woven"], pattern_stack) - 1), 0.5)
+  shade = wave(plain_shade, amplitude: pick(pat_on, pat_amp, 0), count: pick(pat_on, pat_n, 1))
+    |> require(1 - pat_on * item(pat_secs, 0), "The pattern runs over the straight start: it won't screw on any more", warn: true)
+    |> require(1 - pat_on * item(pat_secs, 4) * lip_on * lip_long, "The pattern runs over the straight end: nothing screws on there any more", warn: true)
 
   # A brim around the first turn, outermost ring first, hopping between rings and into the shade.
   first_rise  = sample(rise, [0, 0, min(top_z, sample(rise, [0, 0, 0]) / 2)])
@@ -925,22 +979,25 @@ component shade "Shade"
   mark_height  = polyline(point([side_x, side_x], 0, [shift, shade_top])) |> place(z: z0, flip: 1 - up)
   mark_end     = polyline(point([r_end, r_end], 0, [top_z - end_eff, top_z])) |> place(z: z0, flip: 1 - up)
   mark_end_arc = polyline(point(arc2_r, 0, cur_top - arc2_z + shift)) |> place(z: z0, flip: 1 - up)
-  mark mark_start for start_len, length, mount, direction, along "Start"
+  mark mark_start for start_len, length, mount, direction, along, pattern_start "Start"
   mark_wings   = polyline(point(flatten([w_R, [item(w_R, w_lc - 1)]]), 0, pick(w_rev, top_z - item(w_zb, series(0, 1, w_lc + 1)), z_w + item(w_zb, series(0, 1, w_lc + 1))))) |> place(z: z0, flip: 1 - up)
   mark pick(wing_on, mark_wings, []) for wings_on, wing_mode, wings, wing_curve, wing_side, wing_seams, wing_gap, wing_rise, wing_grow, wing_begin, wing_in, wing_in_curve, wing_out, wing_out_curve, wing_widen, length "Wings"
-  mark pick(not_tube, mark_fillet, []) for fillet "Fillet"
-  mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, widest_len, widest_fillet, end_d, max_angle, sphere, flatness, own_at, own_r "Shade"
+  mark pick(not_tube, mark_fillet, []) for fillet, pattern_fillet "Fillet"
+  mark pick(not_tube, mark_shade, []) for shape, opening, transition, inout_h, widest, widest_at, widest_len, widest_fillet, end_d, max_angle, sphere, flatness, own_at, own_r, pattern_shade "Shade"
   mark pick(not_tube, mark_opening, []) for opening, end_d "Opening"
   mark pick(inout, mark_widest, []) for widest, widest_at, widest_len, widest_fillet "Widest"
   mark pick(not_tube, mark_height, []) for transition, inout_h "Height"
-  mark pick(lip_on * lip_long, mark_end, []) for end_len, end_straight "Straight end"
-  mark pick(lip_on * lip_arc, mark_end_arc, []) for lip_fillet, fillet "End fillet"
+  mark pick(lip_on * lip_long, mark_end, []) for end_len, end_straight, pattern_end "Straight end"
+  mark pick(lip_on * lip_arc, mark_end_arc, []) for lip_fillet, fillet, pattern_end_fillet "End fillet"
   # The closed end, in the shade's own z (its print turned back over: z = its end + the disc's
   # layer − the print's z).
   mark_cap     = polyline(point([0, cap_cr], 0, [top_z + cap_dl / 2, top_z + cap_dl / 2])) |> place(z: z0, flip: 1 - up)
   mark_cap_arc = polyline(point(cap_ar, 0, top_z - cap_az)) |> place(z: z0, flip: 1 - up)
   mark pick(is_closed, mark_cap, []) for closed, closed_layer "Closed end"
   mark pick(is_closed * greater(cap_f, 0), mark_cap_arc, []) for closed_fillet "Closed end's fillet"
+  # The pattern: beside each section it's on, leading to its settings.
+  pat_marks = flatten([pick(item(pat_secs, 0), [mark_start], []), pick(item(pat_secs, 1) * not_tube, [mark_fillet], []), pick(item(pat_secs, 2) * not_tube, [mark_shade], []), pick(item(pat_secs, 3) * lip_on * lip_arc, [mark_end_arc], []), pick(item(pat_secs, 4) * lip_on * lip_long, [mark_end], [])])
+  mark pick(pat_on, pat_marks |> move(x: 2 * line), []) for pattern_waves, pattern_stack, pattern_depth, pattern_fade "Pattern"
 
   # ---- The shape for whoever works on it their own way: the wall's surface (through the middle
   # of the bead), exact, as a STEP surface; no thickness (a closed shade's disc included).

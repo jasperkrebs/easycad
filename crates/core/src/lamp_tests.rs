@@ -245,7 +245,10 @@ fn shades_that_open_out_round_into_their_straight_end() {
 fn marks_lead_to_each_shades_own_settings() {
     let e = run(LAMP);
     let mark = |label: &str| e.marks.iter().find(|m| m.label.as_deref() == Some(label));
-    assert_eq!(mark("Fillet").unwrap().settings, ["main.fillet"]);
+    assert_eq!(
+        mark("Fillet").unwrap().settings,
+        ["main.fillet", "main.pattern_fillet"]
+    );
     assert!(mark("Straight end").is_some(), "the sphere ends straight");
     let start = &mark("Start").unwrap().lines[0];
     assert_eq!((start[0][0], start[0][2]), (23.0, 0.0));
@@ -267,14 +270,18 @@ fn marks_lead_to_each_shades_own_settings() {
     assert_eq!(tube_marks, ["Start"], "a tube is one straight piece");
     let lampshade = include_str!("../../../web/templates/lampshade.easycad");
     let e = run(lampshade);
-    assert!(e.marks.iter().any(|m| m.settings == ["fillet"]));
+    assert!(
+        e.marks
+            .iter()
+            .any(|m| m.settings == ["fillet", "pattern_fillet"])
+    );
     assert!(
         e.marks.iter().all(|m| m.label.as_deref() != Some("Lip")),
         "no lip on a cone"
     );
     let broken = lampshade.replace(
-        "mark pick(not_tube, mark_fillet, []) for fillet",
-        "mark pick(not_tube, mark_fillet, []) for filet",
+        "mark pick(not_tube, mark_fillet, []) for fillet,",
+        "mark pick(not_tube, mark_fillet, []) for filet,",
     );
     let e = run(&broken);
     assert!(

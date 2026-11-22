@@ -7,6 +7,49 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-22: Patterns on the Lamp's and the Lampshade's sections (recipe-developer)
+
+**Why:** the owner: tap sections in the Plan and put a pattern on them, one pattern running
+through all the picked sections, fading in and out along the surface; first a sine wave in and
+out, matching up into rails, or woven.
+
+- **Pattern** group in the Lampshade and the Lamp's shade: a switch per section (start/throat,
+  fillet, shade, end fillet, straight end/lip), waves a turn, rails or woven (half a wave more a
+  turn), depth, fade length along the surface. Off as it ships: the G-code is unchanged (golden
+  tests). On the thread (start, the Lamp's straight end) it warns the thread is gone.
+- **The Plan:** a mark with on/off settings gets its own bar (its name leads to the settings,
+  its switches as chips, done); `@mark` keeps the section switches off the shade's own bar. A
+  **Pattern** mark beside the patterned sections leads to the pattern's settings.
+- **`wave`** (engine, with the owner's leave): an amplitude of 0 leaves the path as it is, and
+  only the moves the wave reaches are split, by how far round each turns (the shade's spiral has
+  no fixed count a turn, so every move was split 12 × count times: the Lamp's sphere ran out of
+  points). Unit-tested.
+- Tests: `patterns_tests.rs` (5), the `wave` test, the smoke test's Plan section.
+
+Open: a test print; more patterns. See [patterns.md](patterns.md). Noticed, not from this change:
+`scripts/request-test.cjs` stops at its line 144 (no "Send to be built" button), the same without it.
+
+## 2026-11-22: Nutcracker: a cross on each bottom, overhang compensation, exact threads (recipe-developer)
+
+**Why:** the owner: overhang compensation for the fillets, and strong bottoms: after the bottom's
+spiral and a layer up the fillet, the line should run in to the middle and back, 4 times, a cross.
+
+- **`spokes(path, height, count, width, inner)`** (new step, `toolpath_ops.rs`; general manager's
+  area, the owner's leave): from where a path round the Z axis first reaches `height`, `count`
+  spokes spread over the turn after, each in to near the axis and back out (legs a line apart, a
+  half circle round), flat at `height`, the bit of wall between the legs left out. Unit-tested on a
+  helix. In the nutcracker at two layers up, 4 by default ("Spokes on the bottom", 0: none).
+- **Overhangs** group (as the Lampshade's): compensation by layer height, a field of z from the
+  fillets' quarter circles and the flattening's slope; replaces "Closer layers on overhangs".
+- **Exact threads:** `contour` with a varying layer fitted its steps to the whole height, so the
+  threads came out 2.474 and 2.478 mm a turn (cap, key); each part is now sliced in pieces (fillet
+  and flattening compensated, threaded tube and handle at the pitch): exactly 2.5 (tested).
+- From the sweep: a handle can't be narrower than it's thick, and a flattening is lengthened to
+  stay under about 70° (shorter, its layers couldn't stack); both tested.
+
+Open: a test print. Noticed, not from this change: a long fuzz round (FUZZ_CASES=800) finds a
+damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on `main`).
+
 ## 2026-11-22 (later): the render's settings in a side tab, typed or slid (claude/lampshade-light-render-wcvx6x)
 
 The Render view's settings moved from the row under the view to a **Render** tab in the side

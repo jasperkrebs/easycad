@@ -137,7 +137,10 @@ The lamp builder is a new template, **Lamp**.
     `tube`, with the tube's sizes. After that a new shape keeps the name, and brings its sizes
     for the settings the old shape didn't use.
   - **Tap a mark** (start, fillet, shade, opening, height, straight end…): its shade is selected
-    and the Settings tab opens at the setting, lit up.
+    and the Settings tab opens at the setting, lit up. A mark with on/off settings (each section's
+    pattern switch, a straight end) gets its own bar instead: its name (its settings), its
+    switches as chips, done. Tap the sections one after another to pattern several
+    ([patterns.md](patterns.md)).
   - **Zoom** with a pinch (Safari's own gesture too), the wheel, or the `+` and `−` buttons at
     the plan's top right. A press that wanders less than 12 px (5 px with a mouse) is a tap.
   - **A brim** (`aid`) prints and shows in 3D, but isn't in the Plan: it's there to print safely,

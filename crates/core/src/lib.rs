@@ -51,6 +51,8 @@ mod lamp_tests;
 #[cfg(test)]
 mod nutcracker_tests;
 #[cfg(test)]
+mod patterns_tests;
+#[cfg(test)]
 mod pendant_tests;
 #[cfg(test)]
 mod toolbox_tests;

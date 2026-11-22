@@ -181,6 +181,28 @@ pub(super) fn spikes(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     Ok(Value::Toolpath(Rc::new(out)))
 }
 
+pub(super) fn spokes(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let path = a.toolpath(0)?;
+    let count = a.count(2, 0, 36)?;
+    ctx.spend(path.points.len() / 64 + 1)?;
+    let (out, made) = toolpath_ops::spokes(
+        path,
+        a.num(1)?,
+        count,
+        a.num(3)?,
+        a.num(4)?,
+        ctx.remaining().min(MAX_PATH_POINTS),
+    )?;
+    if made < count {
+        ctx.warn(format!(
+            "{} of {count} spokes were left out: the path doesn't reach that height, or there isn't room to reach in from the wall",
+            count - made
+        ));
+    }
+    ctx.spend(out.points.len())?;
+    Ok(Value::Toolpath(Rc::new(out)))
+}
+
 /// Temperatures from inputs `from..from + 4` (nozzle, up, mid, down); 0 is the printer's own.
 fn temperatures(a: &Args, from: usize) -> Result<Temperatures, String> {
     let read = |k: usize| -> Result<Option<f64>, String> {

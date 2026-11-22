@@ -1886,6 +1886,16 @@ body[data-plan] .view-legend {
   stroke-dasharray: none;
 }
 
+/* The tapped mark, whose bar shows. */
+.plan-mark.selected .plan-mark-hit {
+  opacity: 0.35;
+}
+
+.plan-mark.selected .plan-mark-line {
+  opacity: 1;
+  stroke-dasharray: none;
+}
+
 /* A setting a mark led to: lit up for a moment. */
 .setting.flash {
   animation: flash 1.6s ease-out;

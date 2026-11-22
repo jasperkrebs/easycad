@@ -409,6 +409,17 @@ pub(super) fn join(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 pub(super) fn wave(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let (amplitude, count, phase) = (a.field(1)?, a.num(2)?, a.num(3)?);
     let max = ctx.remaining().min(MAX_PATH_POINTS);
+    // No wave (an amplitude of 0 everywhere): the geometry as it is, not a point moved or added.
+    if amplitude.as_constant() == Some(0.0) {
+        toolpath::check_wave(count, phase)?;
+        return match a.get(0)? {
+            v @ (Value::Toolpath(_) | Value::Curve(_) | Value::Surface(_)) => Ok(v.clone()),
+            other => Err(format!(
+                "works on toolpaths, curves and surfaces, got {}",
+                other.kind()
+            )),
+        };
+    }
     let out = match a.get(0)? {
         Value::Toolpath(p) => Value::Toolpath(Rc::new(toolpath::wave_path(
             p, &amplitude, count, phase, max,
