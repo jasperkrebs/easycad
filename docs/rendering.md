@@ -96,21 +96,29 @@ lamp, though the draft, which draws front faces only, showed it.)
 ## The denoiser
 
 A path tracer's picture is grainy until it has many samples; a see-through shade most of all
-(the light reaching it through the plastic is found by chance). When a Preview or Render is done,
-or stopped, it's **denoised**: Intel **Open Image Denoise**, the denoiser production renderers
-use, a neural network trained on rendered pictures, run on the GPU through WebGPU (`oidn-web`).
-It's given the picture in full float (before tone mapping) and two guides drawn from the same
-camera: each surface's colour (albedo) and its normal. The guides keep what's geometry (the
-beads' edges, the lamp's outline) sharp while the noise goes; the picture's alpha is denoised too
-where a shade is see-through over the transparent background. On the test scenes, 16 samples:
-the mean difference of a pixel from its neighbours drops from 14–18 to under 1.
+(the light reaching it through the plastic is found by chance). **Denoise** (beside PNG, once a
+Preview or Render is done or stopped) runs Intel **Open Image Denoise**, the denoiser production
+renderers use, a neural network trained on rendered pictures, on the GPU through WebGPU
+(`oidn-web`). Off until pressed; **Denoise by itself** in the Quality group runs it on every
+finished picture.
 
-- **Denoised** (beside PNG) switches between the denoised picture and the one as rendered; the
-  PNG saves whichever shows. **Denoise** in the Quality group turns it off.
-- It works best with enough samples to go on: at 16–32 samples the layer lines on a see-through
-  shade soften; at a few hundred they stay. A preview's denoised look is the render's, cleaner.
-- The network (1.8 MB, Intel's `rt_hdr_alb_nrm` weights) loads the first time it's needed and is
-  then kept offline with the app.
+- It's given the picture in full float (before tone mapping) and two guides drawn from the same
+  camera: each surface's colour (albedo) and its normal. The guides are drawn, not path traced,
+  so they're clean, and the network is the one trained for clean guides (`rt_hdr_calb_cnrm`):
+  it keeps what the normals show, the beads' round faces, so **the layer lines stay**. (The first
+  version used the network for noisy guides, which smoothed them away with the noise.) On the
+  layer-line test (a frosted lamp at 640 px, 24 samples) the brightness changes about 4 times (3.8–4.5) more
+  from row to row than from column to column once denoised: the lines, sharper than through the
+  grain (1.1, grain is the same both ways).
+- **Denoise strength** (Quality) blends the picture as rendered back in: 100 % all denoised,
+  less keeps some grain and every bit of detail. It changes the picture at once, without
+  rendering again.
+- Once denoised, the button switches between the denoised picture and the one as rendered; the
+  PNG saves whichever shows.
+- The alpha is denoised too where a shade is see-through over the transparent background.
+- The network (1.8 MB) loads the first time it's needed and is then kept offline with the app.
+- It needs enough to go on: at a few hundred samples nothing is guessed; at 16–32 on a tiny
+  picture (a layer a pixel high) fine detail goes soft.
 - Where the browser has no WebGPU, the path tracer's own edge-aware smoothing is used instead
   (the status line says so): lighter, and it softens more.
 
@@ -200,13 +208,15 @@ setting up and a small preview work anywhere.
   is two meshes (its beads; the faces inside its wall, with vertices of their own), and the
   merged geometry's groups (which it adds without clearing) are cleared before each scene. This
   was the "same scene, another material" of the first version.
-- The faces inside the wall are a thin film (light crosses unbent); as a face of index 1
+- The faces inside the wall are a thin film (light crosses unbent) in a see-through part, and
+  solid in a solid one (see-through there, they let light slip through the seams where one
+  turn's bead meets the next: faint rings of light inside an opaque shade). As a face of index 1
   between two solids, the path tracer's transmission made NaNs and blackened the pixels behind
   a see-through shade.
 - When the 3D view loses its GPU context (a phone short of memory), the prepared render is
   freed so the 3D view can be rebuilt (architecture §9.2): Prepare again afterwards.
 - **oidn-web** 0.5.0 (MIT, by pissang; bundles @petamoriken/float16) runs Open Image Denoise's
-  U-Net in WGSL compute shaders; the weights (`rt_hdr_alb_nrm.tza`, Apache-2.0, Intel) come from
+  U-Net in WGSL compute shaders; the weights (`rt_hdr_calb_cnrm.tza`, Apache-2.0, Intel) come from
   the npm package `oidn-weights` 2.3.0-1. Both in `web/vendor/oidn-web/`, loaded only when the
   Render view denoises. The denoised picture is shown through the path tracer's own display pass,
   so its tone mapping and exposure are the same.
