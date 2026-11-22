@@ -529,6 +529,220 @@ pub fn spikes(
     Ok((out, count))
 }
 
+/// Spokes into a toolpath around the Z axis, `count` of them, from where it first reaches
+/// `height` (the first there, the rest spread evenly over the turn after): at each the line
+/// leaves the wall, runs in to the middle half a line to one side, turns round a half circle
+/// `inner` from the axis and runs back out half a line to the other side, back into the wall.
+/// The legs lie flat at `height`; each move gets the bead of the wall move it starts from, and
+/// the stretch of wall between the legs (a line width) is left out: the legs close it. A cross
+/// that ties a vase's bottom to its wall. Returns the toolpath and how many spokes went in.
+pub fn spokes(
+    path: &Toolpath,
+    height: f64,
+    count: usize,
+    width: f64,
+    inner: f64,
+    max_points: usize,
+) -> Result<(Toolpath, usize), String> {
+    if !(width.is_finite() && width > 0.0) {
+        return Err(format!("`width` must be more than 0, got {width}"));
+    }
+    if !height.is_finite() || !inner.is_finite() {
+        return Err("`height` and `inner` must be numbers".into());
+    }
+    let inner = if inner > 0.0 {
+        inner.max(width / 2.0)
+    } else {
+        1.25 * width
+    };
+    let n = path.points.len();
+    let mut along = vec![0.0; n];
+    for i in 1..n {
+        along[i] = along[i - 1] + dist3(path.points[i - 1], path.points[i]);
+    }
+    // Where it first reaches the height, on a printing move.
+    let Some(i0) = (1..n).find(|&i| !is_travel(path, i) && path.points[i][2] >= height - 1e-9)
+    else {
+        return Ok((path.clone(), 0));
+    };
+    if count == 0 {
+        return Ok((path.clone(), 0));
+    }
+    let point_at = |d: f64| -> (P3, usize) {
+        let i = along.partition_point(|a| *a < d).clamp(1, n - 1);
+        let (a, b) = (path.points[i - 1], path.points[i]);
+        let len = along[i] - along[i - 1];
+        let f = if len > 0.0 {
+            ((d - along[i - 1]) / len).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (lerp3(a, b, f), i)
+    };
+    let (a0, b0) = (path.points[i0 - 1], path.points[i0]);
+    let f0 = if b0[2] > a0[2] {
+        ((height - a0[2]) / (b0[2] - a0[2])).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let d0 = along[i0 - 1] + f0 * (along[i0] - along[i0 - 1]);
+    // Walking on from there: the angle turned round the axis so far, unwrapped.
+    let ang = |p: P3| p[1].atan2(p[0]);
+    let step = std::f64::consts::TAU / count as f64;
+    let wrap = |mut a: f64| {
+        while a > std::f64::consts::PI {
+            a -= std::f64::consts::TAU;
+        }
+        while a < -std::f64::consts::PI {
+            a += std::f64::consts::TAU;
+        }
+        a
+    };
+    let mut centres = vec![d0];
+    let (mut prev, mut s_prev, mut turned) = (point_at(d0).0, d0, 0.0);
+    let mut i = i0;
+    while centres.len() < count && i < n {
+        if is_travel(path, i) {
+            break;
+        }
+        let p = path.points[i];
+        let da = wrap(ang(p) - ang(prev)).abs();
+        let want = step * centres.len() as f64;
+        if da > 0.0 && turned + da >= want {
+            let f = ((want - turned) / da).clamp(0.0, 1.0);
+            let d = s_prev + f * (along[i] - s_prev);
+            centres.push(d);
+            prev = point_at(d).0;
+            s_prev = d;
+            turned = want;
+            continue;
+        }
+        turned += da;
+        prev = p;
+        s_prev = along[i];
+        i += 1;
+    }
+    // Keep spokes on one printing stretch, clear of each other, long enough to reach in.
+    let half = width / 2.0;
+    let kept: Vec<f64> = centres
+        .into_iter()
+        .filter(|&c| {
+            let (m, im) = point_at(c);
+            let r = m[0].hypot(m[1]);
+            c - half > along[0]
+                && c + half < along[n - 1]
+                && !is_travel(path, im)
+                && r > inner + 1.5 * width
+        })
+        .collect();
+    let count = kept.len();
+    let mut out = path.emptied();
+    let mut new_index: Vec<Option<usize>> = vec![None; n];
+    let mut starts = path.layer_starts.iter().peekable();
+    let mut left = kept.iter().peekable();
+    let push = |out: &mut Toolpath, i: usize, p: P3, travel: bool, flow: f64, speed: f64| {
+        out.points.push(p);
+        out.travel.push(travel);
+        out.flow.push(if travel { 0.0 } else { flow });
+        out.turn.push(path.turn.get(i).copied().unwrap_or(0.0));
+        out.part.push(path.part.get(i).copied().unwrap_or(0));
+        out.height.push(if travel {
+            0.0
+        } else {
+            path.height.get(i).copied().unwrap_or(0.0)
+        });
+        out.width.push(if travel {
+            0.0
+        } else {
+            path.width.get(i).copied().unwrap_or(0.0)
+        });
+        out.speed.push(speed);
+    };
+    for i in 0..n {
+        if starts.peek() == Some(&&i) {
+            out.layer_starts.push(out.points.len());
+            starts.next();
+        }
+        while let Some(&&c) = left.peek() {
+            if i == 0 || c - half > along[i] {
+                break;
+            }
+            left.next();
+            let (a, ia) = point_at(c - half);
+            let (b, _) = point_at(c + half);
+            let (m, _) = point_at(c);
+            let r = m[0].hypot(m[1]).max(1e-9);
+            let u = [m[0] / r, m[1] / r];
+            // Along the wall, the way it goes.
+            let tl = (b[0] - a[0]).hypot(b[1] - a[1]).max(1e-9);
+            let t = [(b[0] - a[0]) / tl, (b[1] - a[1]) / tl];
+            let side = |p: P3| (p[0] - m[0]) * t[0] + (p[1] - m[1]) * t[1];
+            let (la, lb) = (side(a), side(b));
+            let at = |radius: f64, lateral: f64| -> P3 {
+                [
+                    u[0] * radius + t[0] * lateral,
+                    u[1] * radius + t[1] * lateral,
+                    height,
+                ]
+            };
+            let (c_in, c_out) = (at(inner, la), at(inner, lb));
+            // A line width in from the wall, down at the height.
+            let toward = |from: P3, to: P3| -> P3 {
+                let d = (to[0] - from[0]).hypot(to[1] - from[1]);
+                let f = (width / d.max(1e-9)).min(1.0);
+                [
+                    from[0] + (to[0] - from[0]) * f,
+                    from[1] + (to[1] - from[1]) * f,
+                    height,
+                ]
+            };
+            let speed = path.speed_factor(ia);
+            let flow = path.flow.get(ia).copied().unwrap_or(1.0);
+            push(&mut out, ia, a, false, flow, speed);
+            push(&mut out, ia, toward(a, c_in), false, 1.0, speed);
+            push(&mut out, ia, c_in, false, 1.0, speed);
+            let (mid, rr) = ((la + lb) / 2.0, (lb - la).abs() / 2.0);
+            let sign = if lb >= la { 1.0 } else { -1.0 };
+            for k in 1..8 {
+                let ph = std::f64::consts::PI * k as f64 / 8.0;
+                push(
+                    &mut out,
+                    ia,
+                    at(inner - rr * ph.sin(), mid - sign * rr * ph.cos()),
+                    false,
+                    1.0,
+                    speed,
+                );
+            }
+            push(&mut out, ia, c_out, false, 1.0, speed);
+            push(&mut out, ia, toward(b, c_out), false, 1.0, speed);
+            push(&mut out, ia, b, false, 1.0, speed);
+        }
+        // The original point, unless a spoke left it out.
+        let inside = kept
+            .iter()
+            .any(|c| along[i] >= c - half - 1e-9 && along[i] <= c + half + 1e-9);
+        if inside && !is_travel(path, i) {
+            continue;
+        }
+        let travel = is_travel(path, i);
+        push(
+            &mut out,
+            i,
+            path.points[i],
+            travel,
+            path.flow.get(i).copied().unwrap_or(0.0),
+            path.speed_factor(i),
+        );
+        new_index[i] = Some(out.points.len() - 1);
+        if out.points.len() > max_points.min(MAX_PATH_POINTS) {
+            return Err("the spokes need too many points".into());
+        }
+    }
+    out.copy_events(path, &|i| new_index.get(i).copied().flatten());
+    Ok((out, count))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,5 +960,67 @@ mod tests {
         );
         // The rest of the square is all there.
         assert!((out.stats().path_length_mm - (160.0 + 2.0 * 5.0)).abs() < 1e-9);
+    }
+
+    /// A cross into a helix: four spokes from where it reaches the height, a quarter turn apart,
+    /// flat at the height, turning round near the axis, the helix carrying on unchanged.
+    #[test]
+    fn spokes_make_a_cross() {
+        // Two turns of a 40 mm helix from z 1 to 5, a point every degree.
+        let pts: Vec<P3> = (0..=720)
+            .map(|d| {
+                let a = (d as f64).to_radians();
+                [40.0 * a.cos(), 40.0 * a.sin(), 1.0 + 2.0 * d as f64 / 360.0]
+            })
+            .collect();
+        let path = line_path(pts.clone(), 20.0);
+        let (out, made) = spokes(&path, 3.0, 4, 4.0, 0.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(made, 4);
+        // Inside the wall: only the spokes, flat at the height, as near the axis as their turns.
+        let inside: Vec<&P3> = out
+            .points
+            .iter()
+            .filter(|p| p[0].hypot(p[1]) < 39.0)
+            .collect();
+        assert!(
+            inside.iter().all(|p| (p[2] - 3.0).abs() < 1e-9),
+            "{inside:?}"
+        );
+        let nearest = inside
+            .iter()
+            .map(|p| p[0].hypot(p[1]))
+            .fold(f64::INFINITY, f64::min);
+        assert!((nearest - (5.0 - 2.0)).abs() < 0.05, "{nearest}");
+        // Spokes a quarter turn apart: their tips' directions.
+        let tips: Vec<f64> = inside
+            .iter()
+            .filter(|p| (p[0].hypot(p[1]) - nearest).abs() < 0.05)
+            .map(|p| p[1].atan2(p[0]).to_degrees().rem_euclid(360.0))
+            .collect();
+        assert_eq!(tips.len(), 4, "{tips:?}");
+        for w in tips.windows(2) {
+            assert!(
+                ((w[1] - w[0]).rem_euclid(360.0) - 90.0).abs() < 1.0,
+                "{tips:?}"
+            );
+        }
+        // The first where the nozzle reaches the height (the toolpath prints its 0.5 mm layer
+        // above the curve: z 3 three quarters round, at 270°).
+        assert!((tips[0] - 270.0).abs() < 1.0, "{tips:?}");
+        // The helix carries on to its end, and no spokes without the height, or with none asked.
+        let (end, want) = (out.points[out.points.len() - 1], pts[pts.len() - 1]);
+        assert!((0..3).all(|k| (end[k] - want[k] - if k == 2 { 0.5 } else { 0.0 }).abs() < 1e-9));
+        assert_eq!(
+            spokes(&path, 9.0, 4, 4.0, 0.0, MAX_PATH_POINTS).unwrap().1,
+            0
+        );
+        assert_eq!(
+            spokes(&path, 3.0, 0, 4.0, 0.0, MAX_PATH_POINTS)
+                .unwrap()
+                .0
+                .points
+                .len(),
+            path.points.len()
+        );
     }
 }

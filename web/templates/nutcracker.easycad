@@ -4,6 +4,7 @@ printer "Ginger G1"
 note "A cap and a key that screws into it: put a nut in the cap, screw the key down onto it until it cracks. Two prints from one set of settings, each centred on the bed with its own G-code file, each one continuous line: a flat spiral bottom, a fillet, then the wall in vase mode, whose layer height is the thread's pitch, so every turn lays one turn of thread."
 note "The key is a threaded tube as long as the cap is deep and a bit more; above it the tube flattens gradually (round to a flat stadium shape, along an S-curve or straight) into a broad flat handle, like the bow of a large key. The handle is as wide as keeps every layer as long as the tube's (or your own width); at its thinnest, two lines thick, its walls meet into one solid blade."
 note "The cap sits one line width outside the key, plus the fit. Both spirals turn the same way, so the key screws in closed end first, as it prints."
+note "The bottoms take the force, so each is tied to its wall by a cross: as soon as the wall is a layer up from the bottom (part way up the fillet), the line runs in to the middle and back out, flat on the bottom's spiral, four times (or as many as set). The fillets and the flattening lean, so their layers come closer (overhang compensation by layer height); the threads stay exactly a pitch a turn."
 
 group "Thread"
 param thread_d   = 80 mm   in 20..300 step 0.5   "Thread diameter (the key's inside)"
@@ -23,14 +24,20 @@ param handle_len = 60 mm   in 0..400 step 1      "Handle length (flat)"
 param handle_w   = 0 mm    in 0..600 step 1      "Handle width (0: as long round as the tube)"
 param handle_t   = 12 mm   in 2..200 step 0.5    "Handle thickness (two lines: solid)"
 
+group "Bottom"
+param bottom_spokes = 4    in 0..12 step 1       "Spokes on the bottom (4: a cross; 0: none)"
+
 group "Print"
 param line       = 6 mm    in 1..12 step 0.1     "Line width"
 param flow       = 20      in 1..400             "Flow (mm³/s)"
-param pace       = 100 %   in 0..100             "Closer layers on overhangs"
-param steep      = 0       in 0..4 step 0.1      "Steep curve (0: even; more: less when shallow, more when steep)"  when pace
-param pivot      = 45 deg  in 5..85 step 1       "Steep curve pivot (as set at this lean)"  when steep
 param disc_extrusion = 100 % in 50..200          "Bottom extrusion"
 param wall_extrusion = 100 % in 50..200          "Wall extrusion"
+
+group "Overhangs"
+param compensation = "layer height" of ["layer height", "off"] "Compensation (the fillets and the flattening)"
+param strength   = 100 %   in 0..100             "Strength"  when compensation = "layer height"
+param steep      = 0       in 0..4 step 0.1      "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
+param pivot      = 45 deg  in 5..85 step 1       "Steep curve pivot (as now at this angle)"  when steep
 
 # ---- Sizes. The key's wall runs half a line outside its thread diameter (its inside face on the
 # thread), the cap's one line and the fit further out. Heights on whole layers (the pitch).
@@ -38,7 +45,6 @@ key_r    = thread_d / 2 + line / 2
 cap_r    = key_r + line + fit
 cap_wh   = max(2, round(cap_h / pitch)) * pitch
 key_th   = max(2, round(key_thread / pitch)) * pitch
-flat_h   = max(1, round(flatten / pitch)) * pitch
 hand_h   = round(handle_len / pitch) * pitch
 key_wh   = key_th + flat_h + hand_h
 # Fillets that leave room for the flat spiral inside them.
@@ -48,8 +54,30 @@ key_fil  = max(pitch, min(key_fillet, min((key_th - pitch) * 0.95, key_r - 2 * l
 # line: two lines thick, its walls meet), and as wide as keeps the length round the tube's
 # (a stadium: two straights and two half circles), or the width set.
 hand_ry  = max(line / 2, (handle_t - line) / 2)
-same_rx  = (2 * pi * key_r - 2 * pi * hand_ry) / 4 + hand_ry
+same_rx  = max(hand_ry, (2 * pi * key_r - 2 * pi * hand_ry) / 4 + hand_ry)
 hand_rx  = pick(greater(handle_w, 0), max(hand_ry, (handle_w - line) / 2), same_rx)
+# The flattening, on whole layers, and never so short its sides would lean past about 70° (an
+# S-curve's steepest is 1.5 times its average): the layers couldn't stack.
+flat_d   = max(abs(key_r - hand_ry), abs(hand_rx - key_r))
+flat_h   = max(max(1, round(flatten / pitch)), ceil(0.55 * flat_d / pitch)) * pitch
+
+# ---- Overhang compensation by layer height, as the Lampshade's: where the wall leans (the
+# fillets, the flattening) layers come closer, pitch × (1 − strength × (lean / pivot)^steep ×
+# (1 − cos lean)), each still extruded for a whole layer; where it's straight (the threads) every
+# layer is exactly the pitch. The lean at height z: up a quarter-circle fillet of radius f from the
+# flat bottom (at `pitch`), from flat to straight; up the flattening, its steeper side's slope.
+comp     = less(abs(index_of(["layer height", "off"], compensation)), 0.5) * strength
+cap_h0   = clamp(z - pitch, 0, cap_fil)
+cap_lean = atan2(cap_fil - cap_h0, sqrt(max(0.000001, cap_fil ^ 2 - (cap_fil - cap_h0) ^ 2)))
+key_h0   = clamp(z - pitch, 0, key_fil)
+key_fl   = atan2(key_fil - key_h0, sqrt(max(0.000001, key_fil ^ 2 - (key_fil - key_h0) ^ 2)))
+# The flattening: how fast its sides move at height z (an S-curve's slope peaks at 1.5).
+flat_t   = clamp((z - key_th) / flat_h, 0, 1)
+flat_dt  = pick(index_of(["smooth", "linear"], flat_curve), 1, 6 * flat_t * (1 - flat_t)) * greater(z, key_th) * less(z, key_th + flat_h)
+key_mo   = atan(flat_dt * max(abs(key_r - hand_ry), abs(hand_rx - key_r)) / flat_h)
+key_lean = max(key_fl * less(z, key_th), key_mo)
+cap_lay  = pitch * max(0.05, 1 - comp * (min(cap_lean, 89) / pivot) ^ steep * (1 - cos(cap_lean)))
+key_lay  = pitch * max(0.05, 1 - comp * (min(key_lean, 89) / pivot) ^ steep * (1 - cos(key_lean)))
 
 # Sections: closed curves with their seam at the back (+Y), where the bottom spiral ends and the
 # wall starts; every section the same number of points, so they line up layer to layer.
@@ -62,13 +90,22 @@ cap_fr   = cap_flat + sqrt(cap_fil ^ 2 - (cap_fil - fz * cap_fil) ^ 2)
 cap_fils = unit |> scale(cap_fr) |> move(z: pitch + fz * cap_fil)
 cap_top  = unit |> scale(cap_r) |> move(z: cap_wh)
 cap_shape = loft(flatten([cap_fils, [cap_top]]))
-cap_wall = spiralize(contour(cap_shape, pitch, pace: pace, steep: steep, pivot: pivot), width: line, flow: flow, flat_top: false, ramp: false)
+# Sliced in two, so the thread is exactly a pitch a turn: the fillet in compensated steps fitted
+# to its own height, the straight wall at the pitch (stretched a hair to whole layers).
+cap_fil_s = loft(cap_fils)
+cap_str_s = loft([item(cap_fils, 24), cap_top])
+# (Each piece's first layer is the last one's top: left out.)
+cap_l2   = contour(cap_str_s, pitch)
+cap_lays = flatten([contour(cap_fil_s, cap_lay), item(cap_l2, series(1, 1, count(cap_l2) - 1))])
+cap_wall = spiralize(cap_lays, width: line, flow: flow, flat_top: false, ramp: false)
   |> bead(layer: pitch) |> adjust(extrude: wall_extrusion)
 # The bottom: rings one line apart from the fillet's foot inward, linked into a spiral from the
 # centre out: its last turn widens onto the fillet's foot and ends on the seam, where the wall starts.
 cap_rings = rings(unit |> scale(cap_flat), line)
 cap_disc = toolpath(link_rings(reverse(cap_rings), "spiral", line), width: line, layer: pitch, flow: flow) |> adjust(extrude: disc_extrusion)
-cap      = join([cap_disc, cap_wall])
+# The cross: as soon as the wall is a layer up from the bottom (part way up the fillet), the line
+# runs in to the middle and back out `bottom_spokes` times, flat on the bottom, tying its spiral to the wall.
+cap      = spokes(join([cap_disc, cap_wall]), height: 2 * pitch, count: bottom_spokes, width: line)
 
 # ---- The key, printed its pressing end down: the fillet, the threaded tube, then flattening
 # from round into the handle's stadium (along an S-curve or straight), then the flat handle.
@@ -82,11 +119,21 @@ fb       = pick(index_of(["smooth", "linear"], flat_curve), ft, smoothstep(ft))
 key_morph = tween(unit |> scale(key_r), hand, fb) |> move(z: key_th + ft * flat_h)
 key_hand = hand |> move(z: key_wh)
 key_shape = loft(flatten([key_fils, [key_tube], key_morph, pick(greater(hand_h, 0), [key_hand], [])]))
-key_wall = spiralize(contour(key_shape, pitch, pace: pace, steep: steep, pivot: pivot), width: line, flow: flow, flat_top: false, ramp: false)
+# Sliced in pieces, so the thread is exactly a pitch a turn: the fillet and the flattening in
+# compensated steps fitted to their own heights, the threaded tube and the handle at the pitch.
+key_fil_s = loft(key_fils)
+key_tub_s = loft([item(key_fils, 24), key_tube])
+key_mor_s = loft(flatten([[key_tube], key_morph]))
+key_han_s = loft([hand |> move(z: key_th + flat_h), hand |> move(z: key_th + flat_h + max(pitch, hand_h))])
+key_l2   = contour(key_tub_s, pitch)
+key_l3   = contour(key_mor_s, key_lay)
+key_l4   = contour(key_han_s, pitch)
+key_lays = flatten([contour(key_fil_s, key_lay), item(key_l2, series(1, 1, count(key_l2) - 1)), item(key_l3, series(1, 1, count(key_l3) - 1)), pick(greater(hand_h, 0), item(key_l4, series(1, 1, count(key_l4) - 1)), [])])
+key_wall = spiralize(key_lays, width: line, flow: flow, flat_top: false, ramp: false)
   |> bead(layer: pitch) |> adjust(extrude: wall_extrusion)
 key_rings = rings(unit |> scale(key_flat), line)
 key_disc = toolpath(link_rings(reverse(key_rings), "spiral", line), width: line, layer: pitch, flow: flow) |> adjust(extrude: disc_extrusion)
-key      = join([key_disc, key_wall])
+key      = spokes(join([key_disc, key_wall]), height: 2 * pitch, count: bottom_spokes, width: line)
   |> require(1 - less(key_th + pitch, cap_wh), "The threaded length is shorter than the cap is deep: screwed all the way down, the key's flattening would hit the cap's rim", warn: true)
   |> require(less(atan2(1.5 * max(abs(key_r - hand_ry), abs(hand_rx - key_r)), flat_h), 60), "The flattening leans more than 60°: make it longer", warn: true)
 
