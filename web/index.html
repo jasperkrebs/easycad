@@ -21,7 +21,8 @@
           "three/addons/": "./vendor/three/addons/",
           "three/examples/jsm/": "./vendor/three/addons/",
           "three-mesh-bvh": "./vendor/three-mesh-bvh/index.module.js",
-          "three-gpu-pathtracer": "./vendor/three-gpu-pathtracer/index.module.js"
+          "three-gpu-pathtracer": "./vendor/three-gpu-pathtracer/index.module.js",
+          "oidn-web": "./vendor/oidn-web/oidn.js"
         }
       }
     </script>
@@ -106,6 +107,7 @@
               <button type="button" class="render-go" id="renderPreview" title="A quick look: small, few samples" disabled>Preview</button>
               <button type="button" class="render-go" id="renderFinal" title="Render the picture at its size and samples" disabled>Render</button>
               <button type="button" id="renderStop" title="Stop rendering (the picture so far stays)" disabled>Stop</button>
+              <button type="button" id="renderDenoised" aria-pressed="false" title="The denoised picture (on) or as rendered (off)" disabled>Denoised</button>
               <button type="button" id="renderSave" title="Save the picture as a PNG (transparent background)" disabled>PNG</button>
             </div>
           </div>

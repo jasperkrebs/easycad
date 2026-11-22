@@ -40,6 +40,9 @@ do not edit by hand.
 | three.js | 0.186.1 | MIT | https://github.com/mrdoob/three.js | `web/vendor/three/LICENSE` |
 | three-gpu-pathtracer | 0.0.27 | MIT | https://github.com/gkjohnson/three-gpu-pathtracer | `web/vendor/three-gpu-pathtracer/LICENSE` |
 | three-mesh-bvh | 0.9.18 | MIT | https://github.com/gkjohnson/three-mesh-bvh | `web/vendor/three-mesh-bvh/LICENSE` |
+| oidn-web | 0.5.0 | MIT | https://github.com/pissang/oidn-web | `web/vendor/oidn-web/LICENSE` |
+| @petamoriken/float16 (bundled in oidn-web) | 3.9.3 | MIT | https://github.com/petamoriken/float16 | `web/vendor/oidn-web/LICENSE-bundled.txt` |
+| Intel Open Image Denoise weights (rt_hdr_alb_nrm) | 2.3.0 | Apache-2.0 | https://github.com/RenderKit/oidn-weights | `web/vendor/oidn-web/LICENSE-weights.txt` |
 | Anthropic TypeScript SDK | 0.129.0 | MIT | https://github.com/anthropics/anthropic-sdk-typescript | `web/vendor/anthropic/LICENSE` |
 | @stablelib/base64 (bundled in the SDK file) | 1.0.1 | MIT | https://github.com/StableLib/stablelib | `web/vendor/anthropic/LICENSE-bundled.txt` |
 | fast-sha256 (bundled in the SDK file) | 1.3.0 | Unlicense | https://github.com/dchest/fast-sha256-js | `web/vendor/anthropic/LICENSE-bundled.txt` |

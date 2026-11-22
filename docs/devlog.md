@@ -50,6 +50,33 @@ spiral and a layer up the fillet, the line should run in to the middle and back,
 Open: a test print. Noticed, not from this change: a long fuzz round (FUZZ_CASES=800) finds a
 damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on `main`).
 
+## 2026-11-22 (evening): the render's denoiser; the room as a cutaway (claude/lampshade-light-render-wcvx6x)
+
+- **Denoiser:** Intel Open Image Denoise (oidn-web 0.5.0 on WebGPU, the `rt_hdr_alb_nrm` weights
+  from `oidn-weights` 2.3.0-1) runs when a preview or render is done or stopped: the float picture
+  with albedo and normal guides drawn from the camera, the alpha too where a shade is see-through.
+  On the test scenes at 16 samples, the noise (a pixel's mean difference from its neighbours)
+  drops from 14–18 to under 1. **Denoised** beside PNG compares it with the picture as rendered;
+  **Denoise** in Quality turns it off. Without WebGPU: the path tracer's edge-aware smoothing.
+- **Bug: the lamp hidden with wall, floor and ceiling on:** the surfaces were solid from both
+  sides, so a camera above the ceiling (or below the floor, behind the wall) saw only them, while
+  the draft (front faces only) showed the lamp. Now each is solid from the room's side only: a
+  cutaway. `render-test` has the scene (all three on, from above) and checks the lamp shows.
+- `render-test` runs WebGPU (software) too, and checks every scene is denoised and less noisy.
+- Found on the way: the path tracer now and then leaves a negative value (a silk's metallic
+  coat); the display clips it, but the denoiser's transfer curve made it NaN and the whole
+  picture black. The input is clamped to 0–65504 (the denoiser's range), and an output with
+  invalid values falls back to the smoothing, saying why. `render-test` checks the denoised
+  picture's brightness too (a black one has no noise at all).
+- oidn-web hands back alpha 1 everywhere (a black background), its alpha pass
+  too; the render keeps its own alpha and, over a see-through shade, denoises it as a grey picture
+  through the same network. The denoised picture is a float texture read with nearest filtering
+  (a float texture some GPUs can't filter reads as black).
+- `scripts/smoke-test.cjs` expects the Lampshade's new **Pattern** group (from the patterns change
+  on `main`, whose smoke test still listed the old groups).
+
+**Open:** at 16–32 samples the denoiser softens the layer lines of see-through shades.
+
 ## 2026-11-22 (later): the render's settings in a side tab, typed or slid (claude/lampshade-light-render-wcvx6x)
 
 The Render view's settings moved from the row under the view to a **Render** tab in the side

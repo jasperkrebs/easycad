@@ -1421,13 +1421,16 @@ const renderTime = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${String(Math.ro
 function showRenderProgress(p) {
   const what = p.kind === 'final' ? 'Render' : 'Preview';
   const size = p.width ? ` · ${p.width}×${p.height}` : '';
+  const by = { oidn: 'denoised', smooth: 'smoothed (no WebGPU for the denoiser)' };
+  const denoised = p.denoised ? ` · ${p.showing ? by[p.denoised] : 'as rendered'}` : p.denoiseError ? ` · not denoised: ${p.denoiseError}` : '';
   const texts = {
     empty: 'Prepare to render',
+    denoising: `${what} · ${p.samples} samples${size} · denoising…`,
     draft: `Draft${renderView.info ? ` · ${renderView.info}` : ''}`,
     compiling: `${what} · compiling the shaders…`,
     rendering: `${what} · ${p.samples} / ${p.target}${size} · ${renderTime(p.seconds || 0)}`,
-    done: `${what} done · ${p.samples} samples${size} · ${renderTime(p.seconds || 0)}`,
-    stopped: `${what} stopped · ${p.samples} samples`,
+    done: `${what} done · ${p.samples} samples${size} · ${renderTime(p.seconds || 0)}${denoised}`,
+    stopped: `${what} stopped · ${p.samples} samples${size}${denoised}`,
   };
   renderStatus(texts[p.state] || '');
   const running = p.state === 'compiling' || p.state === 'rendering';
@@ -1436,6 +1439,9 @@ function showRenderProgress(p) {
   $('renderPreview').toggleAttribute('disabled', !prepared);
   $('renderFinal').toggleAttribute('disabled', !prepared);
   $('renderSave').toggleAttribute('disabled', !(p.state === 'done' || p.state === 'stopped' || p.state === 'rendering'));
+  // The denoised picture or the one as rendered, once there's a denoised one.
+  $('renderDenoised').toggleAttribute('disabled', !p.denoised);
+  $('renderDenoised').setAttribute('aria-pressed', String(Boolean(p.denoised && p.showing)));
   $('renderPreview').setAttribute('aria-pressed', String(running && p.kind === 'preview'));
   $('renderFinal').setAttribute('aria-pressed', String(running && p.kind === 'final'));
 }
@@ -1636,6 +1642,7 @@ function renderPanel() {
     }),
     ['Quality', 'render:quality', [
       [renderParam('bounces', 'Light bounces', 'number', { min: 1, max: 32, step: 1 }), r.bounces],
+      [renderParam('denoise', 'Denoise (when done or stopped)', 'toggle'), r.denoise],
       [renderParam('previewSize', 'Preview: longer side', 'number', { unit: 'px', min: 160, max: 4096, step: 1 }), r.preview.size],
       [renderParam('previewSamples', 'Preview: samples', 'number', { unit: 'spp', min: 1, max: 4096, step: 1 }), r.preview.samples],
       [renderParam('finalSize', 'Render: longer side', 'number', { unit: 'px', min: 160, max: 4096, step: 1 }), r.final.size],
@@ -1713,6 +1720,8 @@ function onRenderSetting(setting, value) {
       const k = name.slice(0, -1);
       return changeRender({ [k]: { on: true, distance: value } });
     }
+    case 'denoise':
+      return changeRender({ denoise: value });
     case 'previewSize':
       return changeRender({ preview: { ...r.preview, size: value } });
     case 'previewSamples':
@@ -1730,6 +1739,7 @@ function wireRender() {
   $('renderPreview').addEventListener('click', () => renderView.api?.start('preview'));
   $('renderFinal').addEventListener('click', () => renderView.api?.start('final'));
   $('renderStop').addEventListener('click', () => renderView.api?.stop());
+  $('renderDenoised').addEventListener('click', () => renderView.api?.showDenoised($('renderDenoised').getAttribute('aria-pressed') !== 'true'));
   $('renderSave').addEventListener('click', async () => {
     if (!renderView.api?.rendered) return;
     const blob = await (await fetch(renderView.api.capture())).blob();

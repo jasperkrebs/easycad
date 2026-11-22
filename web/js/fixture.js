@@ -189,6 +189,8 @@ export const RENDER_DEFAULTS = {
   /** The quick look and the render: the picture's longer side in pixels, and samples per pixel. */
   preview: { size: 640, samples: 32 },
   final: { size: 1920, samples: 512 },
+  /** Denoise a finished (or stopped) preview or render: Open Image Denoise, where there's WebGPU. */
+  denoise: true,
   /**
    * The camera: where it looks from (`view`, for Fit), its lens (mm, as on a full-frame camera),
    * and where it was left (the scene's metres; null: fitted).
@@ -243,6 +245,7 @@ export function cleanRender(raw) {
     bounces: Math.round(num(r.bounces, 1, 32, D.bounces)),
     preview: quality(r.preview, D.preview),
     final: quality(r.final, D.final),
+    denoise: typeof r.denoise === 'boolean' ? r.denoise : D.denoise,
     camera: {
       view: Object.hasOwn(CAMERA_VIEWS, String(cam.view)) ? String(cam.view) : D.camera.view,
       lens: num(cam.lens, 10, 300, D.camera.lens),

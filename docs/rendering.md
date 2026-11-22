@@ -88,6 +88,32 @@ Moving a distance turns its surface on. One colour for all three (a matte paint)
 them on, the picture isn't transparent where they are: the light pool on the wall and the
 shadows are the point.
 
+Each surface is solid from the room's side only (it faces the lamp). A camera outside the room
+(above the ceiling, below the floor, behind the wall) looks through it, as an architect's
+cutaway; the light inside still bounces off it. (Solid from both sides, such a surface hid the
+lamp, though the draft, which draws front faces only, showed it.)
+
+## The denoiser
+
+A path tracer's picture is grainy until it has many samples; a see-through shade most of all
+(the light reaching it through the plastic is found by chance). When a Preview or Render is done,
+or stopped, it's **denoised**: Intel **Open Image Denoise**, the denoiser production renderers
+use, a neural network trained on rendered pictures, run on the GPU through WebGPU (`oidn-web`).
+It's given the picture in full float (before tone mapping) and two guides drawn from the same
+camera: each surface's colour (albedo) and its normal. The guides keep what's geometry (the
+beads' edges, the lamp's outline) sharp while the noise goes; the picture's alpha is denoised too
+where a shade is see-through over the transparent background. On the test scenes, 16 samples:
+the mean difference of a pixel from its neighbours drops from 14–18 to under 1.
+
+- **Denoised** (beside PNG) switches between the denoised picture and the one as rendered; the
+  PNG saves whichever shows. **Denoise** in the Quality group turns it off.
+- It works best with enough samples to go on: at 16–32 samples the layer lines on a see-through
+  shade soften; at a few hundred they stay. A preview's denoised look is the render's, cleaner.
+- The network (1.8 MB, Intel's `rt_hdr_alb_nrm` weights) loads the first time it's needed and is
+  then kept offline with the app.
+- Where the browser has no WebGPU, the path tracer's own edge-aware smoothing is used instead
+  (the status line says so): lighter, and it softens more.
+
 ## The light
 
 - **Light on:** the bulb is the main light: a point light at the glass's centre (its colour
@@ -179,10 +205,14 @@ setting up and a small preview work anywhere.
   a see-through shade.
 - When the 3D view loses its GPU context (a phone short of memory), the prepared render is
   freed so the 3D view can be rebuilt (architecture §9.2): Prepare again afterwards.
+- **oidn-web** 0.5.0 (MIT, by pissang; bundles @petamoriken/float16) runs Open Image Denoise's
+  U-Net in WGSL compute shaders; the weights (`rt_hdr_alb_nrm.tza`, Apache-2.0, Intel) come from
+  the npm package `oidn-weights` 2.3.0-1. Both in `web/vendor/oidn-web/`, loaded only when the
+  Render view denoises. The denoised picture is shown through the path tracer's own display pass,
+  so its tone mapping and exposure are the same.
 - The library's WebGL path tracer is marked deprecated in favour of its WebGPU one; the WebGPU
   one is the upgrade once phones run WebGPU everywhere.
 
-Not yet (on the roadmap): a denoiser (fewer samples for a clean picture), your own environment
-(an HDRI) for the light off, the room's light as a layer of its own over a transparent
+Not yet (on the roadmap): your own environment (an HDRI) for the light off, the room's light as a layer of its own over a transparent
 background (a shadow and light catcher), a picture shape of its own (it's the view's), and
 building the BVH in a worker (the first render after preparing blocks the page while it builds).
