@@ -47,7 +47,9 @@ ran the GPU out of memory and froze the browser.)
    (left out, as the brim is). Slow, once: changing the project afterwards changes nothing in the
    render until it's prepared again (the Prepare button lights up when it's out of date). The
    parts' colours and materials aren't in the snapshot: they change without preparing again.
-2. **Set up** the light, camera, room, materials and quality (the tabs under the buttons). The
+2. **Set up** the light, camera, room, materials and quality in the side panel's **Render** tab
+   (it shows while the Render view does): fold-outs as in the settings window, every number
+   typed or slid, so a render's settings can be set again exactly. The
    canvas shows a **draft**: the scene in plain grey, drawn at once, to frame the picture. Grey on
    purpose: it's never mistaken for the render.
 3. **Preview** renders small and quick (640 px, 32 samples by default); **Render** renders the
@@ -67,7 +69,7 @@ responsive. The render asks the browser for the high-performance GPU (on a lapto
 
 ## The camera
 
-**Camera** has where it looks from (Front, ¾, Side, Below, Above: **Fit** frames the lamp from
+The **Camera** group has where it looks from (Front, ¾, Side, Below, Above: **Fit** frames the lamp from
 there) and the **lens** (24 to 135 mm, as on a full-frame camera: a wide lens up close bends the
 lamp's lines, a long one far off keeps them straight). A new lens keeps the framing (the camera
 moves to keep the same width in view). Orbit, pan and zoom in the view as in the 3D view; where
@@ -75,7 +77,7 @@ the camera is left is kept with the project (in its file too), so a render can b
 
 ## The room
 
-**Room** puts surfaces round the lamp, lit by it and in the picture (and the PNG):
+The **Room** group puts surfaces round the lamp, lit by it and in the picture (and the PNG):
 
 - **Wall:** behind the lamp (on the far side from the Front view), its distance from the lamp's
   axis;
@@ -102,7 +104,7 @@ picture.
 
 ## The materials: printed plastics
 
-**Materials** has a row per printed part: its **colour** and how **solid** it is (the same as the
+A **Material** group per printed part has its **colour** and how **solid** it is (the same as the
 3D view's custom colours), and its **plastic** (`web/js/materials.js`):
 
 | Plastic | Matte | Coat | Sheen | Silk | IOR | Depth |

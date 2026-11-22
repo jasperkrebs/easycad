@@ -205,10 +205,7 @@ export const RENDER_DEFAULTS = {
   surface: '#e9e5df',
 };
 
-/** Picture sizes (the longer side, pixels) and samples offered. */
-export const RENDER_SIZES = [320, 480, 640, 960, 1280, 1920, 2560, 3840];
-export const RENDER_SAMPLES = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
-/** Camera views (directions it looks from, y up, the front towards +z) and lenses (mm). */
+/** Camera views (directions it looks from, y up, the front towards +z). */
 export const CAMERA_VIEWS = {
   front: { label: 'Front', dir: [0, 0.06, 1] },
   'three-quarter': { label: '¾', dir: [0.62, 0.22, 0.75] },
@@ -216,7 +213,6 @@ export const CAMERA_VIEWS = {
   below: { label: 'Below', dir: [0, -0.6, 0.8] },
   above: { label: 'Above', dir: [0, 0.65, 0.76] },
 };
-export const LENSES = [24, 35, 50, 85, 135];
 
 /**
  * Render settings from anything (a file, storage), every value checked and within its range;

@@ -108,9 +108,12 @@ async function alphaRange(page, url) {
       }, { ...sc, render: { ...quick, ...sc.render } });
       const current = await page.textContent('#projectName');
       if (current !== sc.project) {
+        // The template list is in the Settings tab (the Render tab is in front in the Render view).
+        await page.click('#tab-settings');
         await page.selectOption('#template', sc.template);
         await page.waitForFunction((t) => document.getElementById('projectName').textContent === t, sc.project, { timeout: 30000 });
         await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 60000 });
+        await page.click('#tab-render');
       }
       await page.click('#renderPrepare');
       await page.waitForFunction(() => /^Draft|Can't/.test(document.getElementById('renderStatus').textContent), null, { timeout: 300000 });

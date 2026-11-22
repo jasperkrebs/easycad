@@ -7,6 +7,14 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-22 (later): the render's settings in a side tab, typed or slid (claude/lampshade-light-render-wcvx6x)
+
+The Render view's settings moved from the row under the view to a **Render** tab in the side
+panel (shown while the view is): fold-outs (Light, Camera, Room, a Material per part, Quality)
+built from the settings window's own rows (`settingRow`, `foldout`, now exported from
+`settings.js`), so every value has a number field beside its slider and units. Under the view:
+only Prepare, Preview, Render, Stop and PNG.
+
 ## 2026-11-22: the render: consistent, rendered on demand, plastics, camera and room (claude/lampshade-light-render-wcvx6x)
 
 **Why:** the owner found the render inconsistent (the same scene looking like another material

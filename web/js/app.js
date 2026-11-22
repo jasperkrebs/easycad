@@ -8,13 +8,13 @@
 import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
-import { layoutKey, renderSettings } from './settings.js';
+import { foldout, layoutKey, renderSettings, settingRow } from './settings.js';
 import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
-import { CAMERA_VIEWS, LENSES, RENDER_SAMPLES, RENDER_SIZES, cleanRender, fixtureOf } from './fixture.js';
+import { CAMERA_VIEWS, cleanRender, fixtureOf } from './fixture.js';
 import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
@@ -50,7 +50,7 @@ const COLOR_KEY = 'easycad.colorMode';
 /** How fast the print plays back. */
 const SPEED_KEY = 'easycad.playSpeed';
 const MAX_FILE_BYTES = 256 * 1024;
-const TABS = ['settings', 'chat', 'recipe', 'print', 'about'];
+const TABS = ['settings', 'chat', 'recipe', 'print', 'render', 'about'];
 
 const state = {
   /** The recipe text: the project. */
@@ -160,6 +160,8 @@ async function run(quality, how = {}) {
   renderPrintsView(result);
   renderCustomColors();
   renderPlanView(result);
+  // The Render tab's materials follow the parts.
+  if (renderOn() && renderPanelKey !== `${projectName()}|${printsOf(result).map((p) => p.name).join()}`) renderPanel();
 
   renderProject(result);
   renderPrintTab();
@@ -1459,6 +1461,8 @@ async function showRender(on) {
   document.body.toggleAttribute('data-render', on);
   if (!on) {
     renderView.api?.pause();
+    $('tab-render').hidden = true;
+    if ($('tab-render').getAttribute('aria-selected') === 'true') selectTab('settings');
     if (viewport.lost) {
       freeRender();
       viewport.rebuild();
@@ -1469,8 +1473,10 @@ async function showRender(on) {
   if (planOn()) $('viewPlan').click();
   if ($('viewPrints').getAttribute('aria-pressed') === 'true') showPrints(false);
   document.querySelectorAll('[data-mode]').forEach((x) => x.setAttribute('aria-pressed', 'false'));
-  showRenderSettings();
-  renderMaterialsPane();
+  // Its settings: the side panel's Render tab, shown while the view is.
+  renderPanel();
+  $('tab-render').hidden = false;
+  selectTab('render');
   markRenderStale();
   if (!renderView.api?.prepared) showRenderProgress({ state: 'empty' });
   try {
@@ -1507,49 +1513,6 @@ async function prepareRender() {
   }
 }
 
-/** Fills a select with options ([value, label]) once. */
-function fillSelect(id, options) {
-  const select = /** @type {HTMLSelectElement} */ ($(id));
-  if (select.options.length) return;
-  for (const [value, label] of options) select.append(new Option(label, String(value)));
-}
-
-/** The render's controls from this project's settings. */
-function showRenderSettings() {
-  const { render: r, hang } = customColors();
-  const set = (id, v) => (/** @type {HTMLInputElement} */ ($(id)).value = String(v));
-  const out = (id, text) => ($(id).textContent = text);
-  fillSelect('renderView', Object.entries(CAMERA_VIEWS).map(([k, v]) => [k, v.label]));
-  fillSelect('renderLens', LENSES.map((l) => [l, `${l} mm`]));
-  fillSelect('renderBounces', [2, 4, 6, 8, 12, 16, 24, 32].map((b) => [b, `${b} bounces`]));
-  for (const id of ['renderPreviewSize', 'renderFinalSize']) fillSelect(id, RENDER_SIZES.map((v) => [v, `${v} px`]));
-  for (const id of ['renderPreviewSamples', 'renderFinalSamples']) fillSelect(id, RENDER_SAMPLES.map((v) => [v, `${v} spp`]));
-  $('renderLight').setAttribute('aria-pressed', String(r.light));
-  $('renderLight').textContent = r.light ? 'Light on' : 'Light off';
-  $('renderHang').textContent = hang === 'up' ? 'Hangs ↑' : 'Hangs ↓';
-  set('renderLumens', r.lumens);
-  out('renderLumensOut', `${Math.round(r.lumens)} lm`);
-  set('renderKelvin', r.kelvin);
-  out('renderKelvinOut', `${Math.round(r.kelvin)} K`);
-  set('renderRoom', Math.round(r.room * 100));
-  out('renderRoomOut', `${Math.round(r.room * 100)} %`);
-  set('renderExposure', r.exposure);
-  out('renderExposureOut', `${r.exposure > 0 ? '+' : ''}${r.exposure}`);
-  set('renderView', r.camera.view);
-  set('renderLens', LENSES.includes(r.camera.lens) ? r.camera.lens : 50);
-  for (const [k, id] of [['wall', 'renderWall'], ['floor', 'renderFloor'], ['ceiling', 'renderCeiling']]) {
-    $(id).setAttribute('aria-pressed', String(r[k].on));
-    set(`${id}D`, r[k].distance);
-    out(`${id}Out`, `${Math.round(r[k].distance)} mm`);
-  }
-  set('renderSurface', r.surface);
-  set('renderBounces', r.bounces);
-  set('renderPreviewSize', r.preview.size);
-  set('renderPreviewSamples', r.preview.samples);
-  set('renderFinalSize', r.final.size);
-  set('renderFinalSamples', r.final.samples);
-}
-
 /** Keeps a change to the render's settings with the project's colours (nothing else). */
 function saveRender(update) {
   const colors = customColors();
@@ -1561,7 +1524,6 @@ function saveRender(update) {
 /** Changes the render's settings: kept, shown, and the renderer stops (Preview or Render again). */
 function changeRender(update) {
   const next = saveRender(update);
-  showRenderSettings();
   renderView.api?.setSettings(next);
 }
 
@@ -1574,60 +1536,172 @@ function changeLook(name, i, update) {
   if (state.last) renderView.api?.setLooks(renderLooks(state.last));
 }
 
+/** A setting row as the settings window draws it (number field, unit, slider; switch; list). */
+// (Named render-…, so their ids never meet a project setting's.)
+const renderParam = (name, label, kind, extra = {}) => ({ name: `render-${name}`, label, kind, attrs: [], unit: '', ...extra });
+
+/** A row of its own: a label and whatever control. */
+const renderRow = (label, control) => el('div', { className: 'setting text' }, [el('label', { text: label }), control]);
+
+/** What the Render tab was last built for (its parts), so it's rebuilt only when they change. */
+let renderPanelKey = '';
+
 /**
- * The Materials pane: per printed part, its colour, how solid, its plastic, and the plastic's
- * values (each can be set for the part; ↺ goes back to the plastic's).
+ * The Render tab: the render's settings as the settings window has them (a number to type, a
+ * slider beside it), in fold-outs: light, camera, room, each part's material, quality. Changes
+ * stop the render; Preview or Render again.
  */
-function renderMaterialsPane() {
-  const host = $('renderMaterials');
-  const prints = printsOf(state.last);
+function renderPanel() {
+  const host = $('renderSettings');
   const colors = customColors();
-  const slider = (label, value, min, max, step, onInput, fmtValue) => {
-    const input = /** @type {HTMLInputElement} */ (el('input', { type: 'range', min: String(min), max: String(max), step: String(step), value: String(value), 'aria-label': label }));
-    const out = el('output', { text: fmtValue(value) });
-    input.addEventListener('input', () => {
-      out.textContent = fmtValue(Number(input.value));
-      onInput(Number(input.value));
-    });
-    return el('label', { className: 'render-field', title: label }, [label.split(':').pop()?.trim() || label, input, out]);
-  };
-  host.replaceChildren(
+  const r = colors.render;
+  const prints = printsOf(state.last);
+  renderPanelKey = `${projectName()}|${prints.map((p) => p.name).join()}`;
+  const views = Object.entries(CAMERA_VIEWS);
+  const plastics = Object.entries(PLASTICS);
+  const pct = (x) => Math.round(x * 1000) / 10;
+
+  /** @type {[string, string, any[]][]} group name, remembered key, rows: [param, value] or a node */
+  const groups = [
+    ['Light', 'render:light', [
+      [renderParam('light', 'Light on', 'toggle'), r.light],
+      [renderParam('hang', 'Shades hang (the socket points down)', 'choice', { choices: ['down', 'up'] }), colors.hang],
+      [renderParam('lumens', 'Bulb', 'number', { unit: 'lm', min: 50, max: 5000, step: 10 }), r.lumens],
+      [renderParam('kelvin', 'Colour temperature', 'number', { unit: 'K', min: 1800, max: 6500, step: 50 }), r.kelvin],
+      [renderParam('room', 'Room light (bulb on)', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(r.room)],
+      [renderParam('exposure', 'Exposure', 'number', { unit: 'stops', min: -6, max: 6, step: 0.25 }), r.exposure],
+    ]],
+    ['Camera', 'render:camera', [
+      [renderParam('view', 'View (Fit frames it)', 'choice', { choices: views.map(([, v]) => v.label) }), CAMERA_VIEWS[r.camera.view].label],
+      [renderParam('lens', 'Lens (full-frame)', 'number', { unit: 'mm', min: 10, max: 300, step: 1 }), r.camera.lens],
+      renderRow('Frame the lamp', Object.assign(el('button', { type: 'button', text: 'Fit', title: 'Frame the lamp from the view' }), { onclick: () => renderView.api?.fit() })),
+    ]],
+    ['Room', 'render:room', [
+      [renderParam('wall', 'Wall behind', 'toggle'), r.wall.on],
+      [renderParam('wallD', 'Wall: from the lamp\'s axis', 'number', { unit: 'mm', min: 0, max: 5000, step: 10 }), r.wall.distance],
+      [renderParam('floor', 'Floor or table under', 'toggle'), r.floor.on],
+      [renderParam('floorD', 'Floor: below the lamp', 'number', { unit: 'mm', min: 0, max: 5000, step: 10 }), r.floor.distance],
+      [renderParam('ceiling', 'Ceiling above', 'toggle'), r.ceiling.on],
+      [renderParam('ceilingD', 'Ceiling: above the socket', 'number', { unit: 'mm', min: 0, max: 5000, step: 10 }), r.ceiling.distance],
+      renderRow('Colour', (() => {
+        const input = /** @type {HTMLInputElement} */ (el('input', { type: 'color', value: r.surface, 'aria-label': 'Wall, floor and ceiling colour' }));
+        input.addEventListener('input', () => changeRender({ surface: input.value }));
+        return input;
+      })()),
+    ]],
     ...prints.map((p, i) => {
       const look = partLook(colors, p.name, i);
       const mat = cleanMaterial(look.material);
       const v = materialValues(mat);
-      const set = (update) => changeLook(p.name, i, { material: cleanMaterial({ ...cleanMaterial(customColors().parts[p.name]?.material), ...update }) });
-      const color = /** @type {HTMLInputElement} */ (el('input', { type: 'color', value: look.color, 'aria-label': `${p.name}: colour`, title: `${p.name}: colour` }));
+      const color = /** @type {HTMLInputElement} */ (el('input', { type: 'color', value: look.color, 'aria-label': `${p.name}: colour` }));
       color.addEventListener('input', () => changeLook(p.name, i, { color: color.value }));
-      const plastic = /** @type {HTMLSelectElement} */ (el('select', { 'aria-label': `${p.name}: plastic`, title: `${p.name}: plastic` }));
-      for (const [key, pl] of Object.entries(PLASTICS)) plastic.append(new Option(pl.label, key));
-      plastic.value = mat.plastic;
-      // A new plastic brings its own values (the part's own go).
-      plastic.addEventListener('change', () => {
-        changeLook(p.name, i, { material: { plastic: plastic.value } });
-        renderMaterialsPane();
-      });
-      const reset = el('button', { type: 'button', text: '↺', title: `${p.name}: the plastic's own values`, 'aria-label': `${p.name}: the plastic's own values` });
+      const reset = el('button', { type: 'button', text: '↺ The plastic\'s values', title: `${p.name}: the plastic's own values` });
       reset.addEventListener('click', () => {
         changeLook(p.name, i, { material: { plastic: mat.plastic } });
-        renderMaterialsPane();
+        renderPanel();
       });
-      const pct = (x) => `${Math.round(x * 100)} %`;
-      return el('div', { className: 'render-material' }, [
-        el('span', { className: 'color-name', text: p.name }),
-        color,
-        slider(`${p.name}: solid`, look.opacity, 0.05, 1, 0.05, (x) => changeLook(p.name, i, { opacity: x }), pct),
-        plastic,
-        slider(`${p.name}: matte`, v.roughness, 0, 1, 0.01, (x) => set({ roughness: x }), pct),
-        slider(`${p.name}: coat`, v.coat, 0, 1, 0.05, (x) => set({ coat: x }), pct),
-        slider(`${p.name}: sheen`, v.sheen, 0, 1, 0.05, (x) => set({ sheen: x }), pct),
-        slider(`${p.name}: silk`, v.metal, 0, 1, 0.05, (x) => set({ metal: x }), pct),
-        slider(`${p.name}: depth`, v.depth, 0.5, 100, 0.5, (x) => set({ depth: x }), (x) => `${x} mm`),
-        slider(`${p.name}: IOR`, v.ior, 1.3, 1.7, 0.01, (x) => set({ ior: x }), (x) => x.toFixed(2)),
-        reset,
-      ]);
+      const m = (key) => `mat:${i}:${key}`;
+      return /** @type {[string, string, any[]]} */ ([`Material · ${p.name}`, `render:material:${p.name}`, [
+        renderRow('Colour', color),
+        [renderParam(m('opacity'), 'Solid (less: see-through)', 'number', { unit: '%', min: 5, max: 100, step: 1 }), pct(look.opacity)],
+        [renderParam(m('plastic'), 'Plastic', 'choice', { choices: plastics.map(([, pl]) => pl.label) }), PLASTICS[mat.plastic].label],
+        [renderParam(m('roughness'), 'Matte', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(v.roughness)],
+        [renderParam(m('coat'), 'Gloss coat', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(v.coat)],
+        [renderParam(m('sheen'), 'Sheen', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(v.sheen)],
+        [renderParam(m('metal'), 'Silk shine', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(v.metal)],
+        [renderParam(m('depth'), 'Colour depth', 'number', { unit: 'mm', min: 0.5, max: 100, step: 0.5 }), v.depth],
+        [renderParam(m('ior'), 'Refractive index', 'number', { min: 1.3, max: 1.7, step: 0.01 }), v.ior],
+        renderRow('', reset),
+      ]]);
+    }),
+    ['Quality', 'render:quality', [
+      [renderParam('bounces', 'Light bounces', 'number', { min: 1, max: 32, step: 1 }), r.bounces],
+      [renderParam('previewSize', 'Preview: longer side', 'number', { unit: 'px', min: 160, max: 4096, step: 1 }), r.preview.size],
+      [renderParam('previewSamples', 'Preview: samples', 'number', { unit: 'spp', min: 1, max: 4096, step: 1 }), r.preview.samples],
+      [renderParam('finalSize', 'Render: longer side', 'number', { unit: 'px', min: 160, max: 4096, step: 1 }), r.final.size],
+      [renderParam('finalSamples', 'Render: samples', 'number', { unit: 'spp', min: 1, max: 10000, step: 1 }), r.final.samples],
+    ]],
+  ];
+  host.replaceChildren(
+    ...groups.map(([name, key, rows], g) => {
+      const f = foldout(name, g === 0, key);
+      const body = /** @type {HTMLElement} */ (f.querySelector('.group-body'));
+      for (const row of rows) body.append(row instanceof Node ? row : settingRow(row[0], row[1], onRenderSetting));
+      /** @type {HTMLElement} */ (f.querySelector('.group-count')).textContent = String(body.childElementCount);
+      return f;
     }),
   );
+}
+
+/** A Render tab setting changed (dragged, typed or picked). */
+function onRenderSetting(setting, value) {
+  const name = setting.replace(/^render-/, '');
+  const r = customColors().render;
+  const mat = /^mat:(\d+):(\w+)$/.exec(name);
+  if (mat) {
+    const i = Number(mat[1]);
+    const part = printsOf(state.last)[i];
+    if (!part) return;
+    const key = mat[2];
+    if (key === 'opacity') return changeLook(part.name, i, { opacity: Math.max(0.05, value / 100) });
+    if (key === 'plastic') {
+      const plastic = Object.entries(PLASTICS).find(([, pl]) => pl.label === value)?.[0] ?? 'pla';
+      // A new plastic brings its own values (the part's own go).
+      changeLook(part.name, i, { material: { plastic } });
+      renderPanel();
+      return;
+    }
+    const scaled = ['roughness', 'coat', 'sheen', 'metal'].includes(key) ? value / 100 : value;
+    const own = cleanMaterial(customColors().parts[part.name]?.material);
+    changeLook(part.name, i, { material: cleanMaterial({ ...own, [key]: scaled }) });
+    return;
+  }
+  switch (name) {
+    case 'light':
+      return changeRender({ light: value });
+    case 'hang': {
+      const colors = customColors();
+      colors.hang = value === 'up' ? 'up' : 'down';
+      saveCustomColors(colors);
+      if (state.last) {
+        viewport.setFixture(fixtureFor(state.last));
+        renderPlanView(state.last);
+      }
+      markRenderStale();
+      return;
+    }
+    case 'lumens':
+    case 'kelvin':
+    case 'exposure':
+    case 'bounces':
+      return changeRender({ [name]: value });
+    case 'room':
+      return changeRender({ room: value / 100 });
+    case 'view': {
+      const view = Object.entries(CAMERA_VIEWS).find(([, v]) => v.label === value)?.[0] ?? 'front';
+      return changeRender({ camera: { ...r.camera, view, position: null, target: null } });
+    }
+    case 'lens':
+      return changeRender({ camera: { ...r.camera, lens: value } });
+    case 'wall':
+    case 'floor':
+    case 'ceiling':
+      return changeRender({ [name]: { ...r[name], on: value } });
+    case 'wallD':
+    case 'floorD':
+    case 'ceilingD': {
+      const k = name.slice(0, -1);
+      return changeRender({ [k]: { on: true, distance: value } });
+    }
+    case 'previewSize':
+      return changeRender({ preview: { ...r.preview, size: value } });
+    case 'previewSamples':
+      return changeRender({ preview: { ...r.preview, samples: value } });
+    case 'finalSize':
+      return changeRender({ final: { ...r.final, size: value } });
+    case 'finalSamples':
+      return changeRender({ final: { ...r.final, samples: value } });
+  }
 }
 
 function wireRender() {
@@ -1636,56 +1710,11 @@ function wireRender() {
   $('renderPreview').addEventListener('click', () => renderView.api?.start('preview'));
   $('renderFinal').addEventListener('click', () => renderView.api?.start('final'));
   $('renderStop').addEventListener('click', () => renderView.api?.stop());
-  // The settings panes, one at a time.
-  for (const tab of document.querySelectorAll('.render-tabs [data-pane]')) {
-    tab.addEventListener('click', () => {
-      const pane = /** @type {HTMLElement} */ (tab).dataset.pane;
-      for (const t of document.querySelectorAll('.render-tabs [data-pane]')) t.setAttribute('aria-selected', String(t === tab));
-      for (const p of document.querySelectorAll('.render-pane')) /** @type {HTMLElement} */ (p).hidden = /** @type {HTMLElement} */ (p).dataset.pane !== pane;
-      if (pane === 'materials') renderMaterialsPane();
-    });
-  }
-  $('renderLight').addEventListener('click', () => changeRender({ light: !customColors().render.light }));
-  $('renderHang').addEventListener('click', () => {
-    const colors = customColors();
-    colors.hang = colors.hang === 'up' ? 'down' : 'up';
-    saveCustomColors(colors);
-    showRenderSettings();
-    if (state.last) {
-      viewport.setFixture(fixtureFor(state.last));
-      renderPlanView(state.last);
-    }
-    markRenderStale();
-  });
-  const num = (id) => Number(/** @type {HTMLInputElement} */ ($(id)).value);
-  const value = (id) => /** @type {HTMLInputElement} */ ($(id)).value;
-  $('renderLumens').addEventListener('input', () => changeRender({ lumens: num('renderLumens') }));
-  $('renderKelvin').addEventListener('input', () => changeRender({ kelvin: num('renderKelvin') }));
-  $('renderRoom').addEventListener('input', () => changeRender({ room: num('renderRoom') / 100 }));
-  $('renderExposure').addEventListener('input', () => changeRender({ exposure: num('renderExposure') }));
-  $('renderView').addEventListener('change', () => changeRender({ camera: { ...customColors().render.camera, view: value('renderView'), position: null, target: null } }));
-  $('renderLens').addEventListener('change', () => changeRender({ camera: { ...customColors().render.camera, lens: num('renderLens') } }));
-  $('renderFit').addEventListener('click', () => renderView.api?.fit());
-  for (const [k, id] of /** @type {const} */ ([['wall', 'renderWall'], ['floor', 'renderFloor'], ['ceiling', 'renderCeiling']])) {
-    $(id).addEventListener('click', () => {
-      const r = customColors().render;
-      changeRender({ [k]: { ...r[k], on: !r[k].on } });
-    });
-    // Moving the distance turns the surface on.
-    $(`${id}D`).addEventListener('input', () => changeRender({ [k]: { on: true, distance: num(`${id}D`) } }));
-  }
-  $('renderSurface').addEventListener('input', () => changeRender({ surface: value('renderSurface') }));
-  $('renderBounces').addEventListener('change', () => changeRender({ bounces: num('renderBounces') }));
-  $('renderPreviewSize').addEventListener('change', () => changeRender({ preview: { ...customColors().render.preview, size: num('renderPreviewSize') } }));
-  $('renderPreviewSamples').addEventListener('change', () => changeRender({ preview: { ...customColors().render.preview, samples: num('renderPreviewSamples') } }));
-  $('renderFinalSize').addEventListener('change', () => changeRender({ final: { ...customColors().render.final, size: num('renderFinalSize') } }));
-  $('renderFinalSamples').addEventListener('change', () => changeRender({ final: { ...customColors().render.final, samples: num('renderFinalSamples') } }));
   $('renderSave').addEventListener('click', async () => {
     if (!renderView.api?.rendered) return;
     const blob = await (await fetch(renderView.api.capture())).blob();
     download(`${saveName()}-render.png`, blob, 'image/png');
   });
-  showRenderSettings();
 }
 
 function wire() {
