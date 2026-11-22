@@ -1,0 +1,24 @@
+{
+  "program": "STRAIGHT2",
+  "stopAtMm": 40,
+  "splineSegments": 1268,
+  "nominalMinutes": 8.1,
+  "leastJointMarginDeg": 37.4,
+  "leastMarginJoint": "A5",
+  "pointsRolled": 0,
+  "maxRollDeg": 0.0,
+  "pointsTiltEased": 0,
+  "maxNozzleTiltDeg": 0.0,
+  "toolpathPoints": 65980,
+  "heightMm": 247.8,
+  "pathLengthM": 141.5,
+  "volumeCm3": 704,
+  "flowMm3S": 150.0,
+  "lineWidthMm": 5,
+  "srcBytes": 124130,
+  "recipeWarnings": [
+    "The socket sticks out above the shade: set the grip deeper below the top",
+    "The arm climbs steeper than 15\u00b0 in places (the wings' heights and the wall's far apart): the nozzle may drag on the layer below. A thicker wall layer, a shorter grip, a wider shade or less compensation"
+  ],
+  "note": "heightMm, pathLengthM, volumeCm3 and toolpathPoints are the whole print's; this program stops at 40 mm."
+}

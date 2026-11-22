@@ -1,0 +1,246 @@
+{
+  "program": "/tmp/claude-0/-home-user-easycad/e016c619-83eb-5835-be7e-091f7df1669a/scratchpad/straight/Full/STRAIGHT2.SRC",
+  "targets": 21911,
+  "samples": 87641,
+  "jointLimitViolations": 0,
+  "minimumAxisMarginsDeg": [
+    162.19,
+    70.19,
+    36.03,
+    67.95,
+    36.83
+  ],
+  "axisRangesDeg": [
+    [
+      -22.8,
+      -7.1
+    ],
+    [
+      -27.6,
+      -10.2
+    ],
+    [
+      119.3,
+      134.0
+    ],
+    [
+      -112.0,
+      -96.6
+    ],
+    [
+      -88.2,
+      -84.0
+    ],
+    [
+      -25.4,
+      -10.2
+    ]
+  ],
+  "toolVsArm": [],
+  "armSelf": [],
+  "pedestal": [],
+  "bedClearanceTargetMm": 10.0,
+  "bedClosest": [
+    {
+      "part": "Nozzle",
+      "minMm": 0.0,
+      "line": 43,
+      "posesBelowTarget": 1414
+    },
+    {
+      "part": "Heater collar",
+      "minMm": 23.25,
+      "line": 43,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Fan pair 3 housing envelope",
+      "minMm": 38.29,
+      "line": 43,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Left nozzle fan",
+      "minMm": 38.37,
+      "line": 43,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Fan pair 2 housing envelope",
+      "minMm": 38.37,
+      "line": 43,
+      "posesBelowTarget": 0
+    },
+    {
+      "part": "Right nozzle fan",
+      "minMm": 38.38,
+      "line": 43,
+      "posesBelowTarget": 0
+    }
+  ],
+  "bedViolationsExcludingNozzle": [],
+  "materialStride": 1,
+  "materialClearanceTargetMm (fans)": 5.0,
+  "materialClearances": [
+    {
+      "part": "Heater collar",
+      "minClearanceMm": 18.18,
+      "posesBelow5mm": 0,
+      "line": 21799,
+      "tcpWorld": [
+        1142.4,
+        -144.4,
+        -440.0
+      ],
+      "tiltDeg": 0.0
+    },
+    {
+      "part": "Robot mounting disc",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Mounting spine",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Drive enclosure",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Drive mounting block",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Barrel guard",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Left cooling duct",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Left nozzle fan",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Left blower housing",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Right cooling duct",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Right nozzle fan",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Right blower housing",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Front cooling duct",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Front nozzle fan",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Feed trunk",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Intake housing",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Angled feed inlet",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Legacy side connection",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Fan pair 1 housing envelope",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Fan pair 2 housing envelope",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Fan pair 3 housing envelope",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 6, section 1",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 6, section 2",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 5, section 1",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 5, section 2",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 5, section 3",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 4, section 1",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 4, section 2",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 4, section 3",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    },
+    {
+      "part": "Arm link 4, section 4",
+      "minClearanceMm": ">= 25.0",
+      "posesBelow5mm": 0
+    }
+  ],
+  "materialCollisions": [],
+  "maxTiltDeg": 0.0,
+  "verdict": "no modelled collisions or limit violations"
+}
