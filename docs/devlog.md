@@ -7,6 +7,56 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-22 (later): the render's settings in a side tab, typed or slid (claude/lampshade-light-render-wcvx6x)
+
+The Render view's settings moved from the row under the view to a **Render** tab in the side
+panel (shown while the view is): fold-outs (Light, Camera, Room, a Material per part, Quality)
+built from the settings window's own rows (`settingRow`, `foldout`, now exported from
+`settings.js`), so every value has a number field beside its slider and units. Under the view:
+only Prepare, Preview, Render, Stop and PNG.
+
+## 2026-11-22: the render: consistent, rendered on demand, plastics, camera and room (claude/lampshade-light-render-wcvx6x)
+
+**Why:** the owner found the render inconsistent (the same scene looking like another material
+after a reload), live rendering ran the Mac's GPU out of memory and froze the browser, and asked
+for plastics, per-part materials, a camera and a room ([rendering.md](rendering.md)).
+
+**What landed:**
+- **The inconsistency, found:** three-gpu-pathtracer merges the scene into one geometry and
+  numbers its materials by *mesh* (a group per mesh, into the flat list of all meshes'
+  materials), keeping a material per *vertex*, and adds those groups to the geometry it keeps
+  without clearing the last scene's. Each part was one mesh with two materials (its beads; the
+  hidden faces between turns), so every mesh after it took its neighbour's material (the socket
+  the hidden faces', the bulb the cap's, a wall the bulb's glow), and a second Prepare kept the
+  first scene's assignments. Now one material per mesh (each part two meshes, the hidden faces
+  with vertices of their own), and the merged geometry's groups are cleared before each scene.
+  And the hidden faces were a material of index 1 between solids: NaNs in the transmission,
+  blackening half the pixels behind a see-through shade (measured on the frosted-PETG scene:
+  42–50 % black pixels; as a thin film, 0.3 %). Also gone: the raster stand-in while shaders
+  compile or the camera moves (it drew transmission another way); the noise is stable; the
+  camera is kept with the project instead of copied from the 3D view at Prepare.
+- **Rendered on demand:** Prepare, then set up (a plain grey draft frames the picture), then
+  **Preview** (640 px, 32 samples) or **Render** (1920 px, 512 samples), **Stop**; the same
+  bounces for both (12). Sizes are the picture's pixels whatever the screen; the GPU's work is cut
+  into tiles by pixels × bounces; the high-performance GPU is asked for. Status: compiling,
+  samples, pixels, time.
+- **Plastics** (`web/js/materials.js`): PLA, PLA matte, PLA silk, PETG, PETG frosted, PC clear,
+  PP, ABS/ASA, TPU, wood fill, stone fill; per part with its colour and how solid, and its own
+  matte, coat, sheen, silk, depth and IOR (↺ back to the plastic's). Kept with the custom colours
+  (in the file too); no Prepare needed to change them.
+- **Camera:** views (Front, ¾, Side, Below, Above) with Fit, lenses 24–135 mm (a new lens keeps
+  the framing), the orbit kept.
+- **Room:** wall, floor and ceiling at set distances (the cable ends at the ceiling), lit by the
+  lamp and in the PNG; one colour.
+- The bulb is opal glass: solid in the PNG (it had gone black there: see-through glass gave it no
+  alpha).
+- `scripts/render-test.cjs` renders five scenes (Lampshade white PLA; frosted PETG with wall and
+  floor; Lamp in amber PC from below; silk gold with the light off; Thread pendant with ceiling and
+  wall) and checks Stop; `scripts/fixture.test.mjs` the plastics and settings.
+
+**Open:** a denoiser (16–32 sample previews are grainy), the room's light as a layer over a
+transparent background, the picture's own shape, your own environment (HDRI).
+
 ## 2026-11-21: the 3D view comes back after the phone takes its GPU away (general-manager)
 
 **Why:** on the owner's phone the lamps no longer showed in the 3D view (shape, toolpath, both)

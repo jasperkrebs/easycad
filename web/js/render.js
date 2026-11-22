@@ -3,14 +3,18 @@
 // it, and bends through the beads' round faces (the layer lines). Loaded only when the view is
 // first opened: the rest of the app never pays for it.
 //
-// Two steps, as an offline renderer works: prepare (the toolpaths swept into solid beads, the
-// BVH built: slow, once) and render (samples added until the set number). Preparing takes a
-// snapshot: changing the project afterwards changes nothing here until it's prepared again. The
-// light, exposure and the rest only restart the sampling.
+// Three steps, as an offline renderer works:
+// - prepare: the toolpaths swept into solid beads, once (slow). A snapshot: changing the project
+//   afterwards changes nothing here until it's prepared again;
+// - set up: the light, the materials, the camera, the room. Nothing renders while you do: the
+//   canvas shows a plain draft (grey, quick) to frame the picture;
+// - render: Preview (small, few samples) or Render (the picture's size and samples), until done
+//   or Stop. What's on the canvas then is only ever the path tracer's.
 //
 // The scene is in metres (the recipe's mm × 0.001, so the bulb's light falls off as it does in a
-// room), y up, the project turned over when it hangs the other way. The background stays
-// transparent: the PNG goes on top of an environment afterwards.
+// room), y up, the project turned over when it hangs the other way, the front towards +z. The
+// background stays transparent: the PNG goes on top of an environment afterwards. Walls, floor
+// and ceiling, when on, are in the picture, lit by the lamp.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -18,34 +22,40 @@ import { GradientEquirectTexture, WebGLPathTracer } from 'three-gpu-pathtracer';
 import { beadGeometry } from './viewport.js';
 import { touching } from './wall.js';
 import { fixtureGroup } from './fixture-mesh.js';
-import { CAP_SHOWS, RENDER_DEFAULTS, bulbCentre, kelvinColor } from './fixture.js';
+import { CAMERA_VIEWS, CAP_SHOWS, RENDER_DEFAULTS, bulbCentre, cleanRender, kelvinColor } from './fixture.js';
+import { physicalOf } from './materials.js';
 
 /** The recipe's millimetres in the scene's metres. */
 const MM = 0.001;
 /** A 60 W bulb's 806 lm make this much light (the scene's units) at the shade. */
 const UNIT_INTENSITY = 0.03;
-/** Printed plastic (PLA and PETG are about 1.46-1.57). */
-const IOR = 1.5;
+/** The cable's length (mm) without a ceiling: out of the picture. */
+const LONG_CABLE = 4000;
+/** Pixel-bounces one GPU dispatch may take (a tile): kept small so the page, and the Mac's GPU, stay responsive. */
+const DISPATCH = { phone: 1.5e6, other: 5e6 };
 
 /**
+ * @typedef {{ color: string, opacity: number, material?: any }} Look
  * @typedef {{
  *   paths: { points: Float32Array, widths: Float32Array, heights: Float32Array, ups: Float32Array | null, part: number }[],
- *   looks: { color: string, opacity: number }[],
+ *   looks: Look[],
  *   fixture: ReturnType<typeof import('./fixture.js').fixtureOf>,
  * }} Snapshot
+ * @typedef {{ state: 'empty' | 'draft' | 'compiling' | 'rendering' | 'done' | 'stopped', kind?: 'preview' | 'final',
+ *   samples?: number, target?: number, width?: number, height?: number, seconds?: number }} Progress
  */
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ onProgress?: (samples: number, target: number) => void }} [hooks]
+ * @param {{ onProgress?: (p: Progress) => void, onCamera?: (camera: { position: number[], target: number[] }) => void }} [hooks]
  */
 export function createRenderer(canvas, hooks = {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, preserveDrawingBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
+  const camera = new THREE.PerspectiveCamera(27, 1, 0.01, 100);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = false;
 
@@ -63,21 +73,31 @@ export function createRenderer(canvas, hooks = {}) {
   tracer.renderDelay = 0;
   tracer.fadeDuration = 0;
   tracer.minSamples = 1;
-  tracer.rasterizeScene = true;
-  tracer.dynamicLowRes = true;
-  // A phone's GPU gets its work in tiles, so the page stays responsive between them.
-  const small = Math.min(screen.width, screen.height) < 700;
-  if (small) tracer.tiles.set(3, 3);
+  // Only ever the path tracer's picture on the canvas (no raster stand-in while it compiles or
+  // the camera moves: that looked like another material), and the same noise every time.
+  tracer.rasterizeScene = false;
+  tracer.dynamicLowRes = false;
+  tracer.stableNoise = true;
+  const phone = Math.min(screen.width, screen.height) < 700;
 
-  let settings = { ...RENDER_DEFAULTS };
-  let prepared = false;
+  let settings = cleanRender(RENDER_DEFAULTS);
+  /** @type {Snapshot | null} */
+  let snap = null;
+  /** The scene the path tracer has (BVH, lights) is out of date (surfaces, cable). */
+  let sceneDirty = true;
   let frame = 0;
+  /** What's running: null, or the kind of render, its target, and when it started. */
+  let job = /** @type {{ kind: 'preview' | 'final', target: number, t0: number } | null} */ (null);
+  /** What the canvas shows. */
+  let shows = /** @type {Progress['state']} */ ('empty');
 
-  // Materials: the printed parts' (by part), and the fittings'.
+  // Materials: the printed parts' (by part: the beads, and the faces inside the wall), the
+  // fittings', the room's.
   /** @type {Map<number, THREE.MeshPhysicalMaterial[]>} */
   const partMaterials = new Map();
-  const bulbMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.9, transmission: 1, ior: 1.5, thickness: 0, side: THREE.DoubleSide });
-  // The point light inside lights the scene; the frosted glass round it mustn't shade it.
+  // Frosted glass is opal white: solid to the eye (and in the PNG's alpha), glowing when on.
+  const bulbMaterial = new THREE.MeshPhysicalMaterial({ color: 0xf4f2ee, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
+  // The point light inside lights the scene; the glass round it mustn't shade it.
   /** @type {any} */ (bulbMaterial).castShadow = false;
   const fittings = {
     socket: new THREE.MeshPhysicalMaterial({ color: 0x2e3035, roughness: 0.45, metalness: 0, side: THREE.DoubleSide }),
@@ -85,94 +105,211 @@ export function createRenderer(canvas, hooks = {}) {
     bulb: bulbMaterial,
     cable: new THREE.MeshPhysicalMaterial({ color: 0x1a1b1d, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }),
   };
+  const surfaceMaterial = new THREE.MeshPhysicalMaterial({ color: 0xe9e5df, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
   const bulbLight = new THREE.PointLight(0xffffff, 0, 0, 2);
   /** The bulb's glass radius (m), for its glow. */
   let glassR = 0.03;
 
-  /** Everything prepared: y up, in metres, turned over when the project hangs the other way. */
-  let root = new THREE.Group();
-  scene.add(root);
+  // The draft: the scene in plain grey, lit simply, to frame the picture without waiting.
+  const draftMaterial = new THREE.MeshStandardMaterial({ color: 0xc9ced6, roughness: 0.75, metalness: 0 });
+  const draftLight = new THREE.HemisphereLight(0xffffff, 0x6b6f78, 2.2);
 
-  function dispose(group) {
-    group.traverse((o) => /** @type {any} */ (o).geometry?.dispose());
-    for (const pair of partMaterials.values()) for (const m of pair) m.dispose();
-    partMaterials.clear();
+  /** The lamp (y up, in metres, turned over when it hangs the other way); the room round it. */
+  let root = new THREE.Group();
+  /** @type {THREE.Group} */
+  let hung = new THREE.Group();
+  /** @type {THREE.Object3D | null} */
+  let fixture = null;
+  const room = new THREE.Group();
+  scene.add(root, room);
+
+  /** The lamp's box in the scene (shades, holder, bulb; not the cable). */
+  function lampBox() {
+    const box = new THREE.Box3();
+    root.updateMatrixWorld(true);
+    root.traverse((o) => {
+      if (/** @type {any} */ (o).isMesh && o.name !== 'cable') box.expandByObject(o);
+    });
+    if (box.isEmpty()) box.set(new THREE.Vector3(-0.1, -0.1, -0.1), new THREE.Vector3(0.1, 0.1, 0.1));
+    return box;
   }
 
-  function resize() {
-    const w = Math.max(1, canvas.clientWidth);
-    const h = Math.max(1, canvas.clientHeight);
-    const ratio = Math.min((window.devicePixelRatio || 1) * settings.scale, 4096 / w, 4096 / h);
+  function disposeGroup(group) {
+    group.traverse((o) => /** @type {any} */ (o).geometry?.dispose());
+  }
+
+  function report(p) {
+    hooks.onProgress?.(p);
+  }
+
+  // ---- The picture's size: the CSS box stays; the drawing buffer is the render's pixels.
+
+  /** The canvas's size on screen (CSS pixels). */
+  const box = () => [Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight)];
+
+  /** Sets the drawing buffer so its longer side is `px` (the draft: the screen's, at most 1.5×). */
+  function sizeFor(px) {
+    const [w, h] = box();
+    const ratio = px ? px / Math.max(w, h) : Math.min(window.devicePixelRatio || 1, 1.5);
     renderer.setPixelRatio(ratio);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    if (prepared) {
-      tracer.updateCamera();
-      wake();
-    }
   }
-  const sizes = new ResizeObserver(resize);
+
+  let lastBox = '';
+  const sizes = new ResizeObserver(() => {
+    const now = box().join('x');
+    if (now === lastBox) return;
+    lastBox = now;
+    // A new shape for the picture: whatever was rendered no longer fits it.
+    if (job || shows === 'done' || shows === 'stopped') stop();
+    draft();
+  });
   sizes.observe(canvas);
 
+  // ---- The camera: orbiting, a view to fit, a lens; where it was left goes back to the app.
+
   controls.addEventListener('change', () => {
-    if (!prepared) return;
-    tracer.updateCamera();
-    wake();
+    if (job) stop();
+    draft();
   });
+  controls.addEventListener('end', () => saveCamera());
 
-  /** Renders samples until there are enough (then stops: the picture stays on the canvas). */
-  function tick() {
-    frame = 0;
-    if (!prepared) return;
-    tracer.renderSample();
-    hooks.onProgress?.(Math.floor(tracer.samples), settings.samples);
-    if (tracer.samples < settings.samples) frame = requestAnimationFrame(tick);
-  }
-  function wake() {
-    if (!frame) frame = requestAnimationFrame(tick);
+  function saveCamera() {
+    hooks.onCamera?.({ position: camera.position.toArray(), target: controls.target.toArray() });
   }
 
-  /**
-   * A printed part's materials: its beads' faces (its colour, as see-through as it's set), and
-   * the faces where one turn sits on the next, inside the plastic: light crosses them unbent
-   * and unreflected (the same index both sides), tinted as it goes, so the wall is one solid.
-   */
-  function partMaterials2(look) {
-    const outer = partMaterial(look);
-    const inner = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
-      roughness: 0,
-      metalness: 0,
-      transmission: 1,
-      ior: 1,
-      thickness: 1,
-      attenuationColor: outer.attenuationColor,
-      attenuationDistance: outer.attenuationDistance,
-    });
-    return [outer, inner];
+  function lensFov(lens) {
+    return THREE.MathUtils.radToDeg(2 * Math.atan(12 / Math.max(1, lens)));
   }
 
-  /** A printed part's beads: its colour, and as see-through (transmissive) as it's set. */
-  function partMaterial(look) {
-    const color = new THREE.Color(look.color);
-    const clear = Math.min(1, Math.max(0, 1 - look.opacity));
-    const m = new THREE.MeshPhysicalMaterial({
-      color,
-      roughness: settings.matte,
-      metalness: 0,
-      transmission: clear,
-      ior: IOR,
-      // Solid: light refracts into the bead and out again, tinted by the plastic over a few mm.
-      thickness: clear > 0 ? 1 : 0,
-      attenuationColor: color,
-      attenuationDistance: clear > 0 ? 0.005 + 0.05 * clear : Infinity,
-    });
-    return m;
+  /** Frames the lamp from a view (its direction), with the lens as set. */
+  function fit(view) {
+    const dir = new THREE.Vector3(...(CAMERA_VIEWS[view] || CAMERA_VIEWS.front).dir).normalize();
+    const b = lampBox();
+    const centre = b.getCenter(new THREE.Vector3());
+    const radius = Math.max(0.02, b.getSize(new THREE.Vector3()).length() / 2);
+    camera.fov = lensFov(settings.camera.lens);
+    const half = THREE.MathUtils.degToRad(camera.fov / 2);
+    const fitHalf = Math.min(half, Math.atan(Math.tan(half) * camera.aspect));
+    const dist = (radius / Math.sin(fitHalf)) * 0.9;
+    controls.target.copy(centre);
+    camera.position.copy(centre).addScaledVector(dir, dist);
+    clip();
+    controls.update();
   }
 
-  /** The settings into the scene: the bulb, the room's light, exposure, materials, sampling. */
-  function apply() {
+  /** Near and far planes from how far the camera is. */
+  function clip() {
+    const d = camera.position.distanceTo(controls.target);
+    camera.near = Math.max(0.001, d / 200);
+    camera.far = d * 200;
+    camera.updateProjectionMatrix();
+  }
+
+  /** The camera as the settings have it: where it was left, or fitted to its view. */
+  function placeCamera() {
+    const c = settings.camera;
+    camera.fov = lensFov(c.lens);
+    if (c.position && c.target) {
+      camera.position.fromArray(c.position);
+      controls.target.fromArray(c.target);
+      clip();
+      controls.update();
+    } else {
+      fit(c.view);
+    }
+  }
+
+  // ---- The materials.
+
+  /** A part's two materials (its beads; the faces inside its wall) set from its look. */
+  function setLook(pair, look) {
+    const [outer, inner] = pair;
+    inner.needsUpdate = true;
+    const p = physicalOf(look);
+    const color = new THREE.Color(p.color);
+    outer.color.copy(color);
+    outer.transmission = p.transmission;
+    outer.roughness = p.roughness;
+    outer.metalness = p.metalness;
+    outer.ior = p.ior;
+    outer.clearcoat = p.clearcoat;
+    outer.clearcoatRoughness = p.clearcoatRoughness;
+    outer.sheen = p.sheen;
+    outer.sheenColor.copy(color);
+    outer.sheenRoughness = p.sheenRoughness;
+    outer.thickness = p.thickness;
+    outer.attenuationColor.copy(color);
+    outer.attenuationDistance = p.attenuationDistance;
+    outer.needsUpdate = true;
+  }
+
+  function newPair() {
+    return [
+      new THREE.MeshPhysicalMaterial({ side: THREE.FrontSide }),
+      // Inside the wall, where a turn sits on the next: a thin film light crosses unbent. (Not a
+      // face of index 1 between two solids: that blackened half the pixels, NaNs in the path
+      // tracer's transmission; nor a real interface: light trapped in each turn.)
+      new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0, metalness: 0, transmission: 1, ior: 1.5, thickness: 0 }),
+    ];
+  }
+
+  // ---- The room and the light.
+
+  /** The fittings (their cable up to the ceiling, when there's one) and the room's surfaces. */
+  function buildRoom() {
+    if (fixture) {
+      fixture.parent?.remove(fixture);
+      disposeGroup(fixture);
+      fixture = null;
+    }
+    disposeGroup(room);
+    room.clear();
+    if (snap?.fixture) {
+      const fx = snap.fixture;
+      const cable = settings.ceiling.on ? Math.max(1, settings.ceiling.distance) : LONG_CABLE;
+      fixture = fixtureGroup(fx, fittings, cable);
+      glassR = (fx.glass / 2) * MM;
+      bulbLight.position.set(0, 0, -(CAP_SHOWS + bulbCentre(fx)));
+      fixture.add(bulbLight);
+      hung.add(fixture);
+    }
+    const b = lampBox();
+    // The socket's top: where the cable starts (the lamp's top without fittings).
+    let top = b.max.y;
+    root.updateMatrixWorld(true);
+    const cable = fixture?.getObjectByName('cable');
+    if (cable) top = new THREE.Box3().setFromObject(cable).min.y;
+    const size = 20;
+    const plane = (w, h) => new THREE.PlaneGeometry(w, h);
+    if (settings.wall.on) {
+      const wall = new THREE.Mesh(plane(size, size), surfaceMaterial);
+      wall.position.set(0, (b.min.y + b.max.y) / 2, -settings.wall.distance * MM);
+      wall.name = 'wall';
+      room.add(wall);
+    }
+    if (settings.floor.on) {
+      const floor = new THREE.Mesh(plane(size, size), surfaceMaterial);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.set(0, b.min.y - settings.floor.distance * MM, 0);
+      floor.name = 'floor';
+      room.add(floor);
+    }
+    if (settings.ceiling.on) {
+      const ceiling = new THREE.Mesh(plane(size, size), surfaceMaterial);
+      ceiling.rotation.x = Math.PI / 2;
+      ceiling.position.set(0, top + settings.ceiling.distance * MM, 0);
+      ceiling.name = 'ceiling';
+      room.add(ceiling);
+    }
+    surfaceMaterial.color.set(settings.surface);
+    sceneDirty = true;
+  }
+
+  /** The light and the picture's look from the settings. */
+  function applyLight() {
     const [r, g, b] = kelvinColor(settings.kelvin);
     const warm = new THREE.Color(r, g, b);
     const on = settings.light;
@@ -184,68 +321,106 @@ export function createRenderer(canvas, hooks = {}) {
     bulbMaterial.emissiveIntensity = on ? intensity / (Math.PI * glassR * glassR) : 0;
     scene.environmentIntensity = on ? settings.room : 1;
     renderer.toneMappingExposure = 2 ** settings.exposure;
+    surfaceMaterial.color.set(settings.surface);
     tracer.bounces = settings.bounces;
     tracer.transmissiveBounces = Math.max(settings.bounces, 10);
-    for (const [outer] of partMaterials.values()) outer.roughness = settings.matte;
-    if (prepared) {
-      tracer.updateMaterials();
-      tracer.updateLights();
-      tracer.updateEnvironment();
-      tracer.reset();
-      wake();
-    }
   }
 
-  /** Looks at the lamp (the shades, holder and bulb; not the cable) from `dir`. */
-  function frame3(dir) {
-    const box = new THREE.Box3();
-    root.updateMatrixWorld(true);
-    root.traverse((o) => {
-      if (/** @type {any} */ (o).isMesh && o.name !== 'cable') box.expandByObject(o);
-    });
-    if (box.isEmpty()) box.set(new THREE.Vector3(-0.1, -0.1, -0.1), new THREE.Vector3(0.1, 0.1, 0.1));
-    const centre = box.getCenter(new THREE.Vector3());
-    const radius = Math.max(0.02, box.getSize(new THREE.Vector3()).length() / 2);
-    const half = THREE.MathUtils.degToRad(camera.fov / 2);
-    const fitHalf = Math.min(half, Math.atan(Math.tan(half) * camera.aspect));
-    const dist = (radius / Math.sin(fitHalf)) * 0.85;
-    controls.target.copy(centre);
-    camera.position.copy(centre).addScaledVector(dir.clone().normalize(), dist);
-    camera.near = dist / 100;
-    camera.far = dist * 100;
-    camera.updateProjectionMatrix();
-    controls.update();
+  // ---- Drawing: the draft, and the path tracer's samples.
+
+  /** The plain grey draft (only while nothing rendered is showing). */
+  function draft() {
+    if (job) return;
+    if (!snap) {
+      renderer.clear();
+      shows = 'empty';
+      report({ state: 'empty' });
+      return;
+    }
+    sizeFor(0);
+    renderer.toneMappingExposure = 1;
+    scene.overrideMaterial = draftMaterial;
+    scene.add(draftLight);
+    const env = scene.environment;
+    scene.environment = null;
+    renderer.render(scene, camera);
+    scene.environment = env;
+    scene.remove(draftLight);
+    scene.overrideMaterial = null;
+    renderer.toneMappingExposure = 2 ** settings.exposure;
+    shows = 'draft';
+    report({ state: 'draft' });
+  }
+
+  function tick() {
+    frame = 0;
+    if (!job) return;
+    if (tracer.isCompiling) {
+      report({ state: 'compiling', kind: job.kind });
+      tracer.renderSample();
+      frame = requestAnimationFrame(tick);
+      return;
+    }
+    tracer.renderSample();
+    const samples = Math.floor(tracer.samples);
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const seconds = (performance.now() - job.t0) / 1000;
+    if (samples >= job.target) {
+      const kind = job.kind;
+      job = null;
+      shows = 'done';
+      report({ state: 'done', kind, samples, target: samples, width: size.x, height: size.y, seconds });
+      return;
+    }
+    shows = 'rendering';
+    report({ state: 'rendering', kind: job.kind, samples, target: job.target, width: size.x, height: size.y, seconds });
+    frame = requestAnimationFrame(tick);
+  }
+
+  function stop() {
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+    if (!job) return;
+    const kind = job.kind;
+    job = null;
+    shows = 'stopped';
+    report({ state: 'stopped', kind, samples: Math.floor(tracer.samples) });
   }
 
   return {
     /**
-     * Prepares a snapshot for rendering: every toolpath swept into solid beads, the fittings,
-     * the BVH. Slow; `onStep` says what it's doing.
-     * @param {Snapshot} snap
-     * @param {number[]} viewDir where the 3D view looks from (recipe's x, y, z, from the target)
+     * Prepares a snapshot for rendering: every toolpath swept into solid beads, the fittings.
+     * Slow; `onStep` says what it's doing. The camera stays where it was left (fitted the first
+     * time).
+     * @param {Snapshot} next
      * @param {(what: string) => void} [onStep]
      */
-    async prepare(snap, viewDir, onStep = () => {}) {
-      prepared = false;
-      if (frame) cancelAnimationFrame(frame);
-      frame = 0;
+    async prepare(next, onStep = () => {}) {
+      stop();
+      snap = null;
+      if (fixture) {
+        fixture.parent?.remove(fixture);
+        fixture = null;
+      }
       scene.remove(root);
-      dispose(root);
+      disposeGroup(root);
+      for (const pair of partMaterials.values()) for (const m of pair) m.dispose();
+      partMaterials.clear();
       root = new THREE.Group();
       // Recipe (z up, mm) to scene (y up, m); hung the other way: turned over first.
       root.rotation.x = -Math.PI / 2;
       root.scale.setScalar(MM);
-      const hung = new THREE.Group();
-      if (snap.fixture?.flipped) hung.rotation.x = Math.PI;
+      hung = new THREE.Group();
+      if (next.fixture?.flipped) hung.rotation.x = Math.PI;
       root.add(hung);
       scene.add(root);
       const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
 
       let triangles = 0;
-      for (let k = 0; k < snap.paths.length; k++) {
-        onStep(`Beads ${k + 1}/${snap.paths.length}`);
+      for (let k = 0; k < next.paths.length; k++) {
+        onStep(`Beads ${k + 1}/${next.paths.length}`);
         await nextFrame();
-        const p = snap.paths[k];
+        const p = next.paths[k];
         const n = p.points.length / 3;
         const white = new Float32Array(3 * n).fill(1);
         const { geometry, kinds, at } = beadGeometry(p.points, p.widths, p.heights, white, p.ups, { kinds: true });
@@ -259,8 +434,12 @@ export function createRenderer(canvas, hooks = {}) {
         for (let t = 0; t + 2 < ix.length; t += 3) [ix[t + 1], ix[t + 2]] = [ix[t + 2], ix[t + 1]];
         geometry.deleteAttribute('color');
         triangles += ix.length / 3;
-        if (!partMaterials.has(p.part)) partMaterials.set(p.part, partMaterials2(snap.looks[p.part] || { color: '#f2f2f2', opacity: 1 }));
-        // The flat faces where a turn sits on the next go inside the solid (their own group).
+        if (!partMaterials.has(p.part)) {
+          const pair = newPair();
+          setLook(pair, next.looks[p.part] || { color: '#f2f2f2', opacity: 1 });
+          partMaterials.set(p.part, pair);
+        }
+        // The flat faces where a turn sits on the next go inside the solid (a mesh of their own).
         const { above, below } = touching(p.points, p.widths, p.heights);
         const outerIx = [];
         const innerIx = [];
@@ -270,70 +449,149 @@ export function createRenderer(canvas, hooks = {}) {
           const inside = (kind === 1 && above[i]) || (kind === 2 && below[i]);
           (inside ? innerIx : outerIx).push(ix[3 * t], ix[3 * t + 1], ix[3 * t + 2]);
         }
-        const big = geometry.getAttribute('position').count > 65535;
-        const sorted = big ? new Uint32Array(ix.length) : new Uint16Array(ix.length);
-        sorted.set(outerIx);
-        sorted.set(innerIx, outerIx.length);
-        geometry.setIndex(new THREE.BufferAttribute(sorted, 1));
-        geometry.clearGroups();
-        geometry.addGroup(0, outerIx.length, 0);
-        if (innerIx.length) geometry.addGroup(outerIx.length, innerIx.length, 1);
+        // Two meshes, one material each: the beads' outside, and the faces inside the wall with
+        // vertices of their own. (The path tracer keeps a material per vertex, and numbers the
+        // materials of its merged scene by mesh: a mesh with two materials, or a vertex shared
+        // by both, gives the wrong material to whatever comes after.)
+        const pos = /** @type {Float32Array} */ (geometry.getAttribute('position').array);
+        const verts = pos.length / 3;
+        geometry.setIndex(new THREE.BufferAttribute(verts > 65535 ? new Uint32Array(outerIx) : new Uint16Array(outerIx), 1));
         geometry.computeVertexNormals();
-        const mesh = new THREE.Mesh(geometry, partMaterials.get(p.part));
-        mesh.name = 'part';
-        hung.add(mesh);
+        const [outerMat, innerMat] = /** @type {THREE.MeshPhysicalMaterial[]} */ (partMaterials.get(p.part));
+        const outer = new THREE.Mesh(geometry, outerMat);
+        outer.name = 'part';
+        hung.add(outer);
+        if (innerIx.length) {
+          const inside = new THREE.BufferGeometry();
+          const flat = new Float32Array(innerIx.length * 3);
+          innerIx.forEach((v, k) => flat.set(pos.subarray(3 * v, 3 * v + 3), 3 * k));
+          inside.setAttribute('position', new THREE.BufferAttribute(flat, 3));
+          const seq = innerIx.length > 65535 ? new Uint32Array(innerIx.length) : new Uint16Array(innerIx.length);
+          for (let k = 0; k < seq.length; k++) seq[k] = k;
+          inside.setIndex(new THREE.BufferAttribute(seq, 1));
+          inside.computeVertexNormals();
+          const mesh = new THREE.Mesh(inside, innerMat);
+          mesh.name = 'part-inside';
+          hung.add(mesh);
+        }
       }
-      if (snap.fixture) {
-        const fx = snap.fixture;
-        const group = fixtureGroup(fx, fittings, 4000);
-        glassR = (fx.glass / 2) * MM;
-        bulbLight.position.set(0, 0, -(CAP_SHOWS + bulbCentre(fx)));
-        group.add(bulbLight);
-        hung.add(group);
-      }
-      // The 3D view's angle, in the scene's frame (as the lamp hangs).
-      const d = new THREE.Vector3(...viewDir);
-      if (snap.fixture?.flipped) d.set(d.x, -d.y, -d.z);
-      frame3(new THREE.Vector3(d.x, d.z, -d.y));
-      onStep('Building the BVH');
-      await nextFrame();
-      tracer.setScene(scene, camera);
-      prepared = true;
-      apply();
+      snap = next;
+      buildRoom();
+      sizeFor(0);
+      placeCamera();
+      draft();
       return { triangles };
     },
 
     /** Whether there's a prepared scene. */
     get prepared() {
-      return prepared;
+      return Boolean(snap);
     },
 
-    /** The samples rendered so far. */
-    get samples() {
-      return prepared ? tracer.samples : 0;
+    /** Whether a render is running. */
+    get running() {
+      return Boolean(job);
     },
 
     /**
-     * New settings (restarts the sampling; a new scale resizes the picture).
-     * @param {typeof RENDER_DEFAULTS} next
+     * New settings: the render stops (nothing renders until Preview or Render), the draft shows
+     * the change. A new view or lens refits; surfaces and the ceiling rebuild the room.
+     * @param {ReturnType<typeof cleanRender>} next
      */
     setSettings(next) {
-      const rescale = next.scale !== settings.scale;
-      settings = { ...next };
-      if (rescale) resize();
-      apply();
+      const before = settings;
+      settings = cleanRender(next);
+      stop();
+      const roomChanged = ['wall', 'floor', 'ceiling'].some((k) => JSON.stringify(before[k]) !== JSON.stringify(settings[k]));
+      if (snap && roomChanged) buildRoom();
+      if (before.camera.lens !== settings.camera.lens && snap) {
+        // A new lens keeps what's framed: the camera moves to keep the same width in view.
+        const old = Math.tan(THREE.MathUtils.degToRad(lensFov(before.camera.lens) / 2));
+        const now = Math.tan(THREE.MathUtils.degToRad(lensFov(settings.camera.lens) / 2));
+        const off = camera.position.clone().sub(controls.target).multiplyScalar(old / now);
+        camera.position.copy(controls.target).add(off);
+        camera.fov = lensFov(settings.camera.lens);
+        clip();
+        controls.update();
+        saveCamera();
+      } else if (snap && (!settings.camera.position || before.camera.view !== settings.camera.view)) {
+        placeCamera();
+      }
+      applyLight();
+      draft();
     },
 
-    /** Starts or carries on sampling (after the view was hidden). */
+    /**
+     * The parts' looks (custom colour, how solid, material), by part. Stops the render.
+     * @param {Look[]} looks
+     */
+    setLooks(looks) {
+      stop();
+      for (const [part, pair] of partMaterials) setLook(pair, looks[part] || { color: '#f2f2f2', opacity: 1 });
+      if (snap) snap.looks = looks;
+      draft();
+    },
+
+    /** Frames the lamp again from the view set (forgets where the camera was left). */
+    fit() {
+      stop();
+      fit(settings.camera.view);
+      saveCamera();
+      draft();
+    },
+
+    /**
+     * Renders: a preview (small, few samples) or the picture (its size and samples), with the
+     * bounces as set, until done or stopped.
+     * @param {'preview' | 'final'} kind
+     */
+    start(kind) {
+      if (!snap) return;
+      stop();
+      const q = kind === 'final' ? settings.final : settings.preview;
+      sizeFor(q.size);
+      applyLight();
+      for (const [part, pair] of partMaterials) setLook(pair, snap.looks[part] || { color: '#f2f2f2', opacity: 1 });
+      if (sceneDirty) {
+        // The path tracer merges the scene into one geometry it keeps, adding a group per mesh
+        // each time without clearing the last time's: cleared here, or a second scene keeps the
+        // first one's materials on its meshes.
+        /** @type {any} */ (tracer)._generator?.geometry?.clearGroups?.();
+        tracer.setScene(scene, camera);
+        sceneDirty = false;
+      } else {
+        tracer.setCamera(camera);
+      }
+      tracer.updateMaterials();
+      tracer.updateLights();
+      tracer.updateEnvironment();
+      // Tiles: each GPU dispatch a bounded amount of work.
+      const px = renderer.getDrawingBufferSize(new THREE.Vector2());
+      const work = px.x * px.y * (settings.bounces + 2);
+      const n = Math.min(8, Math.max(1, Math.ceil(Math.sqrt(work / (phone ? DISPATCH.phone : DISPATCH.other)))));
+      tracer.tiles.set(n, n);
+      tracer.reset();
+      job = { kind, target: q.samples, t0: performance.now() };
+      report({ state: tracer.isCompiling ? 'compiling' : 'rendering', kind, samples: 0, target: q.samples });
+      frame = requestAnimationFrame(tick);
+    },
+
+    /** Stops rendering; the picture so far stays (and can be saved). */
+    stop,
+
+    /** After the view was hidden: the draft again if nothing rendered is showing. */
     resume() {
-      resize();
-      if (prepared) wake();
+      if (!job && shows !== 'done' && shows !== 'stopped') draft();
     },
 
     /** Stops sampling (the view hidden). */
     pause() {
-      if (frame) cancelAnimationFrame(frame);
-      frame = 0;
+      stop();
+    },
+
+    /** Whether the canvas holds a rendered picture (done, stopped, or under way). */
+    get rendered() {
+      return shows === 'done' || shows === 'stopped' || shows === 'rendering';
     },
 
     /** The picture as it is now, a PNG data URL with a transparent background. */
@@ -346,14 +604,17 @@ export function createRenderer(canvas, hooks = {}) {
      * canvas's context, so the 3D view can have the memory back. The canvas can't be used again.
      */
     dispose() {
-      if (frame) cancelAnimationFrame(frame);
-      frame = 0;
-      prepared = false;
+      stop();
+      snap = null;
       sizes.disconnect();
       controls.dispose();
       scene.remove(root);
-      dispose(root);
+      disposeGroup(root);
+      disposeGroup(room);
+      for (const pair of partMaterials.values()) for (const m of pair) m.dispose();
       for (const m of Object.values(fittings)) m.dispose();
+      surfaceMaterial.dispose();
+      draftMaterial.dispose();
       sky.dispose();
       tracer.dispose();
       renderer.dispose();

@@ -2170,10 +2170,28 @@ body[data-render] .view-legend {
 
 .view-render {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.render-actions {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 .view-render[hidden] {
   display: none;
@@ -2193,7 +2211,8 @@ body[data-render] .view-legend {
 }
 
 .view-render button[aria-pressed="true"],
-.view-render .render-prepare[data-stale] {
+.view-render .render-prepare[data-stale],
+.view-render .render-go:not(:disabled) {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);
@@ -2203,18 +2222,7 @@ body[data-render] .view-legend {
   opacity: 0.5;
 }
 
-.render-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
 
-.render-field input {
-  width: 84px;
-  accent-color: var(--accent);
-}
 
 /* The plan's fittings button (socket and bulb shown or hidden), under the zoom buttons. */
 .plan-fittings {

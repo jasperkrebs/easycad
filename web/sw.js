@@ -24,6 +24,7 @@ const ASSETS = [
   './js/fixture.js',
   './js/fixture-mesh.js',
   './js/language-guide.js',
+  './js/materials.js',
   './js/parts.js',
   './js/print.js',
   './js/recipe.js',

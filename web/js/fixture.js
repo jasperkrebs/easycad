@@ -184,12 +184,34 @@ export const RENDER_DEFAULTS = {
   room: 0.06,
   /** Exposure, ±stops (a shade lit from inside shows its glow a stop up). */
   exposure: 1,
-  /** How rough (matte) the printed surface is, 0 glossy to 1 matte. */
-  matte: 0.35,
-  /** Samples per pixel to stop at, light bounces, and pixels per screen pixel. */
-  samples: 256,
-  bounces: 8,
-  scale: 1,
+  /** Light bounces (the same for the preview and the render, so the preview shows the light as it'll be). */
+  bounces: 12,
+  /** The quick look and the render: the picture's longer side in pixels, and samples per pixel. */
+  preview: { size: 640, samples: 32 },
+  final: { size: 1920, samples: 512 },
+  /**
+   * The camera: where it looks from (`view`, for Fit), its lens (mm, as on a full-frame camera),
+   * and where it was left (the scene's metres; null: fitted).
+   */
+  camera: { view: 'front', lens: 50, position: /** @type {number[] | null} */ (null), target: /** @type {number[] | null} */ (null) },
+  /**
+   * Surfaces round the lamp, lit by it and in the picture: a wall behind it (mm from the lamp's
+   * axis), a floor or table under it (mm below its lowest point), a ceiling above it (mm above
+   * the socket's top; the cable ends there). One colour for all.
+   */
+  wall: { on: false, distance: 300 },
+  floor: { on: false, distance: 500 },
+  ceiling: { on: false, distance: 600 },
+  surface: '#e9e5df',
+};
+
+/** Camera views (directions it looks from, y up, the front towards +z). */
+export const CAMERA_VIEWS = {
+  front: { label: 'Front', dir: [0, 0.06, 1] },
+  'three-quarter': { label: '¾', dir: [0.62, 0.22, 0.75] },
+  side: { label: 'Side', dir: [1, 0.06, 0] },
+  below: { label: 'Below', dir: [0, -0.6, 0.8] },
+  above: { label: 'Above', dir: [0, 0.65, 0.76] },
 };
 
 /**
@@ -200,19 +222,36 @@ export const RENDER_DEFAULTS = {
  */
 export function cleanRender(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
-  const num = (k, lo, hi) => {
-    const v = Number(r[k]);
-    return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : RENDER_DEFAULTS[k];
+  const D = RENDER_DEFAULTS;
+  const num = (v, lo, hi, d) => {
+    const x = Number(v);
+    return v !== null && v !== undefined && v !== '' && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
   };
+  const obj = (v) => (v && typeof v === 'object' ? v : {});
+  const quality = (q, d) => ({ size: Math.round(num(obj(q).size, 160, 4096, d.size)), samples: Math.round(num(obj(q).samples, 1, 10000, d.samples)) });
+  const surface = (s, d) => ({ on: typeof obj(s).on === 'boolean' ? obj(s).on : d.on, distance: num(obj(s).distance, 0, 5000, d.distance) });
+  const point = (p) => (Array.isArray(p) && p.length === 3 && p.every((x) => Number.isFinite(Number(x)) && Math.abs(Number(x)) < 1000) ? p.map(Number) : null);
+  const cam = obj(r.camera);
+  const position = point(cam.position);
+  const target = point(cam.target);
   return {
-    light: typeof r.light === 'boolean' ? r.light : RENDER_DEFAULTS.light,
-    lumens: num('lumens', 50, 5000),
-    kelvin: num('kelvin', 1800, 6500),
-    room: num('room', 0, 1),
-    exposure: num('exposure', -6, 6),
-    matte: num('matte', 0, 1),
-    samples: Math.round(num('samples', 1, 10000)),
-    bounces: Math.round(num('bounces', 1, 32)),
-    scale: num('scale', 0.25, 4),
+    light: typeof r.light === 'boolean' ? r.light : D.light,
+    lumens: num(r.lumens, 50, 5000, D.lumens),
+    kelvin: num(r.kelvin, 1800, 6500, D.kelvin),
+    room: num(r.room, 0, 1, D.room),
+    exposure: num(r.exposure, -6, 6, D.exposure),
+    bounces: Math.round(num(r.bounces, 1, 32, D.bounces)),
+    preview: quality(r.preview, D.preview),
+    final: quality(r.final, D.final),
+    camera: {
+      view: Object.hasOwn(CAMERA_VIEWS, String(cam.view)) ? String(cam.view) : D.camera.view,
+      lens: num(cam.lens, 10, 300, D.camera.lens),
+      position: position && target ? position : null,
+      target: position && target ? target : null,
+    },
+    wall: surface(r.wall, D.wall),
+    floor: surface(r.floor, D.floor),
+    ceiling: surface(r.ceiling, D.ceiling),
+    surface: /^#[0-9a-f]{6}$/i.test(String(r.surface)) ? String(r.surface) : D.surface,
   };
 }

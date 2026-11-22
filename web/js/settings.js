@@ -237,7 +237,7 @@ function openGroups() {
  * @param {boolean} first
  * @param {string} [key] what its open state is remembered under (its name)
  */
-function foldout(name, first, key = name) {
+export function foldout(name, first, key = name) {
   const remembered = openGroups()[key];
   const details = /** @type {HTMLDetailsElement} */ (
     el('details', { className: 'group' }, [
@@ -252,7 +252,7 @@ function foldout(name, first, key = name) {
   return details;
 }
 
-function settingRow(p, value, onChange) {
+export function settingRow(p, value, onChange) {
   const id = `set-${p.name}`;
   const label = el('label', { htmlFor: id, text: p.label });
   if (p.attrs.includes('assumed')) {

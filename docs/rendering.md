@@ -35,16 +35,58 @@ be: the view setting is kept with the project's colours (in its file too); the r
 untouched. The 3D view and the Plan show the project as it prints (throat on the bed), the
 fittings placed as the lamp hangs; the render shows it hanging.
 
-## Two steps: prepare, then render
+## Three steps: prepare, set up, render
 
-- **Prepare** takes a snapshot of the project as it is: each printed part's toolpaths swept into
-  solid beads at their real line width and layer height (the 3D view's *Line width* beads,
-  `beadGeometry`, so the layer lines are real round faces), the fittings, the custom colours and
-  the hidden parts (left out, as the brim is). Then the BVH (the structure the rays search) is
-  built. Slow, once: changing the project afterwards changes nothing in the render until it's
-  prepared again (the Prepare button lights up when it's out of date).
-- **Render** adds samples until the set number (64 to 4096 per pixel), the picture getting less
-  grainy with each. Orbiting, the light and the settings only restart the sampling.
+Nothing renders by itself: a slider or a camera move never starts the GPU. (Rendering live,
+every change restarted the path tracer at full size; on a Mac a big picture with many bounces
+ran the GPU out of memory and froze the browser.)
+
+1. **Prepare** takes a snapshot of the project as it is: each printed part's toolpaths swept into
+   solid beads at their real line width and layer height (the 3D view's *Line width* beads,
+   `beadGeometry`, so the layer lines are real round faces), the fittings and the hidden parts
+   (left out, as the brim is). Slow, once: changing the project afterwards changes nothing in the
+   render until it's prepared again (the Prepare button lights up when it's out of date). The
+   parts' colours and materials aren't in the snapshot: they change without preparing again.
+2. **Set up** the light, camera, room, materials and quality in the side panel's **Render** tab
+   (it shows while the Render view does): fold-outs as in the settings window, every number
+   typed or slid, so a render's settings can be set again exactly. The
+   canvas shows a **draft**: the scene in plain grey, drawn at once, to frame the picture. Grey on
+   purpose: it's never mistaken for the render.
+3. **Preview** renders small and quick (640 px, 32 samples by default); **Render** renders the
+   picture (1920 px, 512 samples by default); both with the same bounces (12 by default), so the
+   preview shows the light as the render will. **Stop** stops either; the picture so far stays and
+   **PNG** saves it. The status line says what it's doing: compiling the shaders (the first time,
+   a while on some GPUs), samples so far, the picture's pixels, the time.
+
+What's on the canvas is only ever the draft or the path tracer's picture: no quick stand-in
+while the shaders compile or the camera moves (that stand-in drew transmission differently, so
+the same scene sometimes looked like another material), and the noise is the same every time
+(stable noise): the same settings give the same picture.
+
+Sizes are the picture's longer side in pixels (320 to 3840), whatever the screen; the GPU's work
+is cut into tiles so each pass is small (by pixels × bounces), which keeps the page and the GPU
+responsive. The render asks the browser for the high-performance GPU (on a laptop with two).
+
+## The camera
+
+The **Camera** group has where it looks from (Front, ¾, Side, Below, Above: **Fit** frames the lamp from
+there) and the **lens** (24 to 135 mm, as on a full-frame camera: a wide lens up close bends the
+lamp's lines, a long one far off keeps them straight). A new lens keeps the framing (the camera
+moves to keep the same width in view). Orbit, pan and zoom in the view as in the 3D view; where
+the camera is left is kept with the project (in its file too), so a render can be done again.
+
+## The room
+
+The **Room** group puts surfaces round the lamp, lit by it and in the picture (and the PNG):
+
+- **Wall:** behind the lamp (on the far side from the Front view), its distance from the lamp's
+  axis;
+- **Floor:** under the lamp (a floor or a table), its distance below the lamp's lowest point;
+- **Ceiling:** above the lamp, its distance above the socket's top; the cable ends there.
+
+Moving a distance turns its surface on. One colour for all three (a matte paint). With any of
+them on, the picture isn't transparent where they are: the light pool on the wall and the
+shadows are the point.
 
 ## The light
 
@@ -54,38 +96,58 @@ fittings placed as the lamp hangs; the render shows it hanging.
   little light from round the lamp (**Room**, 6 % by default) keeps the dark side from going
   black.
 - **Light off:** daylight from round the lamp only (a bright sky over a darker floor); the bulb is
-  plain frosted glass.
+  plain opal glass.
 
 The scene is in metres, so the light falls off with distance as it does in a room. AgX tone
 mapping and the **Exp** slider (± stops) bring the bulb's glare and the shade's glow into one
 picture.
 
-## The materials: from the custom colours
+## The materials: printed plastics
 
-Each printed part takes its **custom colour** and how **solid** it is (the Custom colour mode's
-controls, `docs/architecture.md` §9):
+A **Material** group per printed part has its **colour** and how **solid** it is (the same as the
+3D view's custom colours), and its **plastic** (`web/js/materials.js`):
 
-- **Solid** (100 %): the light bounces off it, scattered (a white shade reflects the bulb's
-  light round the inside and out of the opening).
-- **See-through** (less): that much of the light passes into the plastic (transmission = 1 −
-  solid), bends at each bead's round face, is tinted by the colour over a few millimetres, and
-  comes out again: the layer lines show as bright and dark bands, as on a print held to the
-  light.
-- **Matte** sets how rough the printed surface is (glossy to frosted), for the reflections and
-  for the light passing through.
+| Plastic | Matte | Coat | Sheen | Silk | IOR | Depth |
+|---|---|---|---|---|---|---|
+| PLA | 40 % | | | | 1.46 | 4 mm |
+| PLA matte | 70 % | | 30 % | | 1.46 | 3 mm |
+| PLA silk | 22 % | 60 % | | 45 % | 1.46 | 2 mm |
+| PETG | 18 % | 30 % | | | 1.57 | 12 mm |
+| PETG frosted | 55 % | | | | 1.57 | 8 mm |
+| PC clear | 6 % | 60 % | | | 1.585 | 40 mm |
+| PP | 45 % | | 20 % | | 1.49 | 6 mm |
+| ABS / ASA | 50 % | | | | 1.53 | 3 mm |
+| TPU | 55 % | | 40 % | | 1.5 | 5 mm |
+| Wood fill | 85 % | | 35 % | | 1.5 | 1 mm |
+| Stone / marble fill | 60 % | 10 % | | | 1.5 | 1.5 mm |
 
-The plastic's refractive index is 1.5 (PLA and PETG are 1.46 to 1.57).
+Each value can be set for the part (↺ goes back to the plastic's):
+
+- **Solid:** 100 % bounces all the light it doesn't absorb (a white shade reflects the bulb's
+  light round the inside and out of the opening); less lets that much pass into the plastic
+  (transmission = 1 − solid), where it bends at each bead's round face and comes out again: the
+  layer lines show as bright and dark bands, as on a print held to the light.
+- **Matte:** how rough the surface is: glossy reflections to a soft sheen, and how much the light
+  passing through spreads (printed walls frost it).
+- **Coat:** a clear gloss layer over it (silk and clear plastics).
+- **Sheen:** a soft, velvety edge (matte and filled plastics).
+- **Silk:** the metallic shine of silk PLA.
+- **Depth:** how far light travels in the plastic before it has the plastic's colour: short for
+  deeply coloured or filled plastic, long for clear.
+- **IOR:** the refractive index, how much the beads bend the light.
+
+The plastic and its values are kept per part with the custom colours (in the project file too).
+Colour and material changes need no Prepare.
 
 ## The picture
 
-The background stays transparent (the checkerboard behind the view); the lamp's own pixels are
-solid where it's opaque and partly transparent where the background shows through a clear
-shade, so it composites over any environment. **Resolution** renders at ½, 1 or 2 × the
-screen's pixels (at most 4096 across); **PNG** saves the picture as it is.
+The background stays transparent (the checkerboard behind the view), unless the room's surfaces
+fill it; the lamp's own pixels are solid where it's opaque and partly transparent where the
+background shows through a clear shade, so it composites over any environment. The bulb is opal
+glass: solid in the picture, glowing when on. **PNG** saves the picture as it is, at its size.
 
-On a phone the work is cut into tiles so the page stays responsive; it's slow there (a lamp of
-a million triangles is fine on a laptop's GPU), but preparing and setting up a render works
-anywhere.
+On a phone it's slow (a lamp of a million triangles is fine on a laptop's GPU), but preparing,
+setting up and a small preview work anywhere.
 
 ## How it's built
 
@@ -106,11 +168,21 @@ anywhere.
   outside is then its beads' round faces, inside and out, where the light bends: the layer lines'
   lensing. The first turn's bottom, the last turn's top and any step where a turn sits out past
   half a bead stay real faces.
+- **One material per mesh.** The path tracer merges the scene into one geometry, numbers the
+  materials by mesh (a group per mesh into the flat list of every mesh's materials) and keeps a
+  material per vertex; a mesh with two materials gives its neighbours the wrong ones. So each part
+  is two meshes (its beads; the faces inside its wall, with vertices of their own), and the
+  merged geometry's groups (which it adds without clearing) are cleared before each scene. This
+  was the "same scene, another material" of the first version.
+- The faces inside the wall are a thin film (light crosses unbent); as a face of index 1
+  between two solids, the path tracer's transmission made NaNs and blackened the pixels behind
+  a see-through shade.
 - When the 3D view loses its GPU context (a phone short of memory), the prepared render is
   freed so the 3D view can be rebuilt (architecture §9.2): Prepare again afterwards.
 - The library's WebGL path tracer is marked deprecated in favour of its WebGPU one; the WebGPU
   one is the upgrade once phones run WebGPU everywhere.
 
 Not yet (on the roadmap): a denoiser (fewer samples for a clean picture), your own environment
-(an HDRI) for the light off, the light falling on a wall or ceiling as a layer of its own, and
-building the BVH in a worker (preparing blocks the page while it runs).
+(an HDRI) for the light off, the room's light as a layer of its own over a transparent
+background (a shadow and light catcher), a picture shape of its own (it's the view's), and
+building the BVH in a worker (the first render after preparing blocks the page while it builds).

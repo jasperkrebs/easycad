@@ -18,6 +18,7 @@ const root = path.join(__dirname, '..', 'web');
 const port = 8000 + Math.floor(Math.random() * 1000);
 const shots = process.argv[2];
 const SAMPLES = Number(process.env.RENDER_SAMPLES || 16);
+const SIZE = Number(process.env.RENDER_SIZE || 320);
 
 /** The alpha channel's lowest and highest values of a PNG data URL, read in the page. */
 async function alphaRange(page, url) {
@@ -84,40 +85,61 @@ async function alphaRange(page, url) {
       if (!/\.png$/.test(download.suggestedFilename())) failures.push(`view PNG named ${download.suggestedFilename()}`);
     }
 
-    // The Render view: prepare, light on, then off.
+    // The Render view: a set of scenes (projects, plastics, how solid, light on and off, the
+    // room), each prepared and previewed small, its PNG saved. Headless Chromium's GPU is
+    // software: small pictures and few samples.
     await page.click('#viewRender');
     await page.waitForFunction(() => !document.getElementById('render').hidden, null, { timeout: 5000 });
-    await page.selectOption('#renderSamples', '64');
-    await page.evaluate((n) => {
-      // Fewer samples than the list offers: headless Chromium's GPU is software.
-      const s = /** @type {HTMLSelectElement} */ (document.getElementById('renderSamples'));
-      s.append(new Option(String(n), String(n)));
-      s.value = String(n);
-      s.dispatchEvent(new Event('change'));
-    }, SAMPLES);
-    await page.click('#renderPrepare');
-    // Prepared: the status says so, then counts the samples.
-    await page.waitForFunction(() => /^Prepared|Can't| \/ /.test(document.getElementById('renderStatus').textContent), null, { timeout: 600000 });
-    const prepared = await page.textContent('#renderStatus');
-    console.log(prepared);
-    if (/Can't/.test(prepared)) throw new Error(`render: ${prepared}`);
-    const done = (n) => page.waitForFunction((k) => new RegExp(`^${k} / ${k}\\b`).test(document.getElementById('renderStatus').textContent), n, { timeout: 600000 });
-    const t0 = Date.now();
-    await done(SAMPLES);
-    console.log(`light on: ${SAMPLES} samples in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-    await shot('render-on');
-    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#renderSave')]);
-    const file = await download.path();
-    const dataUrl = `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`;
-    const [lo, hi] = await alphaRange(page, dataUrl);
-    if (!(lo === 0 && hi === 255)) failures.push(`render PNG alpha ${lo}..${hi}: expected a transparent background round an opaque lamp`);
-    if (shots) fs.copyFileSync(file, path.join(shots, 'render-on-transparent.png'));
-    await page.click('#renderLight');
-    await page.waitForFunction(() => document.getElementById('renderLight').textContent === 'Light off', null, { timeout: 5000 });
-    await done(SAMPLES);
-    await shot('render-off');
-    const [download2] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#renderSave')]);
-    if (shots) fs.copyFileSync(await download2.path(), path.join(shots, 'render-off-transparent.png'));
+    const quick = { preview: { size: SIZE, samples: SAMPLES }, bounces: 12 };
+    const scenes = [
+      { name: 'lampshade-pla-white', template: 'lampshade', project: 'Lampshade', part: 'path', look: { color: '#f4f1ea', opacity: 1, material: { plastic: 'pla' } }, render: { light: true } },
+      { name: 'lampshade-petg-frosted', template: 'lampshade', project: 'Lampshade', part: 'path', look: { color: '#f6efe2', opacity: 0.4, material: { plastic: 'petg-frosted' } }, render: { light: true, wall: { on: true, distance: 250 }, floor: { on: true, distance: 400 } } },
+      { name: 'lamp-pc-amber-below', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#ffb347', opacity: 0.25, material: { plastic: 'pc' } }, render: { light: true, camera: { view: 'below', lens: 35, position: null, target: null } } },
+      { name: 'lamp-silk-gold-off', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#c9a227', opacity: 1, material: { plastic: 'pla-silk' } }, render: { light: false, camera: { view: 'three-quarter', lens: 50, position: null, target: null }, wall: { on: true, distance: 300 } } },
+      { name: 'pendant-matte-white', template: 'thread-pendant', project: 'Thread pendant', part: 'path_out', look: { color: '#fbfaf7', opacity: 0.6, material: { plastic: 'pla-matte' } }, render: { light: true, ceiling: { on: true, distance: 300 }, wall: { on: true, distance: 350 } } },
+    ];
+    const only = process.env.RENDER_SCENES ? process.env.RENDER_SCENES.split(',') : null;
+    for (const sc of scenes.filter((x) => !only || only.includes(x.name))) {
+      const t0 = Date.now();
+      await page.evaluate(({ project, part, look, render }) => {
+        const all = JSON.parse(localStorage.getItem('easycad.customColors') || '{}');
+        all[project] = { parts: { [part]: look }, light: 0.5, shadow: 0.5, hang: 'down', render };
+        localStorage.setItem('easycad.customColors', JSON.stringify(all));
+      }, { ...sc, render: { ...quick, ...sc.render } });
+      const current = await page.textContent('#projectName');
+      if (current !== sc.project) {
+        // The template list is in the Settings tab (the Render tab is in front in the Render view).
+        await page.click('#tab-settings');
+        await page.selectOption('#template', sc.template);
+        await page.waitForFunction((t) => document.getElementById('projectName').textContent === t, sc.project, { timeout: 30000 });
+        await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 60000 });
+        await page.click('#tab-render');
+      }
+      await page.click('#renderPrepare');
+      await page.waitForFunction(() => /^Draft|Can't/.test(document.getElementById('renderStatus').textContent), null, { timeout: 300000 });
+      const prepared = await page.textContent('#renderStatus');
+      if (/Can't/.test(prepared)) throw new Error(`${sc.name}: ${prepared}`);
+      await shot(`${sc.name}-draft`);
+      await page.click('#renderPreview');
+      await page.waitForFunction(() => /done|Can't/.test(document.getElementById('renderStatus').textContent), null, { timeout: 1200000 });
+      const status = await page.textContent('#renderStatus');
+      console.log(`${sc.name}: ${status} (${((Date.now() - t0) / 1000).toFixed(0)} s with preparing)`);
+      await shot(`${sc.name}-screen`);
+      const [download] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#renderSave')]);
+      const file = await download.path();
+      if (shots) fs.copyFileSync(file, path.join(shots, `${sc.name}.png`));
+      // Without a room, the background is transparent round an opaque lamp.
+      if (!sc.render.wall && !sc.render.floor && !sc.render.ceiling) {
+        const [lo, hi] = await alphaRange(page, `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`);
+        if (!(lo === 0 && hi === 255)) failures.push(`${sc.name}: PNG alpha ${lo}..${hi}, expected a transparent background round the lamp`);
+      }
+    }
+    // Stop: a render under way stops, the picture so far stays and can be saved.
+    await page.click('#renderPreview');
+    await page.waitForFunction(() => !document.getElementById('renderStop').disabled, null, { timeout: 30000 });
+    // (The page is busy between tiles on a software GPU: a click through the page waits for it.)
+    await page.evaluate(() => document.getElementById('renderStop').click());
+    await page.waitForFunction(() => /stopped/.test(document.getElementById('renderStatus').textContent), null, { timeout: 30000 }).catch(() => failures.push('Stop did not stop the render'));
   } catch (err) {
     failures.push(String(err.stack || err));
   } finally {

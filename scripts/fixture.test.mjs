@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { touching } from '../web/js/wall.js';
+import { PLASTICS, cleanMaterial, materialValues, physicalOf } from '../web/js/materials.js';
 import { FITTINGS, RENDER_DEFAULTS, bulbProfile, cleanRender, fixtureOf, fixtureOutline, kelvinColor, socketOf, socketProfile } from '../web/js/fixture.js';
 
 const params = (values) => Object.entries(values).map(([name, value]) => ({ name, value }));
@@ -96,12 +97,46 @@ test('colour temperature: warm is red-heavy, daylight near white', () => {
 test('render settings read back safely', () => {
   assert.deepEqual(cleanRender(null), RENDER_DEFAULTS);
   assert.deepEqual(cleanRender('nonsense'), RENDER_DEFAULTS);
-  const r = cleanRender({ light: false, lumens: 1e9, samples: 'x', room: -1, scale: 2 });
+  // An older file's settings (samples, scale, matte) just fall away.
+  const r = cleanRender({ light: false, lumens: 1e9, samples: 'x', room: -1, scale: 2, matte: 0.5 });
   assert.equal(r.light, false);
   assert.equal(r.lumens, 5000);
-  assert.equal(r.samples, RENDER_DEFAULTS.samples);
   assert.equal(r.room, 0);
-  assert.equal(r.scale, 2);
+  assert.equal('scale' in r || 'samples' in r || 'matte' in r, false);
+  assert.deepEqual(r.final, RENDER_DEFAULTS.final);
+  const q = cleanRender({ preview: { size: 99999, samples: 0 }, wall: { on: true, distance: -5 }, camera: { view: 'below', lens: 85, position: [1, 2, 3], target: [0, 0, 'x'] }, surface: 'red' });
+  assert.deepEqual(q.preview, { size: 4096, samples: 1 });
+  assert.deepEqual(q.wall, { on: true, distance: 0 });
+  assert.equal(q.camera.view, 'below');
+  assert.equal(q.camera.lens, 85);
+  assert.equal(q.camera.position, null, 'a camera without a target is no camera');
+  assert.equal(q.surface, RENDER_DEFAULTS.surface);
+  const c = cleanRender({ camera: { position: [0.1, 0.2, 0.9], target: [0, 0.1, 0] } });
+  assert.deepEqual(c.camera.position, [0.1, 0.2, 0.9]);
+});
+
+test("plastics: a part's material reads back safely and overrides its plastic", () => {
+  assert.deepEqual(cleanMaterial(null), { plastic: 'pla' });
+  assert.deepEqual(cleanMaterial({ plastic: 'nylon-unknown', roughness: 5, ior: 'x' }), { plastic: 'pla', roughness: 1 });
+  const v = materialValues({ plastic: 'petg', roughness: 0.3 });
+  assert.equal(v.roughness, 0.3);
+  assert.equal(v.ior, PLASTICS.petg.ior);
+  for (const [key, p] of Object.entries(PLASTICS)) {
+    assert.ok(p.label && p.ior >= 1.3 && p.ior <= 1.7 && p.depth > 0, key);
+  }
+});
+
+test('a look on the physical material: solid bounces, see-through transmits and tints over its depth', () => {
+  const solid = physicalOf({ color: '#ffffff', opacity: 1, material: { plastic: 'pla' } });
+  assert.equal(solid.transmission, 0);
+  assert.equal(solid.thickness, 0);
+  assert.equal(solid.attenuationDistance, Infinity);
+  const clear = physicalOf({ color: '#e0f0ff', opacity: 0.25, material: { plastic: 'pc' } });
+  assert.equal(clear.transmission, 0.75);
+  assert.equal(clear.thickness, 1);
+  assert.ok(Math.abs(clear.attenuationDistance - PLASTICS.pc.depth / 1000) < 1e-12);
+  assert.equal(clear.ior, PLASTICS.pc.ior);
+  assert.equal(physicalOf({ color: 'bad', opacity: 1 }).color, '#f2f2f2');
 });
 
 test('a vase wall: each turn sits on the one below, the first has nothing under it, the last nothing over it', () => {

@@ -98,26 +98,16 @@
               <input type="range" id="scrub" min="0" max="1000" step="1" value="1000" aria-label="Show the print up to" />
             </div>
           </div>
-          <!-- The render's controls: prepare (a snapshot of the project), the light, the picture. -->
+          <!-- The render's buttons: prepare (a snapshot of the project), then Preview or Render
+               (nothing renders meanwhile). Its settings are in the side panel's Render tab. -->
           <div class="view-render" id="viewRenderBar" hidden>
-            <button type="button" class="render-prepare" id="renderPrepare" title="Prepare the project as it is now for rendering (solid beads; slow, once)">Prepare</button>
-            <button type="button" class="render-toggle" id="renderLight" aria-pressed="true" title="The bulb on (its light the main one) or off (daylight)">Light on</button>
-            <button type="button" class="render-toggle" id="renderHang" title="Which way the shades hang from the socket (the socket always points down)">Hangs ↓</button>
-            <label class="render-field" title="Bulb (lumens)">Bulb <input type="range" id="renderLumens" min="100" max="2500" step="10" aria-label="Bulb output (lumens)"></label>
-            <label class="render-field" title="Bulb colour (kelvin)">K <input type="range" id="renderKelvin" min="1800" max="6500" step="100" aria-label="Bulb colour temperature (kelvin)"></label>
-            <label class="render-field" title="Room light while the bulb is on">Room <input type="range" id="renderRoom" min="0" max="50" step="1" aria-label="Room light while the bulb is on (%)"></label>
-            <label class="render-field" title="Exposure (stops)">Exp <input type="range" id="renderExposure" min="-4" max="4" step="0.25" aria-label="Exposure (stops)"></label>
-            <label class="render-field" title="Surface: glossy ↔ matte">Matte <input type="range" id="renderMatte" min="0" max="100" step="5" aria-label="Surface: glossy to matte (%)"></label>
-            <select id="renderSamples" aria-label="Samples" title="Samples per pixel to stop at">
-              <option value="64">64</option><option value="256">256</option><option value="1024">1024</option><option value="4096">4096</option>
-            </select>
-            <select id="renderBounces" aria-label="Light bounces" title="Light bounces">
-              <option value="4">4 bounces</option><option value="8">8 bounces</option><option value="16">16 bounces</option>
-            </select>
-            <select id="renderScale" aria-label="Resolution" title="Resolution (× the screen's)">
-              <option value="0.5">½×</option><option value="1">1×</option><option value="2">2×</option>
-            </select>
-            <button type="button" class="render-prepare" id="renderSave" title="Save the render as a PNG (transparent background)" disabled>PNG</button>
+            <div class="render-actions">
+              <button type="button" class="render-prepare" id="renderPrepare" title="Prepare the project as it is now for rendering (solid beads; slow, once)">Prepare</button>
+              <button type="button" class="render-go" id="renderPreview" title="A quick look: small, few samples" disabled>Preview</button>
+              <button type="button" class="render-go" id="renderFinal" title="Render the picture at its size and samples" disabled>Render</button>
+              <button type="button" id="renderStop" title="Stop rendering (the picture so far stays)" disabled>Stop</button>
+              <button type="button" id="renderSave" title="Save the picture as a PNG (transparent background)" disabled>PNG</button>
+            </div>
           </div>
           <!-- The assembly taken apart, a shade at a time (furthest out first), as the print plays. -->
           <div class="view-scrub view-assembly" id="viewAssembly" hidden>
@@ -147,6 +137,7 @@
           <button class="tab" role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="false">Chat</button>
           <button class="tab" role="tab" id="tab-recipe" aria-controls="panel-recipe" aria-selected="false">Recipe</button>
           <button class="tab" role="tab" id="tab-print" aria-controls="panel-print" aria-selected="false">Print</button>
+          <button class="tab" role="tab" id="tab-render" aria-controls="panel-render" aria-selected="false" hidden>Render</button>
           <button class="tab" role="tab" id="tab-about" aria-controls="panel-about" aria-selected="false">About</button>
         </nav>
 
@@ -309,6 +300,11 @@
             <summary>Printer settings</summary>
             <div id="printerSettings"></div>
           </details>
+        </section>
+
+        <!-- The Render view's settings: light, camera, room, materials, quality (render.js). -->
+        <section class="card" role="tabpanel" id="panel-render" aria-labelledby="tab-render" hidden>
+          <div id="renderSettings"></div>
         </section>
 
         <section class="card" role="tabpanel" id="panel-about" aria-labelledby="tab-about" hidden>
