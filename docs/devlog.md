@@ -7,6 +7,28 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-22: Patterns on the Lamp's and the Lampshade's sections (recipe-developer)
+
+**Why:** the owner: tap sections in the Plan and put a pattern on them, one pattern running
+through all the picked sections, fading in and out along the surface; first a sine wave in and
+out, matching up into rails, or woven.
+
+- **Pattern** group in the Lampshade and the Lamp's shade: a switch per section (start/throat,
+  fillet, shade, end fillet, straight end/lip), waves a turn, rails or woven (half a wave more a
+  turn), depth, fade length along the surface. Off as it ships: the G-code is unchanged (golden
+  tests). On the thread (start, the Lamp's straight end) it warns the thread is gone.
+- **The Plan:** a mark with on/off settings gets its own bar (its name leads to the settings,
+  its switches as chips, done); `@mark` keeps the section switches off the shade's own bar. A
+  **Pattern** mark beside the patterned sections leads to the pattern's settings.
+- **`wave`** (engine, with the owner's leave): an amplitude of 0 leaves the path as it is, and
+  only the moves the wave reaches are split, by how far round each turns (the shade's spiral has
+  no fixed count a turn, so every move was split 12 × count times: the Lamp's sphere ran out of
+  points). Unit-tested.
+- Tests: `patterns_tests.rs` (5), the `wave` test, the smoke test's Plan section.
+
+Open: a test print; more patterns. See [patterns.md](patterns.md). Noticed, not from this change:
+`scripts/request-test.cjs` stops at its line 144 (no "Send to be built" button), the same without it.
+
 ## 2026-11-22: Nutcracker: a cross on each bottom, overhang compensation, exact threads (recipe-developer)
 
 **Why:** the owner: overhang compensation for the fillets, and strong bottoms: after the bottom's

@@ -514,10 +514,30 @@ async function saveFrom(page, selector) {
       const small = await page.evaluate(tooSmall);
       if (small) failures.push(`${name}: ${small} add buttons are smaller than 40 px`);
       if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-plan.png`) });
-      // The plan's marks lead to the settings that drive each piece (the shade's fillet), and
-      // select the shade.
+      // The plan's marks lead to the settings that drive each piece (the shade's fillet): a mark
+      // with on/off settings (a pattern on it) gets its own bar of them, its name leading on.
       await page.locator('.plan-mark[aria-label^="Fillet"]').dispatchEvent('click');
+      if (!(await barIs('Fillet · main'))) failures.push(`${name}: the fillet's mark has no bar (bar: ${await barFor()})`);
+      await page.click('#plan .plan-bar .plan-bar-name');
       if (!(await page.isVisible('[id="set-main.fillet"]'))) failures.push(`${name}: the fillet's mark didn't lead to its setting`);
+      // A pattern on the fillet and the shade, from their marks' bars: the pattern's own mark shows.
+      await page.click('#plan .plan-bar button[data-set="main.pattern_fillet"]');
+      if (!(await recipeHas(/pattern_fillet: true/))) failures.push(`${name}: the fillet's pattern: ${await partLines()}`);
+      await ready();
+      await page.locator('.plan-mark[aria-label^="Shade"]').dispatchEvent('click');
+      await page.click('#plan .plan-bar button[data-set="main.pattern_shade"]');
+      if (!(await recipeHas(/pattern_shade: true/))) failures.push(`${name}: the shade's pattern: ${await partLines()}`);
+      await ready();
+      if (!(await page.locator('.plan-mark[aria-label^="Pattern"]').count())) failures.push(`${name}: no mark for the pattern`);
+      if (!(await barIs('Shade · main'))) failures.push(`${name}: the shade's bar went away (bar: ${await barFor()})`);
+      if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-lamp-pattern.png`) });
+      // Off again, and done: the shade's own bar.
+      await page.click('#plan .plan-bar button[data-set="main.pattern_shade"]');
+      await ready();
+      await page.locator('.plan-mark[aria-label^="Fillet"]').dispatchEvent('click');
+      await page.click('#plan .plan-bar button[data-set="main.pattern_fillet"]');
+      await ready();
+      await page.click('#plan .plan-bar .close');
       if (!(await barIs('main'))) failures.push(`${name}: the fillet's mark didn't select main (bar: ${await barFor()})`);
       // One tap: a shade outside main's end, going up; it arrives selected.
       await page.click('#plan .plan-add-btn[data-port="main.end_out"][data-way="up"]');

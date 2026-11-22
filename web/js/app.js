@@ -13,7 +13,7 @@ import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColor
 import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
-import { assemblyMotion, assemblySteps, capturePlan, fitPlan, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
+import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
 import { CAMERA_VIEWS, cleanRender, fixtureOf } from './fixture.js';
 import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
 import { beadExtremes, renderBeads } from './beads.js';
@@ -992,6 +992,8 @@ function onProfileChange() {
 
 /** The part selected in the plan (drawn highlighted, its bar showing). */
 let selectedPart = /** @type {string | null} */ (null);
+/** The mark tapped in the plan (its `markKey`), whose bar shows; null: none. */
+let selectedMark = /** @type {string | null} */ (null);
 /**
  * The part the plan just added, while nothing else has changed: switching its shape then adds it
  * afresh under its new shape's name (from the recipe as it was before), so a `cone` that becomes
@@ -1021,11 +1023,29 @@ function renderPlanView(result) {
     selected: selectedPart,
     hidden: hiddenParts,
     colorOf,
-    onSelect: (name) => selectPart(name),
-    onMark: (mark, part) => {
-      if (part) selectPart(part, false);
-      openSettings(mark.settings);
+    onSelect: (name) => {
+      selectedMark = null;
+      selectPart(name);
     },
+    selectedMark,
+    // A piece of the shape tapped: with on/off settings (a pattern on it, …), its bar of them in
+    // the plan; without, its settings.
+    onMark: (mark, part) => {
+      if (markToggles(result, mark).length) {
+        selectedMark = markKey(mark);
+        selectedPart = part;
+        renderPlanView(result);
+      } else {
+        if (part) selectPart(part, false);
+        openSettings(mark.settings);
+      }
+    },
+    onMarkSettings: (mark) => openSettings(mark.settings),
+    onMarkClose: () => {
+      selectedMark = null;
+      renderPlanView(result);
+    },
+    onSetValues: (values) => applyValues(values),
     onAdd: (add) => addPartAt(add.port, add.values),
     onSet: (name, values) => setPartValues(name, values),
     onOpen: (name) => openPart(name),

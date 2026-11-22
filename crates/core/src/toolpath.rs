@@ -1687,17 +1687,35 @@ pub fn wave_path(
     check_wave(count, phase)?;
     let m = path.samples_per_turn.max(1);
     let wanted = (12.0 * count.abs()).ceil();
-    let split = if (m as f64) < wanted {
-        (wanted / m as f64).ceil() as usize
-    } else {
-        1
-    };
-    let total = path
+    // Each move the wave reaches (its amplitude not 0 at both ends) is split into as many pieces
+    // as give each wave 12 points, by how far round it turns; the rest stays as it is. A path
+    // with as many samples every turn splits every one alike.
+    let waved: Vec<bool> = path
         .points
-        .len()
-        .saturating_sub(1)
-        .saturating_mul(split)
-        .saturating_add(1);
+        .iter()
+        .map(|p| amplitude.at(*p) != 0.0)
+        .collect();
+    let pieces: Vec<usize> = (0..path.points.len())
+        .map(|i| {
+            if i == 0 || path.travel.get(i).copied().unwrap_or(false) || !(waved[i - 1] || waved[i])
+            {
+                return 1;
+            }
+            // (A move that doesn't turn, as far as the path says, is split as if a whole turn.)
+            let along = (path.turn.get(i).copied().unwrap_or(0.0)
+                - path.turn.get(i - 1).copied().unwrap_or(0.0))
+            .abs();
+            let turned = if path.samples_per_turn > 0 {
+                1.0 / m as f64
+            } else if along > 0.0 {
+                along
+            } else {
+                1.0
+            };
+            (turned * wanted - 1e-9).ceil().clamp(1.0, 1e6) as usize
+        })
+        .collect();
+    let total = pieces.iter().fold(0usize, |a, k| a.saturating_add(*k));
     too_many(
         total,
         max_points,
@@ -1707,13 +1725,13 @@ pub fn wave_path(
     out.layer_starts.clear();
     let mut new_index = Vec::with_capacity(path.points.len());
     let mut starts = path.layer_starts.iter().peekable();
-    for i in 0..path.points.len() {
+    for (i, &split) in pieces.iter().enumerate() {
         // A layer starts with the move into its first point, split pieces included.
         if starts.peek() == Some(&&i) {
             out.layer_starts.push(out.points.len());
             starts.next();
         }
-        if i > 0 && split > 1 && !path.travel.get(i).copied().unwrap_or(false) {
+        if split > 1 {
             let (q, p) = (path.points[i - 1], path.points[i]);
             let (tq, t) = (
                 path.turn.get(i - 1).copied().unwrap_or(0.0),
@@ -1741,10 +1759,15 @@ pub fn wave_path(
     }
     out.copy_events(path, &|i| new_index.get(i).copied());
     // A spiral is one long open path, but each turn is a loop that tells which side is outside.
-    let first_turn = out
-        .points
-        .get(..(m * split).min(out.points.len()))
-        .unwrap_or(&[]);
+    let t0 = out.turn.first().copied().unwrap_or(0.0);
+    let in_first = out
+        .turn
+        .iter()
+        .take_while(|t| **t - t0 <= 1.0)
+        .count()
+        .max(m * pieces.get(1).copied().unwrap_or(1))
+        .min(out.points.len());
+    let first_turn = out.points.get(..in_first).unwrap_or(&[]);
     let outward = if signed_area_xy(first_turn) >= 0.0 {
         1.0
     } else {
@@ -1759,11 +1782,14 @@ pub fn wave_path(
         count,
         phase,
     );
-    out.samples_per_turn = if path.samples_per_turn > 0 {
-        m * split
-    } else {
-        0
-    };
+    // Every turn split alike, it still has a number of samples a turn; split in places, not.
+    let split = pieces.iter().skip(1).copied().max().unwrap_or(1);
+    out.samples_per_turn =
+        if path.samples_per_turn > 0 && pieces.iter().skip(1).all(|k| *k == split) {
+            m * split
+        } else {
+            0
+        };
     out.layers = path.layers;
     Ok(out)
 }
@@ -1835,7 +1861,7 @@ fn outward(curve: &Curve) -> f64 {
     }
 }
 
-fn check_wave(count: f64, phase: f64) -> Result<(), String> {
+pub(crate) fn check_wave(count: f64, phase: f64) -> Result<(), String> {
     check("count", count, -2000.0, 2000.0, "")?;
     check("phase", phase, -1e6, 1e6, "")?;
     Ok(())
@@ -2482,6 +2508,36 @@ mod tests {
         }
         assert_eq!(weave.flow, expected);
         assert_eq!(weave.layer_starts, vec![0, 2 * 96 + 1]);
+    }
+
+    /// Only the moves the wave reaches are split: where its amplitude is 0, the path keeps its
+    /// points (a pattern on part of a shade doesn't multiply the whole print's). A path without a
+    /// fixed number of samples a turn is split by how far round each move turns.
+    #[test]
+    fn only_waved_moves_are_split() {
+        let c = Curve::circle(40.0, 96);
+        let top = c.transformed(&Xform::translate(0.0, 0.0, 30.0));
+        let w = Surface::loft(&[&c, &top]).unwrap();
+        let p = vase_spiral(&w, settings(0.8, 0.5, 30.0), true, MAX_PATH_POINTS).unwrap();
+        let above = Field::map(
+            |a| Ok(if a[0] > 15.0 { 1.0 } else { 0.0 }),
+            vec![std::rc::Rc::new(Field::coordinate(2))],
+        )
+        .unwrap();
+        let half = wave_path(&p, &above, 9.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let below = |t: &Toolpath| t.points.iter().filter(|q| q[2] < 14.0).count();
+        assert_eq!(below(&half), below(&p));
+        assert!(half.points.len() > p.points.len() + 15 * 96 / 2);
+        assert_eq!(
+            half.samples_per_turn, 0,
+            "split in places: no fixed count a turn"
+        );
+        // Without a count a turn: by how far round (here, as with one, each move in two).
+        let mut loose = p.clone();
+        loose.samples_per_turn = 0;
+        let all = wave_path(&loose, &constant(1.0), 9.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let even = wave_path(&p, &constant(1.0), 9.0, 0.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(all.points.len(), even.points.len());
     }
 
     #[test]
