@@ -74,6 +74,18 @@ pub struct Pellet {
     pub max_temp: f64,
     pub min_extrude_temp: f64,
     pub max_bed: f64,
+    /// The start block's machine settings, EasyGCode's values by default (docs/printers.md):
+    /// the screw's rotation distance (mm³ a turn), the hopper auger's (the mixing stepper), the
+    /// mixing multiplier, the purge's length and speed, the parking purge's layer height and
+    /// speed, and pressure advance's smooth time while printing (s).
+    pub rotation_distance: f64,
+    pub mixing_distance: f64,
+    pub mixing_multiplier: f64,
+    pub purge_length: f64,
+    pub purge_speed: f64,
+    pub parking_layer: f64,
+    pub parking_speed: f64,
+    pub smooth_time: f64,
 }
 
 impl Default for Pellet {
@@ -90,6 +102,14 @@ impl Default for Pellet {
             max_temp: 280.0,
             min_extrude_temp: 160.0,
             max_bed: 110.0,
+            rotation_distance: 456.0,
+            mixing_distance: 8000.0,
+            mixing_multiplier: 1.0,
+            purge_length: 400.0,
+            purge_speed: 500.0,
+            parking_layer: 2.0,
+            parking_speed: 10000.0,
+            smooth_time: 0.5,
         }
     }
 }
@@ -265,17 +285,32 @@ fn klipper_start(p: &Pellet) -> Vec<String> {
         format!("_GINGER_EXTRUDER_SET_DOWN S={down}"),
         "G28 ; home".into(),
         "BED_MESH_PROFILE LOAD=global".into(),
-        "_GINGER_PURGE_PARKING PURGE_LAYER_HEIGHT=2 PURGE_PARKING_SPEED=10000".into(),
+        format!(
+            "_GINGER_PURGE_PARKING PURGE_LAYER_HEIGHT={} PURGE_PARKING_SPEED={}",
+            num(p.parking_layer),
+            num(p.parking_speed)
+        ),
         format!("_GINGER_EXTRUDER_WAIT_UP S={up}"),
         format!("_GINGER_EXTRUDER_WAIT_MID S={mid}"),
         format!("_GINGER_EXTRUDER_WAIT_DOWN S={down}"),
         format!("_GINGER_BED_WAIT BED_TEMPERATURE_MIN={bed_min} BED_TEMPERATURE_MAX={bed_max}"),
-        "_GINGER_EXTRUDER_MIXING_MULTIPLIER S=1".into(),
-        "SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=extruder DISTANCE=456".into(),
-        "SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=mixing_stepper DISTANCE=8000".into(),
+        format!(
+            "_GINGER_EXTRUDER_MIXING_MULTIPLIER S={}",
+            num(p.mixing_multiplier)
+        ),
+        format!(
+            "SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=extruder DISTANCE={}",
+            num(p.rotation_distance)
+        ),
+        format!(
+            "SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=mixing_stepper DISTANCE={}",
+            num(p.mixing_distance)
+        ),
         // PURGE_LENGHT [sic]: the parameter name must match the printer macro.
         format!(
-            "_GINGER_PURGE PURGE_LENGHT=400 PURGE_SPEED=500 PURGE_MATERIAL_QUANTITY={}",
+            "_GINGER_PURGE PURGE_LENGHT={} PURGE_SPEED={} PURGE_MATERIAL_QUANTITY={}",
+            num(p.purge_length),
+            num(p.purge_speed),
             num(p.purge)
         ),
         "G90 ; absolute coordinates".into(),
@@ -287,7 +322,10 @@ fn klipper_start(p: &Pellet) -> Vec<String> {
             "SET_PRESSURE_ADVANCE EXTRUDER=extruder ADVANCE={}",
             num(p.pa)
         ),
-        "SET_PRESSURE_ADVANCE EXTRUDER=extruder SMOOTH_TIME=0.5".into(),
+        format!(
+            "SET_PRESSURE_ADVANCE EXTRUDER=extruder SMOOTH_TIME={}",
+            num(p.smooth_time)
+        ),
         "M106 S0 ; fan off for the ramp loop".into(),
         "_GINGER_BUZZER_TONE_INITIAL".into(),
         "; --- end of start G-code ---".into(),
@@ -585,6 +623,36 @@ const MAX_FILAMENT_BED: f64 = 150.0;
 const MIN_OVERRIDE: f64 = 1.0;
 const MAX_OVERRIDE: f64 = 1000.0;
 
+/// The start block's machine settings, within what the G1's macros take (and the Print tab's
+/// fields allow): a value outside is refused before any G-code is written.
+fn check_pellet_machine(p: &Pellet) -> Result<(), String> {
+    for (name, v, lo, hi) in [
+        ("screw rotation distance", p.rotation_distance, 1.0, 5000.0),
+        (
+            "mixing stepper rotation distance",
+            p.mixing_distance,
+            1.0,
+            100000.0,
+        ),
+        ("mixing multiplier", p.mixing_multiplier, 0.0, 10.0),
+        ("purge length", p.purge_length, 0.0, 10000.0),
+        ("purge speed", p.purge_speed, 1.0, 10000.0),
+        ("parking purge layer height", p.parking_layer, 0.1, 20.0),
+        ("parking speed", p.parking_speed, 1.0, 30000.0),
+        ("pressure advance smooth time", p.smooth_time, 0.0, 0.5),
+    ] {
+        if !(lo..=hi).contains(&v) {
+            return Err(format!(
+                "the {name} must be between {} and {}, got {}",
+                num(lo),
+                num(hi),
+                num(v)
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The pellet printer's own temperatures against its limits (and the limits against sense).
 fn check_pellet_heaters(p: &Pellet) -> Result<(), String> {
     let (lo, hi) = (p.min_extrude_temp, p.max_temp);
@@ -655,6 +723,14 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
             p.pellet.max_temp,
             p.pellet.min_extrude_temp,
             p.pellet.max_bed,
+            p.pellet.rotation_distance,
+            p.pellet.mixing_distance,
+            p.pellet.mixing_multiplier,
+            p.pellet.purge_length,
+            p.pellet.purge_speed,
+            p.pellet.parking_layer,
+            p.pellet.parking_speed,
+            p.pellet.smooth_time,
         ]
         .iter(),
     )
@@ -682,6 +758,7 @@ fn check(path: &Toolpath, profile: &Profile) -> Result<(), String> {
     }
     if p.mode == Mode::Pellet {
         check_pellet_heaters(&p.pellet)?;
+        check_pellet_machine(&p.pellet)?;
     }
     // The filament printer's own temperatures (the printer settings allow the same ranges).
     if p.mode == Mode::Filament
@@ -943,6 +1020,64 @@ mod tests {
         };
         let text = write(&path, &short, "x").unwrap().text;
         assert!(text.contains("G0 Z30.000 F3000 ; lift clear of the print for finishing\n"));
+    }
+
+    /// The G1's machine settings in the start block: EasyGCode's by default, the owner's when set;
+    /// out of range, refused.
+    #[test]
+    fn the_g1s_machine_settings_reach_the_start_block() {
+        let ring = Curve::circle(10.0, 4);
+        let path = toolpath::from_curves(
+            &[&ring],
+            Settings::new(2.0, 0.6, 20.0).unwrap(),
+            MAX_PATH_POINTS,
+        )
+        .unwrap();
+        let easygcode = write(&path, &Profile::default(), "x").unwrap().text;
+        for line in [
+            "_GINGER_PURGE_PARKING PURGE_LAYER_HEIGHT=2 PURGE_PARKING_SPEED=10000\n",
+            "_GINGER_EXTRUDER_MIXING_MULTIPLIER S=1\n",
+            "SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=extruder DISTANCE=456\n",
+            "SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=mixing_stepper DISTANCE=8000\n",
+            "_GINGER_PURGE PURGE_LENGHT=400 PURGE_SPEED=500 PURGE_MATERIAL_QUANTITY=5000\n",
+            "SET_PRESSURE_ADVANCE EXTRUDER=extruder SMOOTH_TIME=0.5\n",
+        ] {
+            assert!(easygcode.contains(line), "{line}");
+        }
+        let own = Profile {
+            pellet: Pellet {
+                rotation_distance: 520.0,
+                mixing_distance: 4000.0,
+                mixing_multiplier: 1.5,
+                purge_length: 200.0,
+                purge_speed: 300.0,
+                parking_layer: 3.0,
+                parking_speed: 8000.0,
+                smooth_time: 0.2,
+                ..Pellet::default()
+            },
+            ..Profile::default()
+        };
+        let text = write(&path, &own, "x").unwrap().text;
+        for line in [
+            "_GINGER_PURGE_PARKING PURGE_LAYER_HEIGHT=3 PURGE_PARKING_SPEED=8000\n",
+            "_GINGER_EXTRUDER_MIXING_MULTIPLIER S=1.5\n",
+            "SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=extruder DISTANCE=520\n",
+            "SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=mixing_stepper DISTANCE=4000\n",
+            "_GINGER_PURGE PURGE_LENGHT=200 PURGE_SPEED=300 PURGE_MATERIAL_QUANTITY=5000\n",
+            "SET_PRESSURE_ADVANCE EXTRUDER=extruder SMOOTH_TIME=0.2\n",
+        ] {
+            assert!(text.contains(line), "{line}");
+        }
+        let wrong = Profile {
+            pellet: Pellet {
+                mixing_distance: 0.0,
+                ..Pellet::default()
+            },
+            ..Profile::default()
+        };
+        let err = write(&path, &wrong, "x").unwrap_err();
+        assert!(err.contains("mixing stepper rotation distance"), "{err}");
     }
 
     #[test]

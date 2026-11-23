@@ -15,7 +15,11 @@ const EASYGCODE = {
   travelSpeed: 100,
   center: [125, 125],
   filament: { diameter: 1.75, nozzle: 205, bed: 60, fan: 100 },
-  pellet: { up: 210, mid: 210, down: 210, bed: 50, pa: 0.3, purge: 5000, fan: 0 },
+  pellet: {
+    up: 210, mid: 210, down: 210, bed: 50, pa: 0.3, purge: 5000, fan: 0,
+    // The start block's machine settings, EasyGCode's values.
+    rotationDistance: 456, mixingDistance: 8000, mixingMultiplier: 1, purgeLength: 400, purgeSpeed: 500, parkingLayer: 2, parkingSpeed: 10000, smoothTime: 0.5,
+  },
 };
 
 /**
@@ -210,6 +214,14 @@ const FIELDS = [
   { key: 'pellet.pa', label: 'Pressure advance', unit: '', min: 0, max: 2, only: 'pellet' },
   { key: 'pellet.purge', label: 'Purge amount', unit: '', min: 0, max: 100000, only: 'pellet' },
   { key: 'pellet.fan', label: 'Part fan', unit: '%', min: 0, max: 100, only: 'pellet' },
+  { key: 'pellet.rotationDistance', label: 'Screw rotation distance', unit: 'mm³/turn', min: 1, max: 5000, only: 'pellet' },
+  { key: 'pellet.mixingDistance', label: 'Mixing stepper rotation distance (hopper auger)', unit: '', min: 1, max: 100000, only: 'pellet' },
+  { key: 'pellet.mixingMultiplier', label: 'Mixing multiplier', unit: '×', min: 0, max: 10, only: 'pellet' },
+  { key: 'pellet.purgeLength', label: 'Purge length', unit: '', min: 0, max: 10000, only: 'pellet' },
+  { key: 'pellet.purgeSpeed', label: 'Purge speed', unit: '', min: 1, max: 10000, only: 'pellet' },
+  { key: 'pellet.parkingLayer', label: 'Parking purge layer height', unit: 'mm', min: 0.1, max: 20, only: 'pellet' },
+  { key: 'pellet.parkingSpeed', label: 'Parking purge speed', unit: '', min: 1, max: 30000, only: 'pellet' },
+  { key: 'pellet.smoothTime', label: 'Pressure advance smooth time', unit: 's', min: 0, max: 0.5, only: 'pellet' },
   { key: 'robot.stopAt', label: 'Stop at this height (a test print; 0: all)', unit: 'mm', min: 0, max: 5000, only: 'robot' },
   { key: 'robot.screw', label: 'Screw command per mm³/s', unit: '', min: 0.01, max: 1000, only: 'robot' },
   { key: 'robot.maxSpeed', label: 'Fastest print move', unit: 'mm/s', min: 0.5, max: 250, only: 'robot' },

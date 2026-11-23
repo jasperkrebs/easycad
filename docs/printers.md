@@ -67,7 +67,13 @@ characterising them. The datasheet of the grade in the hopper is the authority.
 ### The start and end G-code on the G1
 
 EasyCAD writes EasyGCode's start block unchanged (CLAUDE.md: G-code safety); only its settings
-(temperatures, pressure advance, purge) change it. What each step does on the G1:
+change its values. Besides the temperatures, pressure advance and purge amount, the Print tab
+has (23 Nov, the owner's ask; EasyGCode's values by default, so the G-code is the same until one
+is changed; each kept within a range, out of it the G-code is refused): **screw rotation
+distance** (456, step 5), **mixing stepper rotation distance** (8000, step 6), **mixing
+multiplier** (1), **purge length** (400) and **speed** (500, step 7), **parking purge layer
+height** (2) and **speed** (10000, step 4), **pressure advance smooth time** (0.5 s, step 7).
+What each step does on the G1:
 
 1. `SET_PRESSURE_ADVANCE … SMOOTH_TIME=0.04`, `ADVANCE=0.0`: pressure advance off while heating
    and purging.
@@ -89,7 +95,7 @@ EasyCAD writes EasyGCode's start block unchanged (CLAUDE.md: G-code safety); onl
    Z offset looks like wrong flow).
 6. `SET_EXTRUDER_ROTATION_DISTANCE EXTRUDER=mixing_stepper DISTANCE=8000`: the hopper auger at
    the standard 8000 (the wiki: 4000 for sticky materials or a lot of masterbatch, 12000 for
-   free-flowing ones; not a setting yet).
+   free-flowing ones).
 7. `_GINGER_PURGE PURGE_LENGHT=400 …` (the macro's own spelling), `G90`, `G92 E0`, `M83`,
    `M220 S100`, `M221 S100`, pressure advance from the settings with smooth time 0.5 s, fan off,
    a beep.
