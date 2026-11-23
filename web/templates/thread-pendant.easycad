@@ -52,9 +52,9 @@ param tilt_bed     = 60 mm   in 0..200 step 2.5     "Full tilt from this high (t
 
 group "Overhangs"
 param compensation = "layer height" of ["layer height", "off"] "Compensation (the wall and the wings each their own; the thread keeps its pitch)"
-param strength     = 100 %   in 0..100              "Strength"  when compensation = "layer height"
-param steep        = 0       in 0..4 step 0.1       "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
-param pivot        = 45 deg  in 5..85 step 1        "Steep curve pivot (as now at this angle)"  when steep
+param strength     = 86 %    in 0..100              "Strength"  when compensation = "layer height"
+param steep        = 0.85    in 0..4 step 0.1       "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
+param pivot        = 73 deg  in 5..85 step 1        "Steep curve pivot (as now at this angle)"  when steep
 
 # The socket: its barrel's diameter, its thread's pitch (the layer height: each layer lays one
 # turn of thread) and its body's height (it should stay hidden in the shade). E14's are the

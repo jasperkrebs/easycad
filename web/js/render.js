@@ -18,7 +18,8 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GradientEquirectTexture, WebGLPathTracer } from 'three-gpu-pathtracer';
+import { DenoiseMaterial, GradientEquirectTexture, WebGLPathTracer } from 'three-gpu-pathtracer';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { beadGeometry } from './viewport.js';
 import { touching } from './wall.js';
 import { fixtureGroup } from './fixture-mesh.js';
@@ -41,8 +42,9 @@ const DISPATCH = { phone: 1.5e6, other: 5e6 };
  *   looks: Look[],
  *   fixture: ReturnType<typeof import('./fixture.js').fixtureOf>,
  * }} Snapshot
- * @typedef {{ state: 'empty' | 'draft' | 'compiling' | 'rendering' | 'done' | 'stopped', kind?: 'preview' | 'final',
- *   samples?: number, target?: number, width?: number, height?: number, seconds?: number }} Progress
+ * @typedef {{ state: 'empty' | 'draft' | 'compiling' | 'rendering' | 'denoising' | 'done' | 'stopped', kind?: 'preview' | 'final',
+ *   samples?: number, target?: number, width?: number, height?: number, seconds?: number,
+ *   denoised?: 'oidn' | 'smooth', showing?: boolean, denoiseError?: string }} Progress
  */
 
 /**
@@ -90,6 +92,24 @@ export function createRenderer(canvas, hooks = {}) {
   let job = /** @type {{ kind: 'preview' | 'final', target: number, t0: number } | null} */ (null);
   /** What the canvas shows. */
   let shows = /** @type {Progress['state']} */ ('empty');
+  /**
+   * The denoised picture: Open Image Denoise's (a float texture, as the path tracer's own), or
+   * the path tracer's edge-aware smoothing where there's no WebGPU; and whether it's showing.
+   * Open Image Denoise's keeps the picture as rendered and as denoised (floats), to blend by the
+   * denoise strength.
+   * @type {{ texture: THREE.DataTexture | null, by: 'oidn' | 'smooth', on: boolean, last: Progress, raw?: Float32Array, den?: Float32Array } | null}
+   */
+  let clean = null;
+  /** The last finished or stopped picture (what Denoise works on). */
+  let lastPicture = /** @type {Progress | null} */ (null);
+  /** Each denoise has a number: a newer render, draft or stop makes an older one's result moot. */
+  let denoiseRun = 0;
+  /** @type {(() => void) | null} */
+  let denoiseAbort = null;
+  /** @type {Promise<any> | null} */
+  let unetLoading = null;
+  /** @type {any} */
+  let unet = null;
 
   // Materials: the printed parts' (by part: the beads, and the faces inside the wall), the
   // fittings', the room's.
@@ -105,7 +125,11 @@ export function createRenderer(canvas, hooks = {}) {
     bulb: bulbMaterial,
     cable: new THREE.MeshPhysicalMaterial({ color: 0x1a1b1d, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }),
   };
-  const surfaceMaterial = new THREE.MeshPhysicalMaterial({ color: 0xe9e5df, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
+  // The room's surfaces are solid from the room's side only (each faces the lamp): from outside
+  // (the camera above the ceiling, below the floor, behind the wall) you look through them, as a
+  // cutaway. Both sides solid, they hid the lamp from such a camera (the draft, drawing front
+  // faces only, still showed it).
+  const surfaceMaterial = new THREE.MeshPhysicalMaterial({ color: 0xe9e5df, roughness: 0.92, metalness: 0, side: THREE.FrontSide });
   const bulbLight = new THREE.PointLight(0xffffff, 0, 0, 2);
   /** The bulb's glass radius (m), for its glow. */
   let glassR = 0.03;
@@ -244,6 +268,18 @@ export function createRenderer(canvas, hooks = {}) {
     outer.attenuationColor.copy(color);
     outer.attenuationDistance = p.attenuationDistance;
     outer.needsUpdate = true;
+    // The faces between turns: see-through (a thin film light crosses) in a part that lets light
+    // through; in a solid one, solid too. (See-through in a solid part, they let light slip
+    // through the seams where one turn's bead meets the next: rings of light inside a lamp.)
+    if (p.transmission > 0) {
+      inner.color.set(0xffffff);
+      inner.transmission = 1;
+      inner.roughness = 0;
+    } else {
+      inner.color.copy(color);
+      inner.transmission = 0;
+      inner.roughness = p.roughness;
+    }
   }
 
   function newPair() {
@@ -331,6 +367,7 @@ export function createRenderer(canvas, hooks = {}) {
   /** The plain grey draft (only while nothing rendered is showing). */
   function draft() {
     if (job) return;
+    clearDenoised();
     if (!snap) {
       renderer.clear();
       shows = 'empty';
@@ -369,7 +406,10 @@ export function createRenderer(canvas, hooks = {}) {
       const kind = job.kind;
       job = null;
       shows = 'done';
-      report({ state: 'done', kind, samples, target: samples, width: size.x, height: size.y, seconds });
+      const p = /** @type {Progress} */ ({ state: 'done', kind, samples, target: samples, width: size.x, height: size.y, seconds });
+      report(p);
+      lastPicture = p;
+      if (settings.denoise) denoise(p);
       return;
     }
     shows = 'rendering';
@@ -377,14 +417,227 @@ export function createRenderer(canvas, hooks = {}) {
     frame = requestAnimationFrame(tick);
   }
 
-  function stop() {
+  /**
+   * Stops rendering. `thenDenoise`: the picture so far is kept (Stop pressed), so it's denoised
+   * as a finished one would be; otherwise something else takes over the canvas next.
+   */
+  function stop(thenDenoise = false) {
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     if (!job) return;
     const kind = job.kind;
     job = null;
     shows = 'stopped';
-    report({ state: 'stopped', kind, samples: Math.floor(tracer.samples) });
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const p = /** @type {Progress} */ ({ state: 'stopped', kind, samples: Math.floor(tracer.samples), width: size.x, height: size.y });
+    report(p);
+    lastPicture = tracer.samples >= 1 ? p : null;
+    if (thenDenoise && settings.denoise && tracer.samples >= 1) denoise(p);
+  }
+
+  // ---- The denoiser: Intel Open Image Denoise (oidn-web, on WebGPU) with the albedo and normals
+  // as guides; the path tracer's edge-aware smoothing where there's no WebGPU.
+
+  /**
+   * The denoised picture at the denoise strength: a blend, pixel by pixel, of the picture as
+   * rendered and as denoised (1: all denoised). Less keeps some of the rendered grain and detail.
+   */
+  function blend() {
+    if (!clean?.texture || !clean.raw || !clean.den) return;
+    const t = Math.min(1, Math.max(0, settings.denoiseStrength));
+    const data = /** @type {Float32Array} */ (clean.texture.image.data);
+    const { raw, den } = clean;
+    for (let i = 0; i < data.length; i++) data[i] = raw[i] + (den[i] - raw[i]) * t;
+    clean.texture.needsUpdate = true;
+  }
+
+  function clearDenoised() {
+    denoiseRun++;
+    denoiseAbort?.();
+    denoiseAbort = null;
+    clean?.texture?.dispose();
+    clean = null;
+  }
+
+  /** The network, loaded once (its weights are 1.8 MB). */
+  async function loadUnet() {
+    if (unet) return unet;
+    unetLoading ||= import('oidn-web').then(({ initUNetFromURL }) =>
+      // The weights for clean guides (calb, cnrm): the albedo and normals here are drawn, not path
+      // traced, so free of noise; told so, the network keeps the detail they show (the beads'
+      // round faces: the layer lines) instead of smoothing it away with the noise.
+      initUNetFromURL(new URL('../vendor/oidn-web/rt_hdr_calb_cnrm.tza', import.meta.url).href, undefined, { aux: true, hdr: true }),
+    );
+    try {
+      unet = await unetLoading;
+      return unet;
+    } catch (err) {
+      unetLoading = null;
+      throw err;
+    }
+  }
+
+  /** One run of the network over the image, as a promise. */
+  function execute(net, input) {
+    return new Promise((resolve, reject) => {
+      denoiseAbort = net.tileExecute({ ...input, done: resolve, error: reject });
+    });
+  }
+
+  /**
+   * The denoiser's guides, drawn from the camera at the picture's size: each surface's albedo
+   * (its colour; the glowing bulb white) and normal (as colour, 0.5 + n / 2), the background
+   * empty. The faces inside the walls are left out (they're not seen).
+   */
+  function renderAux(w, h) {
+    const rt = new THREE.WebGLRenderTarget(w, h, { samples: 4 });
+    /** @type {Map<THREE.Mesh, THREE.Material>} */
+    const saved = new Map();
+    scene.traverse((o) => {
+      if (/** @type {any} */ (o).isMesh) saved.set(/** @type {THREE.Mesh} */ (o), /** @type {THREE.Material} */ (/** @type {THREE.Mesh} */ (o).material));
+    });
+    const inside = [...saved.keys()].filter((o) => o.name === 'part-inside');
+    for (const o of inside) o.visible = false;
+    const albedo = (m) => new THREE.MeshBasicMaterial({ color: m.emissiveIntensity > 0 ? 0xffffff : m.color ?? 0xffffff, side: m.side });
+    const normal = (m) =>
+      new THREE.ShaderMaterial({
+        side: m.side,
+        vertexShader: 'varying vec3 vN; void main() { vN = mat3(modelMatrix) * normal; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'varying vec3 vN; void main() { vec3 n = normalize(vN); if (!gl_FrontFacing) n = -n; gl_FragColor = vec4(n * 0.5 + 0.5, 1.0); }',
+      });
+    const out = {};
+    const clear = renderer.getClearAlpha();
+    for (const [key, make] of /** @type {const} */ ([['albedo', albedo], ['normal', normal]])) {
+      const made = new Map();
+      for (const [o, m] of saved) {
+        if (!made.has(m)) made.set(m, make(m));
+        o.material = made.get(m);
+      }
+      renderer.setRenderTarget(rt);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear();
+      renderer.render(scene, camera);
+      const px = new Uint8Array(w * h * 4);
+      renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
+      out[key] = new ImageData(new Uint8ClampedArray(px.buffer), w, h);
+      for (const m of made.values()) m.dispose();
+    }
+    for (const [o, m] of saved) o.material = m;
+    for (const o of inside) o.visible = true;
+    renderer.setRenderTarget(null);
+    renderer.setClearColor(0x000000, clear);
+    rt.dispose();
+    return /** @type {{ albedo: ImageData, normal: ImageData }} */ (out);
+  }
+
+  /** The edge-aware smoothing (no WebGPU): drawn straight from the path tracer's picture. */
+  let smoother = /** @type {FullScreenQuad | null} */ (null);
+
+  /** Draws the picture: denoised when there is one and it's showing, else as rendered. */
+  function present() {
+    const quad = /** @type {any} */ (tracer)._quad;
+    renderer.setRenderTarget(null);
+    if (clean?.on && clean.by === 'smooth') {
+      smoother ||= new FullScreenQuad(
+        Object.assign(new DenoiseMaterial({ sigma: 5, threshold: 0.03, kSigma: 1 }), { premultipliedAlpha: renderer.getContextAttributes().premultipliedAlpha }),
+      );
+      /** @type {any} */ (smoother.material).map = tracer.target.texture;
+      /** @type {any} */ (smoother.material).sigma = 0.5 + 4.5 * Math.min(1, Math.max(0, settings.denoiseStrength));
+      smoother.render(renderer);
+      return;
+    }
+    if (!quad) return;
+    // The path tracer's own display pass (its tone mapping, exposure and alpha), on either picture.
+    quad.material.map = clean?.on && clean.texture ? clean.texture : tracer.target.texture;
+    quad.material.opacity = 1;
+    quad.material.blending = THREE.NoBlending;
+    quad.render(renderer);
+  }
+
+  /** Denoises the picture as it is (a finished or stopped render) and shows the result. */
+  async function denoise(p) {
+    clearDenoised();
+    const run = denoiseRun;
+    const target = tracer.target;
+    const [w, h] = [target.width, target.height];
+    report({ ...p, state: 'denoising' });
+    const moot = () => run !== denoiseRun;
+    try {
+      let by = /** @type {'oidn' | 'smooth'} */ ('smooth');
+      /** @type {THREE.DataTexture | null} */
+      let texture = null;
+      let reason = '';
+      /** @type {Float32Array | undefined} */
+      let denRaw;
+      /** @type {Float32Array | undefined} */
+      let denOut;
+      if ('gpu' in navigator) {
+        try {
+          const net = await loadUnet();
+          if (moot()) return;
+          const color = new Float32Array(w * h * 4);
+          renderer.readRenderTargetPixels(target, 0, 0, w, h, color);
+          // Open Image Denoise takes 0 to 65504: the path tracer now and then leaves a negative
+          // value (a silk's metallic coat), which the display clips but the denoiser's transfer
+          // curve turns into NaN, and a NaN spreads to the whole picture (black).
+          for (let i = 0; i < color.length; i++) {
+            const v = color[i];
+            color[i] = v > 0 ? Math.min(v, 65504) : 0;
+          }
+          const { albedo, normal } = renderAux(w, h);
+          const input = { color: { data: color, width: w, height: h }, albedo, normal };
+          const rgb = /** @type {{ data: Float32Array }} */ (await execute(net, input));
+          if (moot()) return;
+          const out = new Float32Array(rgb.data);
+          let bad = 0;
+          for (let i = 0; i < out.length; i++) if (!Number.isFinite(out[i])) bad++;
+          if (bad) throw new Error(`the denoiser gave ${bad} invalid values`);
+          // The alpha as rendered (oidn-web hands back alpha 1 everywhere: a black background).
+          // Where it's partly see-through over a good part of the picture (a clear shade over the
+          // transparent background), it's denoised too: as a grey picture of its own, through
+          // the same network, the guides the same.
+          let partial = 0;
+          for (let i = 3; i < color.length; i += 4) if (color[i] > 0.02 && color[i] < 0.98) partial++;
+          if (partial > (w * h) / 50) {
+            const grey = new Float32Array(color.length);
+            for (let i = 0; i < color.length; i += 4) {
+              grey[i] = grey[i + 1] = grey[i + 2] = color[i + 3];
+              grey[i + 3] = 1;
+            }
+            const a = /** @type {{ data: Float32Array }} */ (await execute(net, { ...input, color: { data: grey, width: w, height: h } }));
+            if (moot()) return;
+            for (let i = 3; i < out.length; i += 4) out[i] = color[i] <= 0 || color[i] >= 1 ? color[i] : Math.min(1, Math.max(0, a.data[i - 3]));
+          } else {
+            for (let i = 3; i < out.length; i += 4) out[i] = color[i];
+          }
+          denRaw = color;
+          denOut = out;
+          texture = new THREE.DataTexture(new Float32Array(out.length), w, h, THREE.RGBAFormat, THREE.FloatType);
+          // Read texel by texel (and float textures can't always be filtered: one that can't
+          // reads as black).
+          texture.minFilter = THREE.NearestFilter;
+          texture.magFilter = THREE.NearestFilter;
+          texture.needsUpdate = true;
+          by = 'oidn';
+        } catch (err) {
+          reason = String(/** @type {any} */ (err)?.message || err);
+        }
+      } else {
+        reason = 'no WebGPU';
+      }
+      if (moot()) {
+        texture?.dispose();
+        return;
+      }
+      clean = { texture, by, on: true, last: p, raw: denRaw, den: denOut };
+      blend();
+      present();
+      report({ ...p, denoised: by, showing: true, ...(reason ? { denoiseError: reason } : {}) });
+    } catch (err) {
+      if (!moot()) report({ ...p, denoiseError: String(/** @type {any} */ (err)?.message || err) });
+    } finally {
+      if (!moot()) denoiseAbort = null;
+    }
   }
 
   return {
@@ -501,6 +754,15 @@ export function createRenderer(canvas, hooks = {}) {
     setSettings(next) {
       const before = settings;
       settings = cleanRender(next);
+      // Only the denoiser's settings changed: the picture stays, re-blended at the new strength.
+      const changed = Object.keys(settings).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(settings[k]));
+      if (changed.every((k) => k === 'denoise' || k === 'denoiseStrength')) {
+        if (clean) {
+          blend();
+          present();
+        }
+        return;
+      }
       stop();
       const roomChanged = ['wall', 'floor', 'ceiling'].some((k) => JSON.stringify(before[k]) !== JSON.stringify(settings[k]));
       if (snap && roomChanged) buildRoom();
@@ -548,6 +810,7 @@ export function createRenderer(canvas, hooks = {}) {
     start(kind) {
       if (!snap) return;
       stop();
+      clearDenoised();
       const q = kind === 'final' ? settings.final : settings.preview;
       sizeFor(q.size);
       applyLight();
@@ -576,8 +839,32 @@ export function createRenderer(canvas, hooks = {}) {
       frame = requestAnimationFrame(tick);
     },
 
-    /** Stops rendering; the picture so far stays (and can be saved). */
-    stop,
+    /** Stops rendering; the picture so far stays (denoised, when that's on) and can be saved. */
+    stop() {
+      stop(true);
+    },
+
+    /** Denoises the picture showing (a finished or stopped render), at the button's press. */
+    denoise() {
+      if (job || !lastPicture || !snap) return;
+      denoise(lastPicture);
+    },
+
+    /** Whether there's a picture to denoise (finished or stopped, nothing running). */
+    get canDenoise() {
+      return !job && Boolean(lastPicture) && (shows === 'done' || shows === 'stopped');
+    },
+
+    /**
+     * Shows the denoised picture (on) or the one as rendered (off), when there's a denoised one.
+     * @param {boolean} on
+     */
+    showDenoised(on) {
+      if (!clean) return;
+      clean.on = on;
+      present();
+      report({ ...clean.last, denoised: clean.by, showing: on });
+    },
 
     /** After the view was hidden: the draft again if nothing rendered is showing. */
     resume() {
@@ -614,6 +901,10 @@ export function createRenderer(canvas, hooks = {}) {
       for (const pair of partMaterials.values()) for (const m of pair) m.dispose();
       for (const m of Object.values(fittings)) m.dispose();
       surfaceMaterial.dispose();
+      clearDenoised();
+      unet?.dispose?.();
+      unet = null;
+      smoother?.dispose();
       draftMaterial.dispose();
       sky.dispose();
       tracer.dispose();

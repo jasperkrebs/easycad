@@ -58,6 +58,7 @@ const ASSETS = [
   './vendor/three/addons/postprocessing/Pass.js',
   './vendor/three-mesh-bvh/index.module.js',
   './vendor/three-gpu-pathtracer/index.module.js',
+  './vendor/oidn-web/oidn.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',

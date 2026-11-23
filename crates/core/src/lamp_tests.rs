@@ -701,6 +701,9 @@ fn the_shade_prints_at_its_own_layer_height_and_line_width() {
         ("opening", Number(200.0)),
         ("shade_layer", Number(1.5)),
         ("shade_line", Number(8.0)),
+        // Even compensation at full strength (the template's is test 8's steep curve).
+        ("strength", Number(100.0)),
+        ("steep", Number(0.0)),
     ]);
     assert!(e.errors().next().is_none(), "{:?}", e.diagnostics);
     let t = turns(&e.print.as_ref().unwrap().path);
@@ -760,6 +763,8 @@ fn the_shade_prints_at_its_own_layer_height_and_line_width() {
             ("compensation", Text(comp.into())),
             ("wide_down", Bool(wide)),
             ("slicing", Text(slicing.into())),
+            ("strength", Number(100.0)),
+            ("steep", Number(0.0)),
         ]);
         assert!(
             e.diagnostics.is_empty(),

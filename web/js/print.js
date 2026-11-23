@@ -111,6 +111,8 @@ export const KR50 = {
     stopAt: 0,
     lift: 50,
     uprightSpeed: 30,
+    wristMargin: 10,
+    rollRate: 1.5,
   },
 };
 
@@ -214,6 +216,8 @@ const FIELDS = [
   { key: 'robot.maxTurn', label: 'Fastest wrist turn', unit: '°/s', min: 1, max: 200, only: 'robot' },
   { key: 'robot.tolerance', label: 'Points left out within (0: keep all)', unit: 'mm', min: 0, max: 5, only: 'robot' },
   { key: 'robot.block', label: 'Segments per SPLINE block', unit: '', min: 2, max: 10000, only: 'robot' },
+  { key: 'robot.wristMargin', label: 'Joints kept this far inside their limits (rolling the tool)', unit: '°', min: 0, max: 45, only: 'robot' },
+  { key: 'robot.rollRate', label: 'Tool roll changes at most', unit: '°/mm', min: 0.1, max: 30, only: 'robot' },
   { key: 'robot.heat.0', label: 'Heater T0', unit: '°C', min: 0, max: 300, only: 'robot' },
   { key: 'robot.heat.1', label: 'Heater T1', unit: '°C', min: 0, max: 300, only: 'robot' },
   { key: 'robot.heat.2', label: 'Heater T2 (firecap)', unit: '°C', min: 0, max: 300, only: 'robot' },

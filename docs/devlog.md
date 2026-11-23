@@ -29,6 +29,23 @@ middle and back out between, into the wall, in one line.
 
 Open: a test print of both.
 
+
+## 2026-11-23: test 8 is every template's overhang default (general-manager)
+
+**Why:** the owner's test 8 (strength 86 %, steep 0.85, pivot 73°; the Bambu with a 0.8 mm
+nozzle, E14, 5 mm line, flow 15) printed very well, and the owner asked for it as the default in
+every project with overhang compensation, and to call it "test 8" from now on. Done on the
+owner's word in the recipe developer's files.
+
+- Defaults `strength`/`pace` 100 → 86 %, `steep` 0 → 0.85, `pivot` 45 → 73° in the Lampshade,
+  the Lamp, the Thread pendant, the Nutcracker, the vessel and the salt shaker.
+- The golden tests compare with EasyGCode at EasyGCode's compensation (full strength, no steep
+  curve): `as_easygcode` and the smoke test set those along with the rest of EasyGCode's setup;
+  the fixtures are unchanged. Three recipe tests that measure the even, full compensation pin
+  it (`strength: 100`, `steep: 0`).
+- New projects from a template start at test 8; a saved `.easycad` file keeps the values written
+  in it.
+
 ## 2026-11-23: Nutcracker: stacked crosses, spokes per part (recipe-developer)
 
 **Why:** the owner: several crosses printed on top of each other, set for the cap (bottom) and
@@ -85,6 +102,51 @@ spiral and a layer up the fillet, the line should run in to the middle and back,
 
 Open: a test print. Noticed, not from this change: a long fuzz round (FUZZ_CASES=800) finds a
 damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on `main`).
+
+## 2026-11-22 (night): denoise on request, layer lines kept; the socket's shadow (claude/lampshade-light-render-wcvx6x)
+
+- **Denoise is a button**, off until pressed (beside PNG, on a finished or stopped picture);
+  **Denoise by itself** in Quality runs it on every finished one; **Denoise strength** blends the
+  picture as rendered back in, at once, without rendering again.
+- **Layer lines kept:** the denoiser now uses Intel's network for *clean* guides
+  (`rt_hdr_calb_cnrm`): the albedo and normals here are drawn, not path traced, and told so, the
+  network keeps what the normals show (the beads' round faces). The network for noisy guides had
+  smoothed the lines away with the grain. Measured on a frosted lamp at 640 px, 24 samples: the
+  brightness changes about 4× (3.8–4.5) more from row to row than from column to column once denoised (the
+  lines), 1.1 through the grain.
+- **The socket's shadow:** checked with a render: hung up (a bowl over the socket, the bulb under
+  it), no room light, the inside of the bowl stays dark: the socket blocks the bulb. The render
+  showed faint rings of light inside the bowl, though: the faces between turns were see-through
+  in a solid part too, and light slipped through the seams where one turn's bead meets the next.
+  In a solid part they're solid now.
+- `render-test`: denoising pressed (not by itself), the socket's shadow, the layer lines.
+
+## 2026-11-22 (evening): the render's denoiser; the room as a cutaway (claude/lampshade-light-render-wcvx6x)
+
+- **Denoiser:** Intel Open Image Denoise (oidn-web 0.5.0 on WebGPU, the `rt_hdr_alb_nrm` weights
+  from `oidn-weights` 2.3.0-1) runs when a preview or render is done or stopped: the float picture
+  with albedo and normal guides drawn from the camera, the alpha too where a shade is see-through.
+  On the test scenes at 16 samples, the noise (a pixel's mean difference from its neighbours)
+  drops from 14–18 to under 1. **Denoised** beside PNG compares it with the picture as rendered;
+  **Denoise** in Quality turns it off. Without WebGPU: the path tracer's edge-aware smoothing.
+- **Bug: the lamp hidden with wall, floor and ceiling on:** the surfaces were solid from both
+  sides, so a camera above the ceiling (or below the floor, behind the wall) saw only them, while
+  the draft (front faces only) showed the lamp. Now each is solid from the room's side only: a
+  cutaway. `render-test` has the scene (all three on, from above) and checks the lamp shows.
+- `render-test` runs WebGPU (software) too, and checks every scene is denoised and less noisy.
+- Found on the way: the path tracer now and then leaves a negative value (a silk's metallic
+  coat); the display clips it, but the denoiser's transfer curve made it NaN and the whole
+  picture black. The input is clamped to 0–65504 (the denoiser's range), and an output with
+  invalid values falls back to the smoothing, saying why. `render-test` checks the denoised
+  picture's brightness too (a black one has no noise at all).
+- oidn-web hands back alpha 1 everywhere (a black background), its alpha pass
+  too; the render keeps its own alpha and, over a see-through shade, denoises it as a grey picture
+  through the same network. The denoised picture is a float texture read with nearest filtering
+  (a float texture some GPUs can't filter reads as black).
+- `scripts/smoke-test.cjs` expects the Lampshade's new **Pattern** group (from the patterns change
+  on `main`, whose smoke test still listed the old groups).
+
+**Open:** at 16–32 samples the denoiser softens the layer lines of see-through shades.
 
 ## 2026-11-22 (later): the render's settings in a side tab, typed or slid (claude/lampshade-light-render-wcvx6x)
 
@@ -250,6 +312,15 @@ compensating overhangs for a Cartesian printer.
   (fans 25 mm off the bed); the test then passes every check.
 - **`scripts/robot-viewer.py`:** the program animated in the handover's own viewer (its
   `viewer_template.html`), from the same kind of replay.
+- **The whole Sphere** showed the wrist (A5) up to 5.7° past its limit in 1,249 poses, in the
+  closing top where the nozzle leans in (the 40 mm test never got there). Now the writer works
+  every pose out on the handover's kinematics (`kuka.rs`, ported and tested against
+  `kinematics.py`), **rolls the tool about the nozzle** where a joint would come within 10° of
+  its limit (smooth, at most 1.5 °/mm), and **eases the tilt back** where even that isn't enough
+  (the handover's "local tilt relief"); it refuses a program with any joint closer than 3°. The
+  Sphere: 9,483 points rolled (up to 90°), 4,968 with the tilt eased (4 % of the line), every
+  joint at least 3° inside, confirmed by the handover's Python; 49,641 spline segments, 14.9 h at
+  60 mm³/s. A4 is counted continuously (it reached −192° once rolled, which the wrapped angle hid).
 
 **Open:** run it on the controller (it must compile: `C_SPL`, 1000 segments a block); the
 checks in the engine (they're a script for now); calibrate the screw; travels and machine events on the

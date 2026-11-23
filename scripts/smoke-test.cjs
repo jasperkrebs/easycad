@@ -83,7 +83,7 @@ async function saveFrom(page, selector) {
       const groupNames = await page.evaluate(() =>
         [...document.querySelectorAll('#settings details.group')].filter((d) => d.offsetParent !== null).map((d) => d.querySelector('summary .group-name')?.textContent ?? ''),
       );
-      if (groupNames.join() !== 'Socket,Shade,Print,Overhangs,Brim') failures.push(`${name}: settings groups: ${groupNames.join()}`);
+      if (groupNames.join() !== 'Socket,Shade,Pattern,Print,Overhangs,Brim') failures.push(`${name}: settings groups: ${groupNames.join()}`);
       const openNow = await page.locator('#settings details.group[open] .group-name').allTextContents();
       if (openNow.join() !== 'Socket') failures.push(`${name}: open at first: ${openNow.join()}`);
       if (await page.isVisible('#set-opening')) failures.push(`${name}: a closed group's setting is visible`);
@@ -234,6 +234,16 @@ async function saveFrom(page, selector) {
           // EasyGCode widens the beads on overhangs; the template squeezes the layers.
           await page.selectOption('#set-compensation', 'width');
           await page.waitForFunction(() => /^param compensation = "width"/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
+          await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+          // At full strength, even at every angle (the template's is test 8's steep curve).
+          for (const [setting, value, line] of [
+            ['steep', '0', /^param steep\s+= 0 /m],
+            ['strength', '100', /^param strength\s+= 100 %/m],
+          ]) {
+            await page.fill(`#set-${setting}`, value);
+            await page.dispatchEvent(`#set-${setting}`, 'change');
+            await page.waitForFunction((src) => new RegExp(src, 'm').test(document.getElementById('recipe').value), line.source, { timeout: 15000 });
+          }
           await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         }
         if (id === 'bend-stool') {

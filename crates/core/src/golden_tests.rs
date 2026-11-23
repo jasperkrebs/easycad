@@ -814,24 +814,34 @@ const COMPENSATION: &str = "param compensation = \"layer height\"";
 
 /// The lampshade as EasyGCode prints it: its first turn ramps the flow up with the extrusion
 /// (the template's steady start, for pellet extruders, is EasyCAD's own), its overhangs get
-/// wider beads (EasyGCode's default; the template's is layer height), and it ends with a flat
-/// closing turn (the template's default is an open spiral).
+/// wider beads (EasyGCode's default; the template's is layer height) at full strength with no
+/// steep curve (the template's are test 8's), and it ends with a flat closing turn (the
+/// template's default is an open spiral).
 fn lampshade() -> String {
     as_easygcode(LAMPSHADE_TEMPLATE)
 }
 
 const OPEN_TOP: &str = "param flat_top   = false";
 
+/// The template's overhang compensation (test 8, 23 Nov 2026: 86 %, steep 0.85, pivot 73°);
+/// EasyGCode's is the full strength, even at every angle (no steep curve).
+const STRENGTH: &str = "param strength   = 86 % ";
+const STEEP: &str = "param steep      = 0.85 ";
+
 fn as_easygcode(template: &str) -> String {
     assert!(
         template.contains(STEADY_ON)
             && template.contains(COMPENSATION)
             && template.contains(OPEN_TOP)
+            && template.contains(STRENGTH)
+            && template.contains(STEEP)
     );
     template
         .replace(STEADY_ON, "param steady     = false")
         .replace(COMPENSATION, "param compensation = \"width\"")
         .replace(OPEN_TOP, "param flat_top   = true ")
+        .replace(STRENGTH, "param strength   = 100 %")
+        .replace(STEEP, "param steep      = 0    ")
 }
 
 /// The lampshade template against EasyGCode's lampshade (`vase_revolve` and the shades as

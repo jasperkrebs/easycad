@@ -20,6 +20,7 @@ pub mod files;
 pub mod gcode;
 pub mod geom;
 pub mod krl;
+pub mod kuka;
 pub mod legs;
 pub mod nodes;
 pub mod pendant;
