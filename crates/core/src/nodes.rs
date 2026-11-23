@@ -2066,6 +2066,12 @@ pub static NODES: &[Node] = &[
                 0.0,
                 "how far from the axis each spoke turns round (its half circle's middle; 0: 1.25 line widths)",
             ),
+            opt(
+                "angle",
+                "Number",
+                1000.0,
+                "where round the first spoke goes, in degrees from +X (the next place the path passes it; spokes at several heights with one angle stack); past ±360: where it reaches the height",
+            ),
         ],
         output: "Toolpath",
         doc: "Spokes into a path round the Z axis: at each, the line leaves the wall, runs in to the middle half a line to one side, turns round a half circle near the axis and runs back out half a line to the other side, into the wall again. The legs lie flat at `height`, each move with the bead of the wall move it starts from; the bit of wall between the legs is left out (they close it). Put one layer above a flat bottom, they cross its spiral and tie it to the wall: `spokes(join([bottom, wall]), height: 2 * layer, count: 4, width: line)` makes a cross.",

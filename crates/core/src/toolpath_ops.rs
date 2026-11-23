@@ -542,6 +542,7 @@ pub fn spokes(
     count: usize,
     width: f64,
     inner: f64,
+    angle: Option<f64>,
     max_points: usize,
 ) -> Result<(Toolpath, usize), String> {
     if !(width.is_finite() && width > 0.0) {
@@ -598,7 +599,20 @@ pub fn spokes(
         }
         a
     };
-    let mut centres = vec![d0];
+    // With an angle, the first spoke goes where the path next passes it (or a spoke's turn on
+    // from it), so spokes at several heights stack; without, where it reaches the height.
+    let first = match angle {
+        Some(deg) => {
+            let p0 = point_at(d0).0;
+            let way = (i0..n)
+                .map(|k| wrap(ang(path.points[k]) - ang(p0)))
+                .find(|d| d.abs() > 1e-9)
+                .map_or(1.0, f64::signum);
+            (way * wrap(deg.to_radians() - ang(p0))).rem_euclid(step)
+        }
+        None => 0.0,
+    };
+    let mut centres = if first < 1e-12 { vec![d0] } else { vec![] };
     let (mut prev, mut s_prev, mut turned) = (point_at(d0).0, d0, 0.0);
     let mut i = i0;
     while centres.len() < count && i < n {
@@ -607,7 +621,7 @@ pub fn spokes(
         }
         let p = path.points[i];
         let da = wrap(ang(p) - ang(prev)).abs();
-        let want = step * centres.len() as f64;
+        let want = first + step * centres.len() as f64;
         if da > 0.0 && turned + da >= want {
             let f = ((want - turned) / da).clamp(0.0, 1.0);
             let d = s_prev + f * (along[i] - s_prev);
@@ -974,7 +988,7 @@ mod tests {
             })
             .collect();
         let path = line_path(pts.clone(), 20.0);
-        let (out, made) = spokes(&path, 3.0, 4, 4.0, 0.0, MAX_PATH_POINTS).unwrap();
+        let (out, made) = spokes(&path, 3.0, 4, 4.0, 0.0, None, MAX_PATH_POINTS).unwrap();
         assert_eq!(made, 4);
         // Inside the wall: only the spokes, flat at the height, as near the axis as their turns.
         let inside: Vec<&P3> = out
@@ -1011,16 +1025,63 @@ mod tests {
         let (end, want) = (out.points[out.points.len() - 1], pts[pts.len() - 1]);
         assert!((0..3).all(|k| (end[k] - want[k] - if k == 2 { 0.5 } else { 0.0 }).abs() < 1e-9));
         assert_eq!(
-            spokes(&path, 9.0, 4, 4.0, 0.0, MAX_PATH_POINTS).unwrap().1,
+            spokes(&path, 9.0, 4, 4.0, 0.0, None, MAX_PATH_POINTS)
+                .unwrap()
+                .1,
             0
         );
         assert_eq!(
-            spokes(&path, 3.0, 0, 4.0, 0.0, MAX_PATH_POINTS)
+            spokes(&path, 3.0, 0, 4.0, 0.0, None, MAX_PATH_POINTS)
                 .unwrap()
                 .0
                 .points
                 .len(),
             path.points.len()
+        );
+    }
+
+    /// With an angle, the first spoke goes where the path next passes it: crosses at two heights
+    /// with one angle stack, one over the other.
+    #[test]
+    fn spokes_at_an_angle_stack() {
+        // Three turns of a 40 mm helix from z 1 to 7.
+        let pts: Vec<P3> = (0..=1080)
+            .map(|d| {
+                let a = (d as f64).to_radians();
+                [40.0 * a.cos(), 40.0 * a.sin(), 1.0 + 2.0 * d as f64 / 360.0]
+            })
+            .collect();
+        let path = line_path(pts, 20.0);
+        let tips = |p: &Toolpath, z: f64| -> Vec<f64> {
+            let inside: Vec<&P3> = p
+                .points
+                .iter()
+                .filter(|q| q[0].hypot(q[1]) < 39.0 && (q[2] - z).abs() < 1e-9)
+                .collect();
+            let nearest = inside
+                .iter()
+                .map(|q| q[0].hypot(q[1]))
+                .fold(f64::INFINITY, f64::min);
+            let mut t: Vec<f64> = inside
+                .iter()
+                .filter(|q| (q[0].hypot(q[1]) - nearest).abs() < 0.05)
+                .map(|q| q[1].atan2(q[0]).to_degrees().rem_euclid(360.0))
+                .collect();
+            t.sort_by(f64::total_cmp);
+            t
+        };
+        let (one, made) = spokes(&path, 3.0, 4, 4.0, 0.0, Some(45.0), MAX_PATH_POINTS).unwrap();
+        assert_eq!(made, 4);
+        let (two, made) = spokes(&one, 5.0, 4, 4.0, 0.0, Some(45.0), MAX_PATH_POINTS).unwrap();
+        assert_eq!(made, 4);
+        let (low, high) = (tips(&two, 3.0), tips(&two, 5.0));
+        assert_eq!(low.len(), 4, "{low:?}");
+        for (a, want) in low.iter().zip([45.0, 135.0, 225.0, 315.0]) {
+            assert!((a - want).abs() < 1.0, "{low:?}");
+        }
+        assert!(
+            low.iter().zip(&high).all(|(a, b)| (a - b).abs() < 1.0),
+            "{low:?} {high:?}"
         );
     }
 }

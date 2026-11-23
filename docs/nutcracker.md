@@ -20,9 +20,13 @@ the key down onto it.
 
 The bottoms take the force, so each is tied to its wall: as soon as the wall has climbed a layer
 above the bottom (part way up the fillet), the line runs in to the middle, turns round near it and
-runs back out, `Spokes on the bottom` times (4: a cross), a quarter turn apart, each spoke two legs
-a line apart, flat on the bottom's spiral (crossing its rings), the bit of wall between the legs
-left out. The engine step `spokes` does it (any vase with a bottom can use it).
+runs back out, as many times as the part's spokes are set (`Cap: spokes`, `Key: spokes`; 4: a
+cross), evenly round, each spoke two legs a line apart, flat on the bottom's spiral (crossing its
+rings), the bit of wall between the legs left out. More crosses (`Cap/Key: crosses on top of each
+other`, up to 5) go a layer up each, flat on the one below, their spokes over its spokes: all start
+from the seam's angle (+Y). The engine step `spokes` does it (any vase with a bottom can use it;
+its `angle` puts the first spoke where the path next passes that angle, so spokes at several
+heights stack).
 
 ## Overhangs and the thread
 

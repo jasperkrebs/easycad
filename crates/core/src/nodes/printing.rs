@@ -191,6 +191,7 @@ pub(super) fn spokes(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         count,
         a.num(3)?,
         a.num(4)?,
+        Some(a.num(5)?).filter(|d| d.abs() <= 360.0),
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
     if made < count {
