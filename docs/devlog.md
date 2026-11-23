@@ -7,6 +7,20 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-23: Nutcracker: stacked crosses, spokes per part (recipe-developer)
+
+**Why:** the owner: several crosses printed on top of each other, set for the cap (bottom) and
+the key (top) each, and each part's own number of spokes.
+
+- `Cap: spokes`, `Cap: crosses on top of each other`, `Key: spokes`, `Key: crosses on top of each
+  other` (up to 5) replace `Spokes on the bottom`. Each further cross is a layer up, flat on the
+  one below.
+- **`spokes(…, angle)`** (engine): the first spoke where the path next passes that angle, so
+  crosses at several heights stack spoke over spoke; the nutcracker's all start at the seam (+Y).
+  Without it, as before. Unit-tested (two crosses at 45°) and in `nutcracker_tests.rs`.
+
+Open: a test print.
+
 ## 2026-11-22: Patterns on the Lamp's and the Lampshade's sections (recipe-developer)
 
 **Why:** the owner: tap sections in the Plan and put a pattern on them, one pattern running

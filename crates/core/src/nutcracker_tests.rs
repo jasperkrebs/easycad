@@ -166,12 +166,46 @@ fn a_cross_ties_each_bottom_to_its_wall() {
             "{name}: {tips:?}"
         );
     }
-    let none = nutcracker(&[("bottom_spokes", 0.0)]);
+    let none = nutcracker(&[("cap_spokes", 0.0)]);
     assert!(
         print(&none, "cap")
             .iter()
             .all(|p| radius(p) > 30.0 || p[2] < 3.0)
     );
+}
+
+/// Each part its own number of spokes, and crosses stacked on each other, each a layer up, its
+/// spokes over the ones below.
+#[test]
+fn crosses_stack_and_each_part_has_its_own() {
+    let e = nutcracker(&[
+        ("cap_spokes", 3.0),
+        ("key_spokes", 6.0),
+        ("key_crosses", 3.0),
+    ]);
+    assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+    let tips = |name: &str, z: f64| -> Vec<f64> {
+        let mut t: Vec<f64> = print(&e, name)
+            .iter()
+            .filter(|p| (radius(p) - 4.5).abs() < 0.05 && (p[2] - z).abs() < 1e-9)
+            .map(|p| p[1].atan2(p[0]).to_degrees().rem_euclid(360.0))
+            .collect();
+        t.sort_by(f64::total_cmp);
+        t
+    };
+    assert_eq!(tips("cap", 5.0).len(), 3);
+    assert!(tips("cap", 7.5).is_empty());
+    let low = tips("key", 5.0);
+    assert_eq!(low.len(), 6, "{low:?}");
+    for z in [7.5, 10.0] {
+        let up = tips("key", z);
+        assert_eq!(up.len(), 6, "{z}: {up:?}");
+        assert!(
+            low.iter().zip(&up).all(|(a, b)| (a - b).abs() < 1.0),
+            "{z}: {low:?} {up:?}"
+        );
+    }
+    assert!(tips("key", 12.5).is_empty());
 }
 
 /// The fillets lean, so their layers come closer (overhang compensation by layer height); off,
