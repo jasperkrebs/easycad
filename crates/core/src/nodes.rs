@@ -2072,10 +2072,48 @@ pub static NODES: &[Node] = &[
                 1000.0,
                 "where round the first spoke goes, in degrees from +X (the next place the path passes it; spokes at several heights with one angle stack); past ±360: where it reaches the height",
             ),
+            opt(
+                "layers",
+                "Number",
+                1.0,
+                "how many sets, on top of each other (0: none)",
+            ),
+            opt("layer", "Length", 0.0, "how far apart the sets are, up"),
         ],
         output: "Toolpath",
         doc: "Spokes into a path round the Z axis: at each, the line leaves the wall, runs in to the middle half a line to one side, turns round a half circle near the axis and runs back out half a line to the other side, into the wall again. The legs lie flat at `height`, each move with the bead of the wall move it starts from; the bit of wall between the legs is left out (they close it). Put one layer above a flat bottom, they cross its spiral and tie it to the wall: `spokes(join([bottom, wall]), height: 2 * layer, count: 4, width: line)` makes a cross.",
         run: Run::Op(printing::spokes),
+    },
+    Node {
+        name: "spiral_tie",
+        group: "Toolpaths",
+        inputs: &[
+            req(
+                "path",
+                "Toolpath",
+                "a path round the Z axis: a vase's bottom and wall",
+            ),
+            req(
+                "height",
+                "Length",
+                "where it goes in: where the path first reaches this height (the nozzle's); it lies flat at it",
+            ),
+            req(
+                "width",
+                "Length",
+                "line width: the arms are two of it apart",
+            ),
+            opt(
+                "count",
+                "Number",
+                1.0,
+                "how many, on top of each other (0: none)",
+            ),
+            opt("layer", "Length", 0.0, "how far apart they are, up"),
+        ],
+        output: "Toolpath",
+        doc: "A second bottom tied to the wall, in one line: where the path first reaches the height, it spirals in to the middle two lines apart (the other way round from a bottom spiralling out), turns round and spirals back out in the gap, into the wall where it went in. More of them (`count`) go a `layer` up each, on the one below.",
+        run: Run::Op(printing::spiral_tie),
     },
     Node {
         name: "spikes",

@@ -22,11 +22,31 @@ The bottoms take the force, so each is tied to its wall: as soon as the wall has
 above the bottom (part way up the fillet), the line runs in to the middle, turns round near it and
 runs back out, as many times as the part's spokes are set (`Cap: spokes`, `Key: spokes`; 4: a
 cross), evenly round, each spoke two legs a line apart, flat on the bottom's spiral (crossing its
-rings), the bit of wall between the legs left out. More crosses (`Cap/Key: crosses on top of each
+rings), the bit of wall between the legs left out. More (`Cap/Key: how many, on top of each
 other`, up to 5) go a layer up each, flat on the one below, their spokes over its spokes: all start
 from the seam's angle (+Y). The engine step `spokes` does it (any vase with a bottom can use it;
 its `angle` puts the first spoke where the path next passes that angle, so spokes at several
-heights stack).
+heights stack; `layers` and `layer` stack them in one step).
+
+**How long the spokes are** (23 Nov; tested): a spoke is two beads side by side, a band two lines
+wide (`w` the line), its end rounded with one line's radius round the turn's middle, `c` from the
+axis. Two neighbouring bands at the angle 360°/n between them first touch at their ends, where
+their middles are 2w apart: 2·c·sin(180°/n) = 2w, so **c = w / sin(180°/n)**: 2 spokes meet tip to
+tip at the axis (c = w), 3 like the Mercedes star (1.15w), 4 at 1.41w (was 1.25w, tips overlapping a
+little), 6 at 2w, 8 at 2.6w, 12 at 3.9w: the more there are, the shorter. One spoke runs right
+across: it turns round a bead off the opposite wall, c = −(R − 1.5w), R the wall's radius there.
+
+**Or a spiral** (`Cap/Key: tied to the wall by`: spiral): a second bottom in one line, on top of
+the first. Where the wall reaches two layers, the line turns back and runs in, against the wall's
+way (the other way round from the bottom's spiral), round on rings a line apart (a hair less, so
+they come out even to half a line from the middle), stepping in two rings at a time in one short
+window just on from where it went in; in the middle it turns round (half a circle) and runs back
+out on the rings between, the wall's way, stepping out in the same window, a ring from the way
+in's steps; its last step climbs onto the wall and carries straight on up it (the wall between,
+a few lines long, left out at that height). Rings, not a steady spiral, so the outermost one
+runs a line from the wall all round (a steady spiral leaves a crescent). It turns back once, where
+it goes in, and leaves a small gap there (about a line square, between the way in and the wall).
+More, a layer up each, the same way (`spiral_tie`, `count`, `layer`).
 
 ## Overhangs and the thread
 

@@ -551,10 +551,21 @@ pub fn spokes(
     if !height.is_finite() || !inner.is_finite() {
         return Err("`height` and `inner` must be numbers".into());
     }
-    let inner = if inner > 0.0 {
-        inner.max(width / 2.0)
-    } else {
-        1.25 * width
+    // How far from the axis a spoke turns round (its half circle's middle), for a spoke from a
+    // wall `r` from the axis. Each spoke is two legs a line apart, a bead each: a band two lines
+    // wide, its end rounded (one line's radius round the turn's middle). Left to work out:
+    // one spoke runs right across, turning a bead's width off the opposite wall; two meet
+    // exactly at the axis; more, as close as keeps neighbours apart: two bands at the angle
+    // between them touch where their middles are 2 lines apart, 2 × c × sin(180° / count).
+    let asked = count;
+    let inner_at = move |r: f64| -> f64 {
+        if inner > 0.0 {
+            inner.max(width / 2.0)
+        } else if asked <= 1 {
+            -(r - 1.5 * width)
+        } else {
+            width / (std::f64::consts::PI / asked as f64).sin()
+        }
     };
     let n = path.points.len();
     let mut along = vec![0.0; n];
@@ -646,7 +657,7 @@ pub fn spokes(
             c - half > along[0]
                 && c + half < along[n - 1]
                 && !is_travel(path, im)
-                && r > inner + 1.5 * width
+                && r > inner_at(r) + 1.5 * width
         })
         .collect();
     let count = kept.len();
@@ -687,6 +698,7 @@ pub fn spokes(
             let (m, _) = point_at(c);
             let r = m[0].hypot(m[1]).max(1e-9);
             let u = [m[0] / r, m[1] / r];
+            let inner = inner_at(r);
             // Along the wall, the way it goes.
             let tl = (b[0] - a[0]).hypot(b[1] - a[1]).max(1e-9);
             let t = [(b[0] - a[0]) / tl, (b[1] - a[1]) / tl];
@@ -755,6 +767,222 @@ pub fn spokes(
     }
     out.copy_events(path, &|i| new_index.get(i).copied().flatten());
     Ok((out, count))
+}
+
+/// Flat double spirals into a path round the Z axis, `count` of them a `layer` apart from `height`
+/// up, each on the one below. Each (a vase's bottom and wall): where the path
+/// first reaches its height (the nozzle's), the line turns inside and spirals in to the middle two
+/// lines apart, the other way round from a bottom spiralling out, turns round there and spirals
+/// back out in the gap between, one line from the way in, out into the wall where it went in,
+/// flat at `height`. A second bottom on the first, tied to the wall, in one line. Returns the new
+/// path and how many went in (not where the path never reaches the height, or the wall is under
+/// 3 lines from the axis).
+pub fn spiral_ties(
+    path: &Toolpath,
+    height: f64,
+    width: f64,
+    count: usize,
+    layer: f64,
+    max_points: usize,
+) -> Result<(Toolpath, usize), String> {
+    let mut out = path.clone();
+    let mut made = 0;
+    for k in 0..count {
+        let (next, ok) = spiral_tie(&out, height + k as f64 * layer, width, max_points)?;
+        out = next;
+        made += usize::from(ok);
+    }
+    Ok((out, made))
+}
+
+/// One spiral of `spiral_ties`.
+pub fn spiral_tie(
+    path: &Toolpath,
+    height: f64,
+    width: f64,
+    max_points: usize,
+) -> Result<(Toolpath, bool), String> {
+    if !(width.is_finite() && width > 0.0) {
+        return Err(format!("`width` must be more than 0, got {width}"));
+    }
+    if !height.is_finite() {
+        return Err("`height` must be a number".into());
+    }
+    let n = path.points.len();
+    let Some(i0) = (1..n).find(|&i| !is_travel(path, i) && path.points[i][2] >= height - 1e-9)
+    else {
+        return Ok((path.clone(), false));
+    };
+    let (a0, b0) = (path.points[i0 - 1], path.points[i0]);
+    let f0 = if b0[2] > a0[2] {
+        ((height - a0[2]) / (b0[2] - a0[2])).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let start = lerp3(a0, b0, f0);
+    let r_wall = start[0].hypot(start[1]);
+    let mut along = vec![0.0; n];
+    for i in 1..n {
+        along[i] = along[i - 1] + dist3(path.points[i - 1], path.points[i]);
+    }
+    let d0 = along[i0 - 1] + f0 * (along[i0] - along[i0 - 1]);
+    if r_wall < 3.0 * width {
+        return Ok((path.clone(), false));
+    }
+    let ang = |p: P3| p[1].atan2(p[0]);
+    let theta = ang(start);
+    // Which way round the path goes.
+    let way = (i0..n)
+        .map(|k| {
+            let mut d = ang(path.points[k]) - theta;
+            while d > std::f64::consts::PI {
+                d -= std::f64::consts::TAU;
+            }
+            while d < -std::f64::consts::PI {
+                d += std::f64::consts::TAU;
+            }
+            d
+        })
+        .find(|d| d.abs() > 1e-9)
+        .map_or(1.0, f64::signum);
+    let w = width;
+    let at = |phi: f64, r: f64| -> P3 {
+        let a = theta + way * phi;
+        [r * a.cos(), r * a.sin(), height]
+    };
+    // Rings round the axis, the wall's own way (+) and against it (−) as `psi` grows: alternately
+    // the way in's and the way out's, `sp` apart (a line, or a hair less so the last ring ends
+    // half a line from the axis). Every step from ring to ring is in one window just on from where
+    // it goes in (angle `alpha`): in, against the wall's way, down 2 rings across it; out, the
+    // wall's way, up 2 rings across it, a ring from the way in's; the last climb lands on the wall
+    // at the window's end and carries on along it. The way in starts with a turn back (a line
+    // on from the wall, against it); in the middle it turns round, half a circle a ring across.
+    let tau = std::f64::consts::TAU;
+    let rings = ((r_wall - 0.5 * w) / (2.0 * w)).ceil().max(1.0) as usize;
+    let sp = (r_wall - 0.5 * w) / (2.0 * rings as f64);
+    let alpha = (4.0 * w / r_wall).min(60f64.to_radians());
+    let delta = w / r_wall;
+    // Points close enough that the chords stay within 5 % of a line of the circles, at most 10°
+    // apart.
+    let step = |r: f64| {
+        let r = r.max(w / 2.0);
+        (2.0 * (1.0 - (0.05 * w / r).min(1.0)).acos()).clamp(1f64.to_radians(), 10f64.to_radians())
+    };
+    let mut ins: Vec<P3> = Vec::new();
+    // A stretch from (psi0, r0) to (psi1, r1), the radius changing evenly with the angle.
+    let arc = |ins: &mut Vec<P3>, psi0: f64, r0: f64, psi1: f64, r1: f64| {
+        let pieces = ((psi1 - psi0).abs() / step(r0.min(r1))).ceil().max(1.0) as usize;
+        for k in 1..=pieces {
+            let f = k as f64 / pieces as f64;
+            ins.push(at(psi0 + (psi1 - psi0) * f, r0 + (r1 - r0) * f));
+        }
+    };
+    let ring_in = |k: usize| r_wall - (2 * k + 1) as f64 * sp;
+    ins.push(at(-delta, ring_in(0)));
+    for k in 0..rings {
+        let from = if k == 0 { -delta } else { -tau * k as f64 };
+        let to = alpha - tau * (k + 1) as f64;
+        arc(&mut ins, from, ring_in(k), to, ring_in(k));
+        if k + 1 < rings {
+            arc(
+                &mut ins,
+                to,
+                ring_in(k),
+                -tau * (k + 1) as f64,
+                ring_in(k + 1),
+            );
+        }
+    }
+    // Round in the middle, onto the ring inside, bulging on against the wall's way.
+    let psi_u = alpha - tau * rings as f64;
+    let rho = ring_in(rings - 1);
+    let a_u = theta + way * psi_u;
+    let (u, t) = ([a_u.cos(), a_u.sin()], [-way * a_u.sin(), way * a_u.cos()]);
+    for k in 1..8 {
+        let ph = std::f64::consts::PI * k as f64 / 8.0;
+        let (ru, rt) = (rho - 0.5 * sp + 0.5 * sp * ph.cos(), -0.5 * sp * ph.sin());
+        ins.push([u[0] * ru + t[0] * rt, u[1] * ru + t[1] * rt, height]);
+    }
+    ins.push(at(psi_u, rho - sp));
+    for j in (0..rings).rev() {
+        let r = r_wall - (2 * j + 2) as f64 * sp;
+        let from = alpha - tau * (j + 1) as f64;
+        arc(&mut ins, from, r, -tau * j as f64, r);
+        let up = if j == 0 { r_wall } else { r + 2.0 * sp };
+        arc(&mut ins, -tau * j as f64, r, alpha - tau * j as f64, up);
+    }
+    let d_out = d0 + alpha * r_wall;
+    let total = n + ins.len() + 2;
+    if total > max_points.min(MAX_PATH_POINTS) {
+        return Err("the spiral needs too many points".into());
+    }
+    let mut out = path.emptied();
+    let mut new_index: Vec<Option<usize>> = vec![None; n];
+    let mut starts = path.layer_starts.iter().peekable();
+    let flow = path.flow.get(i0).copied().unwrap_or(1.0);
+    let speed = path.speed_factor(i0);
+    let push = |out: &mut Toolpath, i: usize, p: P3, travel: bool, flow: f64, speed: f64| {
+        out.points.push(p);
+        out.travel.push(travel);
+        out.flow.push(if travel { 0.0 } else { flow });
+        out.turn.push(path.turn.get(i).copied().unwrap_or(0.0));
+        out.part.push(path.part.get(i).copied().unwrap_or(0));
+        out.height.push(if travel {
+            0.0
+        } else {
+            path.height.get(i).copied().unwrap_or(0.0)
+        });
+        out.width.push(if travel {
+            0.0
+        } else {
+            path.width.get(i).copied().unwrap_or(0.0)
+        });
+        out.speed.push(speed);
+    };
+    for i in 0..n {
+        if starts.peek() == Some(&&i) {
+            out.layer_starts.push(out.points.len());
+            starts.next();
+        }
+        if i == i0 {
+            push(&mut out, i0, start, false, flow, speed);
+            for p in &ins {
+                push(&mut out, i0, *p, false, flow, speed);
+            }
+            // Back on the wall a line on, where the path is (at the height).
+            let k = along.partition_point(|a| *a < d_out).clamp(1, n - 1);
+            let len = along[k] - along[k - 1];
+            let f = if len > 0.0 {
+                ((d_out - along[k - 1]) / len).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let back = lerp3(path.points[k - 1], path.points[k], f);
+            push(
+                &mut out,
+                i0,
+                [back[0], back[1], back[2].max(height)],
+                false,
+                flow,
+                speed,
+            );
+        }
+        // The wall the spiral went round, left out.
+        if i >= i0 && along[i] < d_out && !is_travel(path, i) {
+            continue;
+        }
+        push(
+            &mut out,
+            i,
+            path.points[i],
+            is_travel(path, i),
+            path.flow.get(i).copied().unwrap_or(0.0),
+            path.speed_factor(i),
+        );
+        new_index[i] = Some(out.points.len() - 1);
+    }
+    out.copy_events(path, &|i| new_index.get(i).copied().flatten());
+    Ok((out, true))
 }
 
 #[cfg(test)]
@@ -1004,7 +1232,10 @@ mod tests {
             .iter()
             .map(|p| p[0].hypot(p[1]))
             .fold(f64::INFINITY, f64::min);
-        assert!((nearest - (5.0 - 2.0)).abs() < 0.05, "{nearest}");
+        // Four: as close as keeps neighbours a bead apart, 4 / sin 45° from the axis, less the
+        // turn's half a line.
+        let c = 4.0 / std::f64::consts::FRAC_PI_4.sin();
+        assert!((nearest - (c - 2.0)).abs() < 0.05, "{nearest}");
         // Spokes a quarter turn apart: their tips' directions.
         let tips: Vec<f64> = inside
             .iter()
@@ -1082,6 +1313,41 @@ mod tests {
         assert!(
             low.iter().zip(&high).all(|(a, b)| (a - b).abs() < 1.0),
             "{low:?} {high:?}"
+        );
+    }
+
+    /// A double spiral into a helix: flat at the height, rings no more than a line apart from a
+    /// line inside the wall to the middle, back out onto the wall; the way in against the
+    /// helix's way.
+    #[test]
+    fn a_spiral_ties_in_a_second_bottom() {
+        let pts: Vec<P3> = (0..=1080)
+            .map(|d| {
+                let a = (d as f64).to_radians();
+                [40.0 * a.cos(), 40.0 * a.sin(), 1.0 + 2.0 * d as f64 / 360.0]
+            })
+            .collect();
+        let path = line_path(pts, 20.0);
+        let (out, made) = spiral_ties(&path, 3.0, 4.0, 2, 2.0, MAX_PATH_POINTS).unwrap();
+        assert_eq!(made, 2);
+        for z in [3.0, 5.0] {
+            let flat: Vec<&P3> = out.points.iter().filter(|p| p[2] == z).collect();
+            let mut r: Vec<f64> = flat.iter().map(|p| p[0].hypot(p[1])).collect();
+            r.sort_by(f64::total_cmp);
+            assert!(
+                r[0] < 2.5 && (r[r.len() - 1] - 40.0).abs() < 1e-6,
+                "{z}: {r:?}"
+            );
+            assert!(r.windows(2).all(|w| w[1] - w[0] <= 4.0 + 1e-9), "{z}");
+            // Counter-clockwise helix: in clockwise.
+            let (a, b) = (flat[1], flat[5]);
+            assert!(a[0] * b[1] - a[1] * b[0] < 0.0, "{z}");
+        }
+        assert_eq!(
+            spiral_ties(&path, 9.0, 4.0, 1, 0.0, MAX_PATH_POINTS)
+                .unwrap()
+                .1,
+            0
         );
     }
 }
