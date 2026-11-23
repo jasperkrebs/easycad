@@ -93,7 +93,8 @@ What the sketcher leaves out, added here:
   each move is extruded for the gap under it, as a vase's first turn).
 - **Overhang compensation by layer height**, as the Lampshade's (strength, steep curve, pivot):
   layers come closer where the wall leans, each still extruded for a whole layer. A sphere's
-  bottom, leaning 70°, gets layers down to about a third of the pitch. **Only on the outer
+  bottom, leaning 70°, gets layers down to a little under half the pitch (test 8's defaults:
+  86 %, steep 0.85, pivot 73). **Only on the outer
   wall:** it's compensated in every layer, bottom to top, the grip's included, while the thread
   keeps its pitch.
 - **A thinner wall and wings than the thread** (Print: "Wall and wings: line width" and "layer

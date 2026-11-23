@@ -30,10 +30,10 @@ group "Overhangs"
 param slicing    = "height" of ["height", "surface"] "Slicing (surface: along the wall, experimental)"
 param flat_flow  = 0       in 0..400                "Flow where it runs flat (mm³/s, 0: as the shade)"  when slicing = "surface"
 param compensation = "layer height" of ["layer height", "width", "off"] "Compensation"
-param strength   = 100 %   in 0..100                "Strength"  when slicing = "height"
+param strength   = 86 %    in 0..100                "Strength"  when slicing = "height"
 param surface_strength = 0 % in 0..100              "Strength along the surface"  when slicing = "surface"
-param steep      = 0       in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"  when not compensation = "off"
-param pivot      = 45 deg  in 5..85 step 1          "Steep curve pivot (as now at this angle)"  when steep
+param steep      = 0.85    in 0..4 step 0.1         "Steep curve (0: even; more: less when shallow, more when steep)"  when not compensation = "off"
+param pivot      = 73 deg  in 5..85 step 1          "Steep curve pivot (as now at this angle)"  when steep
 param max_width  = 2.5     in 1..5 step 0.1         "Max line width (× the line)"  when compensation = "width"
 
 group "Brim"

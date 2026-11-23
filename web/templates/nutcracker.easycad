@@ -38,9 +38,9 @@ param wall_extrusion = 100 % in 50..200          "Wall extrusion"
 
 group "Overhangs"
 param compensation = "layer height" of ["layer height", "off"] "Compensation (the fillets and the flattening)"
-param strength   = 100 %   in 0..100             "Strength"  when compensation = "layer height"
-param steep      = 0       in 0..4 step 0.1      "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
-param pivot      = 45 deg  in 5..85 step 1       "Steep curve pivot (as now at this angle)"  when steep
+param strength   = 86 %    in 0..100             "Strength"  when compensation = "layer height"
+param steep      = 0.85    in 0..4 step 0.1      "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
+param pivot      = 73 deg  in 5..85 step 1       "Steep curve pivot (as now at this angle)"  when steep
 
 # ---- Sizes. The key's wall runs half a line outside its thread diameter (its inside face on the
 # thread), the cap's one line and the fit further out. Heights on whole layers (the pitch).

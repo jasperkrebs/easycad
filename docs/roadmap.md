@@ -82,14 +82,15 @@ so in the dev log); when something new comes up, add it here, not only in the de
 
 ### Recipes and projects (recipe-developer)
 
-- **Overhang tuning** (tests 1–6, 14–15 Nov; the Bambu with a 0.8 mm nozzle, E14 (2 mm pitch),
+- **Overhang tuning** (tests 1–8, 14–23 Nov; the Bambu with a 0.8 mm nozzle, E14 (2 mm pitch),
   5 mm line, flow 15): the overhang settings only, layer-height compensation. **Every turn keeps
   the same plastic** (even layer lines); the compensation is only how close the turns sit, so the
-  plastic squeezes. Never extrude less on overhangs. Found so far: test 5 (85 %, steep 0.8,
-  pivot 70) printed well to about 70° and overflowed at 74°; its turns stepped out about half a
-  bead (2.5 mm) each, which held. Test 6 (80 %, steep 0.8, pivot 76, opening 160 mm, so about
-  79° at the rim) eases the top turns a little. Change one thing at a time (flow changed between
-  tests 1 and 2).
+  plastic squeezes. Never extrude less on overhangs. **Test 8 (86 %, steep 0.85, pivot 73)
+  printed very well and is every template's default since 23 Nov** (Lampshade, Lamp, Thread
+  pendant, Nutcracker; the vessel's and the shaker's pace). On the way: test 5 (85 %, steep 0.8,
+  pivot 70) overflowed at 74°; test 6 (80 %, 0.8, 76) left the top turns too loose; test 7 (86 %,
+  0.7, 76) was almost there, the last 3–4 turns slightly too far apart. Next: other prints,
+  nozzles or flows against test 8; change one thing at a time.
 - **The bell in-out** changes to the shade's layer and line at once at the throat (it has no
   fillet there): ease it over its first curve.
 - **The Lampshade and the Lamp's shade** are two copies of the same steps; a change to one has to

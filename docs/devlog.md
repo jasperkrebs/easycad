@@ -7,6 +7,23 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+
+## 2026-11-23: test 8 is every template's overhang default (general-manager)
+
+**Why:** the owner's test 8 (strength 86 %, steep 0.85, pivot 73°; the Bambu with a 0.8 mm
+nozzle, E14, 5 mm line, flow 15) printed very well, and the owner asked for it as the default in
+every project with overhang compensation, and to call it "test 8" from now on. Done on the
+owner's word in the recipe developer's files.
+
+- Defaults `strength`/`pace` 100 → 86 %, `steep` 0 → 0.85, `pivot` 45 → 73° in the Lampshade,
+  the Lamp, the Thread pendant, the Nutcracker, the vessel and the salt shaker.
+- The golden tests compare with EasyGCode at EasyGCode's compensation (full strength, no steep
+  curve): `as_easygcode` and the smoke test set those along with the rest of EasyGCode's setup;
+  the fixtures are unchanged. Three recipe tests that measure the even, full compensation pin
+  it (`strength: 100`, `steep: 0`).
+- New projects from a template start at test 8; a saved `.easycad` file keeps the values written
+  in it.
+
 ## 2026-11-23: Nutcracker: stacked crosses, spokes per part (recipe-developer)
 
 **Why:** the owner: several crosses printed on top of each other, set for the cap (bottom) and
