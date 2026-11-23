@@ -24,9 +24,12 @@ settings.
   (`fixtures/prints/`, `scripts/prints.test.mjs`, in CI): a project file the owner printed and
   its G-code, which the engine must keep making exactly; `UPDATE_PRINTS=1` writes a meant
   change, with the owner's OK. The feature builder may not touch them. First one: **test 8**.
-- **Printer settings in the project file:** Save writes a `#~ printer {…}` line (every Print
-  tab setting by key); Open makes them the device's, checked and kept in range as in the Print
-  tab (`print.js`: `settingsOf`, `profileFrom`, `useSettings`). Templates have no such line.
+- **Printer settings belong to the project** (the owner: "the printer needs to just save in the
+  easycad file"): Save writes a `#~ printer {…}` line (every Print tab setting by key); Open
+  uses it, checked and kept in range as in the Print tab (`print.js`: `settingsOf`,
+  `profileFrom`). Nothing is kept per device any more: a new project from a template starts from
+  the printer's defaults; the project left open keeps its settings over a reload (they're saved
+  with it). A project left open from before takes the settings the device had, once.
 
 Open: test 8's approved print uses the P1P's default printer settings (made from the test 7
 file); save it again from the app with the real ones and replace `fixtures/prints/test-8.*`.

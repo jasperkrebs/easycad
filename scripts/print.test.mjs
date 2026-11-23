@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
-import { G1, PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, machineGuide, materialOf, printChecks, printerFor, profileFrom, settingsOf, useSettings } from '../web/js/print.js';
+import { G1, PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, machineGuide, materialOf, newProfile, printChecks, printerFor, profileFrom, settingsOf } from '../web/js/print.js';
 import { printerLine, withoutPrinter } from '../web/js/templates.js';
 
 // A stand-in for the browser's localStorage, so settings are saved and reloaded as on a device.
@@ -65,9 +65,9 @@ test("the G1's origin is its bed's centre, and follows the bed", () => {
   const r = changeSettings('pellet', p, { 'bed.0': 800, 'bed.1': 600 });
   assert.deepEqual(r.changed, ['bed.0', 'bed.1']);
   assert.deepEqual(p.center, [400, 300]);
-  // Saved, and reopened: still the centre of the saved bed.
-  assert.deepEqual(loadProfile('pellet').center, [400, 300]);
-  assert.deepEqual(loadProfile('pellet').bed, [800, 600, 1000]);
+  // Nothing is kept on the device: the project (and its file) keeps them.
+  assert.deepEqual(Object.keys(store), []);
+  assert.deepEqual(loadProfile('pellet').center, [500, 500]);
   // An origin the user moved stays where they put it, even when the bed changes.
   changeSettings('pellet', p, { 'center.0': 50 });
   changeSettings('pellet', p, { 'bed.0': 1000 });
@@ -219,7 +219,7 @@ test("the bead is EasyGCode's: a rectangle with a half circle each side; blends 
 
 test("a project file keeps the printer's settings, and opening it brings them back", () => {
   // The P1P with a hotter nozzle, a slower travel and the fan at half.
-  const mine = loadProfile('p1p');
+  const mine = newProfile('p1p');
   changeSettings('p1p', mine, { 'filament.nozzle': 230, travelSpeed: 60, 'filament.fan': 50 });
   const settings = settingsOf('p1p', mine);
   assert.equal(settings['filament.nozzle'], 230);
@@ -230,10 +230,10 @@ test("a project file keeps the printer's settings, and opening it brings them ba
   assert.equal(text, 'project "Test"\n');
   assert.equal(printer?.printer, 'p1p');
   assert.deepEqual(profileFrom('p1p', printer?.settings ?? {}), mine);
-  // Another device, with its own settings: opening the file makes them the file's.
-  changeSettings('p1p', loadProfile('p1p'), { 'filament.nozzle': 200 });
-  useSettings('p1p', printer?.settings ?? {});
-  assert.equal(loadProfile('p1p').filament.nozzle, 230);
+  // Only the file keeps them: nothing went to the device, and a new project starts from the
+  // printer's defaults.
+  assert.deepEqual(Object.keys(store), []);
+  assert.equal(newProfile('p1p').filament.nozzle, PRINTERS.p1p.defaults.filament.nozzle);
 });
 
 test("a file's printer settings are checked as the Print tab checks them", () => {

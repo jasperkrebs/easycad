@@ -221,6 +221,15 @@ async function saveFrom(page, selector) {
         await page.waitForFunction((t) => document.getElementById('projectName').textContent === t, title, { timeout: 15000 });
         await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         if (shots) await page.screenshot({ path: path.join(shots, `smoke-${name}-${id}.png`), fullPage: name === 'phone' });
+        // A new project starts from the printer's defaults (the settings belong to the project,
+        // not the device): the origin moved for the one before is back at the bed's centre.
+        if (id !== 'bend-stool') {
+          await printerFields({});
+          const fresh = [await page.inputValue('#printer-center-0'), await page.inputValue('#printer-center-1')].join('/');
+          if (fresh !== '500/500') failures.push(`${name}: ${id} didn't start from the G1's defaults: origin ${fresh}`);
+          await printerFields(EASYGCODE_ORIGIN);
+          await page.click('#tab-settings');
+        }
         // The lampshade's steady start (for pellet extruders) is EasyCAD's own: off, it's
         // EasyGCode's ramp.
         if (id === 'lampshade') {

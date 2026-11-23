@@ -10,7 +10,9 @@ and what it does with it.
 | **Bambu P1P** | `printer "Bambu P1P 0.4"` | filament, 0.4 mm nozzle; E in mm of filament | EasyGCode's |
 | **KUKA KR50 (SPHR cell)** | `printer "KUKA KR50"` | pellets on a robot arm; a KRL program (`.SRC` + `.DAT` in a ZIP), extruder over EthernetKRL | the SPHR handover's (below) |
 
-The settings live in `web/js/print.js` (the Print tab, and the agent's `set_printer`); the
+The settings live in `web/js/print.js` (the Print tab, and the agent's `set_printer`) and belong
+to the project: its `.easycad` file keeps them (a `#~ printer` line), and a new project starts
+from the printer's defaults. The
 heater limits also go to the engine (`gcode::Pellet`), which refuses G-code that would ask a
 printer for more than it takes.
 

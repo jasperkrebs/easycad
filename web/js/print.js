@@ -5,7 +5,7 @@
 // defaults are EasyGCode's, so G-code starts out exactly as EasyGCode would write it; changes are
 // remembered on this device, per printer.
 
-import { el, fmt, loadJSON, numberField, parseNumber, save, saveJSON } from './dom.js';
+import { el, fmt, loadJSON, numberField, parseNumber } from './dom.js';
 
 /** EasyGCode's machine settings (travel 6000 mm/min, end lift 50 mm, the bed centre at 125/125). */
 const EASYGCODE = {
@@ -266,9 +266,15 @@ function defaults(id) {
   return structuredClone(PRINTERS[id].defaults);
 }
 
+/** A printer's settings as they come: its defaults (a project without settings of its own). */
+export function newProfile(id) {
+  return defaults(id);
+}
+
 /**
- * The printer's profile: its defaults, with the settings changed on this device (kept inside
- * today's ranges).
+ * The printer's settings this device kept before they went into the project file (23 Nov 2026):
+ * its defaults with those changes (kept inside today's ranges). Only read, for a project left
+ * open from before then; nothing writes them any more.
  */
 export function loadProfile(id) {
   const profile = defaults(id);
@@ -331,21 +337,6 @@ export function profileFrom(id, settings) {
   return profile;
 }
 
-/**
- * Takes a project file's printer settings as this device's (the Print tab shows them, and they
- * stay for the next project, as a change in the Print tab does).
- * @param {keyof typeof PRINTERS} id
- * @param {Record<string, unknown>} settings
- */
-export function useSettings(id, settings) {
-  const profile = profileFrom(id, settings);
-  saveProfile(id, profile);
-  return profile;
-}
-
-function saveProfile(id, profile) {
-  saveJSON(storageKey(id), profile);
-}
 
 /**
  * The printer profile a recipe's `printer "…"` line names. Older projects name the G1 "Klipper
@@ -366,7 +357,7 @@ export function materialOf(id, profile) {
 
 /**
  * Sets the zones, bed and max flow from one of Ginger Slicer's material profiles (the G1 only),
- * and saves them on this device.
+ * for the project.
  * @param {keyof typeof PRINTERS} id
  * @param {any} profile edited in place
  * @param {string} name
@@ -383,8 +374,8 @@ export function applyMaterial(id, profile, name) {
 }
 
 /**
- * Changes settings by key (the agent's set_printer), as the Print tab's fields do: checked,
- * clamped to each field's range, and saved on this device.
+ * Changes settings by key (the agent's set_printer), as the Print tab's fields do: checked and
+ * clamped to each field's range (the project keeps them, and its file).
  * @param {keyof typeof PRINTERS} id
  * @param {any} profile edited in place
  * @param {Record<string, unknown>} patch key (as in FIELDS) → new value
@@ -418,7 +409,6 @@ export function changeSettings(id, profile, patch) {
     }
     changed.push(key);
   }
-  if (changed.length) saveProfile(id, profile);
   return { changed, notes };
 }
 
@@ -481,7 +471,6 @@ export function renderPrinterSettings(host, id, profile, onChange) {
       const box = /** @type {HTMLInputElement} */ (el('input', { type: 'checkbox', id: fieldId, className: 'switch', checked: getPath(profile, f.key) === true }));
       box.addEventListener('change', () => {
         setPath(profile, f.key, box.checked);
-        saveProfile(id, profile);
         onChange();
       });
       row.append(box);
@@ -497,7 +486,6 @@ export function renderPrinterSettings(host, id, profile, onChange) {
         const tidy = Math.min(max ?? v, Math.max(min ?? v, v));
         input.value = String(tidy);
         setField(id, profile, f.key, tidy);
-        saveProfile(id, profile);
         for (const k of ['center.0', 'center.1']) {
           const centre = /** @type {HTMLInputElement | null} */ (host.querySelector(`#printer-${k.replace('.', '-')}`));
           if (centre) centre.value = String(getPath(profile, k));
@@ -515,7 +503,6 @@ export function renderPrinterSettings(host, id, profile, onChange) {
   const reset = el('button', { className: 'btn', type: 'button', text: 'Back to the defaults' });
   reset.addEventListener('click', () => {
     Object.assign(profile, defaults(id));
-    save(storageKey(id), null);
     renderPrinterSettings(host, id, profile, onChange);
     onChange();
   });
