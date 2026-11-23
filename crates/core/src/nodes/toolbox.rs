@@ -483,7 +483,15 @@ pub(super) fn contour(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         steep: a.num(3)?,
         pivot: a.num(4)?,
     };
-    let layers = s.contour(&layer, pace, ctx.remaining().min(MAX_PATH_POINTS))?;
+    let max = ctx.remaining().min(MAX_PATH_POINTS);
+    let layers = if a.flag(5)? {
+        let Some(l) = layer.as_constant() else {
+            return Err("`across` needs a plain layer height, not a field".into());
+        };
+        s.contour_across(l, pace, max)?
+    } else {
+        s.contour(&layer, pace, max)?
+    };
     ctx.spend(layers.iter().map(|c| c.points.len()).sum())?;
     Value::list(
         layers

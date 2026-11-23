@@ -7,6 +7,29 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-23: the key's flattening paced point by point; the G1's start-block settings (recipe-developer)
+
+**Why:** the owner: on the key, the walls that overhang sag and the rest prints fine; compensate
+each point of the layer, not the whole layer (a little non-planar is fine). And more Ginger
+settings (the mixing stepper's rotation distance and so on) to change its start G-code.
+
+- **`contour(…, across: true)`** (engine, `Surface::contour_across`): each line of the surface
+  (point j of every section) paced by its own lean, sampled 8 times a section; every line takes
+  as many layers as the line needing most (rounded), its steps scaled to fit: flat at the bottom
+  and top sections, leaning between. Unit-tested.
+- **The key's flattening** uses it, with its own `Flattening: strength` (86 %). With the shared
+  steep curve the sides get 2.24 mm in the middle, the ends 2.32, both 2.5 at either end;
+  100 % with steep 0: about 2.0 at the sides. Tested; the threads are still exactly the pitch.
+- **The G1** (`gcode.rs`, Print tab): screw and mixing stepper rotation distances, mixing
+  multiplier, purge length and speed, parking purge layer height and speed, pressure advance
+  smooth time: EasyGCode's values by default (golden G-code unchanged), ranges checked. Tested.
+
+- **The handle's walls touch** whatever the line: its thickness was 12 mm (two 6 mm lines), so
+  with a 5 mm line they stayed 2 mm apart (the owner's picture). 0, now the default, is solid:
+  a line apart centre to centre. Tested at 5, 6 and 8 mm.
+
+Open: a test print of the key (does the per-point pacing hold the sides; how much strength).
+
 ## 2026-11-23: Nutcracker: spokes as long as they can be, or a spiral (recipe-developer)
 
 **Why:** the owner: more than 4 spokes ran into each other in the middle, fewer didn't meet; 1

@@ -58,12 +58,25 @@ at the pitch): sliced as one, the steps were fitted to the whole height and the 
 1 % off, the cap's and the key's differently (2.474 and 2.478 mm a turn: half a millimetre apart
 over the cap).
 
+**The flattening, point by point** (23 Nov): it leans differently all round, its sides moving in
+(43 → 3 mm, up to about 37° at the S-curve's middle), its ends moving out (43 → 64.5 mm, about
+20°), the corners hardly. Paced as a whole, every point got the steepest point's compensation:
+the sides were no better off and the rest was squashed. Now each point down the wall is paced by
+its own lean (`contour(…, across: true)`), all of them taking the same number of layers from the
+tube to the handle, so the layers come closer only where the wall overhangs, flat where the
+flattening starts and ends and leaning a little between (non-planar). Its own strength
+(`Flattening: strength`, 86 % like the rest): with the shared steep curve (0.85, pivot 73°) a
+37° lean asks for only about 10 % closer layers (2.24 mm in the middle of the sides against
+2.32 at the ends); if the sides still sag, raise it, or take the steep curve to 0 (at 100 %:
+about 2.0 mm there), without squashing the ends or the threads.
+
 ## The handle
 
 - **Width:** 0 makes it as long round as the tube (its bead's middle), so every layer takes as
   long as the tube's and the line isn't stretched; or set the width (outside).
-- **Thickness** (outside): at two lines its two walls meet into one solid blade (the default, 12
-  mm with a 6 mm line); thicker leaves it hollow.
+- **Thickness** (outside): 0 (as it ships) is solid: its two walls close in to a line apart, centre
+  to centre, so they touch whatever the line width (it was 12 mm, two 6 mm lines: with a 5 mm
+  line its walls stayed 2 mm apart, 23 Nov). Set, more than two lines leaves it hollow.
 - The flattening leans its long sides in and its ends out: layers come closer there (Overhangs),
   and past 60° it says to make it longer.
 

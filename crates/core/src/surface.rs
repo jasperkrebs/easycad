@@ -438,6 +438,85 @@ impl Surface {
             .collect())
     }
 
+    /// Layers paced point by point: down each line of the surface (point `j` of every section),
+    /// its own steps, `layer · (1 − pace · (1 − cos a))` with `a` that line's own lean there (as
+    /// `stepped_contour`'s), so where the wall overhangs the layers come closer and where it
+    /// stands straight they don't. Every line takes the same number of layers (as many as the
+    /// line needing most, rounded), each line's steps scaled to fit it: the layers start on the
+    /// bottom section and end on the top one, flat, and lean between (not flat).
+    pub fn contour_across(
+        &self,
+        layer: f64,
+        pace: Pace,
+        max_points: usize,
+    ) -> Result<Vec<Curve>, String> {
+        if !(layer > 0.0 && layer.is_finite()) {
+            return Err(format!("`layer` must be more than 0, got {layer}"));
+        }
+        if self.looped {
+            return Err(LOOPED.into());
+        }
+        pace.check()?;
+        let n = self.sections.len();
+        let m = self.samples();
+        if n < 2 || m < 2 {
+            return Err("needs a surface with at least 2 sections".into());
+        }
+        // Each line sampled finely along the surface (8 steps a section), and how many layers it
+        // takes from the bottom to each sample.
+        let fine = (n - 1) * 8;
+        let mut counts: Vec<Vec<f64>> = Vec::with_capacity(m);
+        for j in 0..m {
+            let mut c = vec![0.0; fine + 1];
+            let mut prev = self.point_at(0.0, j);
+            for k in 1..=fine {
+                let p = self.point_at(k as f64 / 8.0, j);
+                let dz = p[2] - prev[2];
+                if dz.is_nan() || dz <= 0.0 {
+                    return Err(format!(
+                        "the surface must rise all the way up each line, but line {} doesn't between sections {} and {}",
+                        j + 1,
+                        (k - 1) / 8 + 1,
+                        (k - 1) / 8 + 2
+                    ));
+                }
+                let run = (p[0] - prev[0]).hypot(p[1] - prev[1]);
+                let cos = dz.atan2(run).sin().max(0.05);
+                let step = (layer * (1.0 - pace.at(cos) * (1.0 - cos))).max(0.05 * layer);
+                c[k] = c[k - 1] + dz / step;
+                prev = p;
+            }
+            counts.push(c);
+        }
+        let most = counts.iter().map(|c| c[fine]).fold(0.0, f64::max);
+        let layers = most.round().max(1.0) as usize;
+        if (layers + 1).saturating_mul(m) > max_points {
+            return Err(format!(
+                "this needs too many points ({} layers of {m}); use a larger layer height",
+                layers + 1
+            ));
+        }
+        Ok((0..=layers)
+            .map(|k| {
+                let points = (0..m)
+                    .map(|j| {
+                        let c = &counts[j];
+                        let want = c[fine] * k as f64 / layers as f64;
+                        let i = c.partition_point(|x| *x < want).clamp(1, fine);
+                        let span = c[i] - c[i - 1];
+                        let f = if span > 0.0 {
+                            ((want - c[i - 1]) / span).clamp(0.0, 1.0)
+                        } else {
+                            0.0
+                        };
+                        self.point_at((i - 1) as f64 / 8.0 + f / 8.0, j)
+                    })
+                    .collect();
+                Curve::new(points, self.closed)
+            })
+            .collect())
+    }
+
     /// Layers stepped up one at a time, each step `layer(z)` tall, or with `pace` closer where
     /// the wall leans (EasyGCode's overhang-paced Z): `layer(z) · (1 − pace · (1 − cos a))`, `a`
     /// being the lean of the seam (point 0) at `z` (cos a no less than 0.05), the pace scaled by
@@ -933,6 +1012,65 @@ mod tests {
             p[1] *= grow;
         }
         s
+    }
+
+    /// Across: from a circle up to an ellipse twice as wide along X, the wall straight up at ±Y
+    /// and leaning out at ±X. Each point is paced by its own lean: the layers come closer at ±X,
+    /// not at ±Y; all start on the bottom and end on the top, flat.
+    #[test]
+    fn across_paces_each_point_by_its_own_lean() {
+        let bottom = Curve::circle(10.0, 64);
+        let top: Vec<P3> = bottom
+            .points
+            .iter()
+            .map(|p| [2.0 * p[0], p[1], 20.0])
+            .collect();
+        let s = Surface::loft(&[&bottom, &Curve::new(top, true)]).unwrap();
+        let layers = s.contour_across(1.0, Pace::even(1.0), 1_000_000).unwrap();
+        let n = layers.len() - 1;
+        // The X line leans atan(10 / 20) = 26.6°: 1 − (1 − cos) = cos, 0.894 mm a layer.
+        assert_eq!(n, (20.0 / 26.565f64.to_radians().cos()).round() as usize);
+        assert!(layers[0].points.iter().all(|p| p[2].abs() < 1e-9));
+        assert!(layers[n].points.iter().all(|p| (p[2] - 20.0).abs() < 1e-9));
+        // Point 0 is on +X, point 16 on +Y: the X line steps an even 20 / n, the Y line too,
+        // but each layer at X is where its own count puts it.
+        let (x, y) = (0, 16);
+        for (k, layer) in layers.iter().enumerate().take(n).skip(1) {
+            let (zx, zy) = (layer.points[x][2], layer.points[y][2]);
+            assert!((zx - 20.0 * k as f64 / n as f64).abs() < 1e-6, "{k} {zx}");
+            assert!((zy - 20.0 * k as f64 / n as f64).abs() < 1e-6, "{k} {zy}");
+        }
+        // (A line leaning the same all the way up takes its layers evenly however much it leans:
+        // every line takes the same number.) Here the +X side leans out in the lower half only,
+        // the −X side stands straight.
+        let mid: Vec<P3> = bottom
+            .points
+            .iter()
+            .map(|p| [p[0] + 8.0 * p[0].max(0.0) / 10.0, p[1], 10.0])
+            .collect();
+        let top: Vec<P3> = bottom
+            .points
+            .iter()
+            .map(|p| [p[0] + 8.0 * p[0].max(0.0) / 10.0, p[1], 20.0])
+            .collect();
+        let bottom2: Vec<P3> = bottom.points.clone();
+        let s = Surface {
+            sections: vec![bottom2, mid, top],
+            ..s
+        };
+        let layers = s.contour_across(1.0, Pace::even(1.0), 1_000_000).unwrap();
+        let n = layers.len() - 1;
+        // The −X side stands straight: even steps all the way. The +X side leans out in its lower
+        // half, so it takes more of its layers there: halfway through, it's below the −X side.
+        let (px, nx) = (0, 32);
+        let half = n / 2;
+        assert!((layers[half].points[nx][2] - 20.0 * half as f64 / n as f64).abs() < 1e-6);
+        assert!(
+            layers[half].points[px][2] < layers[half].points[nx][2] - 0.5,
+            "{} {}",
+            layers[half].points[px][2],
+            layers[half].points[nx][2]
+        );
     }
 
     #[test]

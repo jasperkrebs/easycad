@@ -95,6 +95,23 @@ fn the_key_flattens_into_a_handle() {
     );
 }
 
+/// Solid as it ships, whatever the line: the handle's two walls close in to a line apart (centre to
+/// centre), so they touch. (Its thickness was 12 mm, two 6 mm lines: with a 5 mm line, 2 mm apart.)
+#[test]
+fn the_handles_walls_touch_whatever_the_line() {
+    for line in [5.0, 6.0, 8.0] {
+        let e = nutcracker(&[("line", line)]);
+        let key = print(&e, "key");
+        let top = key.iter().map(|p| p[2]).fold(0.0, f64::max);
+        let thick = key
+            .iter()
+            .filter(|p| p[2] > top - 2.0)
+            .map(|p| p[0].abs())
+            .fold(0.0, f64::max);
+        assert!((thick - line / 2.0).abs() < 0.05, "{line}: {thick}");
+    }
+}
+
 #[test]
 fn a_key_too_short_for_the_cap_says_so() {
     let e = nutcracker(&[("key_thread", 40.0)]);
@@ -341,4 +358,35 @@ fn a_spiral_ties_a_second_bottom_to_the_wall() {
         .filter(|p| (p[2] - 7.5).abs() < 1e-9 && radius(p) < 10.0)
         .count();
     assert!(up > 10, "{up}");
+}
+/// The flattening is paced point by point: in its middle, its sides (moving in from the tube's
+/// 43 mm to the handle's 3, the steepest) rise less a turn than its ends (moving out to 64.5
+/// mm); where it starts and ends, both rise the pitch. The flattening's own strength paces it more.
+#[test]
+fn the_flattening_is_paced_point_by_point() {
+    let rises = |e: &Evaluation, axis: usize| -> Vec<f64> {
+        let key = print(e, "key");
+        let mut z: Vec<f64> = key
+            .windows(2)
+            .filter(|w| {
+                let o = 1 - axis;
+                (w[0][o] > 0.0) != (w[1][o] > 0.0) && w[1][axis] > 0.0
+            })
+            .map(|w| w[1][2])
+            .filter(|z| *z > 95.0 && *z < 175.0)
+            .collect();
+        z.dedup_by(|a, b| (*a - *b).abs() < 0.05);
+        z.windows(2).map(|w| w[1] - w[0]).collect()
+    };
+    let least = |r: &[f64]| r.iter().copied().fold(f64::INFINITY, f64::min);
+    let e = nutcracker(&[]);
+    let (sides, ends) = (rises(&e, 0), rises(&e, 1));
+    assert!(least(&sides) < least(&ends) - 0.05, "{sides:?} {ends:?}");
+    assert!((sides[sides.len() - 1] - 2.5).abs() < 0.05, "{sides:?}");
+    let more = nutcracker(&[("flat_strength", 100.0), ("steep", 0.0)]);
+    assert!(
+        least(&rises(&more, 0)) < least(&sides) - 0.15,
+        "{:?}",
+        rises(&more, 0)
+    );
 }

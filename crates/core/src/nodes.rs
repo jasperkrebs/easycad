@@ -1572,6 +1572,12 @@ pub static NODES: &[Node] = &[
                 45.0,
                 "with `steep`: the lean (degrees from vertical) where the pace is as set",
             ),
+            opt(
+                "across",
+                "Bool",
+                0.0,
+                "pace each point by its own lean, not the whole layer by the seam's: layers closer only where that part of the wall leans, so they lean between the flat bottom and top",
+            ),
         ],
         output: "List<Curve>",
         doc: "Flat layer curves through the surface, `layer` apart from bottom to top (height snapped to whole layers), ready for `spiralize` or `toolpath`, or to bend with fields first. With `pace`, layers come closer where the wall leans out or in, so the beads stay one layer apart along the wall, and the steps are fitted to end exactly at the top. A `layer` field (e.g. of `z`) makes each layer as tall as the field halfway up it: thin layers at the bottom easing into thick ones. (Grasshopper: Contour)",

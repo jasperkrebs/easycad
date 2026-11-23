@@ -22,7 +22,7 @@ param flatten    = 80 mm   in 10..400 step 1     "Flattening (round to flat)"
 param flat_curve = "smooth" of ["smooth", "linear"] "Flattening curve"
 param handle_len = 60 mm   in 0..400 step 1      "Handle length (flat)"
 param handle_w   = 0 mm    in 0..600 step 1      "Handle width (0: as long round as the tube)"
-param handle_t   = 12 mm   in 2..200 step 0.5    "Handle thickness (two lines: solid)"
+param handle_t   = 0 mm    in 0..200 step 0.5    "Handle thickness (0: solid, its two walls a line apart)"
 
 group "Bottom"
 param cap_tie    = "spokes" of ["spokes", "spiral"] "Cap: tied to the wall by"
@@ -43,6 +43,7 @@ param compensation = "layer height" of ["layer height", "off"] "Compensation (th
 param strength   = 86 %    in 0..100             "Strength"  when compensation = "layer height"
 param steep      = 0.85    in 0..4 step 0.1      "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
 param pivot      = 73 deg  in 5..85 step 1       "Steep curve pivot (as now at this angle)"  when steep
+param flat_strength = 86 % in 0..100             "Flattening: strength (each point by its own lean)"  when compensation = "layer height"
 
 # ---- Sizes. The key's wall runs half a line outside its thread diameter (its inside face on the
 # thread), the cap's one line and the fit further out. Heights on whole layers (the pitch).
@@ -55,10 +56,11 @@ key_wh   = key_th + flat_h + hand_h
 # Fillets that leave room for the flat spiral inside them.
 cap_fil  = max(pitch, min(cap_fillet, min((cap_wh - pitch) * 0.95, cap_r - 2 * line)))
 key_fil  = max(pitch, min(key_fillet, min((key_th - pitch) * 0.95, key_r - 2 * line)))
-# The handle, by its bead's middle: half its thickness less half a line across (at least half a
-# line: two lines thick, its walls meet), and as wide as keeps the length round the tube's
+# The handle, by its bead's middle: solid (0, as it ships), half a line either side of the middle,
+# so its two walls are a line apart and touch, whatever the line; or half its thickness less half
+# a line (at least half a line), and as wide as keeps the length round the tube's
 # (a stadium: two straights and two half circles), or the width set.
-hand_ry  = max(line / 2, (handle_t - line) / 2)
+hand_ry  = pick(greater(handle_t, 0), max(line / 2, (handle_t - line) / 2), line / 2)
 same_rx  = max(hand_ry, (2 * pi * key_r - 2 * pi * hand_ry) / 4 + hand_ry)
 hand_rx  = pick(greater(handle_w, 0), max(hand_ry, (handle_w - line) / 2), same_rx)
 # The flattening, on whole layers, and never so short its sides would lean past about 70° (an
@@ -70,17 +72,16 @@ flat_h   = max(max(1, round(flatten / pitch)), ceil(0.55 * flat_d / pitch)) * pi
 # fillets, the flattening) layers come closer, pitch × (1 − strength × (lean / pivot)^steep ×
 # (1 − cos lean)), each still extruded for a whole layer; where it's straight (the threads) every
 # layer is exactly the pitch. The lean at height z: up a quarter-circle fillet of radius f from the
-# flat bottom (at `pitch`), from flat to straight; up the flattening, its steeper side's slope.
+# flat bottom (at `pitch`), from flat to straight. The flattening leans differently all round (the
+# sides moving in, the ends moving out, the corners hardly): there each point of a layer is paced
+# by its own lean (`contour(…, across: true)`), so the layers come closer only where the wall
+# overhangs; flat where it starts and ends, leaning a little between.
 comp     = less(abs(index_of(["layer height", "off"], compensation)), 0.5) * strength
 cap_h0   = clamp(z - pitch, 0, cap_fil)
 cap_lean = atan2(cap_fil - cap_h0, sqrt(max(0.000001, cap_fil ^ 2 - (cap_fil - cap_h0) ^ 2)))
 key_h0   = clamp(z - pitch, 0, key_fil)
 key_fl   = atan2(key_fil - key_h0, sqrt(max(0.000001, key_fil ^ 2 - (key_fil - key_h0) ^ 2)))
-# The flattening: how fast its sides move at height z (an S-curve's slope peaks at 1.5).
-flat_t   = clamp((z - key_th) / flat_h, 0, 1)
-flat_dt  = pick(index_of(["smooth", "linear"], flat_curve), 1, 6 * flat_t * (1 - flat_t)) * greater(z, key_th) * less(z, key_th + flat_h)
-key_mo   = atan(flat_dt * max(abs(key_r - hand_ry), abs(hand_rx - key_r)) / flat_h)
-key_lean = max(key_fl * less(z, key_th), key_mo)
+key_lean = key_fl * less(z, key_th)
 cap_lay  = pitch * max(0.05, 1 - comp * (min(cap_lean, 89) / pivot) ^ steep * (1 - cos(cap_lean)))
 key_lay  = pitch * max(0.05, 1 - comp * (min(key_lean, 89) / pivot) ^ steep * (1 - cos(key_lean)))
 
@@ -140,7 +141,8 @@ key_tub_s = loft([item(key_fils, 24), key_tube])
 key_mor_s = loft(flatten([[key_tube], key_morph]))
 key_han_s = loft([hand |> move(z: key_th + flat_h), hand |> move(z: key_th + flat_h + max(pitch, hand_h))])
 key_l2   = contour(key_tub_s, pitch)
-key_l3   = contour(key_mor_s, key_lay)
+flat_comp = less(abs(index_of(["layer height", "off"], compensation)), 0.5) * flat_strength
+key_l3   = contour(key_mor_s, pitch, pace: flat_comp, steep: steep, pivot: pivot, across: true)
 key_l4   = contour(key_han_s, pitch)
 key_lays = flatten([contour(key_fil_s, key_lay), item(key_l2, series(1, 1, count(key_l2) - 1)), item(key_l3, series(1, 1, count(key_l3) - 1)), pick(greater(hand_h, 0), item(key_l4, series(1, 1, count(key_l4) - 1)), [])])
 key_wall = spiralize(key_lays, width: line, flow: flow, flat_top: false, ramp: false)
