@@ -59,16 +59,25 @@ at the pitch): sliced as one, the steps were fitted to the whole height and the 
 over the cap).
 
 **The flattening, point by point** (23 Nov): it leans differently all round, its sides moving in
-(43 → 3 mm, up to about 37° at the S-curve's middle), its ends moving out (43 → 64.5 mm, about
-20°), the corners hardly. Paced as a whole, every point got the steepest point's compensation:
-the sides were no better off and the rest was squashed. Now each point down the wall is paced by
-its own lean (`contour(…, across: true)`), all of them taking the same number of layers from the
-tube to the handle, so the layers come closer only where the wall overhangs, flat where the
-flattening starts and ends and leaning a little between (non-planar). Its own strength
-(`Flattening: strength`, 86 % like the rest): with the shared steep curve (0.85, pivot 73°) a
-37° lean asks for only about 10 % closer layers (2.24 mm in the middle of the sides against
-2.32 at the ends); if the sides still sag, raise it, or take the steep curve to 0 (at 100 %:
-about 2.0 mm there), without squashing the ends or the threads.
+(43 mm to the handle's half line, up to about 37° in the S-curve's middle), its ends moving out
+gently, the corners hardly. Each point down the wall is paced by its own lean
+(`contour(…, across: true)`): straight, the full pitch; leaning, closer. One spiral has the same
+number of turns everywhere, so the points that overhang can't use more, thinner layers and still
+arrive at the top with the rest:
+- **Uneven** (as it ships, `Flattening: the handle's top`): the overhanging points fall behind and
+  stay behind; the handle's top edge ends lower there (as it ships, the sides 4.2 mm lower than
+  the ends; at strength 100 % with the steep curve at 0, 8.9 mm). Straight parts always the
+  full pitch.
+- **Flat:** it ends level; the points that lean less make up the difference where the
+  flattening leans (where nothing leans, every point steps the full pitch).
+In the middle of the sides 2.24 mm a layer, at the ends 2.44 (the shared steep curve, 0.85 and
+73°, asks little of 37°: about 10 %); `Flattening: strength` paces it more without touching the
+fillets. A first version spread the difference over every point evenly (2.24 against 2.32: hardly
+more than an extra layer, the owner found), and started the flattening a little squeezed.
+
+**No squeezed layer where the tube meets the flattening:** the fillets are on whole layers now,
+so the tube above them ends exactly at the flattening (with an 8 mm fillet it used to end at 90.5
+mm, the flattening started at 90: a 1.9–2.1 mm layer between, the owner's "gap").
 
 ## The handle
 

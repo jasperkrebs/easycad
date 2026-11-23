@@ -359,34 +359,54 @@ fn a_spiral_ties_a_second_bottom_to_the_wall() {
         .count();
     assert!(up > 10, "{up}");
 }
-/// The flattening is paced point by point: in its middle, its sides (moving in from the tube's
-/// 43 mm to the handle's 3, the steepest) rise less a turn than its ends (moving out to 64.5
-/// mm); where it starts and ends, both rise the pitch. The flattening's own strength paces it more.
+/// The flattening is paced point by point: in its middle its sides (moving in from the tube's
+/// 43 mm to the handle's half line, the steepest) step closer than its ends (moving out, gently);
+/// where it starts, every point steps the full pitch straight on from the tube (no squeezed
+/// layer between: the fillet is on whole layers, so the tube ends exactly there). Uneven at the
+/// top (as it ships), the sides fall behind and the handle's top edge is lower there; flat, it
+/// ends level. The flattening's own strength paces it more.
 #[test]
 fn the_flattening_is_paced_point_by_point() {
-    let rises = |e: &Evaluation, axis: usize| -> Vec<f64> {
-        let key = print(e, "key");
-        let mut z: Vec<f64> = key
+    let rises = |e: &Evaluation, deg: f64, lo: f64, hi: f64| -> Vec<f64> {
+        let (c, s) = (deg.to_radians().cos(), deg.to_radians().sin());
+        let side = |p: &P3| p[1] * c - p[0] * s;
+        let fwd = |p: &P3| p[0] * c + p[1] * s;
+        let mut z: Vec<f64> = print(e, "key")
             .windows(2)
-            .filter(|w| {
-                let o = 1 - axis;
-                (w[0][o] > 0.0) != (w[1][o] > 0.0) && w[1][axis] > 0.0
-            })
+            .filter(|w| (side(&w[0]) > 0.0) != (side(&w[1]) > 0.0) && fwd(&w[1]) > 0.0)
             .map(|w| w[1][2])
-            .filter(|z| *z > 95.0 && *z < 175.0)
+            .filter(|z| *z > lo && *z < hi)
             .collect();
+        z.sort_by(f64::total_cmp);
         z.dedup_by(|a, b| (*a - *b).abs() < 0.05);
         z.windows(2).map(|w| w[1] - w[0]).collect()
     };
     let least = |r: &[f64]| r.iter().copied().fold(f64::INFINITY, f64::min);
     let e = nutcracker(&[]);
-    let (sides, ends) = (rises(&e, 0), rises(&e, 1));
-    assert!(least(&sides) < least(&ends) - 0.05, "{sides:?} {ends:?}");
-    assert!((sides[sides.len() - 1] - 2.5).abs() < 0.05, "{sides:?}");
+    // (The key's tube ends at 90 mm.)
+    for deg in [0.0, 90.0, 180.0, 270.0] {
+        let r = rises(&e, deg, 80.0, 100.0);
+        assert!(r.iter().all(|x| *x > 2.45), "{deg}: {r:?}");
+    }
+    let (sides, ends) = (rises(&e, 0.0, 95.0, 170.0), rises(&e, 90.0, 95.0, 170.0));
+    assert!(least(&sides) < least(&ends) - 0.1, "{sides:?} {ends:?}");
+    let tops = |e: &Evaluation| {
+        let key = print(e, "key");
+        let top = key.iter().map(|p| p[2]).fold(0.0, f64::max);
+        let near = |f: &dyn Fn(&P3) -> bool| {
+            key.iter()
+                .filter(|p| p[2] > top - 15.0 && f(p))
+                .map(|p| p[2])
+                .fold(0.0, f64::max)
+        };
+        (near(&|p| p[1].abs() < 5.0), near(&|p| p[1].abs() > 50.0))
+    };
+    let (side_top, end_top) = tops(&e);
+    assert!(end_top - side_top > 2.5, "{side_top} {end_top}");
+    let v = [("hand_top".to_string(), Literal::Text("flat".into()))];
+    let flat = evaluate(&set_values(TEMPLATE, &v).unwrap(), Quality::Final);
+    let (side_top, end_top) = tops(&flat);
+    assert!(end_top - side_top < 1.0, "{side_top} {end_top}");
     let more = nutcracker(&[("flat_strength", 100.0), ("steep", 0.0)]);
-    assert!(
-        least(&rises(&more, 0)) < least(&sides) - 0.15,
-        "{:?}",
-        rises(&more, 0)
-    );
+    assert!(least(&rises(&more, 0.0, 95.0, 170.0)) < least(&sides) - 0.15);
 }

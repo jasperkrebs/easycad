@@ -44,6 +44,7 @@ param strength   = 86 %    in 0..100             "Strength"  when compensation =
 param steep      = 0.85    in 0..4 step 0.1      "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
 param pivot      = 73 deg  in 5..85 step 1       "Steep curve pivot (as now at this angle)"  when steep
 param flat_strength = 86 % in 0..100             "Flattening: strength (each point by its own lean)"  when compensation = "layer height"
+param hand_top   = "uneven" of ["uneven", "flat"] "Flattening: the handle's top (uneven: straight parts at the full layer, the overhangs fall behind; flat: the straight parts make it up)"  when compensation = "layer height"
 
 # ---- Sizes. The key's wall runs half a line outside its thread diameter (its inside face on the
 # thread), the cap's one line and the fit further out. Heights on whole layers (the pitch).
@@ -54,8 +55,10 @@ key_th   = max(2, round(key_thread / pitch)) * pitch
 hand_h   = round(handle_len / pitch) * pitch
 key_wh   = key_th + flat_h + hand_h
 # Fillets that leave room for the flat spiral inside them.
-cap_fil  = max(pitch, min(cap_fillet, min((cap_wh - pitch) * 0.95, cap_r - 2 * line)))
-key_fil  = max(pitch, min(key_fillet, min((key_th - pitch) * 0.95, key_r - 2 * line)))
+# On whole layers, so the straight wall above starts and ends on whole layers too (the key's
+# tube meets the flattening at exactly its height, no squeezed layer between).
+cap_fil  = max(1, round(min(cap_fillet, min((cap_wh - pitch) * 0.95, cap_r - 2 * line)) / pitch)) * pitch
+key_fil  = max(1, round(min(key_fillet, min((key_th - pitch) * 0.95, key_r - 2 * line)) / pitch)) * pitch
 # The handle, by its bead's middle: solid (0, as it ships), half a line either side of the middle,
 # so its two walls are a line apart and touch, whatever the line; or half its thickness less half
 # a line (at least half a line), and as wide as keeps the length round the tube's
@@ -134,17 +137,21 @@ fb       = pick(index_of(["smooth", "linear"], flat_curve), ft, smoothstep(ft))
 key_morph = tween(unit |> scale(key_r), hand, fb) |> move(z: key_th + ft * flat_h)
 key_hand = hand |> move(z: key_wh)
 key_shape = loft(flatten([key_fils, [key_tube], key_morph, pick(greater(hand_h, 0), [key_hand], [])]))
-# Sliced in pieces, so the thread is exactly a pitch a turn: the fillet and the flattening in
-# compensated steps fitted to their own heights, the threaded tube and the handle at the pitch.
+# Sliced in pieces, so the thread is exactly a pitch a turn: the fillet in compensated steps fitted
+# to its height, the threaded tube at the pitch, then the flattening and the handle together,
+# each point paced by its own lean (straight: the pitch; leaning: closer). Uneven at the top: the
+# points that overhang fall behind and the handle's top edge is lower there; flat: every point
+# ends on the top, the straight parts making it up where the flattening leans.
 key_fil_s = loft(key_fils)
 key_tub_s = loft([item(key_fils, 24), key_tube])
-key_mor_s = loft(flatten([[key_tube], key_morph]))
-key_han_s = loft([hand |> move(z: key_th + flat_h), hand |> move(z: key_th + flat_h + max(pitch, hand_h))])
+# (The handle in sections as close as the flattening's, so the smooth loft stays straight.)
+hand_n   = max(1, ceil(hand_h / (flat_h / 24)))
+key_hands = hand |> move(z: key_th + flat_h + hand_h * series(1, 1, hand_n) / hand_n)
+key_mh_s = loft(flatten([[key_tube], key_morph, pick(greater(hand_h, 0), key_hands, [])]))
 key_l2   = contour(key_tub_s, pitch)
 flat_comp = less(abs(index_of(["layer height", "off"], compensation)), 0.5) * flat_strength
-key_l3   = contour(key_mor_s, pitch, pace: flat_comp, steep: steep, pivot: pivot, across: true)
-key_l4   = contour(key_han_s, pitch)
-key_lays = flatten([contour(key_fil_s, key_lay), item(key_l2, series(1, 1, count(key_l2) - 1)), item(key_l3, series(1, 1, count(key_l3) - 1)), pick(greater(hand_h, 0), item(key_l4, series(1, 1, count(key_l4) - 1)), [])])
+key_l3   = contour(key_mh_s, pitch, pace: flat_comp, steep: steep, pivot: pivot, across: true, flat_top: less(abs(index_of(["uneven", "flat"], hand_top) - 1), 0.5))
+key_lays = flatten([contour(key_fil_s, key_lay), item(key_l2, series(1, 1, count(key_l2) - 1)), item(key_l3, series(1, 1, count(key_l3) - 1))])
 key_wall = spiralize(key_lays, width: line, flow: flow, flat_top: false, ramp: false)
   |> bead(layer: pitch) |> adjust(extrude: wall_extrusion)
 key_rings = rings(unit |> scale(key_flat), line)

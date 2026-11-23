@@ -7,6 +7,24 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-23 (later): the key: no squeezed layer, overhangs squish, straight parts don't (recipe-developer)
+
+**Why:** the owner's picture: a gap where the key's tube meets the flattening; and the
+point-by-point pacing "just adds an extra layer": the overhangs should squish, the straight
+parts stand the full layer, non-planar is fine.
+
+- **The gap:** the tube above an 8 mm fillet wasn't whole layers, so it was stretched to end at
+  90.5 mm while the flattening started at 90: one 1.9–2.1 mm layer. The fillets are on whole
+  layers now (cap and key): 2.5 mm straight on. Tested.
+- **Per point, honestly:** one spiral has the same turns everywhere, so the first version scaled
+  every point's steps to end flat: all about the same. Now `contour(…, across: true)` gives each
+  line its own steps (straight: the layer), its count the least needing line's; the leaning
+  lines end short of the top (`flat_top: true`: level, the others making it up only where the
+  surface leans). The key slices the flattening and the handle together: sides 2.24 mm, ends 2.44
+  in the middle; the handle's top edge 4.2 mm lower at the sides (8.9 at strength 100 %, steep 0).
+  `Flattening: the handle's top`: uneven (default) or flat. Unit- and template-tested; a sweep of
+  648 combinations clean.
+
 ## 2026-11-23: the key's flattening paced point by point; the G1's start-block settings (recipe-developer)
 
 **Why:** the owner: on the key, the walls that overhang sag and the rest prints fine; compensate

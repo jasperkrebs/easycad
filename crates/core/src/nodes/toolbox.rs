@@ -488,7 +488,7 @@ pub(super) fn contour(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
         let Some(l) = layer.as_constant() else {
             return Err("`across` needs a plain layer height, not a field".into());
         };
-        s.contour_across(l, pace, max)?
+        s.contour_across(l, pace, a.flag(6)?, max)?
     } else {
         s.contour(&layer, pace, max)?
     };
