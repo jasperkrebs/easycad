@@ -7,6 +7,28 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-23: Nutcracker: spokes as long as they can be, or a spiral (recipe-developer)
+
+**Why:** the owner: more than 4 spokes ran into each other in the middle, fewer didn't meet; 1
+should run across to the opposite wall, 2 meet tip to tip, 3 like the Mercedes star, more get
+shorter. And, instead of spokes, the bottom's spiral again on top, the other way round, in to the
+middle and back out between, into the wall, in one line.
+
+- **Spoke length** (`spokes`, `inner` 0): c = w / sin(180°/n) from the axis (bands two lines wide,
+  rounded ends, just touching); one spoke: across, a bead off the opposite wall. 4 moves from
+  1.25w to 1.41w (its tips overlapped a little). Drawn from above for 1–12 and tested (1, 2, 3, 4, 6).
+- **`spiral_tie(path, height, width, count, layer)`** (new step): rings a line apart, in against
+  the wall's way, round in the middle, out between them, all ring changes in one window next to
+  where it goes in, the last onto the wall carrying straight on. A first try (a steady spiral, 2
+  lines a turn) left a crescent against the wall; rings fixed it. Unit- and template-tested.
+- `Cap/Key: tied to the wall by` (spokes, spiral); `how many, on top of each other` for both.
+- `spokes` takes `layers`/`layer` (one step for stacked crosses: five chained steps copied the
+  path five times and ran out of points on a 300 mm cap with 1 mm lines); a count of 0 passes the
+  path through. A sweep (thread 20–300 mm, line 1–12 mm, 1–12 spokes, 1 and 5 stacked, both ties):
+  no errors; where there's no room, it says how many were left out.
+
+Open: a test print of both.
+
 ## 2026-11-23: Nutcracker: stacked crosses, spokes per part (recipe-developer)
 
 **Why:** the owner: several crosses printed on top of each other, set for the cap (bottom) and

@@ -184,21 +184,61 @@ pub(super) fn spikes(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
 pub(super) fn spokes(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
     let path = a.toolpath(0)?;
     let count = a.count(2, 0, 36)?;
+    // None: the path as it is (not copied, nor counted again).
+    if count == 0 {
+        return Ok(a.get(0)?.clone());
+    }
+    let stacked = a.count(6, 0, 20)?;
+    if stacked == 0 {
+        return Ok(a.get(0)?.clone());
+    }
     ctx.spend(path.points.len() / 64 + 1)?;
-    let (out, made) = toolpath_ops::spokes(
+    let (height, layer) = (a.num(1)?, a.num(7)?);
+    let angle = Some(a.num(5)?).filter(|d| d.abs() <= 360.0);
+    let max = ctx.remaining().min(MAX_PATH_POINTS);
+    let mut out = toolpath_ops::spokes(path, height, count, a.num(3)?, a.num(4)?, angle, max)?;
+    let mut left_out = count - out.1;
+    for k in 1..stacked {
+        let next = toolpath_ops::spokes(
+            &out.0,
+            height + k as f64 * layer,
+            count,
+            a.num(3)?,
+            a.num(4)?,
+            angle,
+            max,
+        )?;
+        left_out += count - next.1;
+        out = next;
+    }
+    let out = out.0;
+    if left_out > 0 {
+        ctx.warn(format!(
+            "{left_out} of {} spokes were left out: the path doesn't reach that height, or there isn't room to reach in from the wall",
+            count * stacked
+        ));
+    }
+    ctx.spend(out.points.len())?;
+    Ok(Value::Toolpath(Rc::new(out)))
+}
+
+pub(super) fn spiral_tie(ctx: &mut Ctx, a: &Args) -> Result<Value, String> {
+    let path = a.toolpath(0)?;
+    let count = a.count(3, 0, 20)?;
+    if count == 0 {
+        return Ok(a.get(0)?.clone());
+    }
+    ctx.spend(path.points.len() / 64 + 1)?;
+    let (out, made) = toolpath_ops::spiral_ties(
         path,
         a.num(1)?,
+        a.num(2)?,
         count,
-        a.num(3)?,
         a.num(4)?,
-        Some(a.num(5)?).filter(|d| d.abs() <= 360.0),
         ctx.remaining().min(MAX_PATH_POINTS),
     )?;
     if made < count {
-        ctx.warn(format!(
-            "{} of {count} spokes were left out: the path doesn't reach that height, or there isn't room to reach in from the wall",
-            count - made
-        ));
+        ctx.warn(format!("{} of {count} spirals were left out: the path doesn't reach that height, or its wall is under 3 lines from the axis", count - made));
     }
     ctx.spend(out.points.len())?;
     Ok(Value::Toolpath(Rc::new(out)))

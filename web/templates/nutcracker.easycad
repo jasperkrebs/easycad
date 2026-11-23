@@ -4,7 +4,7 @@ printer "Ginger G1"
 note "A cap and a key that screws into it: put a nut in the cap, screw the key down onto it until it cracks. Two prints from one set of settings, each centred on the bed with its own G-code file, each one continuous line: a flat spiral bottom, a fillet, then the wall in vase mode, whose layer height is the thread's pitch, so every turn lays one turn of thread."
 note "The key is a threaded tube as long as the cap is deep and a bit more; above it the tube flattens gradually (round to a flat stadium shape, along an S-curve or straight) into a broad flat handle, like the bow of a large key. The handle is as wide as keeps every layer as long as the tube's (or your own width); at its thinnest, two lines thick, its walls meet into one solid blade."
 note "The cap sits one line width outside the key, plus the fit. Both spirals turn the same way, so the key screws in closed end first, as it prints."
-note "The bottoms take the force, so each is tied to its wall by a cross: as soon as the wall is a layer up from the bottom (part way up the fillet), the line runs in to the middle and back out, flat on the bottom's spiral, four times (or as many as set, for the cap and the key each), and as many crosses again a layer up each, on top of each other, if set. The fillets and the flattening lean, so their layers come closer (overhang compensation by layer height); the threads stay exactly a pitch a turn."
+note "The bottoms take the force, so each is tied to its wall by a cross: as soon as the wall is a layer up from the bottom (part way up the fillet), the line runs in to the middle and back out, flat on the bottom's spiral, four times (or as many as set, for the cap and the key each; each spoke as long as keeps its tip clear of the others', one runs right across); or, instead, it spirals in to the middle and back out between, a second bottom in one line. More of them, a layer up each, on top of each other, if set. The fillets and the flattening lean, so their layers come closer (overhang compensation by layer height); the threads stay exactly a pitch a turn."
 
 group "Thread"
 param thread_d   = 80 mm   in 20..300 step 0.5   "Thread diameter (the key's inside)"
@@ -25,10 +25,12 @@ param handle_w   = 0 mm    in 0..600 step 1      "Handle width (0: as long round
 param handle_t   = 12 mm   in 2..200 step 0.5    "Handle thickness (two lines: solid)"
 
 group "Bottom"
-param cap_spokes = 4       in 0..12 step 1       "Cap: spokes (4: a cross; 0: none)"
-param cap_crosses = 1      in 1..5 step 1        "Cap: crosses on top of each other"  when cap_spokes
-param key_spokes = 4       in 0..12 step 1       "Key: spokes (4: a cross; 0: none)"
-param key_crosses = 1      in 1..5 step 1        "Key: crosses on top of each other"  when key_spokes
+param cap_tie    = "spokes" of ["spokes", "spiral"] "Cap: tied to the wall by"
+param cap_spokes = 4       in 0..12 step 1       "Cap: spokes (4: a cross; 0: none)"  when cap_tie = "spokes"
+param cap_crosses = 1      in 1..5 step 1        "Cap: how many, on top of each other"
+param key_tie    = "spokes" of ["spokes", "spiral"] "Key: tied to the wall by"
+param key_spokes = 4       in 0..12 step 1       "Key: spokes (4: a cross; 0: none)"  when key_tie = "spokes"
+param key_crosses = 1      in 1..5 step 1        "Key: how many, on top of each other"
 
 group "Print"
 param line       = 6 mm    in 1..12 step 0.1     "Line width"
@@ -109,11 +111,15 @@ cap_disc = toolpath(link_rings(reverse(cap_rings), "spiral", line), width: line,
 # The cross: as soon as the wall is a layer up from the bottom (part way up the fillet), the line
 # runs in to the middle and back out `cap_spokes` times, flat on the bottom, tying its spiral to
 # the wall; more crosses each a layer up, on the one below (all from the seam's angle, so they stack).
-cap1     = spokes(join([cap_disc, cap_wall]), height: 2 * pitch, count: cap_spokes, width: line, angle: 90)
-cap2     = spokes(cap1, height: 3 * pitch, count: pick(greater(cap_crosses, 1.5), cap_spokes, 0), width: line, angle: 90)
-cap3     = spokes(cap2, height: 4 * pitch, count: pick(greater(cap_crosses, 2.5), cap_spokes, 0), width: line, angle: 90)
-cap4     = spokes(cap3, height: 5 * pitch, count: pick(greater(cap_crosses, 3.5), cap_spokes, 0), width: line, angle: 90)
-cap      = spokes(cap4, height: 6 * pitch, count: pick(greater(cap_crosses, 4.5), cap_spokes, 0), width: line, angle: 90)
+# Each spoke as long as keeps its tip clear of the others' (one spoke: across to the opposite wall).
+cap_base  = join([cap_disc, cap_wall])
+cap_sp    = less(abs(index_of(["spokes", "spiral"], cap_tie) - 1), 0.5)
+cap_n     = pick(cap_sp, 0, cap_spokes)
+cap_x     = spokes(cap_base, height: 2 * pitch, count: cap_n, width: line, angle: 90, layers: cap_crosses, layer: pitch)
+# Or a second bottom: in to the middle and back out in one line, on top of the first (and more,
+# each a layer up).
+cap_s    = spiral_tie(cap_base, height: 2 * pitch, width: line, count: cap_sp * cap_crosses, layer: pitch)
+cap      = pick(cap_sp, cap_s, cap_x)
 
 # ---- The key, printed its pressing end down: the fillet, the threaded tube, then flattening
 # from round into the handle's stadium (along an S-curve or straight), then the flat handle.
@@ -141,11 +147,14 @@ key_wall = spiralize(key_lays, width: line, flow: flow, flat_top: false, ramp: f
   |> bead(layer: pitch) |> adjust(extrude: wall_extrusion)
 key_rings = rings(unit |> scale(key_flat), line)
 key_disc = toolpath(link_rings(reverse(key_rings), "spiral", line), width: line, layer: pitch, flow: flow) |> adjust(extrude: disc_extrusion)
-key1     = spokes(join([key_disc, key_wall]), height: 2 * pitch, count: key_spokes, width: line, angle: 90)
-key2     = spokes(key1, height: 3 * pitch, count: pick(greater(key_crosses, 1.5), key_spokes, 0), width: line, angle: 90)
-key3     = spokes(key2, height: 4 * pitch, count: pick(greater(key_crosses, 2.5), key_spokes, 0), width: line, angle: 90)
-key4     = spokes(key3, height: 5 * pitch, count: pick(greater(key_crosses, 3.5), key_spokes, 0), width: line, angle: 90)
-key      = spokes(key4, height: 6 * pitch, count: pick(greater(key_crosses, 4.5), key_spokes, 0), width: line, angle: 90)
+key_base  = join([key_disc, key_wall])
+key_sp    = less(abs(index_of(["spokes", "spiral"], key_tie) - 1), 0.5)
+key_n     = pick(key_sp, 0, key_spokes)
+key_x     = spokes(key_base, height: 2 * pitch, count: key_n, width: line, angle: 90, layers: key_crosses, layer: pitch)
+# Or a second bottom: in to the middle and back out in one line, on top of the first (and more,
+# each a layer up).
+key_s    = spiral_tie(key_base, height: 2 * pitch, width: line, count: key_sp * key_crosses, layer: pitch)
+key      = pick(key_sp, key_s, key_x)
   |> require(1 - less(key_th + pitch, cap_wh), "The threaded length is shorter than the cap is deep: screwed all the way down, the key's flattening would hit the cap's rim", warn: true)
   |> require(less(atan2(1.5 * max(abs(key_r - hand_ry), abs(hand_rx - key_r)), flat_h), 60), "The flattening leans more than 60°: make it longer", warn: true)
 

@@ -153,7 +153,10 @@ fn a_cross_ties_each_bottom_to_its_wall() {
             .iter()
             .map(|p| radius(p))
             .fold(f64::INFINITY, f64::min);
-        assert!((nearest - (7.5 - 3.0)).abs() < 0.05, "{name}: {nearest}");
+        // Four spokes: as close as keeps neighbours a bead apart (6 / sin 45° from the axis, less
+        // the turn's half a line).
+        let tip = 6.0 / std::f64::consts::FRAC_PI_4.sin() - 3.0;
+        assert!((nearest - tip).abs() < 0.05, "{name}: {nearest}");
         let mut tips: Vec<f64> = cross
             .iter()
             .filter(|p| (radius(p) - nearest).abs() < 0.05)
@@ -184,10 +187,13 @@ fn crosses_stack_and_each_part_has_its_own() {
         ("key_crosses", 3.0),
     ]);
     assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+    // Their tips: as close to the axis as keeps neighbours a bead apart.
+    let tip = |n: f64| 6.0 / (std::f64::consts::PI / n).sin() - 3.0;
     let tips = |name: &str, z: f64| -> Vec<f64> {
+        let r = tip(if name == "cap" { 3.0 } else { 6.0 });
         let mut t: Vec<f64> = print(&e, name)
             .iter()
-            .filter(|p| (radius(p) - 4.5).abs() < 0.05 && (p[2] - z).abs() < 1e-9)
+            .filter(|p| (radius(p) - r).abs() < 0.05 && (p[2] - z).abs() < 1e-9)
             .map(|p| p[1].atan2(p[0]).to_degrees().rem_euclid(360.0))
             .collect();
         t.sort_by(f64::total_cmp);
@@ -261,4 +267,78 @@ fn extreme_handles_still_print() {
         );
         assert_eq!(e.prints.len(), 2, "{values:?}");
     }
+}
+
+/// One spoke runs right across to the opposite wall and back; two meet at the axis, tip to tip.
+#[test]
+fn one_spoke_runs_across_two_meet_in_the_middle() {
+    let flat = |e: &Evaluation| -> Vec<P3> {
+        print(e, "cap")
+            .iter()
+            .filter(|p| (p[2] - 5.0).abs() < 1e-9)
+            .copied()
+            .collect()
+    };
+    // The cap's wall at 5 mm (part way up its fillet), from the drawing of it.
+    let one = flat(&nutcracker(&[("cap_spokes", 1.0)]));
+    // (Its first point flat at the height is a line in from the wall.)
+    let wall_r = radius(&one[0]) + 6.0;
+    // In at the back (+Y), round a bead off the wall at the front.
+    let front = one.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
+    assert!(
+        (front - -(wall_r - 1.5 * 6.0 + 3.0)).abs() < 0.1,
+        "{front} {wall_r}"
+    );
+    let two = flat(&nutcracker(&[("cap_spokes", 2.0)]));
+    let nearest = two.iter().map(radius).fold(f64::INFINITY, f64::min);
+    assert!((nearest - 3.0).abs() < 0.05, "{nearest}");
+}
+
+/// Instead of spokes, a second bottom in one line: in to the middle against the way the wall
+/// goes, rings a line apart, round in the middle and back out between them, into the wall; flat
+/// on the first bottom, nowhere more than a line from the next ring, from the wall to the
+/// middle. Two of them stack.
+#[test]
+fn a_spiral_ties_a_second_bottom_to_the_wall() {
+    let v = [("cap_tie".to_string(), Literal::Text("spiral".into()))];
+    let e = evaluate(&set_values(TEMPLATE, &v).unwrap(), Quality::Final);
+    assert!(e.diagnostics.is_empty(), "{:?}", e.diagnostics);
+    let pts = print(&e, "cap");
+    let i0 = pts.iter().position(|p| (p[2] - 5.0).abs() < 1e-9).unwrap();
+    let n = pts[i0..]
+        .iter()
+        .take_while(|p| (p[2] - 5.0).abs() < 1e-9)
+        .count();
+    let layer = &pts[i0..i0 + n];
+    let wall_r = radius(&layer[0]);
+    let mut radii: Vec<f64> = layer.iter().map(radius).collect();
+    radii.sort_by(f64::total_cmp);
+    assert!(radii[0] < 3.5, "{}", radii[0]);
+    let gap = radii.windows(2).map(|w| w[1] - w[0]).fold(0.0, f64::max);
+    assert!(gap <= 6.0 + 1e-6, "{gap}");
+    // The way in turns against the wall's way (the wall goes counter-clockwise).
+    let turn = |a: &P3, b: &P3| {
+        let d = b[1].atan2(b[0]) - a[1].atan2(a[0]);
+        (d + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI
+    };
+    let wall_way = turn(&pts[i0 - 2], &pts[i0 - 1]).signum();
+    assert!(turn(&layer[2], &layer[10]).signum() == -wall_way);
+    // Out at the wall's radius, then on up the wall, the wall's way.
+    assert!(
+        (radius(&layer[n - 1]) - wall_r).abs() < 0.2,
+        "{}",
+        radius(&layer[n - 1])
+    );
+    assert!(pts[i0 + n][2] > 5.0 && turn(&layer[n - 1], &pts[i0 + n + 2]).signum() == wall_way);
+    // Two: the second a layer up, on the first.
+    let v = [
+        ("cap_tie".to_string(), Literal::Text("spiral".into())),
+        ("cap_crosses".to_string(), Literal::Number(2.0)),
+    ];
+    let e = evaluate(&set_values(TEMPLATE, &v).unwrap(), Quality::Final);
+    let up = print(&e, "cap")
+        .iter()
+        .filter(|p| (p[2] - 7.5).abs() < 1e-9 && radius(p) < 10.0)
+        .count();
+    assert!(up > 10, "{up}");
 }
