@@ -44,6 +44,7 @@ node scripts/agent-test.cjs [dir]  # the Chat tab against a scripted stand-in fo
 node scripts/request-test.cjs [dir]  # feature requests: filed, shipped, the chat carries on
 node scripts/render-test.cjs [dir]   # the Render view: fittings, a path-traced render (slow on a software GPU)
 node --test agent-proxy/worker.test.mjs scripts/requests.test.mjs scripts/print.test.mjs scripts/settings.test.mjs scripts/sketcher.test.mjs scripts/fixture.test.mjs   # the AI proxy, feature requests, printers, list settings, the sketcher's files, the lamp's fittings
+node --test scripts/prints.test.mjs   # the owner's approved prints still make their G-code (needs scripts/build-web.sh)
 python3 scripts/hand-checked-fixtures.py --check   # hand-checked G-code fixtures up to date
 FUZZ_CASES=5000 cargo test --release -p easycad-core --test fuzz   # a long round of damaged recipes (40 run with every `cargo test`)
 cargo test --release -p easycad-core --test sweep -- --ignored --nocapture   # every setting at its ends, with timings
@@ -51,10 +52,20 @@ python3 scripts/third-party-notices.py   # after adding/updating a dependency (C
 ```
 
 CI (`.github/workflows/ci.yml`) is kept light: on pull requests and `main` it runs the Rust
-checks and tests (golden G-code included), the notices and fixture checks, the node tests and
-the web build; a pull request that changes `web/` also runs the smoke test (its screenshots are
-the run's artifact). The agent and request tests are not in CI: run them yourself before a UI
-change, and look at the smoke-test screenshots.
+checks and tests (the G-code checks and the quick open-and-print of every template included),
+the notices and fixture checks, the node tests, the approved prints and the web build; a pull
+request that changes the app (`web/`, but not only `web/templates/`) also runs the smoke test
+(its screenshots are the run's artifact). The agent and request tests are not in CI: run them
+yourself before a UI change, and look at the smoke-test screenshots.
+
+**Which checks a change needs** (keep it quick: the full set only for app changes):
+- **A recipe or template** (`web/templates/`, `fixtures/recipes/`, recipe docs): `cargo test
+  --workspace` (it opens and prints every template, `templates_tests.rs`, in seconds). No smoke
+  test, no web build.
+- **The engine or the language** (`crates/`): the Rust checks and tests, then
+  `scripts/build-web.sh` and the approved prints.
+- **The app** (`web/js`, `index.html`, `styles.css`): the node tests and the smoke test; the agent,
+  request and render tests when the change touches them.
 
 - `web/pkg/` is generated; never edit it or commit it.
 - `wasm-bindgen-cli` must match the `wasm-bindgen` version in `Cargo.lock` exactly.
@@ -84,12 +95,20 @@ change, and look at the smoke-test screenshots.
   Dependencies must be permissive (MIT/Apache/BSD/0BSD; MPL-2.0 OK). No GPL/AGPL in the shipped
   app. Add every new runtime dependency (Rust crate or vendored JS) to `THIRD-PARTY-NOTICES.md`
   in the same change.
-- **G-code safety.** G-code drives real machines. Never emit printable G-code from a node
-  unless it's golden-tested against EasyGCode (or a hand-checked fixture), and keep start/end
-  blocks identical to EasyGCode's proven ones. Fixtures come from EasyGCode itself
-  (`scripts/easygcode-fixtures.cjs` → `fixtures/easygcode/`); EasyGCode is never changed.
-  Hand-checked fixtures (`fixtures/hand-checked/`) are worked out from the geometry in exact
-  arithmetic by `scripts/hand-checked-fixtures.py`, independently of the Rust code.
+- **G-code safety.** G-code drives real machines. Three checks guard it:
+  - **The basics, against EasyGCode:** the start and end blocks (kept identical to EasyGCode's
+    proven ones), the extrusion and flow arithmetic and the vase spirals stay golden-tested
+    against EasyGCode's G-code (`fixtures/easygcode/`, made by EasyGCode itself with
+    `scripts/easygcode-fixtures.cjs`; EasyGCode is never changed). These tests set EasyGCode's
+    settings themselves: templates and new features don't have to match EasyGCode.
+  - **The owner's approved prints** (`fixtures/prints/`): a project file saved from EasyCAD
+    (with its printer settings) and the G-code that printed well. The engine must keep making
+    exactly that G-code (`scripts/prints.test.mjs`). Changing one (`UPDATE_PRINTS=1`) only
+    with the owner's OK, said in the pull request. Add one when the owner says a print worked.
+  - **New steps** need no EasyGCode match and no hand-checked fixture: test what their
+    G-code does (heights, widths, extrusion per mm) in Rust. Hand-checked fixtures
+    (`fixtures/hand-checked/`, `scripts/hand-checked-fixtures.py`) stay as they are and are
+    optional for new work.
 - **Speeds as volumetric flow.** Templates and the agent set `flow:` (mm³/s), not `speed:`.
 - **General steps, not per-project code.** A new project is a recipe. Add an engine step only
   when no combination of existing steps can do the job, and make it reusable (see

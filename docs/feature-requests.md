@@ -62,21 +62,22 @@ reasonable:
   - all Rust tests;
   - the golden tests, which must match EasyGCode's G-code byte for byte;
   - the hand-checked fixtures;
+  - your approved prints (`fixtures/prints/`): their G-code must not change;
   - the wasm size budget.
   (The browser tests on desktop and phone run in the builder's own session, not in CI.)
 - **Some files only a person changes.** The merge is refused, and the request waits for you,
   if the change touches:
   - the workflows and these rules (`.github/`);
   - the AI proxy;
-  - EasyGCode's fixtures and the script that makes them;
+  - EasyGCode's fixtures and the script that makes them, and your approved prints;
   - `CLAUDE.md`;
   - dependencies (`Cargo.toml`/`Cargo.lock`, `THIRD-PARTY-NOTICES.md`, `web/vendor/`), and
     `web/config.json`.
 
   So it can't add a library, weaken a test or change its own rules.
 - **G-code drives real machines.** A change to the G-code writer (`crates/core/src/gcode.rs`)
-  isn't merged by itself: it waits for your review (label `needs-review`). New G-code from a
-  step must be checked against a hand-checked fixture (CLAUDE.md).
+  isn't merged by itself: it waits for your review (label `needs-review`). The G-code of your
+  approved prints and the EasyGCode checks must stay exactly as they are (CLAUDE.md).
 - **Tests only grow**, and a change over 3000 lines needs a person.
 - **Broken means undone.** If CI fails after the merge, the change is reverted (the site goes
   back to the version before) and the builder tries again.

@@ -9,8 +9,8 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
 import { foldout, layoutKey, renderSettings, settingRow } from './settings.js';
-import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutValues } from './templates.js';
-import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
+import { colorsLine, fileNote, fingerprint, printerLine, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutPrinter, withoutValues } from './templates.js';
+import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings, settingsOf, useSettings } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
@@ -1991,9 +1991,17 @@ function wire() {
       if (sketch && isSketcherSettings(sketch)) {
         await openSketcher(sketch, picked?.name || 'thread-pendant');
       } else if (text !== null) {
-        const { text: recipe, colors } = withoutColors(withoutFileNote(text));
+        const { text: withPrinter, colors } = withoutColors(withoutFileNote(text));
+        const { text: recipe, printer } = withoutPrinter(withPrinter);
         await openSource(recipe);
         restoreColors(colors);
+        // The printer's settings as the project was saved with them, for the printer its recipe
+        // names (they become this device's, as a change in the Print tab does).
+        if (printer && printer.printer === state.printer) {
+          state.profile = useSettings(state.printer, printer.settings);
+          renderPrinterSettings($('printerSettings'), state.printer, state.profile, onProfileChange);
+          onProfileChange();
+        }
         setSaveName((picked?.name || '').replace(/\.easycad$/i, ''));
         autosave();
         checkTemplate();
@@ -2006,7 +2014,8 @@ function wire() {
   $('saveProject').addEventListener('click', async () => {
     const site = new URL('.', location.href).href;
     const colors = colorsToSave();
-    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${colors ? `${colorsLine(colors)}\n\n` : ''}${await currentSource()}`);
+    const printer = printerLine(state.printer, settingsOf(state.printer, state.profile));
+    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${printer}\n${colors ? `${colorsLine(colors)}\n` : ''}\n${await currentSource()}`);
     state.openedValues = { ...state.values };
     state.unsaved = false;
     autosave();

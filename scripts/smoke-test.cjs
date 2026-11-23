@@ -695,6 +695,20 @@ async function saveFrom(page, selector) {
       await page.waitForTimeout(1500);
       if ((await page.inputValue('#recipe')) !== before) failures.push('save: opening the saved file changed the recipe (the note stayed in?)');
       if (!(await page.locator('#templateUpdate').isHidden())) failures.push('save: opening the saved file offers a template update');
+      // The printer's settings go with the file: changed on the device since, opening the file
+      // brings back the ones it was saved with.
+      const printerLine = (file.match(/^#~ printer (.*)$/m) || [])[1];
+      const savedTravel = printerLine ? JSON.parse(printerLine).settings?.travelSpeed : undefined;
+      if (typeof savedTravel !== 'number') failures.push(`save: no printer settings in the project file: ${printerLine}`);
+      await page.click('#tab-print');
+      if (!(await page.isVisible('#printerSettings input'))) await page.click('#panel-print summary');
+      await page.fill('#printer-travelSpeed', String(savedTravel + 15));
+      await page.dispatchEvent('#printer-travelSpeed', 'change');
+      await page.setInputFiles('#projectFile', { name: saved.name, mimeType: 'text/plain', buffer: saved.data });
+      await page
+        .waitForFunction((t) => document.getElementById('printer-travelSpeed').value === String(t), savedTravel, { timeout: 15000 })
+        .catch(async () => failures.push(`save: opening the file didn't bring back its travel speed (${savedTravel}): ${await page.inputValue('#printer-travelSpeed')}`));
+      await page.click('#tab-settings');
       // A slider moved since: Save writes it in. A name typed by Save names both files.
       await openGroups(page);
       await page.fill('#set-line', '2,2');

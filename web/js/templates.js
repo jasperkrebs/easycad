@@ -98,7 +98,8 @@ export function fileNote(site) {
     'the settings window; `group` lines sort them; comments start with #. For the language and',
     'every step with its inputs, paste in the text from "Copy for AI" on EasyCAD\'s Recipe tab.',
     'To use it: EasyCAD, Settings, Open. (Lines starting with #| are this note; EasyCAD leaves them',
-    'out when it opens the file. A line starting with #~ colors holds the 3D view\'s colours.)',
+    'out when it opens the file. A line starting with #~ colors holds the 3D view\'s colours, one',
+    'starting with #~ printer the printer\'s settings.)',
   ]
     .map((l) => `${NOTE} ${l}`)
     .join('\n');
@@ -134,15 +135,51 @@ export function colorsLine(colors) {
  * @returns {{ text: string, colors: any }}
  */
 export function withoutColors(text) {
-  let colors = null;
+  const { text: rest, value } = withoutLine(text, COLORS);
+  return { text: rest, colors: value };
+}
+
+/** The project file's line holding the printer's settings (a comment to the recipe). */
+const PRINTER = '#~ printer ';
+
+/**
+ * The line that keeps the printer's settings in a project file: which printer, and each of its
+ * settings by key (as the Print tab's fields have them).
+ * @param {string} printer the printer's id
+ * @param {Record<string, unknown>} settings
+ */
+export function printerLine(printer, settings) {
+  return `${PRINTER}${JSON.stringify({ printer, settings })}`;
+}
+
+/**
+ * A project file's printer settings (from its `#~ printer` line), and the text without that line.
+ * @param {string} text
+ * @returns {{ text: string, printer: { printer: string, settings: Record<string, unknown> } | null }}
+ */
+export function withoutPrinter(text) {
+  const { text: rest, value } = withoutLine(text, PRINTER);
+  const ok = value && typeof value === 'object' && typeof value.printer === 'string' && value.settings && typeof value.settings === 'object';
+  return { text: rest, printer: ok ? value : null };
+}
+
+/**
+ * The JSON on a file's `#~ …` line, and the text without the line. An unreadable line gives
+ * nothing, and goes too.
+ * @param {string} text
+ * @param {string} prefix
+ */
+function withoutLine(text, prefix) {
+  /** @type {any} */
+  let value = null;
   const lines = text.split('\n').filter((l) => {
-    if (!l.startsWith(COLORS)) return true;
+    if (!l.startsWith(prefix)) return true;
     try {
-      colors = JSON.parse(l.slice(COLORS.length));
+      value = JSON.parse(l.slice(prefix.length));
     } catch {
-      // An unreadable line: no colours, and the line goes.
+      // An unreadable line: nothing from it.
     }
     return false;
   });
-  return { text: lines.join('\n').replace(/^\n+/, ''), colors };
+  return { text: lines.join('\n').replace(/^\n+/, ''), value };
 }

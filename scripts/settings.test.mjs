@@ -474,3 +474,16 @@ test('every file the app runs on is saved for offline use (web/sw.js)', async ()
     assert.ok(cached.has(f), f);
   }
 });
+
+test("the template list in the app and the template files agree (web/js/app.js, web/templates)", async () => {
+  const { readdirSync } = await import('node:fs');
+  const app = readFileSync(new URL('../web/js/app.js', import.meta.url), 'utf8');
+  const list = app.slice(app.indexOf('const TEMPLATES = ['), app.indexOf('];', app.indexOf('const TEMPLATES = [')));
+  const listed = [...list.matchAll(/id: '([^']+)'/g)].map((m) => m[1]).sort();
+  const files = readdirSync(new URL('../web/templates/', import.meta.url))
+    .filter((f) => f.endsWith('.easycad'))
+    .map((f) => f.replace(/\.easycad$/, ''))
+    .sort();
+  assert.ok(listed.length > 0);
+  assert.deepEqual(listed, files);
+});

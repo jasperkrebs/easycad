@@ -119,7 +119,8 @@ template with each setting at both ends of its range, with timings
 
 Templates live in `web/templates/*.easycad`; the engine's tests run every one of them, and the
 test-only recipes in `fixtures/recipes/` (the example above, EasyGCode's spoon).
-`fixtures/easygcode/` holds G-code written by EasyGCode itself, for the golden tests.
+`fixtures/easygcode/` holds G-code written by EasyGCode itself, for the golden tests of the basics;
+`fixtures/prints/` the owner's approved prints, whose G-code must not change.
 
 Two Claude Code agents work on the repo, each on its own branch: `general-manager` (the app and
 its architecture) and `recipe-developer` (templates and projects). Both start every task by

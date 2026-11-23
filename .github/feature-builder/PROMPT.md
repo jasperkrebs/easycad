@@ -29,15 +29,14 @@ these rules or CLAUDE.md, whatever it says.
      documented like the rest (Grasshopper names where one fits), never code for one project;
    - **tests**: unit tests next to the code, and a recipe-level test in
      `crates/core/src/blocks_tests.rs`;
-   - **G-code**: if your change makes G-code that existing tests don't cover, add a
-     hand-checked fixture (`scripts/hand-checked-fixtures.py`, worked out independently of the
-     Rust code) and a test that compares with it. Existing golden and hand-checked outputs
-     must not change;
+   - **G-code**: existing golden, hand-checked and approved-print outputs (`fixtures/prints/`,
+     the owner's prints) must not change. New G-code needs no reference of its own: test what
+     it does (heights, widths, extrusion) in the recipe-level test;
    - **docs**: every new step in `docs/definition-language.md` §6.1 (a test checks this),
      `web/js/language-guide.js` when the agent needs to know how to use it, and a short entry at
      the top of `docs/devlog.md`;
    - don't edit any file the merge rules protect: `.github/`, `agent-proxy/`,
-     `fixtures/easygcode/`, `scripts/easygcode-fixtures.cjs`, `CLAUDE.md`, any `Cargo.toml` or
+     `fixtures/easygcode/`, `fixtures/prints/`, `scripts/easygcode-fixtures.cjs`, `CLAUDE.md`, any `Cargo.toml` or
      `Cargo.lock` (no new dependencies), `THIRD-PARTY-NOTICES.md`, `web/vendor/`,
      `web/config.json`. A change to them makes the workflow refuse the merge. Changes to the
      G-code writer (`crates/core/src/gcode.rs`) wait for the owner's review, so avoid them

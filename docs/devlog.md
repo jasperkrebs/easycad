@@ -7,6 +7,30 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+
+## 2026-11-23: quicker checks, approved prints, printer settings in the file (general-manager)
+
+**Why:** the owner asked: a small recipe change shouldn't wait for the browser smoke test;
+new projects shouldn't have to match EasyGCode; and a project file should keep the printer's
+settings.
+
+- **Checks by change** (`CLAUDE.md`, "Which checks a change needs"): `templates_tests.rs` opens
+  and prints every template (G-code for every part, every export) in about a second; CI's
+  smoke test now runs only when the app changes (`web/` but not only `web/templates/`). A node
+  test checks the app's template list against the template files.
+- **G-code safety, new rule** (`CLAUDE.md`): EasyGCode's golden tests stay for the basics
+  (start/end blocks, extrusion, flow, the spirals) at EasyGCode's own settings; new steps don't
+  have to match EasyGCode or need a hand-checked fixture. **Approved prints**
+  (`fixtures/prints/`, `scripts/prints.test.mjs`, in CI): a project file the owner printed and
+  its G-code, which the engine must keep making exactly; `UPDATE_PRINTS=1` writes a meant
+  change, with the owner's OK. The feature builder may not touch them. First one: **test 8**.
+- **Printer settings in the project file:** Save writes a `#~ printer {…}` line (every Print
+  tab setting by key); Open makes them the device's, checked and kept in range as in the Print
+  tab (`print.js`: `settingsOf`, `profileFrom`, `useSettings`). Templates have no such line.
+
+Open: test 8's approved print uses the P1P's default printer settings (made from the test 7
+file); save it again from the app with the real ones and replace `fixtures/prints/test-8.*`.
+
 ## 2026-11-23 (later): the key: no squeezed layer, overhangs squish, straight parts don't (recipe-developer)
 
 **Why:** the owner's picture: a gap where the key's tube meets the flattening; and the

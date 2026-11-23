@@ -3,7 +3,8 @@
 
 import assert from 'node:assert/strict';
 import { beforeEach, test } from 'node:test';
-import { G1, PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, machineGuide, materialOf, printChecks, printerFor } from '../web/js/print.js';
+import { G1, PRINTERS, applyMaterial, changeSettings, describePrinter, loadProfile, machineGuide, materialOf, printChecks, printerFor, profileFrom, settingsOf, useSettings } from '../web/js/print.js';
+import { printerLine, withoutPrinter } from '../web/js/templates.js';
 
 // A stand-in for the browser's localStorage, so settings are saved and reloaded as on a device.
 const store = {};
@@ -214,4 +215,34 @@ test("the bead is EasyGCode's: a rectangle with a half circle each side; blends 
   const hair = beadExtremes([3, 3.3, 3.6, 3.9, 4.2, 4.49, 4.5], [1.3, 1.4, 1.5, 1.6, 1.8, 2, 2]);
   assert.deepEqual(hair.beads.map((b) => `${b.w}x${b.h}`), ['3x1.3', '4.5x2']);
   assert.deepEqual(beadExtremes([0, 0], [0, 0]).beads, []);
+});
+
+test("a project file keeps the printer's settings, and opening it brings them back", () => {
+  // The P1P with a hotter nozzle, a slower travel and the fan at half.
+  const mine = loadProfile('p1p');
+  changeSettings('p1p', mine, { 'filament.nozzle': 230, travelSpeed: 60, 'filament.fan': 50 });
+  const settings = settingsOf('p1p', mine);
+  assert.equal(settings['filament.nozzle'], 230);
+  assert.ok(!('pellet.up' in settings), "the P1P's settings only");
+  // Written as a line of the file, and read back out of it (the recipe left as it was).
+  const file = `${printerLine('p1p', settings)}\n\nproject "Test"\n`;
+  const { text, printer } = withoutPrinter(file);
+  assert.equal(text, 'project "Test"\n');
+  assert.equal(printer?.printer, 'p1p');
+  assert.deepEqual(profileFrom('p1p', printer?.settings ?? {}), mine);
+  // Another device, with its own settings: opening the file makes them the file's.
+  changeSettings('p1p', loadProfile('p1p'), { 'filament.nozzle': 200 });
+  useSettings('p1p', printer?.settings ?? {});
+  assert.equal(loadProfile('p1p').filament.nozzle, 230);
+});
+
+test("a file's printer settings are checked as the Print tab checks them", () => {
+  const p = profileFrom('pellet', { 'pellet.up': 999, travelSpeed: 'fast', 'filament.nozzle': 230, unknown: 1, includeStartEnd: false });
+  assert.equal(p.pellet.up, G1.limits.maxTemp, 'kept inside the heater limit');
+  assert.equal(p.travelSpeed, loadProfile('pellet').travelSpeed, 'not a number: the default');
+  assert.equal(p.filament.nozzle, PRINTERS.pellet.defaults.filament.nozzle, "not the G1's setting");
+  assert.equal(p.includeStartEnd, false);
+  // A line that isn't readable, or isn't settings, gives none (and still goes).
+  assert.deepEqual(withoutPrinter('#~ printer {oops\nx'), { text: 'x', printer: null });
+  assert.deepEqual(withoutPrinter('#~ printer {"printer":"p1p"}\nx'), { text: 'x', printer: null });
 });

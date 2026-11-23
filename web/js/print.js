@@ -296,6 +296,53 @@ export function loadProfile(id) {
   return profile;
 }
 
+/**
+ * The printer's settings as a project file keeps them: each field that applies to it, by key.
+ * @param {keyof typeof PRINTERS} id
+ * @param {any} profile
+ * @returns {Record<string, unknown>}
+ */
+export function settingsOf(id, profile) {
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const f of FIELDS) if (applies(f, profile)) out[f.key] = getPath(profile, f.key);
+  return out;
+}
+
+/**
+ * A printer's profile from a project file's settings: its defaults, each setting checked and
+ * kept inside its range as the Print tab does (one that isn't a setting of this printer, or of
+ * the wrong kind, is left out). Nothing is saved on the device.
+ * @param {keyof typeof PRINTERS} id
+ * @param {Record<string, unknown>} settings
+ */
+export function profileFrom(id, settings) {
+  const profile = defaults(id);
+  for (const f of FIELDS) {
+    if (!applies(f, profile) || !(f.key in settings)) continue;
+    const v = settings[f.key];
+    if (f.kind === 'toggle') {
+      if (typeof v === 'boolean') setPath(profile, f.key, v);
+    } else if (typeof v === 'number' && Number.isFinite(v)) {
+      const { min, max } = range(id, f);
+      setField(id, profile, f.key, Math.min(max ?? v, Math.max(min ?? v, v)));
+    }
+  }
+  return profile;
+}
+
+/**
+ * Takes a project file's printer settings as this device's (the Print tab shows them, and they
+ * stay for the next project, as a change in the Print tab does).
+ * @param {keyof typeof PRINTERS} id
+ * @param {Record<string, unknown>} settings
+ */
+export function useSettings(id, settings) {
+  const profile = profileFrom(id, settings);
+  saveProfile(id, profile);
+  return profile;
+}
+
 function saveProfile(id, profile) {
   saveJSON(storageKey(id), profile);
 }
