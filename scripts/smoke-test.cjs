@@ -235,6 +235,16 @@ async function saveFrom(page, selector) {
           await page.selectOption('#set-compensation', 'width');
           await page.waitForFunction(() => /^param compensation = "width"/m.test(document.getElementById('recipe').value), null, { timeout: 15000 });
           await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+          // At full strength, even at every angle (the template's is test 8's steep curve).
+          for (const [setting, value, line] of [
+            ['steep', '0', /^param steep\s+= 0 /m],
+            ['strength', '100', /^param strength\s+= 100 %/m],
+          ]) {
+            await page.fill(`#set-${setting}`, value);
+            await page.dispatchEvent(`#set-${setting}`, 'change');
+            await page.waitForFunction((src) => new RegExp(src, 'm').test(document.getElementById('recipe').value), line.source, { timeout: 15000 });
+          }
+          await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 15000 });
         }
         if (id === 'bend-stool') {
           // The fixture brims the bottom layer's outline (three lines).

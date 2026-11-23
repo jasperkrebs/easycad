@@ -1582,6 +1582,9 @@ mod wings {
                 ("wing_out", num(60.0)),
                 ("wing_widen", text("same layer length")),
                 ("compensation", text(comp)),
+                // Even, at full strength (the template's is test 8's steep curve).
+                ("strength", num(100.0)),
+                ("steep", num(0.0)),
             ])
         };
         let (squeezed, off) = (with("layer height"), with("off"));
@@ -2059,6 +2062,9 @@ mod wings {
             ("shape", text("cone")),
             ("wings", num(300.0)),
             ("opening", num(250.0)),
+            // Even compensation at full strength, as when this was measured.
+            ("strength", num(100.0)),
+            ("steep", num(0.0)),
         ]);
         let pts = clean_but_warnings(&e);
         let (_, crowded) = support_and_crowding(&pts, 6.0, PITCH, 0.0);
