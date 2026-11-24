@@ -25,7 +25,8 @@ app, the engine, the language, the build, how the pieces fit.
 | The engine | `crates/` (steps, `vase_revolve`, toolpaths, G-code, STEP/STL, the checks) | general manager |
 | The language | `crates/lang/`, `docs/definition-language.md`, `web/js/language-guide.js` | general manager |
 | The app | `web/js/`, `web/index.html`, `web/styles.css`, `web/vendor/` | general manager |
-| G-code safety | `crates/core/src/gcode.rs`, golden tests, `fixtures/easygcode/`, `fixtures/hand-checked/` | general manager |
+| G-code safety | `crates/core/src/gcode.rs`, golden tests, `fixtures/easygcode/`, `fixtures/hand-checked/`, `scripts/prints.test.mjs` | general manager |
+| Approved prints | `fixtures/prints/` (a project that printed well and its G-code; added and changed only with the owner's OK) | recipe developer adds them, the general manager keeps the test |
 | Build, CI, proxy, feature requests | `scripts/`, `.github/`, `agent-proxy/`, `docs/feature-requests.md` | general manager |
 | Architecture and plans | `CLAUDE.md`, `docs/architecture.md`, `docs/roadmap.md`, this file | general manager |
 | Shared | `README.md`, `docs/devlog.md` | both (see below) |
@@ -33,6 +34,15 @@ app, the engine, the language, the build, how the pieces fit.
 Owning an area means: that agent changes it, keeps its docs right, and answers for it. The other
 agent can read everything; if it needs a change in the other's area it asks (below) instead of
 making it, unless the owner says otherwise. Golden tests are never changed to make a recipe fit.
+
+## Checks: only what the change needs
+
+A recipe change doesn't need the whole set (`CLAUDE.md`, "Which checks a change needs"):
+`cargo test --workspace` opens and prints every template in seconds; the browser smoke test
+(minutes) is for changes to the app, and CI runs it only for those. When the owner says a print
+worked, save it as an approved print (`fixtures/prints/`: the project file saved from EasyCAD,
+which carries the printer's settings, and `UPDATE_PRINTS=1 node --test scripts/prints.test.mjs`
+for its G-code).
 
 ## When a recipe needs something the app can't do
 

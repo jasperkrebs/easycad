@@ -5,7 +5,7 @@
 // defaults are EasyGCode's, so G-code starts out exactly as EasyGCode would write it; changes are
 // remembered on this device, per printer.
 
-import { el, fmt, loadJSON, numberField, parseNumber, save, saveJSON } from './dom.js';
+import { el, fmt, loadJSON, numberField, parseNumber } from './dom.js';
 
 /** EasyGCode's machine settings (travel 6000 mm/min, end lift 50 mm, the bed centre at 125/125). */
 const EASYGCODE = {
@@ -266,9 +266,15 @@ function defaults(id) {
   return structuredClone(PRINTERS[id].defaults);
 }
 
+/** A printer's settings as they come: its defaults (a project without settings of its own). */
+export function newProfile(id) {
+  return defaults(id);
+}
+
 /**
- * The printer's profile: its defaults, with the settings changed on this device (kept inside
- * today's ranges).
+ * The printer's settings this device kept before they went into the project file (23 Nov 2026):
+ * its defaults with those changes (kept inside today's ranges). Only read, for a project left
+ * open from before then; nothing writes them any more.
  */
 export function loadProfile(id) {
   const profile = defaults(id);
@@ -296,9 +302,41 @@ export function loadProfile(id) {
   return profile;
 }
 
-function saveProfile(id, profile) {
-  saveJSON(storageKey(id), profile);
+/**
+ * The printer's settings as a project file keeps them: each field that applies to it, by key.
+ * @param {keyof typeof PRINTERS} id
+ * @param {any} profile
+ * @returns {Record<string, unknown>}
+ */
+export function settingsOf(id, profile) {
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  for (const f of FIELDS) if (applies(f, profile)) out[f.key] = getPath(profile, f.key);
+  return out;
 }
+
+/**
+ * A printer's profile from a project file's settings: its defaults, each setting checked and
+ * kept inside its range as the Print tab does (one that isn't a setting of this printer, or of
+ * the wrong kind, is left out). Nothing is saved on the device.
+ * @param {keyof typeof PRINTERS} id
+ * @param {Record<string, unknown>} settings
+ */
+export function profileFrom(id, settings) {
+  const profile = defaults(id);
+  for (const f of FIELDS) {
+    if (!applies(f, profile) || !(f.key in settings)) continue;
+    const v = settings[f.key];
+    if (f.kind === 'toggle') {
+      if (typeof v === 'boolean') setPath(profile, f.key, v);
+    } else if (typeof v === 'number' && Number.isFinite(v)) {
+      const { min, max } = range(id, f);
+      setField(id, profile, f.key, Math.min(max ?? v, Math.max(min ?? v, v)));
+    }
+  }
+  return profile;
+}
+
 
 /**
  * The printer profile a recipe's `printer "…"` line names. Older projects name the G1 "Klipper
@@ -319,7 +357,7 @@ export function materialOf(id, profile) {
 
 /**
  * Sets the zones, bed and max flow from one of Ginger Slicer's material profiles (the G1 only),
- * and saves them on this device.
+ * for the project.
  * @param {keyof typeof PRINTERS} id
  * @param {any} profile edited in place
  * @param {string} name
@@ -336,8 +374,8 @@ export function applyMaterial(id, profile, name) {
 }
 
 /**
- * Changes settings by key (the agent's set_printer), as the Print tab's fields do: checked,
- * clamped to each field's range, and saved on this device.
+ * Changes settings by key (the agent's set_printer), as the Print tab's fields do: checked and
+ * clamped to each field's range (the project keeps them, and its file).
  * @param {keyof typeof PRINTERS} id
  * @param {any} profile edited in place
  * @param {Record<string, unknown>} patch key (as in FIELDS) → new value
@@ -371,7 +409,6 @@ export function changeSettings(id, profile, patch) {
     }
     changed.push(key);
   }
-  if (changed.length) saveProfile(id, profile);
   return { changed, notes };
 }
 
@@ -434,7 +471,6 @@ export function renderPrinterSettings(host, id, profile, onChange) {
       const box = /** @type {HTMLInputElement} */ (el('input', { type: 'checkbox', id: fieldId, className: 'switch', checked: getPath(profile, f.key) === true }));
       box.addEventListener('change', () => {
         setPath(profile, f.key, box.checked);
-        saveProfile(id, profile);
         onChange();
       });
       row.append(box);
@@ -450,7 +486,6 @@ export function renderPrinterSettings(host, id, profile, onChange) {
         const tidy = Math.min(max ?? v, Math.max(min ?? v, v));
         input.value = String(tidy);
         setField(id, profile, f.key, tidy);
-        saveProfile(id, profile);
         for (const k of ['center.0', 'center.1']) {
           const centre = /** @type {HTMLInputElement | null} */ (host.querySelector(`#printer-${k.replace('.', '-')}`));
           if (centre) centre.value = String(getPath(profile, k));
@@ -468,7 +503,6 @@ export function renderPrinterSettings(host, id, profile, onChange) {
   const reset = el('button', { className: 'btn', type: 'button', text: 'Back to the defaults' });
   reset.addEventListener('click', () => {
     Object.assign(profile, defaults(id));
-    save(storageKey(id), null);
     renderPrinterSettings(host, id, profile, onChange);
     onChange();
   });

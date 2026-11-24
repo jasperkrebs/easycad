@@ -477,6 +477,13 @@ conversation {                               # optional; the engine ignores it
 - A saved project file may also hold the 3D view's custom colours, in a comment line
   `#~ colors {…}` before the recipe (each part's colour and opacity, the light). The engine
   ignores it as any comment; the app reads it when the file opens.
+- **The printer's settings belong to the project** (23 Nov 2026): the file keeps them in a
+  comment line `#~ printer {"printer": "p1p", "settings": {"filament.nozzle": 215, …}}`, every
+  Print tab setting of the printer the recipe's `printer` line names, by key. Opening the file
+  uses them, each checked and kept in its range as in the Print tab (a setting of another
+  printer, or an unreadable line, is left out). Nothing is kept per device: a new project from a
+  template (which has no such line) starts from the printer's defaults, and the project left
+  open keeps its own when the page reloads.
 - **"Save settings"** writes only the values (a small `.json`, like EasyGCode). "Load settings"
   puts them back into the open project.
 

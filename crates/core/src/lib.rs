@@ -56,4 +56,6 @@ mod patterns_tests;
 #[cfg(test)]
 mod pendant_tests;
 #[cfg(test)]
+mod templates_tests;
+#[cfg(test)]
 mod toolbox_tests;

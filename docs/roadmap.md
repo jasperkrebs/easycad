@@ -38,7 +38,7 @@ archives ([October](devlog-2026-10.md), [November 1–14](devlog-2026-11.md)).
 | Projects | Own text format, `.easycad`: the recipe is the single source of truth; every change (slider, agent, printer) is an edit to it. |
 | Making things | General steps, not one generator per project: a new project is a recipe; a new step only when no combination of steps can do it. |
 | Printers | Ginger G1 (Klipper, pellets) and Bambu P1P, EasyGCode's proven start/end G-code; the KUKA KR50 of the SPHR handover, its program's start and end ([printers.md](printers.md)). |
-| G-code safety | Nothing printable unless golden-tested against EasyGCode or a hand-checked fixture. |
+| G-code safety | The basics (start/end blocks, extrusion, flow, the vase spirals) golden-tested against EasyGCode; the owner's approved prints (`fixtures/prints/`) keep their exact G-code; new steps are tested for what they do, not against EasyGCode (23 Nov 2026). |
 | Speeds | Always volumetric flow (mm³/s). |
 | AI | Optional: tuning, exports and printing never need it. The owner's own key, never on the site ([api-key.md](api-key.md)). |
 | Hosting | Public repo (all rights reserved, not open source), GitHub Pages, deployed from `main`. |

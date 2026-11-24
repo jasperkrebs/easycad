@@ -18,7 +18,7 @@ fi
 
 # Files that only a person changes: CI and these rules, the AI proxy, EasyGCode's fixtures and
 # the script that makes them, the project rules, dependencies and licenses, vendored code.
-protected=$(printf '%s\n' "$changed" | grep -E '^(\.github/|agent-proxy/|fixtures/easygcode/|scripts/easygcode-fixtures\.cjs$|CLAUDE\.md$|Cargo\.(lock|toml)$|crates/[^/]+/Cargo\.toml$|THIRD-PARTY-NOTICES\.md$|web/vendor/|web/config\.json$|LICENSE)' || true)
+protected=$(printf '%s\n' "$changed" | grep -E '^(\.github/|agent-proxy/|fixtures/easygcode/|fixtures/prints/|scripts/easygcode-fixtures\.cjs$|CLAUDE\.md$|Cargo\.(lock|toml)$|crates/[^/]+/Cargo\.toml$|THIRD-PARTY-NOTICES\.md$|web/vendor/|web/config\.json$|LICENSE)' || true)
 if [ -n "$protected" ]; then
   echo "It changes files only a person may change: $(echo "$protected" | tr '\n' ' ')"
   exit 2

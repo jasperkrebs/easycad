@@ -9,8 +9,8 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
 import { foldout, layoutKey, renderSettings, settingRow } from './settings.js';
-import { colorsLine, fileNote, fingerprint, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutValues } from './templates.js';
-import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, printerFor, renderPrint, renderPrinterSettings } from './print.js';
+import { colorsLine, fileNote, fingerprint, printerLine, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutPrinter, withoutValues } from './templates.js';
+import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, newProfile, printerFor, profileFrom, renderPrint, renderPrinterSettings, settingsOf } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
@@ -68,8 +68,13 @@ const state = {
   /** The settings window's layout, so it's rebuilt only when the recipe's settings change. */
   layout: '',
   printer: /** @type {keyof typeof PRINTERS} */ ('p1p'),
-  /** The printer's machine settings (print.js); G-code is written for these. */
-  profile: loadProfile('p1p'),
+  /**
+   * The printer's machine settings (print.js); G-code is written for these. They're the
+   * project's: saved in its file (and with the project on the device), never per device.
+   */
+  profile: newProfile('p1p'),
+  /** The project's settings for each printer it has been set to (its file keeps the chosen one's). */
+  profiles: /** @type {Record<string, any>} */ ({}),
   /** Changed since it was opened or saved (asks before a template replaces it). */
   unsaved: false,
   /** @type {import('./engine.js').RunResult | null} */
@@ -727,8 +732,8 @@ const chat = createChat({
       ...(settings ? changeSettings(state.printer, state.profile, settings).notes : []),
     ];
     if (settings || material) {
-      renderPrinterSettings($('printerSettings'), state.printer, state.profile, onProfileChange);
-      onProfileChange();
+      renderPrinterSettings($('printerSettings'), state.printer, state.profile, onPrinterEdit);
+      onPrinterEdit();
     }
     return { printer: describePrinter(state.printer, state.profile), notes };
   },
@@ -770,7 +775,10 @@ async function openTemplate(id) {
   const response = await fetch(`templates/${id}.easycad`);
   if (!response.ok) throw new Error(`template ${id}: ${response.status}`);
   const text = await response.text();
+  // A new project: the printer's own defaults.
+  state.profiles = {};
   await openSource(text);
+  setPrinter(state.printer);
   setSaveName('');
   state.template = { id, base: withoutValues(text) };
   autosave();
@@ -901,6 +909,7 @@ function saveNow() {
     source: state.source,
     openedValues: state.openedValues,
     printer: state.printer,
+    printerSettings: { printer: state.printer, settings: settingsOf(state.printer, state.profile) },
     unsaved: state.unsaved,
     saveName: /** @type {HTMLInputElement} */ ($('saveName')).value,
     template: state.template,
@@ -951,10 +960,22 @@ function projectName() {
 
 function setPrinter(id) {
   state.printer = id;
-  state.profile = loadProfile(id);
+  state.profile = state.profiles[id] ||= newProfile(id);
   /** @type {HTMLSelectElement} */ ($('printer')).value = id;
-  renderPrinterSettings($('printerSettings'), id, state.profile, onProfileChange);
+  renderPrinterSettings($('printerSettings'), id, state.profile, onPrinterEdit);
   onProfileChange();
+}
+
+/** The project's printer settings from a file's (or the saved project's) `{ printer, settings }`. */
+function printerSettingsOf(saved) {
+  return saved && saved.printer in PRINTERS ? { [saved.printer]: profileFrom(/** @type {keyof typeof PRINTERS} */ (saved.printer), saved.settings) } : {};
+}
+
+/** A printer setting changed (Print tab, agent): the project changed, so it's kept. */
+function onPrinterEdit() {
+  state.unsaved = true;
+  onProfileChange();
+  autosave();
 }
 
 /**
@@ -1991,8 +2012,12 @@ function wire() {
       if (sketch && isSketcherSettings(sketch)) {
         await openSketcher(sketch, picked?.name || 'thread-pendant');
       } else if (text !== null) {
-        const { text: recipe, colors } = withoutColors(withoutFileNote(text));
+        const { text: withPrinter, colors } = withoutColors(withoutFileNote(text));
+        const { text: recipe, printer } = withoutPrinter(withPrinter);
+        // The printer's settings are the file's (a file without them: the printer's defaults).
+        state.profiles = printerSettingsOf(printer);
         await openSource(recipe);
+        setPrinter(state.printer);
         restoreColors(colors);
         setSaveName((picked?.name || '').replace(/\.easycad$/i, ''));
         autosave();
@@ -2006,7 +2031,8 @@ function wire() {
   $('saveProject').addEventListener('click', async () => {
     const site = new URL('.', location.href).href;
     const colors = colorsToSave();
-    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${colors ? `${colorsLine(colors)}\n\n` : ''}${await currentSource()}`);
+    const printer = printerLine(state.printer, settingsOf(state.printer, state.profile));
+    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${printer}\n${colors ? `${colorsLine(colors)}\n` : ''}\n${await currentSource()}`);
     state.openedValues = { ...state.values };
     state.unsaved = false;
     autosave();
@@ -2096,6 +2122,10 @@ async function start() {
   wire();
   chat.start();
   const saved = restore();
+  // The project left open keeps its printer settings; one left open from before they went into
+  // the project (23 Nov 2026) takes the ones this device had then.
+  if (saved?.printerSettings) state.profiles = printerSettingsOf(saved.printerSettings);
+  else if (saved) for (const id of Object.keys(PRINTERS)) state.profiles[id] = loadProfile(/** @type {keyof typeof PRINTERS} */ (id));
   setPrinter(state.printer);
   renderAbout();
   try {
