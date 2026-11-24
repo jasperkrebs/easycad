@@ -8,6 +8,20 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
 
+
+## 2026-11-24: the Nutcracker printed; recycled PETG on the G1 (general-manager)
+
+The owner finished the Nutcracker in recycled PETG from the recycling factory with a 3 mm
+nozzle, and wrote down what it taught. In [printers.md](printers.md) ("What the owner's prints
+taught"): flow 100–150 mm³/s (under 100 under-extrudes, over 150 the screw skips), zones about
+200/220/230 °C, extrusion multiplier about 0.75–0.8 at a rotation distance of 456 mm³, "smooth
+flow"; the bottom layers print fine, then the walls get inconsistent, probably heat building up
+(a better fan may help).
+
+Open: the thread's fit between the cap and the key wasn't tuned far enough; the heat (more fan by
+height, or several parts at once); maybe a material preset for this PETG, with its flow window
+as a check.
+
 ## 2026-11-24: "the proxy refused the password" when it was the key (general-manager)
 
 **Why:** the owner's AI settings said "Password saved and accepted by the proxy" while the chat

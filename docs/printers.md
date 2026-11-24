@@ -66,6 +66,26 @@ Ginger Slicer's material profiles (zones top to bottom, bed, max flow):
 Ginger supports the G1 on PLA and PETG; the others are profiles it ships without
 characterising them. The datasheet of the grade in the hopper is the authority.
 
+### What the owner's prints taught (the owner's notes)
+
+**Recycled PETG from the recycling factory, 3 mm nozzle** (the Nutcracker, 24 Nov 2026):
+
+| | Found |
+|---|---|
+| Flow | **100–150 mm³/s.** Under 100 it under-extrudes; over 150 the screw skips. |
+| Zones (upper / middle / lower) | about **200 / 220 / 230 °C** (cooler than Ginger's rPETG profile, 215 / 235 / 235) |
+| Extrusion multiplier | about **0.75–0.8**, with the screw's rotation distance at 456 mm³ |
+| Flow mode | "smooth flow" |
+| Cooling | the bottom few layers print fine, then the walls get inconsistent. The owner's theory: heat builds up as the print grows. A better fan may help. |
+
+Not settled: the thread's fit (the cap and the key) wasn't tuned far enough.
+
+The flow window and the heat pull against each other: a small part's layers are short, so the
+next layer comes round before the last has cooled, and slowing down to give it time would drop
+the flow under 100 mm³/s. Ways out that keep the flow up: more fan where the print gets hot (the
+`fan` step by height; the G1's part fan stays under about 70 %), or printing several parts at
+once (`join`), so each layer has longer to cool.
+
 ### The start and end G-code on the G1
 
 EasyCAD writes EasyGCode's start block unchanged (CLAUDE.md: G-code safety); only its settings
