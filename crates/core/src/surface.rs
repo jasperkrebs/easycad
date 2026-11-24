@@ -1022,9 +1022,9 @@ impl Pace {
     }
 
     fn check(&self) -> Result<(), String> {
-        if !(0.0..=1.0).contains(&self.amount) {
+        if !(0.0..=5.0).contains(&self.amount) {
             return Err(format!(
-                "`pace` must be between 0 and 1, got {}",
+                "`pace` must be between 0 and 5, got {}",
                 self.amount
             ));
         }

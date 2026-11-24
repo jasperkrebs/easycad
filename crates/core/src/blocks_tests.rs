@@ -257,7 +257,7 @@ open2 = spiralize(contour(cone, 1), width: 2, flat_top: false)");
     assert_eq!(open.flow.last().copied(), Some(1.0));
     assert_eq!(path(&v, "open2").points.len(), open.points.len());
     assert!(
-        error("c = contour(loft([circle(5), circle(5) |> move(z: 3)]), 1, pace: 2)")
+        error("c = contour(loft([circle(5), circle(5) |> move(z: 3)]), 1, pace: 6)")
             .contains("pace")
     );
 }

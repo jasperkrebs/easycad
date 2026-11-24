@@ -62,10 +62,19 @@ up for you; you only create the accounts and enter the secrets.
    "AI proxy" sets up the proxy and gives the website its address; when it's done, its summary
    says "The AI proxy is live at …".
 8. **In the app:** Chat → AI settings → **My EasyCAD proxy, with a password** → enter the password
-   → **Save**. It should say "accepted by the proxy". The address is filled in already.
+   → **Save**. It should say the password and the proxy's API key are both accepted. The
+   address is filled in already.
 
 To **change the password** or **replace the key**, update the GitHub secret and run the workflow
-again (step 7).
+again (step 7). **Only change them in GitHub, never in Cloudflare:** every push to `main`
+deploys the proxy again and sets both from the GitHub secrets, so a password or key changed in
+Cloudflare's dashboard works only until the next merge (often a day), then the old one is back.
+
+**"The proxy's Claude API key was refused"** (in the chat or in AI settings): your password is
+fine, but Claude no longer takes the key the proxy holds (it was revoked or disabled in the
+Console, or an old one came back from the GitHub secret). Make a new key in the Console, put it
+in the GitHub secret `ANTHROPIC_API_KEY`, and run the workflow (step 7). Until 24 Nov 2026 the
+app called this "the proxy refused the password", though the password was right.
 
 ## 2b. Key on this device (quick start)
 
