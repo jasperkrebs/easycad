@@ -144,7 +144,8 @@ fn a_pattern_on_the_shade_fades_in_and_out() {
             "pattern_waves",
             "pattern_stack",
             "pattern_depth",
-            "pattern_fade"
+            "pattern_fade_in",
+            "pattern_fade_out"
         ]
     );
 }
@@ -159,7 +160,8 @@ fn picked_sections_run_into_each_other() {
         ("pattern_start", Bool(true)),
         ("pattern_fillet", Bool(true)),
         ("pattern_shade", Bool(true)),
-        ("pattern_fade", Number(5.0)),
+        ("pattern_fade_in", Number(5.0)),
+        ("pattern_fade_out", Number(5.0)),
     ]);
     assert!(
         e.diagnostics
@@ -180,7 +182,8 @@ fn picked_sections_run_into_each_other() {
     let two = lampshade(&[
         ("pattern_start", Bool(true)),
         ("pattern_shade", Bool(true)),
-        ("pattern_fade", Number(5.0)),
+        ("pattern_fade_in", Number(5.0)),
+        ("pattern_fade_out", Number(5.0)),
     ]);
     let d = depth(
         &two.prints[0].path.points,
@@ -191,6 +194,31 @@ fn picked_sections_run_into_each_other() {
         d.iter().any(|(z, x)| *z > 15.0 && *z < 30.0 && *x < 0.05),
         "{d:?}"
     );
+}
+
+/// The fade in and the fade out are set on their own: in over 20 mm and none out, the shade's
+/// pattern grows in above the fillet and runs at its full depth right to the opening; the other
+/// way round, it starts at its full depth and fades out.
+#[test]
+fn fade_in_and_out_are_set_on_their_own() {
+    use Literal::{Bool, Number};
+    let plain = lampshade(&[]);
+    let at = |fade_in: f64, fade_out: f64| {
+        let e = lampshade(&[
+            ("pattern_shade", Bool(true)),
+            ("pattern_fade_in", Number(fade_in)),
+            ("pattern_fade_out", Number(fade_out)),
+        ]);
+        depth(&e.prints[0].path.points, &plain.prints[0].path.points, 2.5)
+    };
+    let band = |d: &[(f64, f64)], z: f64| d.iter().find(|(lo, _)| (lo - z).abs() < 1e-9).unwrap().1;
+    // (The cone's shade from about 25 mm to its opening at 75.)
+    let only_in = at(20.0, 0.0);
+    assert!(band(&only_in, 30.0) < 1.5, "{only_in:?}");
+    assert!(band(&only_in, 72.5) > 1.99, "{only_in:?}");
+    let only_out = at(0.0, 20.0);
+    assert!(band(&only_out, 27.5) > 1.99, "{only_out:?}");
+    assert!(band(&only_out, 70.0) < 1.5, "{only_out:?}");
 }
 
 /// Whole waves a turn stack into rails: every layer's wave where the one below it is. Woven, each

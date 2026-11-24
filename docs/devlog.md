@@ -7,6 +7,13 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-24: the patterns' fade in and fade out set on their own (recipe-developer)
+
+**Why:** the owner: sometimes a fade in but no fade out, or the other way round.
+
+- `Fade in over` and `Fade out over` (Lampshade and the Lamp's shades) replace `Fade in and out
+  over`; 0: none (full depth from the start, or to the end). Both on the Pattern mark. Tested
+  both ways. (A project saved with the old `pattern_fade` setting loses it: both fades 20 mm.)
 
 ## 2026-11-23: quicker checks, approved prints, printer settings in the file (general-manager)
 

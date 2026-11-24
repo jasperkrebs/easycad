@@ -15,7 +15,7 @@ In each shade (the Lampshade's own settings, the Lamp's per shade), group **Patt
 | Waves a turn | How many waves round each turn. |
 | Waves stack into | **rails**: whole waves a turn, so every layer's wave sits on the one below: straight ribs up the wall. **woven**: half a wave more a turn, so each layer is shifted half a wave: a weave. |
 | Depth | How far the wave pushes in and out (each way). |
-| Fade in and out over | Along the surface (mm along the profile, not height): from nothing to the full depth where the run of picked sections starts, and back to nothing where it ends. |
+| Fade in over / Fade out over | Each on its own (24 Nov), along the surface (mm along the profile, not height): from nothing to the full depth where the run of picked sections starts (its end nearer the start or throat), and back to nothing where it ends. 0: none, the wave starts or stops at its full depth. |
 
 The section switches are `@mark` settings: they're on their marks' bars in the Plan, not on the
 shade's own bar (they're in the Settings tab as well).
@@ -36,8 +36,8 @@ disc are joined on): `wave(plain_shade, amplitude: …, count: …)`.
   turned over for a shade printed wide edge down or closed), then its distance along the profile
   from the start (`graph(full_z, pat_fs, …)`). Each section has its two ends along the surface.
   A picked section runs on into its neighbour when that's picked too, or empty (no fillet, no
-  lip), so a run of picked sections fades only at its own two ends: smoothstep in over the fade
-  length from the run's start, smoothstep out over it before the run's end. Two runs apart (the
+  lip), so a run of picked sections fades only at its own two ends: smoothstep in over the fade-in
+  length from the run's start, smoothstep out over the fade-out length before the run's end. Two runs apart (the
   start and the shade, not the fillet) fade out and in again between them.
 - **The count:** the waves a turn, plus a half for woven.
 - **The `wave` step** (engine, the owner's leave to do general changes): an amplitude of 0 leaves

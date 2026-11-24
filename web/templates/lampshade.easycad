@@ -66,7 +66,8 @@ param pattern_end = false                          "Pattern on the lip" @mark  w
 param pattern_waves = 24   in 1..200 step 1        "Waves a turn"
 param pattern_stack = "rails" of ["rails", "woven"] "Waves stack into"
 param pattern_depth = 2 mm in 0..30 step 0.1       "Depth (in and out)"
-param pattern_fade = 20 mm in 0..1000 step 1       "Fade in and out over (along the surface)"
+param pattern_fade_in = 20 mm in 0..1000 step 1    "Fade in over (along the surface, from the throat's end; 0: none)"
+param pattern_fade_out = 20 mm in 0..1000 step 1   "Fade out over (along the surface, at the far end; 0: none)"
 
 group "Own shade"
 param own_at     = 50 %    in 5..95                 "Own shade: middle point's height"  when shape = "own"
@@ -412,9 +413,10 @@ pat_his  = [hi_1, hi_2, hi_3, hi_4, hi_5]
 # it), then the distance up the profile to there.
 pat_h    = pick(is_closed, top_z + cap_dl - z, pick(wide_eff, top_z - z, z))
 pat_at   = graph(full_z, pat_fs, pat_h)
-pat_f    = max(pattern_fade, 0.000001)
+pat_fi   = max(pattern_fade_in, 0.000001)
+pat_fo   = max(pattern_fade_out, 0.000001)
 pat_in   = (1 - less(pat_at, item(pat_s, series(0, 1, 5)))) * less(pat_at, flatten([item(pat_s, series(1, 1, 4)), [item(pat_s, 5) + 1]]))
-pat_env  = pat_secs * pat_in * smoothstep(clamp((pat_at - pat_los) / pat_f, 0, 1)) * smoothstep(clamp((pat_his - pat_at) / pat_f, 0, 1))
+pat_env  = pat_secs * pat_in * smoothstep(clamp((pat_at - pat_los) / pat_fi, 0, 1)) * smoothstep(clamp((pat_his - pat_at) / pat_fo, 0, 1))
 pat_amp  = pattern_depth * (item(pat_env, 0) + item(pat_env, 1) + item(pat_env, 2) + item(pat_env, 3) + item(pat_env, 4))
 pat_n    = pattern_waves + 0.5 * less(abs(index_of(["rails", "woven"], pattern_stack) - 1), 0.5)
 shade = wave(plain_shade, amplitude: pick(pat_on, pat_amp, 0), count: pick(pat_on, pat_n, 1))
@@ -941,7 +943,7 @@ mark pick(is_closed, mark_cap, []) for closed, closed_layer "Closed end"
 mark pick(is_closed * greater(cap_f, 0), mark_cap_arc, []) for closed_fillet "Closed end's fillet"
 # The pattern: beside each section it's on, leading to its settings.
 pat_marks = flatten([pick(item(pat_secs, 0), [mark_start], []), pick(item(pat_secs, 1) * not_tube, [mark_fillet], []), pick(item(pat_secs, 2) * not_tube, [mark_shade], []), pick(item(pat_secs, 3) * lip_on * lip_arc, [mark_end_arc], []), pick(item(pat_secs, 4) * lip_on * lip_long, [mark_end], [])])
-mark pick(pat_on, pat_marks |> move(x: 2 * line), []) for pattern_waves, pattern_stack, pattern_depth, pattern_fade "Pattern"
+mark pick(pat_on, pat_marks |> move(x: 2 * line), []) for pattern_waves, pattern_stack, pattern_depth, pattern_fade_in, pattern_fade_out "Pattern"
 
 # ---- The shape for whoever works on it their own way: the wall's surface (through the middle
 # of the bead), exact, as a STEP surface; no thickness (a closed shade's disc included).
