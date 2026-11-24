@@ -181,6 +181,11 @@ damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on
   socket in the 3D view, the Plan and the render, its light with it).
 - **The socket's thread runs the whole body**, edge to edge, fading over half a turn: a shade's
   straight start can sit anywhere along it.
+- **Light off: the bulb's light leaves the scene.** The owner's Mosso lamp (clear PC shades, 5 %
+  solid, light off) rendered its shades black on a Mac, while the same file rendered clear here
+  (software GPU) and a 5 % object with no socket rendered well on the Mac. The bulb's point light
+  stayed in the scene at zero power when off: a division by zero in the light sampling, NaN on
+  some GPUs, and a pixel with a NaN stays black. Off, it's now removed. (To confirm on the Mac.)
 - **The bulb's screw cap:** the bulb now has its Edison screw (E27 3.63 mm pitch, 20 mm; E14
   2.82 mm, 15 mm), the insulator and the contact; hidden in the holder when screwed in, shown when
   the bulb comes off.

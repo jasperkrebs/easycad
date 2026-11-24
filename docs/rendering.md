@@ -153,7 +153,9 @@ finished picture.
   little light from round the lamp (**Room**, 6 % by default) keeps the dark side from going
   black.
 - **Light off:** daylight from round the lamp only (a bright sky over a darker floor); the bulb is
-  plain opal glass.
+  plain opal glass. The bulb's light is taken out of the scene, not left at no power: a light of
+  no power divides by zero in the light sampling, and on some GPUs (a Mac's) that blackened
+  see-through shades.
 
 The scene is in metres, so the light falls off with distance as it does in a room. AgX tone
 mapping and the **Exp** slider (± stops) bring the bulb's glare and the shade's glow into one
