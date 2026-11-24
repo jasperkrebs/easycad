@@ -624,6 +624,10 @@ export function createChat(app) {
     if (Anthropic && err instanceof Anthropic.APIConnectionError) {
       return s.mode === 'proxy' ? `Can't reach the proxy at ${s.proxyUrl} (offline, or a wrong address?).` : "Can't reach the Claude API (offline?).";
     }
+    // The password was right, but Claude refused the key the proxy holds (agent-proxy/worker.js).
+    if (Anthropic && err instanceof Anthropic.APIError && err.status === 424) {
+      return "The proxy's Claude API key was refused: replace ANTHROPIC_API_KEY (GitHub secrets), then run the workflow.";
+    }
     if (Anthropic && err instanceof Anthropic.APIError) return `The API said: ${err.message}`;
     return String((err && err.message) || err);
   }
@@ -825,7 +829,13 @@ export function createChat(app) {
     try {
       if (s.mode === 'proxy') {
         const r = await fetch(`${s.proxyUrl.replace(/\/+$/, '')}/check`, { method: 'POST', headers: { Authorization: `Bearer ${secret()}` } });
-        out.textContent = r.ok ? 'Password saved and accepted by the proxy.' : r.status === 401 ? 'The proxy refused this password.' : `The proxy answered ${r.status}.`;
+        out.textContent = r.ok
+          ? 'Password and the proxy’s API key both accepted.'
+          : r.status === 401
+            ? 'The proxy refused this password.'
+            : r.status === 424
+              ? "Password accepted, but Claude refused the proxy's API key: replace ANTHROPIC_API_KEY (GitHub secrets), then run the workflow."
+              : `The proxy answered ${r.status}.`;
       } else {
         const c = await client();
         await c.models.list({ limit: 1 });
