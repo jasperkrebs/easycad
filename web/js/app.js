@@ -14,7 +14,7 @@ import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, load
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
-import { CAMERA_VIEWS, cleanRender, fixtureOf, fixtureTakenOut } from './fixture.js';
+import { CAMERA_VIEWS, cleanRender, fixtureOf, fixtureTakenOut, partsExtent } from './fixture.js';
 import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
@@ -1378,11 +1378,17 @@ async function openSketcher(data, name) {
 
 /**
  * The fittings for a result (holder, bulb, cable), as the project hangs; null without a socket.
- * Taken apart (the assembly row), they come out of the lamp too, up along the cable.
+ * Taken apart (the assembly row), they come apart too: the socket up past the highest shade,
+ * the bulb down past the lowest.
  */
 function fixtureFor(result) {
-  const fx = result ? fixtureOf(result.params, sections(result), customColors().hang) : null;
-  return fx && assembly.steps.length ? fixtureTakenOut(fx, assembly.u) : fx;
+  if (!result) return null;
+  const parts = sections(result);
+  const fx = fixtureOf(result.params, parts, customColors().hang);
+  if (!fx || !assembly.steps.length || !(assembly.u > 0)) return fx;
+  // Where the shades are, taken apart as far as they are.
+  const offsets = new Map([...assemblyMotion(assembly.steps, assembly.u)].map(([name, m]) => [name, m.dz]));
+  return fixtureTakenOut(fx, assembly.u, partsExtent(parts, offsets));
 }
 
 const renderView = {

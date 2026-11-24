@@ -3,7 +3,7 @@
 // recipe has the socket. Shared by the 3D view and the render.
 
 import * as THREE from 'three';
-import { CABLE_D, CAP_SHOWS, bulbProfile, socketProfile, socketThread, threadRadius } from './fixture.js';
+import { CABLE_D, CAP_SHOWS, bulbProfile, capThread, capTop, socketProfile, socketThread, threadRadius } from './fixture.js';
 
 /** A lathe round the z axis from [radius, z] points. */
 function lathe(profile, segments = 64) {
@@ -67,9 +67,20 @@ export function fixtureGroup(fx, materials, cable = 500) {
   add('socket', lathe(socketProfile(fx)), materials.socket);
   const thread = socketThread(fx);
   if (thread) add('socket-thread', threadGeometry(thread), materials.socket);
-  const neck = fx.cap / 2;
-  add('cap', lathe([[0, 0], [neck, 0], [neck, -CAP_SHOWS], [0, -CAP_SHOWS]], 48), materials.cap);
-  add('bulb', lathe(bulbProfile(fx).map(([r, d]) => [r, -(CAP_SHOWS + d)]), 96), materials.bulb);
+  // The bulb (and its cap) unscrewed from the socket when taken apart: this far below its face.
+  const drop = /** @type {any} */ (fx).bulbDrop || 0;
+  // The Edison screw cap: its core at the thread's root, the thread over it, then the black
+  // insulator and the contact. Screwed in, all but its bottom is inside the holder.
+  const ct = capThread(fx);
+  const down = (profile) => profile.map(([r, z]) => [r, z - drop]);
+  add('cap', lathe(down([[0, ct.z0], [ct.root, ct.z0], [ct.root, ct.z1], [0, ct.z1]]), 48), materials.cap);
+  const capScrew = threadGeometry(ct, 96, 10);
+  capScrew.translate(0, 0, -drop);
+  add('cap-thread', capScrew, materials.cap);
+  const capEnd = capTop(fx);
+  add('cap-insulator', lathe(down(capEnd.insulator), 32), materials.socket);
+  add('cap-contact', lathe(down(capEnd.contact), 24), materials.cap);
+  add('bulb', lathe(bulbProfile(fx).map(([r, d]) => [r, -(drop + CAP_SHOWS + d)]), 96), materials.bulb);
   const top = fx.height + fx.glandH;
   const wire = new THREE.CylinderGeometry(CABLE_D / 2, CABLE_D / 2, cable, 24, 1, false);
   wire.rotateX(Math.PI / 2);

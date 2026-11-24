@@ -171,6 +171,20 @@ spiral and a layer up the fillet, the line should run in to the middle and back,
 Open: a test print. Noticed, not from this change: a long fuzz round (FUZZ_CASES=800) finds a
 damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on `main`).
 
+## 2026-11-24 (later): taken apart, socket on top and bulb at the bottom; the thread all along (claude/lampshade-light-render-wcvx6x)
+
+- **Taken apart, top to bottom: socket, shades, bulb** (the owner's Mosso lamp: socket, the
+  cone, the main shade, the bulb). The socket went up only past the shade it sat in, the bulb
+  stayed in it. Now the socket goes up until its face is 20 mm above the highest shade, and the
+  bulb unscrews and goes down until its cap is 20 mm below the lowest, from where the shades are
+  taken apart to (`fixtureTakenOut` with `partsExtent`; `bulbDrop` moves the bulb off the
+  socket in the 3D view, the Plan and the render, its light with it).
+- **The socket's thread runs the whole body**, edge to edge, fading over half a turn: a shade's
+  straight start can sit anywhere along it.
+- **The bulb's screw cap:** the bulb now has its Edison screw (E27 3.63 mm pitch, 20 mm; E14
+  2.82 mm, 15 mm), the insulator and the contact; hidden in the holder when screwed in, shown when
+  the bulb comes off.
+
 ## 2026-11-24: the render taken apart; the socket's thread (claude/lampshade-light-render-wcvx6x)
 
 - **Rendering the lamp taken apart:** the render's snapshot takes each part where the assembly
