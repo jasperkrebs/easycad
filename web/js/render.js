@@ -217,7 +217,7 @@ export function createRenderer(canvas, hooks = {}) {
     camera.fov = lensFov(settings.camera.lens);
     const half = THREE.MathUtils.degToRad(camera.fov / 2);
     const fitHalf = Math.min(half, Math.atan(Math.tan(half) * camera.aspect));
-    const dist = (radius / Math.sin(fitHalf)) * 0.9;
+    const dist = radius / Math.sin(fitHalf);
     controls.target.copy(centre);
     camera.position.copy(centre).addScaledVector(dir, dist);
     clip();

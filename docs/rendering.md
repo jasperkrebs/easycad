@@ -13,16 +13,24 @@ the 3D view, the Plan and the render (`web/js/fixture.js`, its meshes `fixture-m
 In the Plan, the bulb button under the zoom buttons hides and shows them (remembered on the
 device).
 
-| Socket | Holder (body Ø × height) | Bulb | Glass Ø | Glass below the cap |
-|---|---|---|---|---|
-| E27 | 40 × 55 mm | A60 (pear) | 60 mm | 83 mm (about 108 mm with the cap) |
-| E14 | 28 × 45 mm | P45 (round) | 45 mm | 58 mm (about 80 mm with the cap) |
-| custom | the recipe's thread (`thread_d` or `socket_d`) × `socket_h` (else 55) | A60, P45 under 34 mm | | |
+| Socket | Holder (body Ø × height) | Thread pitch | Bulb | Glass Ø | Glass below the cap |
+|---|---|---|---|---|---|
+| E27 | 40 × 55 mm | 2.5 mm | A60 (pear) | 60 mm | 83 mm (about 108 mm with the cap) |
+| E14 | 28 × 45 mm | 2 mm | P45 (round) | 45 mm | 58 mm (about 80 mm with the cap) |
+| custom | the recipe's thread (`thread_d` or `socket_d`) × `socket_h` (else 55) | `thread_pitch` or `socket_pitch` | A60, P45 under 34 mm | | |
 
 The holder sizes are the ones the recipes already use (the shade's thread on the body, the
 Thread pendant's body heights); the bulbs are the IEC 60064 shapes, sizes as manufacturers
 list them (worth checking against a datasheet before designing to the millimetre). The cable
 is 6 mm across.
+
+**The thread:** the holder's body carries the thread the shade screws onto, at the recipe's
+pitch (the shade's layer height: one bead a turn), in the 3D view, the render and the Plan:
+right-handed, one pitch a turn, its crests at the body's diameter (where the shade's bead runs),
+its roots about half a pitch in, from just above the face to a plain collar under the top,
+fading in and out over a turn at each end (`socketThread`, `threadRadius` in `fixture.js`). The
+Plan's section shows its teeth, half a pitch higher on the left than on the right (the cut is
+half a turn round).
 
 **Where it goes:** on the straight section that screws onto the socket: the part whose beads run
 round the holder's body (within three quarters of a bead of it). The socket always points down:
@@ -44,7 +52,17 @@ ran the GPU out of memory and froze the browser.)
 1. **Prepare** takes a snapshot of the project as it is: each printed part's toolpaths swept into
    solid beads at their real line width and layer height (the 3D view's *Line width* beads,
    `beadGeometry`, so the layer lines are real round faces), the fittings and the hidden parts
-   (left out, as the brim is). Slow, once: changing the project afterwards changes nothing in the
+   (left out, as the brim is), each part where the assembly row has it: **taken apart** (part
+   way or Exploded), every shade is rendered turned and moved off its thread as the 3D view shows
+   it, and the socket, bulb and cable come out of the lamp too, as unscrewing the shade from the
+   holder would leave them (`fixtureTakenOut`): hanging down round the bulb, the shades stay and
+   the fittings go up along the cable until the bulb is clear of the shade's straight section
+   (its length, the bulb's, and 20 mm); with the shades rising from the socket, the fittings come
+   down out of it (its length and 20 mm). The 3D view and the Plan show them out too. Taken
+   apart, Prepare switches the light off (the lamp's to be seen, not lit; it can be turned on
+   again); the bulb shows as opal glass, and the holder's thread shows.
+   The assembly row stays under the view in the Render view. Slow, once: changing the project
+   afterwards changes nothing in the
    render until it's prepared again (the Prepare button lights up when it's out of date). The
    parts' colours and materials aren't in the snapshot: they change without preparing again.
 2. **Set up** the light, camera, room, materials and quality in the side panel's **Render** tab

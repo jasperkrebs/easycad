@@ -171,6 +171,22 @@ spiral and a layer up the fillet, the line should run in to the middle and back,
 Open: a test print. Noticed, not from this change: a long fuzz round (FUZZ_CASES=800) finds a
 damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on `main`).
 
+## 2026-11-24: the render taken apart; the socket's thread (claude/lampshade-light-render-wcvx6x)
+
+- **Rendering the lamp taken apart:** the render's snapshot takes each part where the assembly
+  row has it (part way or Exploded: turned and moved off its thread, as the 3D view shows it),
+  and the socket, bulb and cable come out of the lamp (up along the cable past the shade round the
+  bulb, or down out of a shade rising from the socket), in the 3D view and the Plan too: the
+  first try left them in, and the main shade, which stays on the socket, hid the bulb. Prepared taken apart, the light goes off (the status says
+  "taken apart"; the light can be turned on again); the bulb shows as opal glass. The assembly row
+  now stays under the view in the Render view, and moving it lights up Prepare.
+- **The socket's thread:** the holder's body has the thread the shade screws onto at the recipe's
+  pitch (E27 2.5 mm, E14 2 mm, custom `thread_pitch` or `socket_pitch`): a helical surface,
+  right-handed, crests at the body's diameter, roots about half a pitch in, fading in and out over
+  a turn; in the 3D view, the render and the Plan's section (its teeth).
+- Tests: the thread (`scripts/fixture.test.mjs`); a taken-apart scene in `render-test` (a tube on
+  the Lamp's end, Exploded: "taken apart", the light off).
+
 ## 2026-11-22 (night): denoise on request, layer lines kept; the socket's shadow (claude/lampshade-light-render-wcvx6x)
 
 - **Denoise is a button**, off until pressed (beside PNG, on a finished or stopped picture);

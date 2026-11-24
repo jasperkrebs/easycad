@@ -3,7 +3,7 @@
 // recipe has the socket. Shared by the 3D view and the render.
 
 import * as THREE from 'three';
-import { CABLE_D, CAP_SHOWS, bulbProfile, socketProfile } from './fixture.js';
+import { CABLE_D, CAP_SHOWS, bulbProfile, socketProfile, socketThread, threadRadius } from './fixture.js';
 
 /** A lathe round the z axis from [radius, z] points. */
 function lathe(profile, segments = 64) {
@@ -14,8 +14,44 @@ function lathe(profile, segments = 64) {
 }
 
 /**
+ * The socket's thread as a surface: round the body, a row of points every few degrees, each row
+ * up its height, the radius `threadRadius` (a tooth a pitch, rising a pitch a turn). Closed round
+ * (no seam), open at its ends, where it meets the body at the root.
+ * @param {NonNullable<ReturnType<typeof socketThread>>} t
+ */
+function threadGeometry(t, around = 144, perPitch = 12) {
+  const rows = Math.max(2, Math.ceil(((t.z1 - t.z0) / t.pitch) * perPitch));
+  const pos = new Float32Array(around * (rows + 1) * 3);
+  for (let j = 0; j <= rows; j++) {
+    const z = t.z0 + ((t.z1 - t.z0) * j) / rows;
+    for (let i = 0; i < around; i++) {
+      const a = (2 * Math.PI * i) / around;
+      const r = threadRadius(t, a, z);
+      const k = 3 * (j * around + i);
+      pos[k] = r * Math.cos(a);
+      pos[k + 1] = r * Math.sin(a);
+      pos[k + 2] = z;
+    }
+  }
+  const index = [];
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < around; i++) {
+      const [a, b] = [j * around + i, j * around + ((i + 1) % around)];
+      const [c, d] = [a + around, b + around];
+      index.push(a, b, d, a, d, c);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
  * The fittings, placed in the recipe's frame (the socket face at `fx.face`, the body rising
- * along `fx.up`). Each mesh is named: 'socket', 'cap', 'bulb', 'cable'.
+ * along `fx.up`). Each mesh is named: 'socket' (its body), 'socket-thread' (the thread the shade
+ * screws onto, at its pitch), 'cap', 'bulb', 'cable'.
  * @param {NonNullable<ReturnType<typeof import('./fixture.js').fixtureOf>>} fx
  * @param {{ socket: THREE.Material, cap: THREE.Material, bulb: THREE.Material, cable: THREE.Material }} materials
  * @param {number} [cable] the cable's length above the gland (mm)
@@ -29,6 +65,8 @@ export function fixtureGroup(fx, materials, cable = 500) {
     return m;
   };
   add('socket', lathe(socketProfile(fx)), materials.socket);
+  const thread = socketThread(fx);
+  if (thread) add('socket-thread', threadGeometry(thread), materials.socket);
   const neck = fx.cap / 2;
   add('cap', lathe([[0, 0], [neck, 0], [neck, -CAP_SHOWS], [0, -CAP_SHOWS]], 48), materials.cap);
   add('bulb', lathe(bulbProfile(fx).map(([r, d]) => [r, -(CAP_SHOWS + d)]), 96), materials.bulb);

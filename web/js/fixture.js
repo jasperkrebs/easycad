@@ -7,14 +7,15 @@
 // Pure (no three.js, no DOM), so the node tests can check it. All sizes in mm.
 
 /**
- * Lampholders and bulbs by socket. Holder: the shade thread's diameter (the body), the body's
- * height; the cable gland on top. Bulb (IEC 60064 shapes): the cap's diameter, the glass's
+ * Lampholders and bulbs by socket. Holder: the shade thread's diameter (the body: the thread's
+ * crests) and pitch (the recipes' own: E27 2.5 mm, E14 2 mm), the body's height; the cable gland
+ * on top. Bulb (IEC 60064 shapes): the cap's diameter, the glass's
  * widest diameter and its length below the cap (overall length less the cap, A60 E27 about
  * 108 mm, P45 E14 about 80 mm).
  */
 export const FITTINGS = {
-  E27: { body: 40, height: 55, gland: 13, glandH: 10, bulb: 'A60', cap: 26.5, glass: 60, glassL: 83, shoulder: 45 },
-  E14: { body: 28, height: 45, gland: 11, glandH: 8, bulb: 'P45', cap: 14, glass: 45, glassL: 58, shoulder: 30 },
+  E27: { body: 40, pitch: 2.5, height: 55, gland: 13, glandH: 10, bulb: 'A60', cap: 26.5, glass: 60, glassL: 83, shoulder: 45 },
+  E14: { body: 28, pitch: 2, height: 45, gland: 11, glandH: 8, bulb: 'P45', cap: 14, glass: 45, glassL: 58, shoulder: 30 },
 };
 /** The cable's diameter, and the cap's metal showing between the holder and the glass. */
 export const CABLE_D = 6;
@@ -22,8 +23,8 @@ export const CAP_SHOWS = 3;
 
 /**
  * The socket a recipe is built round, from its settings: `socket` (E27, E14 or custom: then its
- * diameter from `thread_d` or `socket_d`, and height from `socket_h`). null when the recipe has
- * no socket.
+ * diameter from `thread_d` or `socket_d`, pitch from `thread_pitch` or `socket_pitch`, and height
+ * from `socket_h`). null when the recipe has no socket.
  * @param {{ name: string, value: unknown }[]} params
  */
 export function socketOf(params) {
@@ -33,8 +34,9 @@ export function socketOf(params) {
   if (kind !== 'custom') return null;
   const d = Number(get('thread_d') ?? get('socket_d'));
   const h = Number(get('socket_h'));
+  const pitch = Number(get('thread_pitch') ?? get('socket_pitch'));
   const base = FITTINGS[d > 0 && d < 34 ? 'E14' : 'E27'];
-  return { kind, ...base, body: d > 0 ? d : base.body, height: h > 0 ? h : base.height };
+  return { kind, ...base, body: d > 0 ? d : base.body, pitch: pitch > 0 ? pitch : base.pitch, height: h > 0 ? h : base.height };
 }
 
 /**
@@ -77,7 +79,24 @@ export function fixtureOf(params, parts, hang = 'down') {
   }
   // Hanging down: the shades below the socket face. Turned over, the recipe's +z points down.
   const flipped = hang === 'up' ? !shadesUp : shadesUp;
-  return { ...socket, face: flipped ? b : a, up: flipped ? -1 : 1, flipped, part: best.part };
+  return { ...socket, face: flipped ? b : a, up: flipped ? -1 : 1, flipped, part: best.part, throat: b - a, shadesBelow: hang !== 'up' };
+}
+
+/**
+ * The fittings taken out of the lamp (its exploded view), `u` of the way (0: in, 1: out), as
+ * unscrewing the shade from the holder would leave them, showing the bulb and the holder's
+ * thread: the shades hanging down round the bulb, the fittings go up along the cable until the
+ * bulb's tip is clear of the shade's straight section, with a gap; the shades rising from the
+ * socket (the bulb already below them), they come down out of the straight section, with a gap.
+ * @param {NonNullable<ReturnType<typeof fixtureOf>>} fx
+ * @param {number} u
+ */
+export function fixtureTakenOut(fx, u) {
+  const t = Math.min(1, Math.max(0, u));
+  if (!t) return fx;
+  const below = fx.shadesBelow !== false;
+  const out = (fx.throat || 0) + (below ? CAP_SHOWS + fx.glassL : 0) + 20;
+  return { ...fx, face: fx.face + (below ? 1 : -1) * fx.up * out * t };
 }
 
 /** A smooth curve from p0 to p1 leaving along t0 and arriving along t1 (cubic Hermite). */
@@ -129,7 +148,64 @@ export function socketProfile(f) {
   const r = f.body / 2;
   const g = f.gland / 2;
   const e = Math.min(2, r / 6);
-  return [[0, 0], [r - e, 0], [r, e], [r, f.height - e], [r - e, f.height], [g, f.height], [g, f.height + f.glandH], [0, f.height + f.glandH]];
+  const t = socketThread(f);
+  // Under the thread the body is at the thread's root (the thread's own surface goes over it).
+  const body = t ? [[r, t.z0], [t.root, t.z0], [t.root, t.z1], [r, t.z1]] : [];
+  return [[0, 0], [r - e, 0], [r, e], ...body, [r, f.height - e], [r - e, f.height], [g, f.height], [g, f.height + f.glandH], [0, f.height + f.glandH]];
+}
+
+/**
+ * The thread on the socket's body that the shade screws onto: from just above the face to a
+ * plain collar under the top, its crests at the body's diameter (where the shade's bead runs),
+ * its roots `depth` in (about half a pitch), right-handed, one pitch a turn. null when the body
+ * is too short for a turn.
+ * @param {ReturnType<typeof socketOf>} f
+ */
+export function socketThread(f) {
+  const pitch = Number(f.pitch);
+  if (!(pitch > 0)) return null;
+  const r = f.body / 2;
+  const depth = Math.min(0.45 * pitch, r / 8);
+  const z0 = Math.min(2, r / 6) + 1;
+  const z1 = f.height - Math.min(8, f.height / 5);
+  if (z1 - z0 < 2 * pitch) return null;
+  return { pitch, depth, z0, z1, crest: r, root: r - depth };
+}
+
+/**
+ * The thread's surface radius at angle `theta` (radians, counter-clockwise from above) and height
+ * `z` above the face: a rounded tooth each pitch, rising one pitch a turn (right-handed), fading
+ * in over the first turn and out over the last, to the root, where it meets the body.
+ * @param {NonNullable<ReturnType<typeof socketThread>>} t
+ * @param {number} theta
+ * @param {number} z
+ */
+export function threadRadius(t, theta, z) {
+  const u = (z - t.z0) / t.pitch - theta / (2 * Math.PI);
+  const tooth = 0.5 + 0.5 * Math.cos(2 * Math.PI * u);
+  const fade = Math.min(1, Math.max(0, (z - t.z0) / t.pitch), Math.max(0, (t.z1 - z) / t.pitch));
+  return t.root + t.depth * tooth * fade;
+}
+
+/**
+ * The socket cut through its axis on one side (angle `theta`): its profile with the thread's
+ * teeth, [radius, height above the face] from the face's middle round to the gland's top.
+ * @param {ReturnType<typeof socketOf>} f
+ * @param {number} [theta]
+ */
+export function socketSection(f, theta = 0) {
+  const t = socketThread(f);
+  const profile = socketProfile(f);
+  if (!t) return profile;
+  const at = profile.findIndex(([r, z]) => r === t.root && z === t.z0);
+  const steps = Math.max(2, Math.ceil(((t.z1 - t.z0) / t.pitch) * 8));
+  const teeth = [];
+  for (let k = 0; k <= steps; k++) {
+    const z = t.z0 + ((t.z1 - t.z0) * k) / steps;
+    teeth.push([threadRadius(t, theta, z), z]);
+  }
+  // In place of the root's straight run: the teeth.
+  return [...profile.slice(0, at), ...teeth, ...profile.slice(at + 2)];
 }
 
 /**
@@ -148,8 +224,11 @@ export function fixtureOutline(fx, cable = 1000) {
   };
   const top = fx.height + fx.glandH;
   const neck = fx.cap / 2;
+  // The socket's section shows the thread: teeth on the right as cut at angle 0, on the left
+  // at half a turn (half a pitch higher).
+  const section = [...socketSection(fx, 0).map(([r, s]) => [r, z(s)]), ...socketSection(fx, Math.PI).map(([r, s]) => [-r, z(s)]).reverse()];
   return {
-    socket: both(socketProfile(fx), (s) => s),
+    socket: section,
     cap: both([[0, 0], [neck, 0], [neck, CAP_SHOWS], [0, CAP_SHOWS]], (s) => -s),
     bulb: both(bulbProfile(fx), (s) => -(CAP_SHOWS + s)),
     cable: [-1, 1].map((side) => [[(side * CABLE_D) / 2, z(top)], [(side * CABLE_D) / 2, z(top + cable)]]),

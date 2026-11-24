@@ -228,6 +228,9 @@ async function centreSpread(page, url) {
       { name: 'socket-shadow', template: 'lampshade', project: 'Lampshade', part: 'path', look: { color: '#ffffff', opacity: 1, material: { plastic: 'pla-matte' } }, hang: 'up', render: { light: true, room: 0, exposure: 2, camera: { view: 'above', lens: 50, position: null, target: null } }, insideDark: true },
       // The layer lines through the denoiser: a frosted lamp big enough for them to show.
       { name: 'layer-lines', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#f6f1e6', opacity: 0.5, material: { plastic: 'petg-frosted' } }, render: { light: true, preview: { size: 640, samples: 24 }, camera: { view: 'front', lens: 50, position: null, target: null } }, lines: true },
+      // Taken apart (a tube on the lamp's end, Exploded): rendered where the parts are, the light
+      // switched off by Prepare, the bulb still there; the socket's thread shows above the throat.
+      { name: 'lamp-exploded', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#e8e2d6', opacity: 1, material: { plastic: 'pla' } }, recipeAdd: 'part tube = shade(mount: main.end_out, direction: "up", shape: "tube", length: 120 mm)', explode: true, render: { light: true, camera: { view: 'three-quarter', lens: 50, position: null, target: null } } },
       { name: 'pendant-matte-white', template: 'thread-pendant', project: 'Thread pendant', part: 'path_out', look: { color: '#fbfaf7', opacity: 0.6, material: { plastic: 'pla-matte' } }, render: { light: true, ceiling: { on: true, distance: 300 }, wall: { on: true, distance: 350 } } },
     ];
     const only = process.env.RENDER_SCENES ? process.env.RENDER_SCENES.split(',') : null;
@@ -243,14 +246,31 @@ async function centreSpread(page, url) {
         // The template list is in the Settings tab (the Render tab is in front in the Render view).
         await page.click('#tab-settings');
         await page.selectOption('#template', sc.template);
+        // A scene that edited its recipe (the taken-apart one): replacing it is asked first.
+        if (await page.isVisible('#replaceConfirm')) await page.click('#replaceYes');
         await page.waitForFunction((t) => document.getElementById('projectName').textContent === t, sc.project, { timeout: 30000 });
         await page.waitForFunction(() => /Engine ready/.test(document.getElementById('status').textContent), null, { timeout: 60000 });
         await page.click('#tab-render');
+      }
+      if (sc.recipeAdd && !(await page.inputValue('#recipe')).includes(sc.recipeAdd)) {
+        await page.click('#tab-recipe');
+        await page.fill('#recipe', `${await page.inputValue('#recipe')}\n${sc.recipeAdd}\n`);
+        await page.click('#runRecipe');
+        await page.waitForFunction(() => !document.getElementById('viewAssembly').hidden, null, { timeout: 60000 });
+        await page.click('#tab-render');
+      }
+      if (sc.explode) {
+        await page.evaluate(() => document.getElementById('asmExplode').click());
+        await page.waitForFunction(() => document.getElementById('asmExplode').getAttribute('aria-pressed') === 'true', null, { timeout: 30000 });
       }
       await page.evaluate(() => document.getElementById('renderPrepare').click());
       await page.waitForFunction(() => /^Draft|Can't/.test(document.getElementById('renderStatus').textContent), null, { timeout: 300000 });
       const prepared = await page.textContent('#renderStatus');
       if (/Can't/.test(prepared)) throw new Error(`${sc.name}: ${prepared}`);
+      if (sc.explode) {
+        const light = await page.evaluate((project) => JSON.parse(localStorage.getItem('easycad.customColors'))[project].render.light, sc.project);
+        if (!/taken apart/.test(prepared) || light !== false) failures.push(`${sc.name}: taken apart: "${prepared}", light ${light}`);
+      }
       await shot(`${sc.name}-draft`);
       await page.evaluate(() => document.getElementById('renderPreview').click());
       // Done: not denoised by itself (off by default).
@@ -297,6 +317,12 @@ async function centreSpread(page, url) {
         const [aRaw, aClean] = [await lines(page, rawUrl), await lines(page, denoisedUrl)];
         console.log(`  layer lines (row ÷ column change): ${aRaw.toFixed(2)} as rendered, ${aClean.toFixed(2)} denoised`);
         if (!(aClean > 1.15)) failures.push(`${sc.name}: the denoiser flattened the layer lines (${aClean.toFixed(2)})`);
+      }
+      if (sc.explode) {
+        // The bulb shows (opal, unlit): a light patch below the middle of the picture, as the
+        // draft has it, isn't empty.
+        const spread = await centreSpread(page, rawUrl);
+        if (!(spread > 8)) failures.push(`${sc.name}: the middle of the picture is flat (${spread.toFixed(1)})`);
       }
       if (sc.lampShows) {
         // The lamp in the middle of the picture: not one flat colour (a surface in front of it).

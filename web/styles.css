@@ -2173,7 +2173,7 @@ body[data-plan] .view-legend {
   display: none;
 }
 
-body[data-render] .view-scrub,
+body[data-render] .view-scrub:not(.view-assembly),
 body[data-render] .view-legend {
   display: none;
 }
