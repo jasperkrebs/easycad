@@ -15,6 +15,11 @@ Claude API with the key, streaming the answer back.
   - calls from this repo's GitHub Pages site and `localhost:8080` only.
 - **A wrong password** gets a 401 after a short wait, so guessing is slow. Use a long one,
   e.g. 20+ random characters from a password manager.
+- **A key the Claude API refuses** gets a 424 (`api_key_refused`), never a 401, so the app
+  doesn't take it for a wrong password. `POST /check` checks both: the password, then the key
+  (listing one model, which costs nothing).
+- **Change secrets in GitHub only:** every deploy from `main` sets both again from the GitHub
+  secrets, overwriting any change made in Cloudflare.
 
 Setup steps (Cloudflare account, the four GitHub secrets): [docs/api-key.md](../docs/api-key.md).
 CI (`.github/workflows/ci.yml`, job "AI proxy") tests it, deploys it with Wrangler, sets the two
