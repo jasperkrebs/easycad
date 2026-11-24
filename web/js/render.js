@@ -351,7 +351,12 @@ export function createRenderer(canvas, hooks = {}) {
     const on = settings.light;
     const intensity = (UNIT_INTENSITY * settings.lumens) / 806;
     bulbLight.color.copy(warm);
-    bulbLight.intensity = on ? intensity : 0;
+    bulbLight.intensity = intensity;
+    // Off, the light leaves the scene, not just goes dark: a light of no power is a division by
+    // zero in the path tracer's light sampling, which on some GPUs (a Mac's) makes NaNs, and a
+    // pixel with a NaN stays black (see-through shades went black with the light off).
+    if (on && fixture && bulbLight.parent !== fixture) fixture.add(bulbLight);
+    if (!on) bulbLight.removeFromParent();
     // The glass glows as bright as the light it lets out: I ÷ (π r²) for a sphere.
     bulbMaterial.emissive.copy(on ? warm : new THREE.Color(0));
     bulbMaterial.emissiveIntensity = on ? intensity / (Math.PI * glassR * glassR) : 0;
