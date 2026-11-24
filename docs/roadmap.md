@@ -109,7 +109,10 @@ so in the dev log); when something new comes up, add it here, not only in the de
 - **Thread pendant** ([thread-pendant.md](thread-pendant.md)): a test print on E27; measure an E14
   barrel; maybe a pace for the wing rings (half a line a layer) instead of the max overhang; the
   floor lamp, linear pendant and screw part if wanted; Plan marks.
-- **Nutcracker** ([nutcracker.md](nutcracker.md)): a test print (fit, how much the handle takes).
+- **Nutcracker** ([nutcracker.md](nutcracker.md)): printed (24 Nov) and done, in recycled PETG
+  with a 3 mm nozzle on the G1 (the owner's notes: [printers.md](printers.md), "What the owner's
+  prints taught"). Not reached: the thread's fit between the cap and the key; walls inconsistent
+  above the first few layers, probably heat building up.
 - **Patterns** on the Lamp's and the Lampshade's sections ([patterns.md](patterns.md)): a test
   print (how deep a wave the layers hold, rails against woven); more patterns than the sine
   wave; on near-flat parts the wave pushes along the wall rather than out of it.
