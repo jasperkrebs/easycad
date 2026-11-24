@@ -25,6 +25,12 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024; // room for a few rendered views
 const FORWARD = ['anthropic-version', 'anthropic-beta'];
 const EXPOSE = ['request-id', 'retry-after', 'content-type'];
 const WRONG_PASSWORD_DELAY_MS = 800;
+/**
+ * The Claude API refused the proxy's own key (revoked, or an old one put back): not the app's
+ * password, so not a 401, which the app reads as "wrong password". 424: the request failed
+ * because what it depends on did.
+ */
+const KEY_REFUSED = 424;
 const GITHUB_API = 'https://api.github.com';
 /** Open feature requests at most; more wait until some are built. */
 const MAX_OPEN_REQUESTS = 5;
@@ -56,7 +62,18 @@ export default {
       await new Promise((r) => setTimeout(r, WRONG_PASSWORD_DELAY_MS));
       return failure(401, 'authentication_error', 'wrong password', cors);
     }
-    if (request.method === 'POST' && url.pathname === '/check') return json({ ok: true }, 200, cors);
+    // The password is right; the check also asks the Claude API whether it takes the key (listing
+    // one model costs nothing).
+    if (request.method === 'POST' && url.pathname === '/check') {
+      let models;
+      try {
+        models = await fetch(`${API}/v1/models?limit=1`, { headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' } });
+      } catch {
+        return failure(502, 'api_error', 'the Claude API could not be reached', cors);
+      }
+      if (models.status === 401) return keyRefused(cors);
+      return json({ ok: true }, 200, cors);
+    }
     if (request.method === 'POST' && url.pathname === '/feature-request') return fileFeatureRequest(request, env, cors);
     if (request.method !== 'POST' || !PATHS.has(url.pathname)) {
       return failure(404, 'not_found_error', `the proxy only forwards ${[...PATHS].join(' and ')}`, cors);
@@ -96,6 +113,7 @@ export default {
     } catch {
       return failure(502, 'api_error', 'the Claude API could not be reached', cors);
     }
+    if (upstream.status === 401) return keyRefused(cors);
     // Stream the answer through untouched: the app reads the server-sent events as they come.
     const out = new Headers(cors);
     for (const name of EXPOSE) {
@@ -207,6 +225,11 @@ async function sha256(text) {
 
 function json(data, status, headers) {
   return new Response(JSON.stringify(data), { status, headers: { ...headers, 'content-type': 'application/json' } });
+}
+
+/** The Claude API refused the proxy's key: say which secret to replace. */
+function keyRefused(headers) {
+  return failure(KEY_REFUSED, 'api_key_refused', "the Claude API refused the proxy's API key: replace the ANTHROPIC_API_KEY secret (docs/api-key.md)", headers);
 }
 
 /** An error in the Claude API's own format, so the app's SDK reports it like any API error. */

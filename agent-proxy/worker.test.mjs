@@ -66,9 +66,27 @@ test('a wrong or missing password is refused without calling the API', async () 
   assert.equal(upstreamCalls.length, 0);
 });
 
-test('/check answers only with the right password', async () => {
+test('/check answers only with the right password, and checks the key too', async () => {
   assert.equal((await worker.fetch(post('/check', {}), ENV)).status, 200);
+  assert.equal(upstreamCalls.length, 1);
+  assert.match(upstreamCalls[0].url, /\/v1\/models\?limit=1$/);
+  assert.equal(new Headers(upstreamCalls[0].init.headers).get('x-api-key'), 'sk-test-key');
   assert.equal((await worker.fetch(post('/check', {}, { password: 'nope' }), ENV)).status, 401);
+  assert.equal(upstreamCalls.length, 1, 'a wrong password never reaches the API');
+});
+
+test("a key the Claude API refuses isn't reported as a wrong password", async () => {
+  globalThis.fetch = async (url, init) => {
+    upstreamCalls.push({ url: String(url), init });
+    return new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), { status: 401 });
+  };
+  for (const res of [await worker.fetch(post('/v1/messages', message), ENV), await worker.fetch(post('/check', {}), ENV)]) {
+    assert.equal(res.status, 424);
+    const body = await res.json();
+    assert.equal(body.error.type, 'api_key_refused');
+    assert.match(body.error.message, /ANTHROPIC_API_KEY/);
+    assert.equal(res.headers.get('access-control-allow-origin'), ORIGIN);
+  }
 });
 
 test('only allowed pages, models, paths and sizes get through', async () => {
