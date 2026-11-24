@@ -166,3 +166,49 @@ test('a vase wall: each turn sits on the one below, the first has nothing under 
   }
   assert.equal(touching(out, widths, heights).below[2 * per + per / 2], 0);
 });
+
+test("the socket's thread: the recipes' pitch, crests at the body, right-handed, fading out at its ends", async () => {
+  const { socketThread, threadRadius, socketSection } = await import('../web/js/fixture.js');
+  const e27 = socketOf(params({ socket: 'E27' }));
+  const e14 = socketOf(params({ socket: 'E14' }));
+  assert.equal(e27.pitch, 2.5);
+  assert.equal(e14.pitch, 2);
+  assert.equal(socketOf(params({ socket: 'custom', thread_d: 50, thread_pitch: 3 })).pitch, 3);
+  assert.equal(socketOf(params({ socket: 'custom', socket_d: 40, socket_pitch: 2.2 })).pitch, 2.2);
+  const t = socketThread(e27);
+  assert.equal(t.crest, 20, 'the crests are the body (the shade thread) diameter');
+  assert.ok(t.depth > 0.5 && t.depth < 2);
+  // Mid-way up: a crest every pitch at one angle, a root half a pitch on.
+  const mid = t.z0 + 8 * t.pitch;
+  assert.ok(Math.abs(threadRadius(t, 0, mid) - t.crest) < 1e-9);
+  assert.ok(Math.abs(threadRadius(t, 0, mid + t.pitch / 2) - t.root) < 1e-9);
+  // Right-handed: a quarter turn on (counter-clockwise from above), the crest is a quarter pitch up.
+  assert.ok(Math.abs(threadRadius(t, Math.PI / 2, mid + t.pitch / 4) - t.crest) < 1e-9);
+  // It fades to the root at both ends, where it meets the body.
+  assert.ok(Math.abs(threadRadius(t, 0, t.z0) - t.root) < 1e-9);
+  assert.ok(Math.abs(threadRadius(t, 0, t.z1) - t.root) < 1e-9);
+  // The section: still closed on the axis, with teeth (a crest a pitch).
+  const section = socketSection(e27, 0);
+  assert.equal(section[0][0], 0);
+  assert.equal(section[section.length - 1][0], 0);
+  const crests = section.filter(([r, z]) => z > t.z0 + t.pitch && z < t.z1 - t.pitch && r > t.crest - 0.05).length;
+  assert.ok(crests >= Math.floor((t.z1 - t.z0) / t.pitch) - 3, `${crests} crests`);
+  // The plan's outline shows them.
+  const fx = { ...e27, face: 0, up: 1, flipped: false, part: null };
+  assert.ok(fixtureOutline(fx).socket.length > 100);
+});
+
+test('taken apart, the fittings come out of the lamp: up past the shade round the bulb, or down out of a shade above', async () => {
+  const { fixtureTakenOut } = await import('../web/js/fixture.js');
+  // A shade printed throat down and opening up: hung down, the project's turned over (+z down).
+  const down = fixtureOf(params({ socket: 'E27' }), shade(23, 20), 'down');
+  assert.equal(down.throat, 20);
+  assert.equal(fixtureTakenOut(down, 0), down);
+  const out = fixtureTakenOut(down, 1);
+  // Up in the world is -z in the project: the face moves by the throat, cap, glass and a gap.
+  assert.equal(out.face, down.face - (20 + 3 + 83 + 20));
+  assert.equal(fixtureTakenOut(down, 0.5).face, down.face - (20 + 3 + 83 + 20) / 2);
+  // Hung up: the shade rises from the socket; the fittings come down out of its throat.
+  const up = fixtureOf(params({ socket: 'E27' }), shade(23, 20), 'up');
+  assert.equal(fixtureTakenOut(up, 1).face, up.face - (20 + 20));
+});

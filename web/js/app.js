@@ -14,7 +14,7 @@ import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, load
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
-import { CAMERA_VIEWS, cleanRender, fixtureOf } from './fixture.js';
+import { CAMERA_VIEWS, cleanRender, fixtureOf, fixtureTakenOut } from './fixture.js';
 import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
@@ -1273,6 +1273,10 @@ function applyAssembly(result = state.last) {
   /** @type {HTMLInputElement} */ ($('asmRange')).value = String(Math.round(assembly.u * 1000));
   $('asmExplode').setAttribute('aria-pressed', String(assembly.u >= 1));
   $('asmPlay').textContent = assembly.frame ? '❚❚' : '▶';
+  // The fittings come out with them (in the 3D view; the plan's redrawn by the caller).
+  if (result) viewport.setFixture(fixtureFor(result));
+  // The render takes the parts where this puts them: a prepared one is out of date.
+  markRenderStale();
 }
 
 /** Sets how far it's taken apart, and shows it (the plan too). */
@@ -1372,9 +1376,13 @@ async function openSketcher(data, name) {
 // the custom colours); changing the project afterwards changes nothing in the render until it's
 // prepared again. The light and the picture's settings only restart the sampling.
 
-/** The fittings for a result (holder, bulb, cable), as the project hangs; null without a socket. */
+/**
+ * The fittings for a result (holder, bulb, cable), as the project hangs; null without a socket.
+ * Taken apart (the assembly row), they come out of the lamp too, up along the cable.
+ */
 function fixtureFor(result) {
-  return result ? fixtureOf(result.params, sections(result), customColors().hang) : null;
+  const fx = result ? fixtureOf(result.params, sections(result), customColors().hang) : null;
+  return fx && assembly.steps.length ? fixtureTakenOut(fx, assembly.u) : fx;
 }
 
 const renderView = {
@@ -1394,7 +1402,7 @@ const renderOn = () => $('viewRender').getAttribute('aria-pressed') === 'true';
 /** What a render is prepared from: changes to any of it make the prepared one out of date. */
 function renderKey() {
   const c = customColors();
-  return JSON.stringify([state.source, state.values, c.hang, [...hiddenParts].sort()]);
+  return JSON.stringify([state.source, state.values, c.hang, [...hiddenParts].sort(), Math.round(assembly.u * 1000)]);
 }
 
 /** The Prepare button shows when the prepared render no longer matches the project. */
@@ -1415,12 +1423,25 @@ function renderLooks(result) {
 
 /**
  * The project as the render takes it: each printed part's toolpaths (print aids such as a brim
- * left out, hidden parts too), the parts' looks and the fittings.
+ * left out, hidden parts too) where the assembly row has them (taken apart: each turned about
+ * the axis and moved along it, as the 3D view shows it; the socket and bulb stay), the parts'
+ * looks and the fittings.
  */
 function renderSnapshot(result) {
   const { points, starts, widths, heights, ups, aids } = result.paths;
   const owner = result.parts?.paths || [];
   const prints = printsOf(result);
+  const motion = assemblyMotion(assembly.steps, assembly.u);
+  /** Turns (degrees, counter-clockwise from above) and lifts (mm) x, y, z triples in place. */
+  const move = (xyz, angle, dz, lift) => {
+    const [c, s] = [Math.cos((angle * Math.PI) / 180), Math.sin((angle * Math.PI) / 180)];
+    for (let i = 0; i < xyz.length; i += 3) {
+      const [x, y] = [xyz[i], xyz[i + 1]];
+      xyz[i] = c * x - s * y;
+      xyz[i + 1] = s * x + c * y;
+      if (lift) xyz[i + 2] += dz;
+    }
+  };
   const paths = [];
   for (let k = 0; k + 1 < starts.length; k++) {
     const part = owner[k] ?? -1;
@@ -1430,7 +1451,14 @@ function renderSnapshot(result) {
     const w = widths ? widths.slice(a, b) : new Float32Array(b - a).fill(1);
     const h = heights ? heights.slice(a, b) : new Float32Array(b - a).fill(0.5);
     if (aids) for (let i = a; i < b; i++) if (aids[i]) w[i - a] = 0;
-    paths.push({ points: points.slice(3 * a, 3 * b), widths: w, heights: h, ups: ups ? ups.slice(3 * a, 3 * b) : null, part });
+    const pts = points.slice(3 * a, 3 * b);
+    const up = ups ? ups.slice(3 * a, 3 * b) : null;
+    const m = motion.get(prints[part].name);
+    if (m && (m.angle || m.dz)) {
+      move(pts, m.angle, m.dz, true);
+      if (up) move(up, m.angle, 0, false);
+    }
+    paths.push({ points: pts, widths: w, heights: h, ups: up, part });
   }
   return { paths, looks: renderLooks(result), fixture: fixtureFor(result) };
 }
@@ -1549,11 +1577,17 @@ async function prepareRender() {
     const api = await renderApi();
     const key = renderKey();
     renderView.info = '';
+    // Taken apart, the lamp is shown, not lit: the light goes off (it can be turned on again).
+    const exploded = assembly.u > 0 && assembly.steps.length > 0;
+    if (exploded && customColors().render.light) {
+      saveRender({ light: false });
+      if (renderOn()) renderPanel();
+    }
     // This project's settings (another project may have been open since).
     api.setSettings(customColors().render);
     const { triangles } = await api.prepare(renderSnapshot(state.last), (what) => renderStatus(`Preparing · ${what}`));
     renderView.key = key;
-    renderView.info = `${(triangles / 1e6).toFixed(2)} M triangles, prepared in ${fmt((performance.now() - t0) / 1000)} s`;
+    renderView.info = `${exploded ? 'taken apart · ' : ''}${(triangles / 1e6).toFixed(2)} M triangles, prepared in ${fmt((performance.now() - t0) / 1000)} s`;
     showRenderProgress({ state: 'draft' });
   } catch (err) {
     renderStatus(`Can't render here: ${err.message || err}`);
