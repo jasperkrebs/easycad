@@ -198,17 +198,56 @@ test("the socket's thread: the recipes' pitch, crests at the body, right-handed,
   assert.ok(fixtureOutline(fx).socket.length > 100);
 });
 
-test('taken apart, the fittings come out of the lamp: up past the shade round the bulb, or down out of a shade above', async () => {
-  const { fixtureTakenOut } = await import('../web/js/fixture.js');
-  // A shade printed throat down and opening up: hung down, the project's turned over (+z down).
-  const down = fixtureOf(params({ socket: 'E27' }), shade(23, 20), 'down');
-  assert.equal(down.throat, 20);
-  assert.equal(fixtureTakenOut(down, 0), down);
-  const out = fixtureTakenOut(down, 1);
-  // Up in the world is -z in the project: the face moves by the throat, cap, glass and a gap.
-  assert.equal(out.face, down.face - (20 + 3 + 83 + 20));
-  assert.equal(fixtureTakenOut(down, 0.5).face, down.face - (20 + 3 + 83 + 20) / 2);
-  // Hung up: the shade rises from the socket; the fittings come down out of its throat.
-  const up = fixtureOf(params({ socket: 'E27' }), shade(23, 20), 'up');
-  assert.equal(fixtureTakenOut(up, 1).face, up.face - (20 + 20));
+test('taken apart, top to bottom as it hangs: socket, shades, bulb, each clear of the shades', async () => {
+  const { fixtureTakenOut, partsExtent } = await import('../web/js/fixture.js');
+  // Two shades hanging down from the socket (the recipe's +z up, not turned over): the main one
+  // on the socket, z 0 down to -140, and one taken apart further down, -200 to -400.
+  const parts = new Map([
+    ['main', { points: [[23, 0], [23, -60], [80, -140]], width: 6 }],
+    ['cone', { points: [[30, 0], [200, -200]], width: 6 }],
+  ]);
+  const extent = partsExtent(parts, new Map([['cone', -200]]));
+  assert.deepEqual(extent, [-400, 0]);
+  const fx = { ...socketOf(params({ socket: 'E27' })), face: -60, up: 1, flipped: false, part: 'main', throat: 60, shadesBelow: true };
+  assert.equal(fixtureTakenOut(fx, 0, extent).bulbDrop, 0, 'together: as it is');
+  const out = fixtureTakenOut(fx, 1, extent);
+  // The socket's face 20 mm above the highest shade; the whole bulb (its cap) 20 mm below the lowest.
+  assert.equal(out.face, 20);
+  // (The bulb's screw cap reaches 17 + 3.5 mm above where the glass meets it, the face screwed in.)
+  assert.equal(out.face - out.bulbDrop + 20.5, -420);
+  // Half way: half as far.
+  const half = fixtureTakenOut(fx, 0.5, extent);
+  assert.equal(half.face, -20);
+  // Turned over (the recipe's +z down as it hangs), the same in its frame.
+  const flipped = { ...fx, face: 60, up: -1 };
+  const outFlipped = fixtureTakenOut(flipped, 1, [0, 400]);
+  assert.equal(outFlipped.face, -20);
+  assert.equal(outFlipped.face * -1 - outFlipped.bulbDrop + 20.5, -420);
+});
+
+test('the thread runs the whole body: a shade can sit anywhere along it', async () => {
+  const { socketThread } = await import('../web/js/fixture.js');
+  const f = socketOf(params({ socket: 'E27' }));
+  const t = socketThread(f);
+  assert.ok(t.z0 <= 2 && t.z1 >= f.height - 2, `${t.z0}..${t.z1} of ${f.height}`);
+});
+
+test("the bulb's Edison screw: the standard pitch, crests at the cap, inside the holder when screwed in", async () => {
+  const { capThread, capSection, threadRadius } = await import('../web/js/fixture.js');
+  const e27 = socketOf(params({ socket: 'E27' }));
+  const e14 = socketOf(params({ socket: 'E14' }));
+  const t27 = capThread(e27);
+  assert.ok(Math.abs(t27.pitch - 25.4 / 7) < 0.01, 'E27: 7 turns an inch');
+  assert.ok(Math.abs(capThread(e14).pitch - 25.4 / 9) < 0.01, 'E14: 9 turns an inch');
+  assert.equal(t27.crest, e27.cap / 2);
+  // From the glass's top (just below the face) up into the holder, inside its body.
+  assert.equal(t27.z0, -3);
+  assert.ok(t27.z1 > 10 && t27.z1 < e27.height);
+  assert.ok(t27.crest < socketOf(params({ socket: 'E27' })).body / 2);
+  const mid = t27.z0 + 3 * t27.pitch;
+  assert.ok(Math.abs(threadRadius(t27, 0, mid) - t27.crest) < 1e-9);
+  const section = capSection(e27, 0);
+  assert.equal(section[0][0], 0);
+  assert.equal(section[section.length - 1][0], 0);
+  assert.ok(Math.max(...section.map(([, z]) => z)) > t27.z1, 'the insulator and contact on top');
 });

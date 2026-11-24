@@ -308,7 +308,7 @@ export function createRenderer(canvas, hooks = {}) {
       const cable = settings.ceiling.on ? Math.max(1, settings.ceiling.distance) : LONG_CABLE;
       fixture = fixtureGroup(fx, fittings, cable);
       glassR = (fx.glass / 2) * MM;
-      bulbLight.position.set(0, 0, -(CAP_SHOWS + bulbCentre(fx)));
+      bulbLight.position.set(0, 0, -((/** @type {any} */ (fx).bulbDrop || 0) + CAP_SHOWS + bulbCentre(fx)));
       fixture.add(bulbLight);
       hung.add(fixture);
     }

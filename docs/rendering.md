@@ -27,10 +27,15 @@ is 6 mm across.
 **The thread:** the holder's body carries the thread the shade screws onto, at the recipe's
 pitch (the shade's layer height: one bead a turn), in the 3D view, the render and the Plan:
 right-handed, one pitch a turn, its crests at the body's diameter (where the shade's bead runs),
-its roots about half a pitch in, from just above the face to a plain collar under the top,
-fading in and out over a turn at each end (`socketThread`, `threadRadius` in `fixture.js`). The
+its roots about half a pitch in, all along the body (a shade's straight start can sit anywhere
+on it), fading in and out over half a turn at each end (`socketThread`, `threadRadius` in `fixture.js`). The
 Plan's section shows its teeth, half a pitch higher on the left than on the right (the cut is
 half a turn round).
+
+**The bulb's screw:** the bulb has its Edison screw cap (IEC 60061-1): E27 26.5 mm across, 7
+turns an inch (3.63 mm pitch), 20 mm threaded; E14 14 mm, 9 turns an inch (2.82 mm), 15 mm;
+then the black insulator and the contact on top (`capThread`, `capTop`). Screwed in, all of it
+but its bottom 3 mm is inside the holder; taken apart, the bulb comes off with it showing.
 
 **Where it goes:** on the straight section that screws onto the socket: the part whose beads run
 round the holder's body (within three quarters of a bead of it). The socket always points down:
@@ -54,13 +59,13 @@ ran the GPU out of memory and froze the browser.)
    `beadGeometry`, so the layer lines are real round faces), the fittings and the hidden parts
    (left out, as the brim is), each part where the assembly row has it: **taken apart** (part
    way or Exploded), every shade is rendered turned and moved off its thread as the 3D view shows
-   it, and the socket, bulb and cable come out of the lamp too, as unscrewing the shade from the
-   holder would leave them (`fixtureTakenOut`): hanging down round the bulb, the shades stay and
-   the fittings go up along the cable until the bulb is clear of the shade's straight section
-   (its length, the bulb's, and 20 mm); with the shades rising from the socket, the fittings come
-   down out of it (its length and 20 mm). The 3D view and the Plan show them out too. Taken
-   apart, Prepare switches the light off (the lamp's to be seen, not lit; it can be turned on
-   again); the bulb shows as opal glass, and the holder's thread shows.
+   it, and the fittings come apart too (`fixtureTakenOut`): top to bottom as it hangs, it reads
+   **socket, shades, bulb**. The socket (and its cable) goes up until its face is 20 mm above the
+   highest shade, clear of them all; the bulb unscrews from it and goes down until its cap is
+   20 mm below the lowest shade, the whole bulb under them. Both follow the assembly row, from
+   where the shades are taken apart to at the time. The 3D view and the Plan show them so too.
+   Taken apart, Prepare switches the light off (the lamp's to be seen, not lit; it can be turned
+   on again); the bulb shows as opal glass, and the holder's thread shows.
    The assembly row stays under the view in the Render view. Slow, once: changing the project
    afterwards changes nothing in the
    render until it's prepared again (the Prepare button lights up when it's out of date). The

@@ -14,9 +14,14 @@
  * 108 mm, P45 E14 about 80 mm).
  */
 export const FITTINGS = {
-  E27: { body: 40, pitch: 2.5, height: 55, gland: 13, glandH: 10, bulb: 'A60', cap: 26.5, glass: 60, glassL: 83, shoulder: 45 },
-  E14: { body: 28, pitch: 2, height: 45, gland: 11, glandH: 8, bulb: 'P45', cap: 14, glass: 45, glassL: 58, shoulder: 30 },
+  E27: { capPitch: 3.629, capThread: 20, capDepth: 1.1, body: 40, pitch: 2.5, height: 55, gland: 13, glandH: 10, bulb: 'A60', cap: 26.5, glass: 60, glassL: 83, shoulder: 45 },
+  E14: { capPitch: 2.822, capThread: 15, capDepth: 0.8, body: 28, pitch: 2, height: 45, gland: 11, glandH: 8, bulb: 'P45', cap: 14, glass: 45, glassL: 58, shoulder: 30 },
 };
+/**
+ * The bulb's Edison screw cap (IEC 60061-1): its thread's pitch (E27 7 turns an inch, E14 9),
+ * the threaded length and the thread's depth; the cap's diameter is `cap` (the thread's crests).
+ * Screwed in, all of it but `CAP_SHOWS` is inside the holder.
+ */
 /** The cable's diameter, and the cap's metal showing between the holder and the glass. */
 export const CABLE_D = 6;
 export const CAP_SHOWS = 3;
@@ -83,20 +88,47 @@ export function fixtureOf(params, parts, hang = 'down') {
 }
 
 /**
- * The fittings taken out of the lamp (its exploded view), `u` of the way (0: in, 1: out), as
- * unscrewing the shade from the holder would leave them, showing the bulb and the holder's
- * thread: the shades hanging down round the bulb, the fittings go up along the cable until the
- * bulb's tip is clear of the shade's straight section, with a gap; the shades rising from the
- * socket (the bulb already below them), they come down out of the straight section, with a gap.
+ * The fittings taken apart with the lamp (its exploded view), `u` of the way (0: in, 1: out), so
+ * that, top to bottom as it hangs, it reads socket, shades, bulb: the socket goes up along the
+ * cable until its face is a gap above the highest shade, the bulb unscrews from it and goes down
+ * until the top of its screw cap (the whole bulb) is a gap below the lowest. `extent`: the shades' lowest and highest z in the
+ * recipe's frame, where the exploded view has them. Adds `bulbDrop`: how far (mm) the bulb's cap
+ * is below the socket's face.
  * @param {NonNullable<ReturnType<typeof fixtureOf>>} fx
  * @param {number} u
+ * @param {[number, number] | null} [extent]
  */
-export function fixtureTakenOut(fx, u) {
+export function fixtureTakenOut(fx, u, extent = null) {
   const t = Math.min(1, Math.max(0, u));
-  if (!t) return fx;
-  const below = fx.shadesBelow !== false;
-  const out = (fx.throat || 0) + (below ? CAP_SHOWS + fx.glassL : 0) + 20;
-  return { ...fx, face: fx.face + (below ? 1 : -1) * fx.up * out * t };
+  if (!t || !extent) return { ...fx, bulbDrop: 0 };
+  const gap = 20;
+  // Heights along the cable (up as the lamp hangs): the recipe's z times `up`.
+  const [h0, h1] = [extent[0] * fx.up, extent[1] * fx.up];
+  const [lo, hi] = [Math.min(h0, h1), Math.max(h0, h1)];
+  const face = fx.face * fx.up;
+  // Where they end up (the whole socket above the shades, the whole bulb below: its cap a gap
+  // under the lowest), never further in than they start.
+  const faceOut = Math.max(face, hi + gap);
+  // The cap reaches this far above the socket's face screwed in (its thread and contact): its top
+  // goes the gap below.
+  const capAbove = capTop(fx).contact[2][1];
+  const capOut = Math.min(face, lo - gap - capAbove);
+  const faceNow = face + (faceOut - face) * t;
+  const capNow = face + (capOut - face) * t;
+  return { ...fx, face: faceNow * fx.up, bulbDrop: faceNow - capNow };
+}
+
+/** The lowest and highest z of the parts' points (by name: [radius, z] lists), each moved by its offset. */
+export function partsExtent(parts, offsets = new Map()) {
+  let [lo, hi] = [Infinity, -Infinity];
+  for (const [name, { points }] of parts) {
+    const dz = offsets.get(name) || 0;
+    for (const [, z] of points) {
+      lo = Math.min(lo, z + dz);
+      hi = Math.max(hi, z + dz);
+    }
+  }
+  return Number.isFinite(lo) ? /** @type {[number, number]} */ ([lo, hi]) : null;
 }
 
 /** A smooth curve from p0 to p1 leaving along t0 and arriving along t1 (cubic Hermite). */
@@ -155,8 +187,8 @@ export function socketProfile(f) {
 }
 
 /**
- * The thread on the socket's body that the shade screws onto: from just above the face to a
- * plain collar under the top, its crests at the body's diameter (where the shade's bead runs),
+ * The thread on the socket's body that the shade screws onto: all along the body (from its
+ * bottom edge's bevel to its top's), its crests at the body's diameter (where the shade's bead runs),
  * its roots `depth` in (about half a pitch), right-handed, one pitch a turn. null when the body
  * is too short for a turn.
  * @param {ReturnType<typeof socketOf>} f
@@ -166,8 +198,10 @@ export function socketThread(f) {
   if (!(pitch > 0)) return null;
   const r = f.body / 2;
   const depth = Math.min(0.45 * pitch, r / 8);
-  const z0 = Math.min(2, r / 6) + 1;
-  const z1 = f.height - Math.min(8, f.height / 5);
+  // The whole body, edge to edge: a shade's straight start can sit anywhere along it.
+  const edge = Math.min(2, r / 6);
+  const z0 = edge;
+  const z1 = f.height - edge;
   if (z1 - z0 < 2 * pitch) return null;
   return { pitch, depth, z0, z1, crest: r, root: r - depth };
 }
@@ -175,7 +209,7 @@ export function socketThread(f) {
 /**
  * The thread's surface radius at angle `theta` (radians, counter-clockwise from above) and height
  * `z` above the face: a rounded tooth each pitch, rising one pitch a turn (right-handed), fading
- * in over the first turn and out over the last, to the root, where it meets the body.
+ * in over the first half turn and out over the last, to the root, where it meets the body.
  * @param {NonNullable<ReturnType<typeof socketThread>>} t
  * @param {number} theta
  * @param {number} z
@@ -183,8 +217,54 @@ export function socketThread(f) {
 export function threadRadius(t, theta, z) {
   const u = (z - t.z0) / t.pitch - theta / (2 * Math.PI);
   const tooth = 0.5 + 0.5 * Math.cos(2 * Math.PI * u);
-  const fade = Math.min(1, Math.max(0, (z - t.z0) / t.pitch), Math.max(0, (t.z1 - z) / t.pitch));
+  const fade = Math.min(1, Math.max(0, (2 * (z - t.z0)) / t.pitch), Math.max(0, (2 * (t.z1 - z)) / t.pitch));
   return t.root + t.depth * tooth * fade;
+}
+
+/**
+ * The bulb's screw thread, in the fittings' frame (z up from the socket's face, the bulb screwed
+ * in): from the glass's top (`CAP_SHOWS` below the face) up the threaded length, the crests at the
+ * cap's diameter. The same shape as the socket's thread (`threadRadius` takes it).
+ * @param {ReturnType<typeof socketOf>} f
+ */
+export function capThread(f) {
+  const pitch = Number(f.capPitch) || 3.629;
+  const depth = Number(f.capDepth) || 1.1;
+  const r = f.cap / 2;
+  return { pitch, depth, z0: -CAP_SHOWS, z1: (Number(f.capThread) || 20) - CAP_SHOWS, crest: r, root: r - depth };
+}
+
+/**
+ * The cap above its thread: the black insulator and the brass contact at its middle, as
+ * [radius, z] in the fittings' frame, the insulator's and the contact's lathe profiles.
+ * @param {ReturnType<typeof socketOf>} f
+ */
+export function capTop(f) {
+  const t = capThread(f);
+  const ins = t.root * 0.72;
+  const contact = Math.max(1.5, t.root * 0.22);
+  return {
+    insulator: [[0, t.z1], [ins, t.z1], [ins, t.z1 + 2.5], [0, t.z1 + 2.5]],
+    contact: [[0, t.z1 + 2.5], [contact, t.z1 + 2.5], [contact * 0.8, t.z1 + 3.5], [0, t.z1 + 3.5]],
+  };
+}
+
+/**
+ * The cap cut through its axis on one side (angle `theta`): its thread's teeth from the glass up,
+ * then the insulator and the contact, [radius, z] from the axis round to the axis.
+ * @param {ReturnType<typeof socketOf>} f
+ * @param {number} [theta]
+ */
+export function capSection(f, theta = 0) {
+  const t = capThread(f);
+  const top = capTop(f);
+  const steps = Math.max(2, Math.ceil(((t.z1 - t.z0) / t.pitch) * 8));
+  const teeth = [];
+  for (let k = 0; k <= steps; k++) {
+    const z = t.z0 + ((t.z1 - t.z0) * k) / steps;
+    teeth.push([threadRadius(t, theta, z), z]);
+  }
+  return [[0, t.z0], ...teeth, ...top.insulator.slice(1, 3), ...top.contact.slice(1)];
 }
 
 /**
@@ -223,14 +303,16 @@ export function fixtureOutline(fx, cable = 1000) {
     return [...right, ...left];
   };
   const top = fx.height + fx.glandH;
-  const neck = fx.cap / 2;
+  // The bulb unscrewed from the socket (taken apart), this far below its face.
+  const drop = /** @type {any} */ (fx).bulbDrop || 0;
   // The socket's section shows the thread: teeth on the right as cut at angle 0, on the left
   // at half a turn (half a pitch higher).
   const section = [...socketSection(fx, 0).map(([r, s]) => [r, z(s)]), ...socketSection(fx, Math.PI).map(([r, s]) => [-r, z(s)]).reverse()];
   return {
     socket: section,
-    cap: both([[0, 0], [neck, 0], [neck, CAP_SHOWS], [0, CAP_SHOWS]], (s) => -s),
-    bulb: both(bulbProfile(fx), (s) => -(CAP_SHOWS + s)),
+    // The cap, screwed in (inside the holder, but for its bottom) or out with the bulb: its thread.
+    cap: [...capSection(fx, 0).map(([r, s]) => [r, z(s - drop)]), ...capSection(fx, Math.PI).map(([r, s]) => [-r, z(s - drop)]).reverse()],
+    bulb: both(bulbProfile(fx), (s) => -(drop + CAP_SHOWS + s)),
     cable: [-1, 1].map((side) => [[(side * CABLE_D) / 2, z(top)], [(side * CABLE_D) / 2, z(top + cable)]]),
   };
 }
