@@ -7,6 +7,14 @@ Headings end with the branch that wrote them (`general-manager` or `recipe-devel
 
 Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md).
 
+## 2026-11-24: compensation past 100 % (recipe-developer)
+
+**Why:** the owner: the key's overhang is too steep for 100 %.
+
+- `contour`'s `pace` goes to 5 (was 1); past 1 the layers come closer than the lean asks, never
+  under 5 % of the layer. The Nutcracker's `Strength` and `Flattening: strength` go to 500 %.
+  Tested (300 % at the key's sides: about 1 mm a layer, under 100 %'s).
+
 ## 2026-11-24: the patterns' fade in and fade out set on their own (recipe-developer)
 
 **Why:** the owner: sometimes a fade in but no fade out, or the other way round.

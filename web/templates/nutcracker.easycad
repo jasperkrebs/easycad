@@ -40,10 +40,10 @@ param wall_extrusion = 100 % in 50..200          "Wall extrusion"
 
 group "Overhangs"
 param compensation = "layer height" of ["layer height", "off"] "Compensation (the fillets and the flattening)"
-param strength   = 86 %    in 0..100             "Strength"  when compensation = "layer height"
+param strength   = 86 %    in 0..500             "Strength (over 100 %: closer than the lean asks)"  when compensation = "layer height"
 param steep      = 0.85    in 0..4 step 0.1      "Steep curve (0: even; more: less when shallow, more when steep)"  when compensation = "layer height"
 param pivot      = 73 deg  in 5..85 step 1       "Steep curve pivot (as now at this angle)"  when steep
-param flat_strength = 86 % in 0..100             "Flattening: strength (each point by its own lean)"  when compensation = "layer height"
+param flat_strength = 86 % in 0..500             "Flattening: strength (each point by its own lean; over 100 %: closer than the lean asks)"  when compensation = "layer height"
 param hand_top   = "uneven" of ["uneven", "flat"] "Flattening: the handle's top (uneven: straight parts at the full layer, the overhangs fall behind; flat: the straight parts make it up)"  when compensation = "layer height"
 
 # ---- Sizes. The key's wall runs half a line outside its thread diameter (its inside face on the

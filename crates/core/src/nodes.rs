@@ -1558,7 +1558,7 @@ pub static NODES: &[Node] = &[
                 "pace",
                 "Number",
                 0.0,
-                "0..1: closer layers where the wall leans (1: each step is layer × cos(lean), EasyGCode's overhang-paced vessel)",
+                "0..5: closer layers where the wall leans (1: each step is layer × cos(lean), EasyGCode's overhang-paced vessel; more, closer still, never under 5 % of the layer)",
             ),
             opt(
                 "steep",

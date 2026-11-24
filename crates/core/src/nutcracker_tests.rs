@@ -408,5 +408,10 @@ fn the_flattening_is_paced_point_by_point() {
     let (side_top, end_top) = tops(&flat);
     assert!(end_top - side_top < 1.0, "{side_top} {end_top}");
     let more = nutcracker(&[("flat_strength", 100.0), ("steep", 0.0)]);
-    assert!(least(&rises(&more, 0.0, 95.0, 170.0)) < least(&sides) - 0.15);
+    let more = least(&rises(&more, 0.0, 95.0, 170.0));
+    assert!(more < least(&sides) - 0.15);
+    // Past 100 %, closer than the lean asks (here three times: about 1.0 mm at the sides).
+    let triple = nutcracker(&[("flat_strength", 300.0), ("steep", 0.0)]);
+    let triple = least(&rises(&triple, 0.0, 95.0, 170.0));
+    assert!(triple < more - 0.5 && triple > 0.5, "{more} {triple}");
 }

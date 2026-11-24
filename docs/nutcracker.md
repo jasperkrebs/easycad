@@ -72,7 +72,9 @@ arrive at the top with the rest:
   flattening leans (where nothing leans, every point steps the full pitch).
 In the middle of the sides 2.24 mm a layer, at the ends 2.44 (the shared steep curve, 0.85 and
 73°, asks little of 37°: about 10 %); `Flattening: strength` paces it more without touching the
-fillets. A first version spread the difference over every point evenly (2.24 against 2.32: hardly
+fillets; both strengths go to 500 % (24 Nov: the owner's sides still sagged at 100 %), past 100 %
+closer than the lean asks (at 300 % with the steep curve at 0, about 1 mm a layer at the sides'
+steepest), never under 5 % of the pitch. A first version spread the difference over every point evenly (2.24 against 2.32: hardly
 more than an extra layer, the owner found), and started the flattening a little squeezed.
 
 **No squeezed layer where the tube meets the flattening:** the fillets are on whole layers now,
