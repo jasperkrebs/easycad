@@ -33,7 +33,14 @@ const UNIT_INTENSITY = 0.03;
 /** The cable's length (mm) without a ceiling: out of the picture. */
 const LONG_CABLE = 4000;
 /** Pixel-bounces one GPU dispatch may take (a tile): kept small so the page, and the Mac's GPU, stay responsive. */
-const DISPATCH = { phone: 1.5e6, apple: 2.5e6, other: 5e6 };
+const DISPATCH = { phone: 1.5e6, apple: 1e6, other: 5e6 };
+/**
+ * What one piece of GPU work should take (ms), as measured: the tiles are resized between samples
+ * to keep each piece about this long. (Measured to the next frame, so 16 ms is the least seen.)
+ */
+const DISPATCH_MS = 30;
+/** The most tiles a side (16 × 16 pieces a sample). */
+const MAX_TILES = 16;
 /** A Mac's (or iPhone's, iPad's) GPU resets a page whose GPU work runs long sooner than others. */
 const APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
 
@@ -424,16 +431,62 @@ export function createRenderer(canvas, hooks = {}) {
     report({ state: 'draft' });
   }
 
+  // ---- Pacing: one piece of GPU work at a time, each about DISPATCH_MS long. A Mac resets the
+  // GPU when a page's work runs long, and Safari then keeps WebGL off for the page until it's
+  // restarted: so the render never queues more work before the GPU has finished the last piece
+  // (a fence tells), and resizes its tiles by how long the pieces really take (the scene, not
+  // just pixels × bounces, sets that).
+  const gl = /** @type {WebGL2RenderingContext} */ (renderer.getContext());
+  /** @type {{ sync: WebGLSync, t0: number } | null} */
+  let fence = null;
+  /** The last piece's time (ms), or 0. */
+  let lastMs = 0;
+
+  /** Whether the GPU is still on the last piece (else its time is taken). */
+  function gpuBusy() {
+    if (!fence) return false;
+    const status = gl.clientWaitSync(fence.sync, 0, 0);
+    if (status === gl.TIMEOUT_EXPIRED) return true;
+    lastMs = performance.now() - fence.t0;
+    gl.deleteSync(fence.sync);
+    fence = null;
+    return false;
+  }
+
+  function clearFence() {
+    if (fence) gl.deleteSync(fence.sync);
+    fence = null;
+    lastMs = 0;
+  }
+
+  /** Between samples (all tiles done): smaller tiles when a piece ran long, larger when short. */
+  function retile() {
+    if (!lastMs || Math.abs(tracer.samples - Math.round(tracer.samples)) > 1e-6) return;
+    const n = tracer.tiles.x;
+    let next = n;
+    if (lastMs > 2 * DISPATCH_MS) next = Math.min(MAX_TILES, Math.ceil(n * Math.sqrt(lastMs / DISPATCH_MS)));
+    else if (lastMs < DISPATCH_MS * 0.6 && n > 1) next = n - 1;
+    if (next !== n) tracer.tiles.set(next, next);
+  }
+
   function tick() {
     frame = 0;
-    if (!job) return;
+    if (!job || lost) return;
     if (tracer.isCompiling) {
       report({ state: 'compiling', kind: job.kind });
       tracer.renderSample();
       frame = requestAnimationFrame(tick);
       return;
     }
+    if (gpuBusy()) {
+      frame = requestAnimationFrame(tick);
+      return;
+    }
+    retile();
+    const t0 = performance.now();
     tracer.renderSample();
+    fence = { sync: /** @type {WebGLSync} */ (gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)), t0 };
+    gl.flush();
     const samples = Math.floor(tracer.samples);
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const seconds = (performance.now() - job.t0) / 1000;
@@ -869,8 +922,9 @@ export function createRenderer(canvas, hooks = {}) {
       const seeThrough = [...partMaterials.values()].some(([outer]) => outer.transmission > 0);
       const work = px.x * px.y * (settings.bounces + 2 + (seeThrough ? tracer.transmissiveBounces / 2 : 0));
       const budget = phone ? DISPATCH.phone : APPLE ? DISPATCH.apple : DISPATCH.other;
-      const n = Math.min(8, Math.max(1, Math.ceil(Math.sqrt(work / budget))));
+      const n = Math.min(MAX_TILES, Math.max(1, Math.ceil(Math.sqrt(work / budget))));
       tracer.tiles.set(n, n);
+      clearFence();
       tracer.reset();
       job = { kind, target: q.samples, t0: performance.now() };
       report({ state: tracer.isCompiling ? 'compiling' : 'rendering', kind, samples: 0, target: q.samples });

@@ -218,6 +218,13 @@ damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on
   socket in the 3D view, the Plan and the render, its light with it).
 - **The socket's thread runs the whole body**, edge to edge, fading over half a turn: a shade's
   straight start can sit anywhere along it.
+- **Paced by the GPU, not guessed (the owner's Mac kept losing WebGL until Safari was
+  restarted):** after a page resets a Mac's GPU, Safari keeps WebGL off for it until the browser
+  is quit, so a reset must not happen in the first place. The render now puts a fence after each
+  piece of GPU work and sends no more until the GPU has finished it, and resizes the tiles between
+  samples from how long the pieces really take (about 30 ms each, up to 16 × 16 tiles; smaller to
+  start on Apple GPUs). Checked headless: pieces of 76 and 125 ms took the tiles from 2 to 4 to 9
+  a side. The message when no context is given says to restart the browser.
 - **The GPU reset under the render (the owner's Mac: "Can't render here: null is not an object
   (evaluating 'gl.getShaderPrecisionFormat(...)')"):** after a GPU reset Safari hands out a lost
   WebGL context, and three.js failed inside. The app also kept that failed start, so the Render
