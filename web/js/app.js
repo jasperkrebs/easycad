@@ -1714,7 +1714,7 @@ function renderPanel() {
     ]],
     ['Room', 'render:room', [
       [renderParam('wall', 'Wall behind', 'toggle'), r.wall.on],
-      [renderParam('wallD', 'Wall: from the lamp\'s axis', 'number', { unit: 'mm', min: 0, max: 5000, step: 10 }), r.wall.distance],
+      [renderParam('wallD', 'Wall: behind the lamp\'s axis (0: through it, less: in front)', 'number', { unit: 'mm', min: -500, max: 5000, step: 5 }), r.wall.distance],
       [renderParam('floor', 'Floor or table under', 'toggle'), r.floor.on],
       [renderParam('floorD', 'Floor: below the lamp', 'number', { unit: 'mm', min: 0, max: 5000, step: 10 }), r.floor.distance],
       [renderParam('ceiling', 'Ceiling above', 'toggle'), r.ceiling.on],

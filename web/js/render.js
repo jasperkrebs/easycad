@@ -355,9 +355,21 @@ export function createRenderer(canvas, hooks = {}) {
     const plane = (w, h) => new THREE.PlaneGeometry(w, h);
     if (settings.wall.on) {
       const wall = new THREE.Mesh(plane(size, size), surfaceMaterial);
-      wall.position.set(0, (b.min.y + b.max.y) / 2, -settings.wall.distance * MM);
+      const wallZ = -settings.wall.distance * MM;
+      wall.position.set(0, (b.min.y + b.max.y) / 2, wallZ);
       wall.name = 'wall';
       room.add(wall);
+      // The wall cutting through the bulb (a section through the lamp): the light comes from the
+      // bulb's half in front of it, about half its radius out, not from its middle (on the wall
+      // itself, the light would only graze the wall and leave it dark).
+      if (fixture && bulbLight.parent === fixture) {
+        root.updateMatrixWorld(true);
+        const at = bulbLight.getWorldPosition(new THREE.Vector3());
+        if (Math.abs(at.z - wallZ) < glassR) {
+          at.z = wallZ + glassR * 0.5;
+          bulbLight.position.copy(fixture.worldToLocal(at));
+        }
+      }
     }
     if (settings.floor.on) {
       const floor = new THREE.Mesh(plane(size, size), surfaceMaterial);

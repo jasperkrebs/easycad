@@ -108,7 +108,10 @@ the camera is left is kept with the project (in its file too), so a render can b
 The **Room** group puts surfaces round the lamp, lit by it and in the picture (and the PNG):
 
 - **Wall:** behind the lamp (on the far side from the Front view), its distance from the lamp's
-  axis;
+  axis. 0 cuts straight through the lamp (a section: the half behind the wall is hidden, the
+  wall shows how the light leaves the shade); less than 0 puts it in front of the axis. When the
+  wall cuts through the bulb, the bulb's light comes from its half in front of the wall (half
+  the glass radius out), so the wall isn't lit from behind;
 - **Floor:** under the lamp (a floor or a table), its distance below the lamp's lowest point;
 - **Ceiling:** above the lamp, its distance above the socket's top; the cable ends there.
 

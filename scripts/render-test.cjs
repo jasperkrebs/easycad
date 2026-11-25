@@ -231,6 +231,9 @@ async function centreSpread(page, url) {
       // Taken apart (a tube on the lamp's end, Exploded): rendered where the parts are, the light
       // switched off by Prepare, the bulb still there; the socket's thread shows above the throat.
       { name: 'lamp-exploded', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#e8e2d6', opacity: 1, material: { plastic: 'pla' } }, recipeAdd: 'part tube = shade(mount: main.end_out, direction: "up", shape: "tube", length: 120 mm)', explode: true, render: { light: true, camera: { view: 'three-quarter', lens: 50, position: null, target: null } } },
+      // A section: the wall through the lamp's axis, the bulb's light on it (from the bulb's half
+      // in front of it), the shade's light pattern on the wall.
+      { name: 'wall-through', template: 'lampshade', project: 'Lampshade', part: 'path', look: { color: '#f4f1ea', opacity: 1, material: { plastic: 'pla' } }, render: { light: true, room: 0.02, camera: { view: 'three-quarter', lens: 35, position: null, target: null }, wall: { on: true, distance: 0 } }, wallLit: true },
       { name: 'pendant-matte-white', template: 'thread-pendant', project: 'Thread pendant', part: 'path_out', look: { color: '#fbfaf7', opacity: 0.6, material: { plastic: 'pla-matte' } }, render: { light: true, ceiling: { on: true, distance: 300 }, wall: { on: true, distance: 350 } } },
     ];
     const only = process.env.RENDER_SCENES ? process.env.RENDER_SCENES.split(',') : null;
@@ -323,6 +326,12 @@ async function centreSpread(page, url) {
         // draft has it, isn't empty.
         const spread = await centreSpread(page, rawUrl);
         if (!(spread > 8)) failures.push(`${sc.name}: the middle of the picture is flat (${spread.toFixed(1)})`);
+      }
+      if (sc.wallLit) {
+        // The wall round the lamp is lit by the bulb (not dark, as with the light on the wall).
+        const lit = await brightness(page, rawUrl);
+        console.log(`  the wall and lamp: ${lit.toFixed(1)} (0..255)`);
+        if (!(lit > 25)) failures.push(`${sc.name}: the wall through the lamp is dark (${lit.toFixed(1)})`);
       }
       if (sc.lampShows) {
         // The lamp in the middle of the picture: not one flat colour (a surface in front of it).

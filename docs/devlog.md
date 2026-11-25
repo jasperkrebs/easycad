@@ -9,6 +9,15 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+## 2026-11-25: the Render's wall can cut through the lamp (claude/lampshade-light-render-wcvx6x)
+
+- Render tab → Room → Wall distance goes down to −500 mm: 0 cuts through the lamp's axis, a
+  section that shows how the light leaves the shade (for a datasheet's side view). When the wall
+  cuts the bulb, the point light moves to the bulb's half in front of the wall.
+- Tests: `scripts/fixture.test.mjs` (negative distances kept), render-test scene `wall-through`.
+- Open: a batch renderer (project file + shot list → PNGs) and a datasheet page, to run on a
+  computer with a GPU; evaluated, not built.
+
 ## 2026-11-24: the Nutcracker printed; recycled PETG on the G1 (general-manager)
 
 The owner finished the Nutcracker in recycled PETG from the recycling factory with a 3 mm

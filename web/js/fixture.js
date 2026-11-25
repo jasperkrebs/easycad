@@ -363,7 +363,7 @@ export const RENDER_DEFAULTS = {
   camera: { view: 'front', lens: 50, position: /** @type {number[] | null} */ (null), target: /** @type {number[] | null} */ (null) },
   /**
    * Surfaces round the lamp, lit by it and in the picture: a wall behind it (mm from the lamp's
-   * axis), a floor or table under it (mm below its lowest point), a ceiling above it (mm above
+   * axis; 0 cuts through the axis, less than 0 in front of it), a floor or table under it (mm below its lowest point), a ceiling above it (mm above
    * the socket's top; the cable ends there). One colour for all.
    */
   wall: { on: false, distance: 300 },
@@ -396,7 +396,7 @@ export function cleanRender(raw) {
   };
   const obj = (v) => (v && typeof v === 'object' ? v : {});
   const quality = (q, d) => ({ size: Math.round(num(obj(q).size, 160, 4096, d.size)), samples: Math.round(num(obj(q).samples, 1, 10000, d.samples)) });
-  const surface = (s, d) => ({ on: typeof obj(s).on === 'boolean' ? obj(s).on : d.on, distance: num(obj(s).distance, 0, 5000, d.distance) });
+  const surface = (s, d, lo = 0) => ({ on: typeof obj(s).on === 'boolean' ? obj(s).on : d.on, distance: num(obj(s).distance, lo, 5000, d.distance) });
   const point = (p) => (Array.isArray(p) && p.length === 3 && p.every((x) => Number.isFinite(Number(x)) && Math.abs(Number(x)) < 1000) ? p.map(Number) : null);
   const cam = obj(r.camera);
   const position = point(cam.position);
@@ -418,7 +418,8 @@ export function cleanRender(raw) {
       position: position && target ? position : null,
       target: position && target ? target : null,
     },
-    wall: surface(r.wall, D.wall),
+    // The wall can cut through the lamp: 0 through its axis, less in front of it.
+    wall: surface(r.wall, D.wall, -1000),
     floor: surface(r.floor, D.floor),
     ceiling: surface(r.ceiling, D.ceiling),
     surface: /^#[0-9a-f]{6}$/i.test(String(r.surface)) ? String(r.surface) : D.surface,
