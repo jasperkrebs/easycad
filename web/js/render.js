@@ -364,7 +364,11 @@ export function createRenderer(canvas, hooks = {}) {
     renderer.toneMappingExposure = 2 ** settings.exposure;
     surfaceMaterial.color.set(settings.surface);
     tracer.bounces = settings.bounces;
-    tracer.transmissiveBounces = Math.max(settings.bounces, 10);
+    // Passing through see-through plastic doesn't count against the bounces, up to this many: a
+    // ray from the camera to the bulb in a shade with several walls (the Thread pendant's wall,
+    // wings and rings) crosses dozens of faces. At 10, the bulb behind them came out dim (paths
+    // cut off count as black); 32 gave 10-14 % more light there, 64 nothing more.
+    tracer.transmissiveBounces = Math.max(settings.bounces, 32);
   }
 
   // ---- Drawing: the draft, and the path tracer's samples.
