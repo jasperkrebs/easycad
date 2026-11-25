@@ -1562,7 +1562,7 @@ function resetRender(message) {
 /** What the status line says when the render can't start or go on. */
 function renderTrouble(err) {
   return /** @type {any} */ (err)?.code === 'no-gl'
-    ? 'No graphics context right now (the graphics card was reset): Prepare again in a moment, or reload the page'
+    ? 'No graphics for the render: the browser turned them off for this page after the graphics card was reset (Safari keeps them off until it is quit and opened again). Restart the browser'
     : `Can't render here: ${/** @type {any} */ (err)?.message || err}`;
 }
 
