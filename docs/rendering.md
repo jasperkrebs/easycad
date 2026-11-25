@@ -87,8 +87,10 @@ the same scene sometimes looked like another material), and the noise is the sam
 (stable noise): the same settings give the same picture.
 
 Sizes are the picture's longer side in pixels (320 to 3840), whatever the screen; the GPU's work
-is cut into tiles so each pass is small (by pixels × bounces), which keeps the page and the GPU
-responsive. The render asks the browser for the high-performance GPU (on a laptop with two).
+is cut into tiles so each pass is small (by pixels × bounces, the see-through ones too; smaller
+still on a Mac, iPhone or iPad, whose GPU resets a page whose work runs long), which keeps the
+page and the GPU responsive. If the GPU is reset anyway (the browser takes the render's graphics
+context away), the status line says so and Prepare starts afresh. The render asks the browser for the high-performance GPU (on a laptop with two).
 
 ## The camera
 

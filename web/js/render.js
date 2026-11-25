@@ -33,7 +33,17 @@ const UNIT_INTENSITY = 0.03;
 /** The cable's length (mm) without a ceiling: out of the picture. */
 const LONG_CABLE = 4000;
 /** Pixel-bounces one GPU dispatch may take (a tile): kept small so the page, and the Mac's GPU, stay responsive. */
-const DISPATCH = { phone: 1.5e6, other: 5e6 };
+const DISPATCH = { phone: 1.5e6, apple: 2.5e6, other: 5e6 };
+/** A Mac's (or iPhone's, iPad's) GPU resets a page whose GPU work runs long sooner than others. */
+const APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+
+/** Thrown when the browser has no working WebGL 2 context to give (`code` 'no-gl'). */
+export class NoGraphicsError extends Error {
+  constructor() {
+    super('no graphics context right now (the graphics card was reset)');
+    this.code = 'no-gl';
+  }
+}
 
 /**
  * @typedef {{ color: string, opacity: number, material?: any }} Look
@@ -49,10 +59,16 @@ const DISPATCH = { phone: 1.5e6, other: 5e6 };
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ onProgress?: (p: Progress) => void, onCamera?: (camera: { position: number[], target: number[] }) => void }} [hooks]
+ * @param {{ onProgress?: (p: Progress) => void, onCamera?: (camera: { position: number[], target: number[] }) => void, onLost?: () => void }} [hooks]
  */
 export function createRenderer(canvas, hooks = {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+  // The context first, checked: after the GPU was reset (a Mac does that when a page's GPU work
+  // runs long or memory runs out), the browser can hand out a context that's already lost, and
+  // three.js then fails deep inside ("getShaderPrecisionFormat ... null").
+  const attributes = { antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: /** @type {const} */ ('high-performance') };
+  const context = canvas.getContext('webgl2', attributes);
+  if (!context || context.isContextLost()) throw new NoGraphicsError();
+  const renderer = new THREE.WebGLRenderer({ canvas, context, ...attributes });
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -81,6 +97,16 @@ export function createRenderer(canvas, hooks = {}) {
   tracer.dynamicLowRes = false;
   tracer.stableNoise = true;
   const phone = Math.min(screen.width, screen.height) < 700;
+  /** The context was lost (the GPU reset): nothing more is drawn; the app starts afresh. */
+  let lost = false;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    lost = true;
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+    job = null;
+    hooks.onLost?.();
+  });
 
   let settings = cleanRender(RENDER_DEFAULTS);
   /** @type {Snapshot | null} */
@@ -375,7 +401,7 @@ export function createRenderer(canvas, hooks = {}) {
 
   /** The plain grey draft (only while nothing rendered is showing). */
   function draft() {
-    if (job) return;
+    if (job || lost) return;
     clearDenoised();
     if (!snap) {
       renderer.clear();
@@ -817,7 +843,7 @@ export function createRenderer(canvas, hooks = {}) {
      * @param {'preview' | 'final'} kind
      */
     start(kind) {
-      if (!snap) return;
+      if (!snap || lost) return;
       stop();
       clearDenoised();
       const q = kind === 'final' ? settings.final : settings.preview;
@@ -839,8 +865,11 @@ export function createRenderer(canvas, hooks = {}) {
       tracer.updateEnvironment();
       // Tiles: each GPU dispatch a bounded amount of work.
       const px = renderer.getDrawingBufferSize(new THREE.Vector2());
-      const work = px.x * px.y * (settings.bounces + 2);
-      const n = Math.min(8, Math.max(1, Math.ceil(Math.sqrt(work / (phone ? DISPATCH.phone : DISPATCH.other)))));
+      // A see-through part's paths go on through it (up to the transmissive bounces): more work.
+      const seeThrough = [...partMaterials.values()].some(([outer]) => outer.transmission > 0);
+      const work = px.x * px.y * (settings.bounces + 2 + (seeThrough ? tracer.transmissiveBounces / 2 : 0));
+      const budget = phone ? DISPATCH.phone : APPLE ? DISPATCH.apple : DISPATCH.other;
+      const n = Math.min(8, Math.max(1, Math.ceil(Math.sqrt(work / budget))));
       tracer.tiles.set(n, n);
       tracer.reset();
       job = { kind, target: q.samples, t0: performance.now() };
@@ -916,9 +945,14 @@ export function createRenderer(canvas, hooks = {}) {
       smoother?.dispose();
       draftMaterial.dispose();
       sky.dispose();
-      tracer.dispose();
-      renderer.dispose();
-      renderer.forceContextLoss();
+      // (A lost context has nothing to free; three.js mostly ignores the calls, but not always.)
+      try {
+        tracer.dispose();
+        renderer.dispose();
+        if (!lost) renderer.forceContextLoss();
+      } catch {
+        // the context is gone already
+      }
     },
   };
 }

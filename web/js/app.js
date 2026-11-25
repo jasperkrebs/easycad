@@ -1513,11 +1513,57 @@ async function renderApi() {
       onProgress: (p) => showRenderProgress(p),
       // Where the camera was left is kept with the project (nothing else changes).
       onCamera: (cam) => saveRender({ camera: { ...customColors().render.camera, ...cam } }),
+      // The GPU was reset under the render: start afresh (Prepare again).
+      onLost: () => resetRender('The graphics card was reset: Prepare again (a smaller picture or fewer bounces is lighter on it)'),
     }),
   );
-  renderView.api = await renderView.loading;
+  try {
+    renderView.api = await renderView.loading;
+  } catch (err) {
+    // Not kept: the next Prepare tries again, on a fresh canvas (a failed one can stay unusable).
+    renderView.loading = null;
+    freshRenderCanvas();
+    throw err;
+  }
   renderView.api.setSettings(customColors().render);
   return renderView.api;
+}
+
+/** The render's canvas replaced by a new one (its WebGL context gone with the old). */
+function freshRenderCanvas() {
+  const old = $('renderCanvas');
+  old.replaceWith(old.cloneNode(false));
+}
+
+/**
+ * Starts the Render view afresh after its GPU context was lost: whatever was prepared is gone,
+ * the canvas is new, and the status says what happened.
+ * @param {string} message
+ */
+function resetRender(message) {
+  const api = renderView.api;
+  renderView.api = null;
+  renderView.loading = null;
+  renderView.busy = false;
+  renderView.key = '';
+  renderView.info = '';
+  try {
+    api?.dispose();
+  } catch {
+    // its context is gone already
+  }
+  freshRenderCanvas();
+  showRenderProgress({ state: 'empty' });
+  renderStatus(message);
+  $('renderPrepare').removeAttribute('disabled');
+  markRenderStale();
+}
+
+/** What the status line says when the render can't start or go on. */
+function renderTrouble(err) {
+  return /** @type {any} */ (err)?.code === 'no-gl'
+    ? 'No graphics context right now (the graphics card was reset): Prepare again in a moment, or reload the page'
+    : `Can't render here: ${/** @type {any} */ (err)?.message || err}`;
 }
 
 /**
@@ -1531,8 +1577,7 @@ function freeRender() {
   renderView.loading = null;
   renderView.key = '';
   renderView.info = '';
-  const old = $('renderCanvas');
-  old.replaceWith(old.cloneNode(false));
+  freshRenderCanvas();
   showRenderProgress({ state: 'empty' });
   markRenderStale();
 }
@@ -1569,7 +1614,7 @@ async function showRender(on) {
     if (renderOn()) api.resume();
     if (!api.running) api.setSettings(customColors().render);
   } catch (err) {
-    renderStatus(`Can't render here: ${err.message || err}`);
+    renderStatus(renderTrouble(err));
   }
 }
 
@@ -1596,7 +1641,7 @@ async function prepareRender() {
     renderView.info = `${exploded ? 'taken apart · ' : ''}${(triangles / 1e6).toFixed(2)} M triangles, prepared in ${fmt((performance.now() - t0) / 1000)} s`;
     showRenderProgress({ state: 'draft' });
   } catch (err) {
-    renderStatus(`Can't render here: ${err.message || err}`);
+    renderStatus(renderTrouble(err));
   } finally {
     renderView.busy = false;
     $('renderPrepare').removeAttribute('disabled');
