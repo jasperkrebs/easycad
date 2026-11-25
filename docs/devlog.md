@@ -218,6 +218,14 @@ damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on
   socket in the 3D view, the Plan and the render, its light with it).
 - **The socket's thread runs the whole body**, edge to edge, fading over half a turn: a shade's
   straight start can sit anywhere along it.
+- **The bulb shows through a shade:** seen through a rough see-through shade (the owner's
+  Thread pendant, 5 % PLA), the bulb was missing: the path tracer flags a ray after a rough
+  bounce as a "shadow ray" at random, and shadow rays skip what casts no shadow (the bulb: its
+  light inside must get out), so the camera's view through the shade passed through the bulb to
+  the background (transparent: on a dark background a hole). One line changed in the vendored
+  path tracer (`web/vendor/three-gpu-pathtracer/README.txt`): only rays that aren't still the
+  camera's view through see-through surfaces skip it. On the pendant: the bulb area 120 → 220
+  bright (0–255), the bulb a glowing shape behind the walls.
 - **Paced by the GPU, not guessed (the owner's Mac kept losing WebGL until Safari was
   restarted):** after a page resets a Mac's GPU, Safari keeps WebGL off for it until the browser
   is quit, so a reset must not happen in the first place. The render now puts a fence after each
