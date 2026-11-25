@@ -7651,7 +7651,7 @@ class PhysicalPathTracingMaterial extends MaterialBase {
 
 						// if we've determined that this is a shadow ray and we've hit an item with no shadow casting
 						// then skip it
-						if ( ! material.castShadow && state.isShadowRay ) {
+						if ( ! material.castShadow && state.isShadowRay && ! state.transmissiveRay ) {
 
 							ray.origin = stepRayOrigin( ray.origin, ray.direction, - surfaceHit.faceNormal, surfaceHit.dist );
 							continue;

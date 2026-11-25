@@ -250,6 +250,11 @@ setting up and a small preview work anywhere.
   the npm package `oidn-weights` 2.3.0-1. Both in `web/vendor/oidn-web/`, loaded only when the
   Render view denoises. The denoised picture is shown through the path tracer's own display pass,
   so its tone mapping and exposure are the same.
+- **One line changed in the path tracer** (`web/vendor/three-gpu-pathtracer/README.txt`): the
+  bulb casts no shadow (so its light inside gets out), and the library let any ray flagged as a
+  shadow ray pass through such things, including the camera's own view through a rough
+  see-through shade: the bulb went missing behind it. Now only rays that aren't still the
+  camera's view through see-through surfaces pass.
 - The library's WebGL path tracer is marked deprecated in favour of its WebGPU one; the WebGPU
   one is the upgrade once phones run WebGPU everywhere.
 
