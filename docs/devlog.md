@@ -218,6 +218,10 @@ damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on
   socket in the 3D view, the Plan and the render, its light with it).
 - **The socket's thread runs the whole body**, edge to edge, fading over half a turn: a shade's
   straight start can sit anywhere along it.
+- **Through more walls:** the path tracer's limit for passing through see-through plastic went
+  from 10 to 32 (bounces don't count it). The owner's Thread pendant (5 % solid, wall, wings and
+  rings round the bulb) lost light at 10: the bulb behind them dim. Measured: 10 to 32, the shade
+  10 % and its middle 14 % brighter; 64, nothing more; about 9 % slower.
 - **Light off: the bulb's light leaves the scene.** The owner's Mosso lamp (clear PC shades, 5 %
   solid, light off) rendered its shades black on a Mac, while the same file rendered clear here
   (software GPU) and a 5 % object with no socket rendered well on the Mac. The bulb's point light
