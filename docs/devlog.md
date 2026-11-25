@@ -218,6 +218,15 @@ damaged copy of `fixtures/recipes/sphere-robot.easycad` taking 29 s (the same on
   socket in the 3D view, the Plan and the render, its light with it).
 - **The socket's thread runs the whole body**, edge to edge, fading over half a turn: a shade's
   straight start can sit anywhere along it.
+- **The GPU reset under the render (the owner's Mac: "Can't render here: null is not an object
+  (evaluating 'gl.getShaderPrecisionFormat(...)')"):** after a GPU reset Safari hands out a lost
+  WebGL context, and three.js failed inside. The app also kept that failed start, so the Render
+  view stayed broken until a reload. Now: the context is checked first (a clear message), a failed
+  start is retried on a fresh canvas at the next Prepare, a context lost mid-render resets the
+  view ("The graphics card was reset: Prepare again"), and each GPU dispatch is smaller on Apple
+  GPUs (2.5 M pixel-bounces, not 5) and counts the see-through bounces (32 since today), so a Mac
+  is reset less often. Checked by losing the context on purpose (WEBGL_lose_context, a null
+  getContext) in headless Chromium.
 - **Through more walls:** the path tracer's limit for passing through see-through plastic went
   from 10 to 32 (bounces don't count it). The owner's Thread pendant (5 % solid, wall, wings and
   rings round the bulb) lost light at 10: the bulb behind them dim. Measured: 10 to 32, the shade
