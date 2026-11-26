@@ -167,6 +167,30 @@ test('a vase wall: each turn sits on the one below, the first has nothing under 
   assert.equal(touching(out, widths, heights).below[2 * per + per / 2], 0);
 });
 
+test('a sloping wall: where the turns above and below sit across (their flat faces cover only part)', () => {
+  // Turns stepping out 2 mm each (a cone at 45°, 2 mm layers), 6 mm beads: the flat faces are
+  // 4 mm long (6 − 2), the bead above covers its turn's top from 2 − 2 = 0 mm across out to the edge.
+  const pts = [];
+  const per = 48;
+  for (let k = 0; k <= 4 * per; k++) {
+    const a = (2 * Math.PI * k) / per;
+    const r = 50 + (2 * k) / per;
+    pts.push(r * Math.cos(a), r * Math.sin(a), 2 + (2 * k) / per);
+  }
+  const n = pts.length / 3;
+  const widths = new Float32Array(n).fill(6);
+  widths[0] = 0;
+  const heights = new Float32Array(n).fill(2);
+  const { above, aboveAt, belowAt } = touching(pts, widths, heights);
+  const i = per + per / 4;
+  assert.equal(above[i], 1, 'steps of a third of a bead still touch');
+  const [x, y] = [pts[3 * i], pts[3 * i + 1]];
+  const outward = (at) => (at[3 * i] * x + at[3 * i + 1] * y) / Math.hypot(x, y);
+  assert.ok(Math.abs(outward(aboveAt) - 2) < 0.1, `the turn above sits 2 mm out (${outward(aboveAt)})`);
+  assert.ok(Math.abs(outward(belowAt) + 2) < 0.1, `the turn below 2 mm in (${outward(belowAt)})`);
+  assert.ok(Math.abs(aboveAt[3 * i + 2] - 2) < 1e-6, 'its flat face: half of 4 mm');
+});
+
 test("the socket's thread: the recipes' pitch, crests at the body, right-handed, fading out at its ends", async () => {
   const { socketThread, threadRadius, socketSection } = await import('../web/js/fixture.js');
   const e27 = socketOf(params({ socket: 'E27' }));

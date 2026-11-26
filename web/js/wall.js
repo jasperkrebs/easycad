@@ -10,12 +10,20 @@
  * @param {Float32Array | number[]} points x, y, z per point
  * @param {Float32Array | number[]} widths line width per point (of the move into it)
  * @param {Float32Array | number[]} heights layer height per point
- * @returns {{ above: Uint8Array, below: Uint8Array }}
+ * Also where the bead above and the bead below sit across (in plan): `aboveAt`/`belowAt` hold,
+ * per point, the offset to that bead's path (x, y) and half the length of its flat face (the
+ * flat underside of the bead above, the flat top of the bead below). On a sloping wall each turn
+ * sits partly beside the last, and only that part of a flat face is inside the wall.
+ * @returns {{ above: Uint8Array, below: Uint8Array, aboveAt: Float32Array, belowAt: Float32Array }}
  */
 export function touching(points, widths, heights) {
   const n = Math.floor(points.length / 3);
   const above = new Uint8Array(n);
   const below = new Uint8Array(n);
+  const aboveAt = new Float32Array(3 * n);
+  const belowAt = new Float32Array(3 * n);
+  const aboveBest = new Float32Array(n).fill(Infinity);
+  const belowBest = new Float32Array(n).fill(Infinity);
   // The printing moves (j-1 → j), hashed by the cells their footprint crosses.
   let cell = 1;
   for (let j = 1; j < n; j++) {
@@ -49,7 +57,7 @@ export function touching(points, widths, heights) {
     const [x, y, z] = [points[3 * i], points[3 * i + 1], points[3 * i + 2]];
     const cx = Math.floor(x / cell);
     const cy = Math.floor(y / cell);
-    for (let dx = -1; dx <= 1 && !(above[i] && below[i]); dx++) {
+    for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         for (const j of grid.get(key(cx + dx, cy + dy)) || []) {
           if (j === i || j - 1 === i) continue;
@@ -61,11 +69,25 @@ export function touching(points, widths, heights) {
           const across = Math.hypot(x - (x0 + t * ux), y - (y0 + t * uy));
           if (across > 0.5 * Math.max(w, widths[j])) continue;
           const dz = z0 + t * (z1 - z0) - z;
-          if (Math.abs(dz - h) < 0.5 * h) above[i] = 1;
-          if (Math.abs(dz + heights[j]) < 0.5 * heights[j]) below[i] = 1;
+          const flat = Math.max(0, widths[j] / 2 - Math.min(widths[j], heights[j]) / 2);
+          const [ox, oy] = [x0 + t * ux - x, y0 + t * uy - y];
+          if (Math.abs(dz - h) < 0.5 * h) {
+            above[i] = 1;
+            if (across < aboveBest[i]) {
+              aboveBest[i] = across;
+              aboveAt.set([ox, oy, flat], 3 * i);
+            }
+          }
+          if (Math.abs(dz + heights[j]) < 0.5 * heights[j]) {
+            below[i] = 1;
+            if (across < belowBest[i]) {
+              belowBest[i] = across;
+              belowAt.set([ox, oy, flat], 3 * i);
+            }
+          }
         }
       }
     }
   }
-  return { above, below };
+  return { above, below, aboveAt, belowAt };
 }

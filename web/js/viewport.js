@@ -43,9 +43,11 @@ const CAP = 4;
  * @param {Float32Array} colors
  * @param {Float32Array | null} [ups] each point's up direction (x, y, z), the beads' sections
  *   standing along it; straight up when not given
- * @param {{ kinds?: boolean }} [options] kinds: also say, for each triangle, which face of the
- *   bead it's on (0 a round side, 1 the flat top, 2 the flat bottom) and at which point (the
- *   render tells the faces where turns touch from the outside)
+ * @param {{ kinds?: boolean, cover?: { aboveAt: Float32Array, belowAt: Float32Array } }} [options]
+ *   kinds: also say, for each triangle, which face of the bead it's on (0 a round side, 1 the
+ *   flat top, 2 the flat bottom) and at which point (the render tells the faces where turns
+ *   touch from the outside); cover (wall.js `touching`): split the flat faces where the beads
+ *   above and below stop covering them, 1 and 2 only the covered parts
  */
 export function beadGeometry(points, widths, heights, colors, ups = null, options = {}) {
   const n = points.length / 3;
@@ -60,8 +62,16 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
   const kinds = [];
   /** @type {number[]} */
   const triPoint = [];
-  // The section's outline, as (across, up) for a bead `w` wide and `h` tall, centred.
-  const section = (w, h) => {
+  // With `options.cover` (the render's wall, wall.js `touching`): each flat face (the top and
+  // the underside) gets a point where the bead above (below) stops covering it, so the part of
+  // it inside the wall and the part outside are faces of their own.
+  const cover = options.cover ?? null;
+  const ringSize = cover ? RING + 2 : RING;
+  /** Per ring (with `cover`): which side of each split flat face is covered (+1: +across). */
+  let [topSide, bottomSide] = [1, 1];
+  // The section's outline, as (across, up) for a bead `w` wide and `h` tall, centred; with
+  // splits, the top's at `uTop` and the underside's at `uBottom` (across).
+  const section = (w, h, uTop = 0, uBottom = 0) => {
     const r = Math.max(1e-6, Math.min(w, h) / 2);
     const c = Math.max(0, w / 2 - r);
     const out = [];
@@ -69,11 +79,26 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
       const a = -Math.PI / 2 + (Math.PI * s) / ROUND;
       out.push([c + r * Math.cos(a), r * Math.sin(a)]);
     }
+    if (cover) out.push([Math.min(c, Math.max(-c, uTop)), r]);
     for (let s = 0; s <= ROUND; s++) {
       const a = Math.PI / 2 + (Math.PI * s) / ROUND;
       out.push([-c + r * Math.cos(a), r * Math.sin(a)]);
     }
+    if (cover) out.push([Math.min(c, Math.max(-c, uBottom)), -r]);
     return out;
+  };
+  /**
+   * Where the bead above (below) stops covering this one's flat top (underside), across, and on
+   * which side it covers: the neighbour's flat face reaches from its offset ± its half length.
+   * @param {Float32Array} at offsets and half lengths (wall.js `touching`)
+   * @param {number} i
+   * @param {number} ax
+   * @param {number} ay
+   */
+  const split = (at, i, ax, ay) => {
+    const o = at[3 * i] * ax + at[3 * i + 1] * ay;
+    const half = at[3 * i + 2];
+    return o >= 0 ? [o - half, 1] : [o + half, -1];
   };
   let rings = 0;
   let joined = false;
@@ -99,7 +124,12 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
       [Ax, Ay, Az] = square(ax, ay);
       if (inner) [Bx, By, Bz] = square(inner.bx, inner.by);
     }
-    for (const [u, v] of section(w, h)) {
+    let [uTop, uBottom] = [0, 0];
+    if (cover) {
+      [uTop, topSide] = split(cover.aboveAt, i, ax, ay);
+      [uBottom, bottomSide] = split(cover.belowAt, i, ax, ay);
+    }
+    for (const [u, v] of section(w, h, uTop, uBottom)) {
       const up = v - h / 2;
       if (inner && u * inner.side > 0) {
         const d = Math.abs(u) * inner.k;
@@ -110,12 +140,20 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
       col.push(colors[3 * i], colors[3 * i + 1], colors[3 * i + 2]);
     }
     if (joined) {
-      const [p, q] = [RING * (rings - 1), RING * rings];
-      for (let c = 0; c < RING; c++) {
-        const d = (c + 1) % RING;
+      const [p, q] = [ringSize * (rings - 1), ringSize * rings];
+      for (let c = 0; c < ringSize; c++) {
+        const d = (c + 1) % ringSize;
         index.push(p + c, q + c, q + d, p + c, q + d, p + d);
         if (options.kinds) {
-          const kind = c === ROUND ? 1 : c === RING - 1 ? 2 : 0;
+          // 1: the flat top (the part the bead above covers, with `cover`), 2: the underside.
+          let kind = c === ROUND ? 1 : c === RING - 1 ? 2 : 0;
+          if (cover) {
+            // Split: the top is ROUND (+across side) and ROUND + 1 (−across side), the
+            // underside RING (−across side) and RING + 1 (+across side, back to the start).
+            kind = 0;
+            if ((c === ROUND && topSide > 0) || (c === ROUND + 1 && topSide < 0)) kind = 1;
+            if ((c === RING + 1 && bottomSide > 0) || (c === RING && bottomSide < 0)) kind = 2;
+          }
           kinds.push(kind, kind);
           triPoint.push(i, i);
         }
@@ -206,7 +244,7 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
   g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
-  g.setIndex(new THREE.BufferAttribute(rings * RING > 65535 ? new Uint32Array(index) : new Uint16Array(index), 1));
+  g.setIndex(new THREE.BufferAttribute(rings * ringSize > 65535 ? new Uint32Array(index) : new Uint16Array(index), 1));
   g.computeVertexNormals();
   return { geometry: g, upTo, kinds: options.kinds ? new Uint8Array(kinds) : null, at: options.kinds ? new Uint32Array(triPoint) : null };
 }
