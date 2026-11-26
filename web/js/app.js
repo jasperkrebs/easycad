@@ -1704,6 +1704,7 @@ function renderPanel() {
       [renderParam('hang', 'Shades hang (the socket points down)', 'choice', { choices: ['down', 'up'] }), colors.hang],
       [renderParam('lumens', 'Bulb', 'number', { unit: 'lm', min: 50, max: 5000, step: 10 }), r.lumens],
       [renderParam('kelvin', 'Colour temperature', 'number', { unit: 'K', min: 1800, max: 6500, step: 50 }), r.kelvin],
+      [renderParam('lightSize', 'Light size (of the bulb\'s glass; 0: a point)', 'number', { unit: '%', min: 0, max: 100, step: 5 }), pct(r.lightSize)],
       [renderParam('room', 'Room light (bulb on)', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(r.room)],
       [renderParam('exposure', 'Exposure', 'number', { unit: 'stops', min: -6, max: 6, step: 0.25 }), r.exposure],
     ]],
@@ -1815,6 +1816,8 @@ function onRenderSetting(setting, value) {
       return changeRender({ [name]: value });
     case 'room':
       return changeRender({ room: value / 100 });
+    case 'lightSize':
+      return changeRender({ lightSize: value / 100 });
     case 'view': {
       const view = Object.entries(CAMERA_VIEWS).find(([, v]) => v.label === value)?.[0] ?? 'front';
       return changeRender({ camera: { ...r.camera, view, position: null, target: null } });

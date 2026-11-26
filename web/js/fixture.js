@@ -341,6 +341,12 @@ export const RENDER_DEFAULTS = {
   /** The bulb's light output in lumens (806: a 60 W bulb's) and its colour temperature. */
   lumens: 806,
   kelvin: 2700,
+  /**
+   * How big the bulb's light is, as a share of its glass (1: a frosted bulb glows over its whole
+   * glass and the shade's lines and patterns blur on the wall; 0: a point, a clear filament bulb,
+   * that throws them sharp).
+   */
+  lightSize: 1,
   /** The light round the lamp while the bulb is on (1: as with it off). */
   room: 0.06,
   /** Exposure, ±stops (a shade lit from inside shows its glow a stop up). */
@@ -405,6 +411,7 @@ export function cleanRender(raw) {
     light: typeof r.light === 'boolean' ? r.light : D.light,
     lumens: num(r.lumens, 50, 5000, D.lumens),
     kelvin: num(r.kelvin, 1800, 6500, D.kelvin),
+    lightSize: num(r.lightSize, 0, 1, D.lightSize),
     room: num(r.room, 0, 1, D.room),
     exposure: num(r.exposure, -6, 6, D.exposure),
     bounces: Math.round(num(r.bounces, 1, 32, D.bounces)),

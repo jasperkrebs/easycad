@@ -9,6 +9,18 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+## 2026-11-26: the Render's bulb has a size; sloping walls without clear strips (claude/lampshade-light-render-wcvx6x)
+
+- **Light size** (Render tab → Light, 100 % by default): the bulb's light comes from a sphere the
+  size of its glass, not a point, so the shade's layer lines and patterns blur on the wall as
+  they would in a room (0 %: a clear bulb, sharp). A patch in the vendored path tracer gives its
+  point lights a radius (README.txt there).
+- **Sloping walls:** of a bead's flat top, only the part the next turn covers goes inside the
+  wall (`touching` gives where the turns above and below sit; `beadGeometry`'s `cover` splits
+  the flat faces there). The uncovered strips had been clear, smooth windows: a fillet near the
+  bulb glowed (the owner's ripple_on_wall). Sliced along the surface it never showed.
+- Tests: `scripts/fixture.test.mjs` (where the turns sit on a sloping wall).
+
 ## 2026-11-25: the Render's wall can cut through the lamp (claude/lampshade-light-render-wcvx6x)
 
 - Render tab → Room → Wall distance goes down to −500 mm: 0 cuts through the lamp's axis, a

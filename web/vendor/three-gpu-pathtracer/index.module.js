@@ -2574,7 +2574,8 @@ class LightsInfoUniformStruct {
 				index += 4;
 
 				// sample 5
-				index += 1;
+				// radius (EasyCAD: a point light with a size)
+				floatArray[ baseIndex + ( index ++ ) ] = l.radius || 0;
 
 				floatArray[ baseIndex + ( index ++ ) ] = l.decay;
 				floatArray[ baseIndex + ( index ++ ) ] = l.distance;
@@ -4864,7 +4865,18 @@ const light_sampling_functions = /* glsl */`
 
 		} else if ( light.type == POINT_LIGHT_TYPE ) {
 
-			vec3 lightRay = light.u - rayOrigin;
+			// EasyCAD: a point light with a radius shines from a random point on a sphere that size
+			vec3 lightPos = light.u;
+			if ( light.radius > 0.0 ) {
+
+				float sz = 1.0 - 2.0 * ruv.y;
+				float sr = sqrt( max( 0.0, 1.0 - sz * sz ) );
+				float sphi = 2.0 * PI * ruv.z;
+				lightPos += light.radius * vec3( sr * cos( sphi ), sr * sin( sphi ), sz );
+
+			}
+
+			vec3 lightRay = lightPos - rayOrigin;
 			float lightDist = length( lightRay );
 			float cutoffDistance = light.distance;
 			float distanceFalloff = 1.0 / max( pow( lightDist, light.decay ), 0.01 );

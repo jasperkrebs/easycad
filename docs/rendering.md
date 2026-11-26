@@ -155,11 +155,18 @@ finished picture.
 
 ## The light
 
-- **Light on:** the bulb is the main light: a point light at the glass's centre (its colour
+- **Light on:** the bulb is the main light: a light at the glass's centre (its colour
   temperature, 2700 K by default, and its output in lumens, 806 for a 60 W bulb), the frosted
   glass glowing as bright as the light it lets out (and not shading the light inside it). A
   little light from round the lamp (**Room**, 6 % by default) keeps the dark side from going
   black.
+- **Light size** (100 % by default): the light shines from a sphere the size of the glass (a
+  little inside it), as a frosted bulb glows over its whole glass. From a point, the shade's
+  layer lines and patterns fell on the wall as sharp as from a slide projector; from the
+  glass's size they blur as they do in a room, the more the further the wall. 0 % is a point:
+  a clear bulb's filament, which does throw them sharp. (The path tracer's point lights have no
+  size: a patch in the vendored library adds one, `web/vendor/three-gpu-pathtracer/README.txt`.)
+  With the wall through the bulb, the sphere stays in the bulb's half in front of it.
 - **Light off:** daylight from round the lamp only (a bright sky over a darker floor); the bulb is
   plain opal glass. The bulb's light is taken out of the scene, not left at no power: a light of
   no power divides by zero in the light sampling, and on some GPUs (a Mac's) that blackened
@@ -235,6 +242,15 @@ setting up and a small preview work anywhere.
   outside is then its beads' round faces, inside and out, where the light bends: the layer lines'
   lensing. The first turn's bottom, the last turn's top and any step where a turn sits out past
   half a bead stay real faces.
+- **Only as far as the next turn covers it.** On a sloping wall sliced by height (a cone, a
+  fillet), each turn sits partly beside the last: of a bead's flat top, only the part under the
+  next bead is inside the wall; the rest is the wall's outside. `touching` also says where the
+  beads above and below sit across, and the bead's section gets a point on its flat top and its
+  flat underside where that cover ends; only the covered part goes inside. (Whole flat faces
+  went inside at first: the uncovered strips were clear windows, smooth whatever the plastic's
+  roughness, and a fillet near the bulb, which the light meets square to those strips, glowed.
+  Sliced along the surface, the beads tilt with the wall and cover each other's flat faces
+  whole, which is why it didn't show there.)
 - **One material per mesh.** The path tracer merges the scene into one geometry, numbers the
   materials by mesh (a group per mesh into the flat list of every mesh's materials) and keeps a
   material per vertex; a mesh with two materials gives its neighbours the wrong ones. So each part

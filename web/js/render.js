@@ -164,6 +164,8 @@ export function createRenderer(canvas, hooks = {}) {
   // faces only, still showed it).
   const surfaceMaterial = new THREE.MeshPhysicalMaterial({ color: 0xe9e5df, roughness: 0.92, metalness: 0, side: THREE.FrontSide });
   const bulbLight = new THREE.PointLight(0xffffff, 0, 0, 2);
+  /** The largest the light can be where it is (smaller when the wall cuts through the bulb). */
+  let lightRoom = Infinity;
   /** The bulb's glass radius (m), for its glow. */
   let glassR = 0.03;
 
@@ -336,6 +338,7 @@ export function createRenderer(canvas, hooks = {}) {
     }
     disposeGroup(room);
     room.clear();
+    lightRoom = Infinity;
     if (snap?.fixture) {
       const fx = snap.fixture;
       const cable = settings.ceiling.on ? Math.max(1, settings.ceiling.distance) : LONG_CABLE;
@@ -368,6 +371,7 @@ export function createRenderer(canvas, hooks = {}) {
         if (Math.abs(at.z - wallZ) < glassR) {
           at.z = wallZ + glassR * 0.5;
           bulbLight.position.copy(fixture.worldToLocal(at));
+          lightRoom = glassR * 0.45;
         }
       }
     }
@@ -397,6 +401,9 @@ export function createRenderer(canvas, hooks = {}) {
     const intensity = (UNIT_INTENSITY * settings.lumens) / 806;
     bulbLight.color.copy(warm);
     bulbLight.intensity = intensity;
+    // The light shines from the glass, not its middle: a sphere a little inside it (the cap's
+    // end stays outside), or, with the wall through the bulb, inside the half in front of it.
+    /** @type {any} */ (bulbLight).radius = Math.min(settings.lightSize * glassR * 0.85, lightRoom);
     // Off, the light leaves the scene, not just goes dark: a light of no power is a division by
     // zero in the path tracer's light sampling, which on some GPUs (a Mac's) makes NaNs, and a
     // pixel with a NaN stays black (see-through shades went black with the light off).
@@ -776,7 +783,11 @@ export function createRenderer(canvas, hooks = {}) {
         const p = next.paths[k];
         const n = p.points.length / 3;
         const white = new Float32Array(3 * n).fill(1);
-        const { geometry, kinds, at } = beadGeometry(p.points, p.widths, p.heights, white, p.ups, { kinds: true });
+        // Where the turns touch: the flat faces where one sits on the next go inside the solid,
+        // only as far as the next covers them (on a sloping wall each turn sits partly beside
+        // the last: the rest of the face is outside, a face like the beads' round ones).
+        const { above, below, aboveAt, belowAt } = touching(p.points, p.widths, p.heights);
+        const { geometry, kinds, at } = beadGeometry(p.points, p.widths, p.heights, white, p.ups, { kinds: true, cover: { aboveAt, belowAt } });
         // The bead sweep winds its faces inward; the path tracer reads in and out from them.
         const index = geometry.getIndex();
         if (!index || !index.count) {
@@ -792,8 +803,7 @@ export function createRenderer(canvas, hooks = {}) {
           setLook(pair, next.looks[p.part] || { color: '#f2f2f2', opacity: 1 });
           partMaterials.set(p.part, pair);
         }
-        // The flat faces where a turn sits on the next go inside the solid (a mesh of their own).
-        const { above, below } = touching(p.points, p.widths, p.heights);
+        // The covered faces go inside the solid (a mesh of their own).
         const outerIx = [];
         const innerIx = [];
         for (let t = 0; t < ix.length / 3; t++) {
