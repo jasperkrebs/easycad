@@ -16,6 +16,12 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
   edge throws a fan of streaks (the owner's woven pattern); just behind, the shade's light falls
   across the wall.
 - Open: a haze through the lamp's middle, to show its light as beams for a datasheet section.
+- Fixed: a clear shade sliced along the surface rendered black (the owner's black.easycad):
+  `touching` looked for the next turn straight up, not along the bead's up, so on a sloping
+  wall no turn sat on another and the light was trapped in each turn. (Not black in the
+  headless test before or after, so the owner's black came from their GPU: the flat faces'
+  split points are now kept a hair inside the faces, no faces of no size, whose missing
+  normal can come out NaN, a black pixel, on some GPUs. To be checked on the owner's Mac.)
 
 ## 2026-11-26: the Render's bulb has a size; sloping walls without clear strips (claude/lampshade-light-render-wcvx6x)
 

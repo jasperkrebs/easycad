@@ -787,7 +787,7 @@ export function createRenderer(canvas, hooks = {}) {
         // Where the turns touch: the flat faces where one sits on the next go inside the solid,
         // only as far as the next covers them (on a sloping wall each turn sits partly beside
         // the last: the rest of the face is outside, a face like the beads' round ones).
-        const { above, below, aboveAt, belowAt } = touching(p.points, p.widths, p.heights);
+        const { above, below, aboveAt, belowAt } = touching(p.points, p.widths, p.heights, p.ups);
         const { geometry, kinds, at } = beadGeometry(p.points, p.widths, p.heights, white, p.ups, { kinds: true, cover: { aboveAt, belowAt } });
         // The bead sweep winds its faces inward; the path tracer reads in and out from them.
         const index = geometry.getIndex();

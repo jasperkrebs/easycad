@@ -79,12 +79,16 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
       const a = -Math.PI / 2 + (Math.PI * s) / ROUND;
       out.push([c + r * Math.cos(a), r * Math.sin(a)]);
     }
-    if (cover) out.push([Math.min(c, Math.max(-c, uTop)), r]);
+    // (Kept a hair inside the face's ends: a face of no size has no normal, and a ray that
+    // meets one comes out NaN on some GPUs, a black pixel.)
+    const inside = (u) => Math.min(c - edge, Math.max(-c + edge, u));
+    const edge = Math.min(c / 2, 0.01);
+    if (cover) out.push([inside(uTop), r]);
     for (let s = 0; s <= ROUND; s++) {
       const a = Math.PI / 2 + (Math.PI * s) / ROUND;
       out.push([-c + r * Math.cos(a), r * Math.sin(a)]);
     }
-    if (cover) out.push([Math.min(c, Math.max(-c, uBottom)), -r]);
+    if (cover) out.push([inside(uBottom), -r]);
     return out;
   };
   /**
@@ -92,12 +96,13 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
    * which side it covers: the neighbour's flat face reaches from its offset ± its half length.
    * @param {Float32Array} at offsets and half lengths (wall.js `touching`)
    * @param {number} i
-   * @param {number} ax
+   * @param {number} ax the section's across direction
    * @param {number} ay
+   * @param {number} az
    */
-  const split = (at, i, ax, ay) => {
-    const o = at[3 * i] * ax + at[3 * i + 1] * ay;
-    const half = at[3 * i + 2];
+  const split = (at, i, ax, ay, az) => {
+    const o = at[4 * i] * ax + at[4 * i + 1] * ay + at[4 * i + 2] * az;
+    const half = at[4 * i + 3];
     return o >= 0 ? [o - half, 1] : [o + half, -1];
   };
   let rings = 0;
@@ -126,8 +131,8 @@ export function beadGeometry(points, widths, heights, colors, ups = null, option
     }
     let [uTop, uBottom] = [0, 0];
     if (cover) {
-      [uTop, topSide] = split(cover.aboveAt, i, ax, ay);
-      [uBottom, bottomSide] = split(cover.belowAt, i, ax, ay);
+      [uTop, topSide] = split(cover.aboveAt, i, Ax, Ay, Az);
+      [uBottom, bottomSide] = split(cover.belowAt, i, Ax, Ay, Az);
     }
     for (const [u, v] of section(w, h, uTop, uBottom)) {
       const up = v - h / 2;

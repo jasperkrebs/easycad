@@ -185,10 +185,10 @@ test('a sloping wall: where the turns above and below sit across (their flat fac
   const i = per + per / 4;
   assert.equal(above[i], 1, 'steps of a third of a bead still touch');
   const [x, y] = [pts[3 * i], pts[3 * i + 1]];
-  const outward = (at) => (at[3 * i] * x + at[3 * i + 1] * y) / Math.hypot(x, y);
+  const outward = (at) => (at[4 * i] * x + at[4 * i + 1] * y) / Math.hypot(x, y);
   assert.ok(Math.abs(outward(aboveAt) - 2) < 0.1, `the turn above sits 2 mm out (${outward(aboveAt)})`);
   assert.ok(Math.abs(outward(belowAt) + 2) < 0.1, `the turn below 2 mm in (${outward(belowAt)})`);
-  assert.ok(Math.abs(aboveAt[3 * i + 2] - 2) < 1e-6, 'its flat face: half of 4 mm');
+  assert.ok(Math.abs(aboveAt[4 * i + 3] - 2) < 1e-6, 'its flat face: half of 4 mm');
 });
 
 test("the socket's thread: the recipes' pitch, crests at the body, right-handed, fading out at its ends", async () => {
@@ -288,4 +288,29 @@ test("the Render's wall measured from the lamp's back: kept; anything else is fr
   assert.equal(cleanRender({}).wall.from, 'axis');
   assert.deepEqual(cleanRender({ wall: { on: true, distance: 20, from: 'back' } }).wall, { on: true, distance: 20, from: 'back' });
   assert.equal(cleanRender({ wall: { on: true, distance: 20, from: 'front' } }).wall.from, 'axis');
+});
+
+test('a wall sliced along the surface: the turns sit on each other along the wall, not straight up', () => {
+  // A cone 65° from upright, each turn 2 mm on along the wall (its up), 5 mm beads.
+  const pts = [];
+  const ups = [];
+  const per = 48;
+  const [s, c] = [Math.sin((65 * Math.PI) / 180), Math.cos((65 * Math.PI) / 180)];
+  for (let k = 0; k <= 4 * per; k++) {
+    const a = (2 * Math.PI * k) / per;
+    const along = (2 * k) / per;
+    const r = 50 + along * s;
+    pts.push(r * Math.cos(a), r * Math.sin(a), 2 + along * c);
+    ups.push(s * Math.cos(a), s * Math.sin(a), c);
+  }
+  const n = pts.length / 3;
+  const widths = new Float32Array(n).fill(5);
+  widths[0] = 0;
+  const heights = new Float32Array(n).fill(2);
+  const i = 2 * per;
+  assert.equal(touching(pts, widths, heights).above[i], 0, 'straight up, there is no turn one layer up');
+  const t = touching(pts, widths, heights, ups);
+  assert.equal(t.above[i], 1);
+  assert.equal(t.below[i], 1);
+  assert.ok(Math.hypot(t.aboveAt[4 * i], t.aboveAt[4 * i + 1], t.aboveAt[4 * i + 2]) < 0.1, 'right on top of it, along the wall');
 });
