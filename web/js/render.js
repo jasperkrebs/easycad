@@ -43,6 +43,31 @@ const DISPATCH_MS = 30;
 const MAX_TILES = 16;
 /** A Mac's (or iPhone's, iPad's) GPU resets a page whose GPU work runs long sooner than others. */
 const APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+/** On a Mac, up to this many tiles a side (the pieces smaller still, when its GPU has reset). */
+const MAX_TILES_APPLE = 32;
+/**
+ * A Mac's care: its pieces of GPU work are this many times smaller than the Mac's usual. Each
+ * reset of its GPU makes them 4 × smaller (remembered in this browser), each finished picture a
+ * little larger again. Other computers never use it.
+ */
+const CARE_KEY = 'easycad.renderCare';
+const CARE_MAX = 64;
+function care() {
+  try {
+    const c = Number(localStorage.getItem(CARE_KEY));
+    return Number.isFinite(c) && c >= 1 ? Math.min(CARE_MAX, c) : 1;
+  } catch {
+    return 1;
+  }
+}
+/** @param {number} c */
+function setCare(c) {
+  try {
+    localStorage.setItem(CARE_KEY, String(Math.min(CARE_MAX, Math.max(1, c))));
+  } catch {
+    // no storage: the care starts at 1 each time
+  }
+}
 
 /** Thrown when the browser has no working WebGL 2 context to give (`code` 'no-gl'). */
 export class NoGraphicsError extends Error {
@@ -108,6 +133,8 @@ export function createRenderer(canvas, hooks = {}) {
   let lost = false;
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
+    // A Mac whose GPU reset while rendering: smaller pieces from now on.
+    if (APPLE && job) setCare(care() * 4);
     lost = true;
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
@@ -484,7 +511,7 @@ export function createRenderer(canvas, hooks = {}) {
     if (!lastMs || Math.abs(tracer.samples - Math.round(tracer.samples)) > 1e-6) return;
     const n = tracer.tiles.x;
     let next = n;
-    if (lastMs > 2 * DISPATCH_MS) next = Math.min(MAX_TILES, Math.ceil(n * Math.sqrt(lastMs / DISPATCH_MS)));
+    if (lastMs > 2 * DISPATCH_MS) next = Math.min(APPLE ? MAX_TILES_APPLE : MAX_TILES, Math.ceil(n * Math.sqrt(lastMs / DISPATCH_MS)));
     else if (lastMs < DISPATCH_MS * 0.6 && n > 1) next = n - 1;
     if (next !== n) tracer.tiles.set(next, next);
   }
@@ -515,6 +542,7 @@ export function createRenderer(canvas, hooks = {}) {
       job = null;
       shows = 'done';
       const p = /** @type {Progress} */ ({ state: 'done', kind, samples, target: samples, width: size.x, height: size.y, seconds });
+      if (APPLE) setCare(care() * 0.85);
       report(p);
       lastPicture = p;
       if (settings.denoise) denoise(p);
@@ -944,8 +972,8 @@ export function createRenderer(canvas, hooks = {}) {
       // A see-through part's paths go on through it (up to the transmissive bounces): more work.
       const seeThrough = [...partMaterials.values()].some(([outer]) => outer.transmission > 0);
       const work = px.x * px.y * (settings.bounces + 2 + (seeThrough ? tracer.transmissiveBounces / 2 : 0));
-      const budget = phone ? DISPATCH.phone : APPLE ? DISPATCH.apple : DISPATCH.other;
-      const n = Math.min(MAX_TILES, Math.max(1, Math.ceil(Math.sqrt(work / budget))));
+      const budget = phone ? DISPATCH.phone : APPLE ? DISPATCH.apple / care() : DISPATCH.other;
+      const n = Math.min(APPLE ? MAX_TILES_APPLE : MAX_TILES, Math.max(1, Math.ceil(Math.sqrt(work / budget))));
       tracer.tiles.set(n, n);
       clearFence();
       tracer.reset();

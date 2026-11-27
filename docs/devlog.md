@@ -9,6 +9,13 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+## 2026-11-27: the Render on a Mac learns from its GPU resets (claude/lampshade-light-render-wcvx6x)
+
+- The owner's Mac reset its GPU even in Previews. On a Mac only, each reset during a render
+  makes the pieces of GPU work 4 × smaller from then on (stored in the browser), each finished
+  picture × 0.85 larger again, up to 32 × 32 tiles a sample. Other computers (the Lenovo)
+  unchanged. Not tried on a Mac yet.
+
 ## 2026-11-27: the Render's wall just behind the lamp (claude/lampshade-light-render-wcvx6x)
 
 - Render tab → Room → **Wall measured from**: the lamp's axis (as before) or its back (20 mm

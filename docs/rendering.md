@@ -95,6 +95,12 @@ the scene. (Safari, once a page has reset the GPU, keeps WebGL off for that page
 and opened again: the status line says to restart the browser.) If the GPU is reset anyway (the browser takes the render's graphics
 context away), the status line says so and Prepare starts afresh. The render asks the browser for the high-performance GPU (on a laptop with two).
 
+On a Mac (only), the render learns: each GPU reset during a render makes its pieces 4 × smaller
+from then on (remembered in the browser, `easycad.renderCare`, up to 64 ×), and each finished
+picture makes them a little larger again (× 0.85); a Mac may also cut a sample into up to 32 × 32
+tiles (others 16 × 16). Smaller pieces are slower (one piece a frame) but don't trip the Mac's
+GPU watchdog. Other computers' pacing is unchanged.
+
 ## The camera
 
 The **Camera** group has where it looks from (Front, ¾, Side, Below, Above: **Fit** frames the lamp from
