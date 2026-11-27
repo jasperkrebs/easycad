@@ -106,7 +106,7 @@ test('render settings read back safely', () => {
   assert.deepEqual(r.final, RENDER_DEFAULTS.final);
   const q = cleanRender({ preview: { size: 99999, samples: 0 }, wall: { on: true, distance: -5 }, camera: { view: 'below', lens: 85, position: [1, 2, 3], target: [0, 0, 'x'] }, surface: 'red' });
   assert.deepEqual(q.preview, { size: 4096, samples: 1 });
-  assert.deepEqual(q.wall, { on: true, distance: -5 }, 'the wall may cut through the lamp');
+  assert.deepEqual(q.wall, { on: true, distance: -5, from: 'axis' }, 'the wall may cut through the lamp');
   assert.equal(q.camera.view, 'below');
   assert.equal(q.camera.lens, 85);
   assert.equal(q.camera.position, null, 'a camera without a target is no camera');
@@ -278,8 +278,14 @@ test("the bulb's Edison screw: the standard pitch, crests at the cap, inside the
 
 test('the wall can cut through the lamp: 0 through its axis, less in front; the floor and ceiling not', () => {
   const r = cleanRender({ wall: { on: true, distance: -120 }, floor: { on: true, distance: -50 }, ceiling: { on: true, distance: -10 } });
-  assert.deepEqual(r.wall, { on: true, distance: -120 });
+  assert.deepEqual(r.wall, { on: true, distance: -120, from: 'axis' });
   assert.equal(r.floor.distance, 0);
   assert.equal(r.ceiling.distance, 0);
   assert.equal(cleanRender({ wall: { on: true, distance: -9999 } }).wall.distance, -1000);
+});
+
+test("the Render's wall measured from the lamp's back: kept; anything else is from the axis", () => {
+  assert.equal(cleanRender({}).wall.from, 'axis');
+  assert.deepEqual(cleanRender({ wall: { on: true, distance: 20, from: 'back' } }).wall, { on: true, distance: 20, from: 'back' });
+  assert.equal(cleanRender({ wall: { on: true, distance: 20, from: 'front' } }).wall.from, 'axis');
 });

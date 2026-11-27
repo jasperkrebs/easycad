@@ -111,7 +111,11 @@ The **Room** group puts surfaces round the lamp, lit by it and in the picture (a
   axis. 0 cuts straight through the lamp (a section: the half behind the wall is hidden, the
   wall shows how the light leaves the shade); less than 0 puts it in front of the axis. When the
   wall cuts through the bulb, the bulb's light comes from its half in front of the wall (half
-  the glass radius out), so the wall isn't lit from behind;
+  the glass radius out), so the wall isn't lit from behind. Through the axis, though, the
+  bulb's light only skims the wall: every bump of the shade's cut edge throws a long shadow (a
+  fan of streaks, worst with a pattern), as a lamp cut in half against a wall would. For the
+  shade's light on a wall, **Wall measured from: the lamp's back** puts it just behind the
+  lamp (20 mm from its back when chosen; 0 touches it);
 - **Floor:** under the lamp (a floor or a table), its distance below the lamp's lowest point;
 - **Ceiling:** above the lamp, its distance above the socket's top; the cable ends there.
 

@@ -358,7 +358,8 @@ export function createRenderer(canvas, hooks = {}) {
     const plane = (w, h) => new THREE.PlaneGeometry(w, h);
     if (settings.wall.on) {
       const wall = new THREE.Mesh(plane(size, size), surfaceMaterial);
-      const wallZ = -settings.wall.distance * MM;
+      // From the lamp's axis, or from its back (the furthest it reaches behind: just behind it).
+      const wallZ = (settings.wall.from === 'back' ? b.min.z : 0) - settings.wall.distance * MM;
       wall.position.set(0, (b.min.y + b.max.y) / 2, wallZ);
       wall.name = 'wall';
       room.add(wall);

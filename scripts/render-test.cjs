@@ -234,6 +234,8 @@ async function centreSpread(page, url) {
       // A section: the wall through the lamp's axis, the bulb's light on it (from the bulb's half
       // in front of it), the shade's light pattern on the wall.
       { name: 'wall-through', template: 'lampshade', project: 'Lampshade', part: 'path', look: { color: '#f4f1ea', opacity: 1, material: { plastic: 'pla' } }, render: { light: true, room: 0.02, camera: { view: 'three-quarter', lens: 35, position: null, target: null }, wall: { on: true, distance: 0 } }, wallLit: true },
+      // Just behind the lamp (20 mm from its back): the shade's light falls across the wall.
+      { name: 'wall-behind', template: 'lampshade', project: 'Lampshade', part: 'path', look: { color: '#f4f1ea', opacity: 0.5, material: { plastic: 'petg-frosted' } }, render: { light: true, room: 0.02, camera: { view: 'three-quarter', lens: 35, position: null, target: null }, wall: { on: true, distance: 20, from: 'back' } }, wallLit: true },
       { name: 'pendant-matte-white', template: 'thread-pendant', project: 'Thread pendant', part: 'path_out', look: { color: '#fbfaf7', opacity: 0.6, material: { plastic: 'pla-matte' } }, render: { light: true, ceiling: { on: true, distance: 300 }, wall: { on: true, distance: 350 } } },
     ];
     const only = process.env.RENDER_SCENES ? process.env.RENDER_SCENES.split(',') : null;
