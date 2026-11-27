@@ -369,10 +369,11 @@ export const RENDER_DEFAULTS = {
   camera: { view: 'front', lens: 50, position: /** @type {number[] | null} */ (null), target: /** @type {number[] | null} */ (null) },
   /**
    * Surfaces round the lamp, lit by it and in the picture: a wall behind it (mm from the lamp's
-   * axis; 0 cuts through the axis, less than 0 in front of it), a floor or table under it (mm below its lowest point), a ceiling above it (mm above
+   * axis, `from: 'axis'`: 0 cuts through the axis, less than 0 in front of it; or from the
+   * lamp's back, `from: 'back'`: 0 touches it), a floor or table under it (mm below its lowest point), a ceiling above it (mm above
    * the socket's top; the cable ends there). One colour for all.
    */
-  wall: { on: false, distance: 300 },
+  wall: { on: false, distance: 300, from: 'axis' },
   floor: { on: false, distance: 500 },
   ceiling: { on: false, distance: 600 },
   surface: '#e9e5df',
@@ -426,7 +427,7 @@ export function cleanRender(raw) {
       target: position && target ? target : null,
     },
     // The wall can cut through the lamp: 0 through its axis, less in front of it.
-    wall: surface(r.wall, D.wall, -1000),
+    wall: { ...surface(r.wall, D.wall, -1000), from: obj(r.wall).from === 'back' ? 'back' : 'axis' },
     floor: surface(r.floor, D.floor),
     ceiling: surface(r.ceiling, D.ceiling),
     surface: /^#[0-9a-f]{6}$/i.test(String(r.surface)) ? String(r.surface) : D.surface,

@@ -1682,6 +1682,9 @@ const renderRow = (label, control) => el('div', { className: 'setting text' }, [
 /** What the Render tab was last built for (its parts), so it's rebuilt only when they change. */
 let renderPanelKey = '';
 
+/** Where the Render's wall distance is measured from: [key, label]. */
+const WALL_FROM = [['axis', "the lamp's axis"], ['back', "the lamp's back"]];
+
 /**
  * The Render tab: the render's settings as the settings window has them (a number to type, a
  * slider beside it), in fold-outs: light, camera, room, each part's material, quality. Changes
@@ -1715,7 +1718,8 @@ function renderPanel() {
     ]],
     ['Room', 'render:room', [
       [renderParam('wall', 'Wall behind', 'toggle'), r.wall.on],
-      [renderParam('wallD', 'Wall: behind the lamp\'s axis (0: through it, less: in front)', 'number', { unit: 'mm', min: -500, max: 5000, step: 5 }), r.wall.distance],
+      [renderParam('wallFrom', 'Wall measured from', 'choice', { choices: WALL_FROM.map(([, label]) => label) }), WALL_FROM.find(([k]) => k === r.wall.from)?.[1]],
+      [renderParam('wallD', 'Wall distance (0: through the axis, or touching the back)', 'number', { unit: 'mm', min: -500, max: 5000, step: 5 }), r.wall.distance],
       [renderParam('floor', 'Floor or table under', 'toggle'), r.floor.on],
       [renderParam('floorD', 'Floor: below the lamp', 'number', { unit: 'mm', min: 0, max: 5000, step: 10 }), r.floor.distance],
       [renderParam('ceiling', 'Ceiling above', 'toggle'), r.ceiling.on],
@@ -1828,11 +1832,19 @@ function onRenderSetting(setting, value) {
     case 'floor':
     case 'ceiling':
       return changeRender({ [name]: { ...r[name], on: value } });
+    case 'wallFrom': {
+      // From the back: just behind the lamp (20 mm), the shade's light falling across the wall.
+      const from = WALL_FROM.find(([, label]) => label === value)?.[0] ?? 'axis';
+      if (from === r.wall.from) return;
+      changeRender({ wall: { on: true, from, distance: from === 'back' ? 20 : 0 } });
+      renderPanel(); // the distance field shows the new distance
+      return;
+    }
     case 'wallD':
     case 'floorD':
     case 'ceilingD': {
       const k = name.slice(0, -1);
-      return changeRender({ [k]: { on: true, distance: value } });
+      return changeRender({ [k]: { ...r[k], on: true, distance: value } });
     }
     case 'denoise':
       return changeRender({ denoise: value });

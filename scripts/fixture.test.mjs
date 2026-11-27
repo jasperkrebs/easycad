@@ -106,7 +106,7 @@ test('render settings read back safely', () => {
   assert.deepEqual(r.final, RENDER_DEFAULTS.final);
   const q = cleanRender({ preview: { size: 99999, samples: 0 }, wall: { on: true, distance: -5 }, camera: { view: 'below', lens: 85, position: [1, 2, 3], target: [0, 0, 'x'] }, surface: 'red' });
   assert.deepEqual(q.preview, { size: 4096, samples: 1 });
-  assert.deepEqual(q.wall, { on: true, distance: -5 }, 'the wall may cut through the lamp');
+  assert.deepEqual(q.wall, { on: true, distance: -5, from: 'axis' }, 'the wall may cut through the lamp');
   assert.equal(q.camera.view, 'below');
   assert.equal(q.camera.lens, 85);
   assert.equal(q.camera.position, null, 'a camera without a target is no camera');
@@ -185,10 +185,10 @@ test('a sloping wall: where the turns above and below sit across (their flat fac
   const i = per + per / 4;
   assert.equal(above[i], 1, 'steps of a third of a bead still touch');
   const [x, y] = [pts[3 * i], pts[3 * i + 1]];
-  const outward = (at) => (at[3 * i] * x + at[3 * i + 1] * y) / Math.hypot(x, y);
+  const outward = (at) => (at[4 * i] * x + at[4 * i + 1] * y) / Math.hypot(x, y);
   assert.ok(Math.abs(outward(aboveAt) - 2) < 0.1, `the turn above sits 2 mm out (${outward(aboveAt)})`);
   assert.ok(Math.abs(outward(belowAt) + 2) < 0.1, `the turn below 2 mm in (${outward(belowAt)})`);
-  assert.ok(Math.abs(aboveAt[3 * i + 2] - 2) < 1e-6, 'its flat face: half of 4 mm');
+  assert.ok(Math.abs(aboveAt[4 * i + 3] - 2) < 1e-6, 'its flat face: half of 4 mm');
 });
 
 test("the socket's thread: the recipes' pitch, crests at the body, right-handed, fading out at its ends", async () => {
@@ -278,8 +278,39 @@ test("the bulb's Edison screw: the standard pitch, crests at the cap, inside the
 
 test('the wall can cut through the lamp: 0 through its axis, less in front; the floor and ceiling not', () => {
   const r = cleanRender({ wall: { on: true, distance: -120 }, floor: { on: true, distance: -50 }, ceiling: { on: true, distance: -10 } });
-  assert.deepEqual(r.wall, { on: true, distance: -120 });
+  assert.deepEqual(r.wall, { on: true, distance: -120, from: 'axis' });
   assert.equal(r.floor.distance, 0);
   assert.equal(r.ceiling.distance, 0);
   assert.equal(cleanRender({ wall: { on: true, distance: -9999 } }).wall.distance, -1000);
+});
+
+test("the Render's wall measured from the lamp's back: kept; anything else is from the axis", () => {
+  assert.equal(cleanRender({}).wall.from, 'axis');
+  assert.deepEqual(cleanRender({ wall: { on: true, distance: 20, from: 'back' } }).wall, { on: true, distance: 20, from: 'back' });
+  assert.equal(cleanRender({ wall: { on: true, distance: 20, from: 'front' } }).wall.from, 'axis');
+});
+
+test('a wall sliced along the surface: the turns sit on each other along the wall, not straight up', () => {
+  // A cone 65° from upright, each turn 2 mm on along the wall (its up), 5 mm beads.
+  const pts = [];
+  const ups = [];
+  const per = 48;
+  const [s, c] = [Math.sin((65 * Math.PI) / 180), Math.cos((65 * Math.PI) / 180)];
+  for (let k = 0; k <= 4 * per; k++) {
+    const a = (2 * Math.PI * k) / per;
+    const along = (2 * k) / per;
+    const r = 50 + along * s;
+    pts.push(r * Math.cos(a), r * Math.sin(a), 2 + along * c);
+    ups.push(s * Math.cos(a), s * Math.sin(a), c);
+  }
+  const n = pts.length / 3;
+  const widths = new Float32Array(n).fill(5);
+  widths[0] = 0;
+  const heights = new Float32Array(n).fill(2);
+  const i = 2 * per;
+  assert.equal(touching(pts, widths, heights).above[i], 0, 'straight up, there is no turn one layer up');
+  const t = touching(pts, widths, heights, ups);
+  assert.equal(t.above[i], 1);
+  assert.equal(t.below[i], 1);
+  assert.ok(Math.hypot(t.aboveAt[4 * i], t.aboveAt[4 * i + 1], t.aboveAt[4 * i + 2]) < 0.1, 'right on top of it, along the wall');
 });

@@ -9,6 +9,20 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+## 2026-11-27: the Render's wall just behind the lamp (claude/lampshade-light-render-wcvx6x)
+
+- Render tab → Room → **Wall measured from**: the lamp's axis (as before) or its back (20 mm
+  behind it when chosen). Through the axis the bulb's light skims the wall and the shade's cut
+  edge throws a fan of streaks (the owner's woven pattern); just behind, the shade's light falls
+  across the wall.
+- Open: a haze through the lamp's middle, to show its light as beams for a datasheet section.
+- Fixed: a clear shade sliced along the surface rendered black (the owner's black.easycad):
+  `touching` looked for the next turn straight up, not along the bead's up, so on a sloping
+  wall no turn sat on another and the light was trapped in each turn. (Not black in the
+  headless test before or after, so the owner's black came from their GPU: the flat faces'
+  split points are now kept a hair inside the faces, no faces of no size, whose missing
+  normal can come out NaN, a black pixel, on some GPUs. To be checked on the owner's Mac.)
+
 ## 2026-11-26: the Render's bulb has a size; sloping walls without clear strips (claude/lampshade-light-render-wcvx6x)
 
 - **Light size** (Render tab → Light, 100 % by default): the bulb's light comes from a sphere the
