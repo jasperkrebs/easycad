@@ -16,7 +16,22 @@ import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
 import { CAMERA_VIEWS, cleanRender, fixtureOf, fixtureTakenOut, partsExtent } from './fixture.js';
 import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
-import { addBatchSetup, batchFileName, batchLine, batchPlanOf, batchSetups, moveBatchSetup, nextBatchName, removeBatchSetup, setupsOfPlan } from './batch.js';
+import {
+  addBatchSetup,
+  batchFileName,
+  batchLine,
+  batchPictures,
+  batchPlanOf,
+  batchSetups,
+  batchStamp,
+  clearBatchPictures,
+  keepBatchPicture,
+  moveBatchSetup,
+  nextBatchName,
+  removeBatchSetup,
+  setupsOfPlan,
+  zipFiles,
+} from './batch.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
 
@@ -1431,6 +1446,10 @@ const batch = {
   stopping: false,
   /** "Batch 2/5 · name": put before the status line. */
   label: '',
+  /** The batch's start ("batch-2026-11-28-2205"), and the folder its pictures go into (Chrome on a computer: chosen at the start), or null: downloads. */
+  stamp: '',
+  /** @type {any} */
+  folder: null,
 };
 
 const renderOn = () => $('viewRender').getAttribute('aria-pressed') === 'true';
@@ -1949,8 +1968,22 @@ function batchRows() {
   run.addEventListener('click', () => runBatch());
   const list = el('div', { className: 'batch-list', id: 'batchList' });
   const ask = el('div', { className: 'confirm', id: 'batchConfirm', role: 'alertdialog', hidden: true });
+  const all = el('button', { type: 'button', className: 'btn', text: 'Download all', title: 'Every picture the batch made, as one zip (a folder per batch)' });
+  all.addEventListener('click', () => downloadBatchPictures());
+  const forget = el('button', { type: 'button', className: 'btn', text: 'Forget', title: 'Forget the pictures kept (the files saved stay)' });
+  forget.addEventListener('click', async () => {
+    const answer = await askBatch('Forget the pictures the batch kept in this browser? Files already saved stay.', [
+      ['forget', 'Forget them'],
+      ['keep', 'Keep them'],
+    ]);
+    if (answer !== 'forget') return;
+    await clearBatchPictures().catch(() => {});
+    refreshBatchPictures();
+  });
+  const pictures = el('div', { className: 'setting text batch-pictures', id: 'batchPictures', hidden: true }, [el('label', { className: 'batch-count' }), el('div', { className: 'batch-buttons' }, [all, forget])]);
   refreshBatch();
-  return [renderRow('Name', name), renderRow('', saveSetup), ask, list, renderRow('', run)];
+  refreshBatchPictures();
+  return [renderRow('Name', name), renderRow('', saveSetup), ask, list, renderRow('', run), pictures];
 }
 
 /**
@@ -2133,13 +2166,55 @@ function nextRender(test) {
   });
 }
 
-/** The picture on the render's canvas, downloaded. */
+/**
+ * The picture on the render's canvas, a batch's: kept in the browser (whatever happens to the
+ * download), then written into the batch's folder, or downloaded. (A browser lets a page download
+ * one file by itself; for more, Chrome asks once, and an answer not given, or No, blocks the rest:
+ * the folder needs no such leave, and the kept pictures can be downloaded as one zip.)
+ */
 async function downloadRender(name) {
   const api = renderView.api;
   if (!api) return;
   const blob = await (await fetch(api.capture())).blob();
-  download(name, blob, 'image/png');
+  try {
+    await keepBatchPicture({ key: `${batch.stamp}/${name}`, batch: batch.stamp, file: name, blob, at: Date.now() });
+  } catch {
+    // no IndexedDB, or full: the download still goes
+  }
+  let written = false;
+  if (batch.folder) {
+    try {
+      const handle = await batch.folder.getFileHandle(name, { create: true });
+      const out = await handle.createWritable();
+      await out.write(blob);
+      await out.close();
+      written = true;
+    } catch {
+      // the folder went away, or its permission: a download instead
+    }
+  }
+  if (!written) download(name, blob, 'image/png');
   picture.saved = true;
+  refreshBatchPictures();
+}
+
+/** The kept pictures' row in the Batch group: how many, Download all (one zip), Forget. */
+async function refreshBatchPictures() {
+  const row = document.getElementById('batchPictures');
+  if (!row) return;
+  const kept = await batchPictures().catch(() => []);
+  row.hidden = !kept.length;
+  const count = row.querySelector('.batch-count');
+  if (count) count.textContent = `${kept.length} ${kept.length === 1 ? 'picture' : 'pictures'} kept`;
+}
+
+/** Every kept batch picture as one zip (a folder per batch): one download. */
+async function downloadBatchPictures() {
+  const kept = await batchPictures().catch(() => []);
+  if (!kept.length) return;
+  const files = await Promise.all(kept.map(async (k) => ({ path: `${k.batch}/${k.file}`, bytes: new Uint8Array(await k.blob.arrayBuffer()) })));
+  const last = kept[kept.length - 1].batch;
+  download(`${last || 'batch'}.zip`, zipFiles(files), 'application/zip');
 }
 
 /**
@@ -2191,12 +2266,25 @@ async function runBatch() {
     renderView.api?.stop();
     return;
   }
+  const started = new Date();
+  // Chrome on a computer: a folder for the pictures, asked first (while the click still counts);
+  // in it, a folder for this batch. Cancelled, or another browser: downloads.
+  batch.stamp = batchStamp(started);
+  batch.folder = null;
+  const pick = /** @type {any} */ (window).showDirectoryPicker;
+  if (typeof pick === 'function' && !renderView.busy) {
+    try {
+      const parent = await pick.call(window, { id: 'easycad-batch', mode: 'readwrite' });
+      batch.folder = await parent.getDirectoryHandle(batch.stamp, { create: true });
+    } catch {
+      batch.folder = null;
+    }
+  }
   const setups = await batchSetups().catch(() => []);
   if (!setups.length || renderView.busy || !(await letPictureGo())) return;
   batch.running = true;
   batch.stopping = false;
   $('batchRun').textContent = 'Stop batch';
-  const started = new Date();
   // The screen kept on: a sleeping screen stops the page's drawing, and the render with it.
   /** @type {any} */
   let lock = null;
@@ -2235,7 +2323,9 @@ async function runBatch() {
     const run = document.getElementById('batchRun');
     if (run) run.textContent = 'Batch render';
     const stopped = batch.stopping ? ' · stopped' : '';
-    renderStatus(`Batch: ${done} of ${setups.length} rendered${failed.length ? ` · not rendered: ${failed.join(', ')}` : ''}${stopped}`);
+    const where = batch.folder ? ` · in the folder ${batch.stamp}` : '';
+    renderStatus(`Batch: ${done} of ${setups.length} rendered${failed.length ? ` · not rendered: ${failed.join(', ')}` : ''}${stopped}${where}`);
+    batch.folder = null;
     batch.stopping = false;
   }
 }

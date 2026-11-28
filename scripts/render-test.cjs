@@ -173,6 +173,24 @@ async function centreSpread(page, url) {
     // WebGPU (software) for the denoiser, WebGL (software) for the path tracer.
     browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu'] });
     const page = await browser.newPage({ viewport: { width: 1000, height: 760 }, deviceScaleFactor: 1 });
+    // Chrome's folder picker, stood in for: cancelled, or a folder that records what's written.
+    await page.addInitScript(() => {
+      const w = /** @type {any} */ (window);
+      w.__folder = { mode: 'cancel', written: [] };
+      const dir = (path) => ({
+        getDirectoryHandle: async (name) => dir(`${path}/${name}`),
+        getFileHandle: async (name) => ({
+          createWritable: async () => ({
+            write: async (blob) => w.__folder.written.push(`${path}/${name}:${blob.size > 1000}`),
+            close: async () => {},
+          }),
+        }),
+      });
+      w.showDirectoryPicker = async () => {
+        if (w.__folder.mode === 'cancel') throw new DOMException('cancelled', 'AbortError');
+        return dir('picked');
+      };
+    });
     page.on('pageerror', (e) => failures.push(`page error: ${e.message}`));
     page.on('console', (m) => {
       if (m.type() === 'error') failures.push(`console: ${m.text()}`);
@@ -418,6 +436,12 @@ async function centreSpread(page, url) {
       }, name);
       await page.waitForFunction((n) => document.getElementById('renderStatus').textContent === `Saved for the batch: ${n}`, name, { timeout: 30000 });
     };
+    const viewNow = () =>
+      page.evaluate(() => {
+        const project = document.getElementById('projectName').textContent;
+        return JSON.parse(localStorage.getItem('easycad.customColors'))[project].render.camera.view;
+      });
+    const firstView = await viewNow();
     await saveSetup('front view');
     await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('[data-view="top"]')).click());
     const view = await page.evaluate(() => {
@@ -439,11 +463,8 @@ async function centreSpread(page, url) {
     await page
       .waitForFunction(() => /^Opened “front view”/.test(document.getElementById('renderStatus').textContent) && /** @type {HTMLInputElement} */ (document.getElementById('batchName')).value === 'front view', null, { timeout: 60000 })
       .catch(async () => failures.push(`opening a setup: ${await page.textContent('#renderStatus')}`));
-    const view2 = await page.evaluate(() => {
-      const project = document.getElementById('projectName').textContent;
-      return JSON.parse(localStorage.getItem('easycad.customColors'))[project].render.camera.view;
-    });
-    if (view2 !== 'front') failures.push(`the opened setup's camera: ${view2}`);
+    const view2 = await viewNow();
+    if (view2 !== firstView) failures.push(`the opened setup's camera: ${view2}, saved with ${firstView}`);
     const names = [];
     page.on('download', (d) => names.push(d.suggestedFilename()));
     await page.evaluate(() => document.getElementById('batchRun').click());
@@ -473,15 +494,30 @@ async function centreSpread(page, url) {
     await page.waitForFunction(() => /batch plan: 2 setups added/.test(document.getElementById('renderStatus').textContent), null, { timeout: 60000 }).catch(() => {});
     const listed = await page.evaluate(() => document.querySelectorAll('#batchList .batch-setup').length);
     if (listed !== 2) failures.push(`the opened file's plan: ${listed} setups listed, ${await page.textContent('#renderStatus')}`);
+    // This time a folder is picked: the pictures are written into a folder for the batch in it,
+    // nothing downloaded.
     const before = names.length;
-    await page.evaluate(() => document.getElementById('batchRun').click());
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__folder.mode = 'pick';
+      document.getElementById('batchRun').click();
+    });
     await page
       .waitForFunction(() => /^Batch: \d+ of 2 rendered/.test(document.getElementById('renderStatus').textContent), null, { timeout: 1200000 })
       .catch(() => {});
     const again = await page.textContent('#renderStatus');
     await page.waitForTimeout(1000);
-    console.log(`batch from the file: ${again} · ${names.slice(before).join(', ')}`);
-    if (!/^Batch: 2 of 2 rendered$/.test(again) || names.length - before !== 4) failures.push(`batch from the file: ${again}, ${names.length - before} downloads`);
+    const written = await page.evaluate(() => /** @type {any} */ (window).__folder.written);
+    console.log(`batch from the file: ${again} · written ${written.join(', ')} · downloaded ${names.slice(before).join(', ') || 'nothing'}`);
+    if (!/^Batch: 2 of 2 rendered · in the folder batch-/.test(again) || names.length !== before) failures.push(`batch from the file: ${again}, ${names.length - before} downloads`);
+    if (written.length !== 4 || !written.every((w) => /^picked\/batch-[\d-]+\/batch-[\d-]+-(top|front) view(-denoised)?\.png:true$/.test(w))) failures.push(`batch into a folder: ${written.join(', ')}`);
+    // The pictures kept: Download all, one zip of them.
+    const [zip] = await Promise.all([
+      page.waitForEvent('download', { timeout: 60000 }),
+      page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('#batchPictures .btn')).click()),
+    ]);
+    const zipped = require('child_process').execFileSync('python3', ['-I', '-c', 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None; print(len(z.namelist()))', await zip.path()], { encoding: 'utf8' }).trim();
+    console.log(`Download all: ${zip.suggestedFilename()} · ${zipped} pictures`);
+    if (zipped !== '4' || !/^batch-.*\.zip$/.test(zip.suggestedFilename())) failures.push(`Download all: ${zip.suggestedFilename()}, ${zipped} pictures`);
   } catch (err) {
     failures.push(String(err.stack || err));
   } finally {

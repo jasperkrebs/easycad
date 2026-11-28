@@ -287,9 +287,17 @@ The Render tab's **Batch** group renders a list of setups one after another (ove
   but not the beads. Opening the file on another computer adds its setups to the batch there
   (ones it has already are left out); the batch makes their beads from the recipe when it gets
   to them. So the plan can be made on one computer and rendered on another.
-- **Batch render** prepares each setup, renders it at its Render size and samples, downloads the
-  picture as rendered, then denoises it and downloads that too (`batch-<start>-<name>.png` and
-  `…-denoised.png`, so a batch's pictures sort together in the downloads folder). The status line
+- **Batch render** prepares each setup, renders it at its Render size and samples, saves the
+  picture as rendered, then denoises it and saves that too (`batch-<start>-<name>.png` and
+  `…-denoised.png`, so a batch's pictures sort together).
+- **Where they go.** In Chrome (or Edge) on a computer, Batch render first asks for a folder
+  and writes the pictures into a new folder for the batch in it (`batch-<start>/`): no downloads.
+  Cancelled, or in another browser, each picture is downloaded. A page may download one file by
+  itself; for more, Chrome asks once ("download multiple files"), and unanswered or refused it
+  blocks the rest, the PNG button's too, until allowed again (the site's settings, Automatic
+  downloads). So every batch picture is also **kept in the browser** (IndexedDB) as it's made:
+  the Batch group says how many, **Download all** gives them as one zip (a folder per batch:
+  one download, one click), **Forget** lets them go. The status line
   says which setup it's on. A GPU reset retries the setup once (a Mac then takes smaller pieces),
   and a setup that still fails is named at the end; the rest go on. **Stop** (or Stop batch)
   stops the batch.

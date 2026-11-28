@@ -9,6 +9,17 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+## 2026-11-28: the batch's pictures don't depend on the browser's downloads (claude/lampshade-light-render-wcvx6x)
+
+- An agent's overnight batch saved only its first picture: Chrome lets a page download one file
+  by itself and asks about more; unanswered, it blocked the rest (and the PNG button). Now Batch
+  render asks for a folder first where the browser can (Chrome on a computer: File System
+  Access) and writes the pictures into a folder for the batch; and every picture is kept in
+  IndexedDB as it's made, **Download all** giving them as one zip (`zipFiles`, stored, in
+  `web/js/batch.js`).
+- Tests: `scripts/fixture.test.mjs` (the zip, read back by Python), `scripts/render-test.cjs`
+  (a picked folder stood in for; Download all).
+
 ## 2026-11-28: the Render keeps its picture; batch setups open and move (claude/lampshade-light-render-wcvx6x)
 
 - A picture is held until let go (New view, Preview, Render, Prepare, the views, Fit, Batch
