@@ -2154,6 +2154,24 @@ body[data-plan] .view-legend {
   width: 100%;
   height: 100%;
   touch-action: none;
+  /* A picture kept when the view changes shape: shown whole, not stretched. */
+  object-fit: contain;
+  transform-origin: 0 0;
+}
+
+/* A picture held: the view moves and zooms it (the camera stays). */
+.render[data-held] #renderCanvas {
+  cursor: grab;
+}
+
+/* Throw a long render away? Over the picture, at its foot. */
+.render-confirm {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  margin: 0;
+  z-index: 2;
 }
 
 .render-status {
@@ -2232,6 +2250,11 @@ body[data-render] .view-legend {
   opacity: 0.5;
 }
 
+/* Settings changed while a picture is held: Preview and Render show them. */
+.view-render .render-go[data-stale]:not(:disabled) {
+  box-shadow: 0 0 0 2px var(--warn);
+}
+
 
 
 /* The plan's fittings button (socket and bulb shown or hidden), under the zoom buttons. */
@@ -2291,6 +2314,17 @@ body[data-render] .view-legend {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.batch-remove {
+.batch-setup {
+  cursor: pointer;
+}
+.batch-buttons {
+  display: flex;
+  gap: 4px;
+}
+.batch-buttons .btn {
   min-width: 32px;
+}
+.batch-setup:first-child .batch-move:first-child,
+.batch-setup:last-child .batch-move:nth-child(2) {
+  visibility: hidden;
 }

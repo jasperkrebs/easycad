@@ -15,6 +15,7 @@ const STORE = 'setups';
  *   render: any,
  *   snapshot: any,
  *   saved: number,
+ *   order?: number,
  *   recipe?: { source: string, alongWall: boolean, hidden: string[], u: number, colors: any },
  * }} BatchSetup
  * `snapshot`: the beads as saved (on this computer); `recipe`: what makes them (the project
@@ -51,10 +52,50 @@ async function request(mode, make) {
   }
 }
 
-/** The saved setups, in the order they were saved. @returns {Promise<BatchSetup[]>} */
+/** Where a setup stands in the batch: its place when moved, else when it was saved. */
+const place = (s) => (Number.isFinite(s.order) ? /** @type {number} */ (s.order) : s.id);
+
+/** The saved setups, in the batch's order. @returns {Promise<BatchSetup[]>} */
 export async function batchSetups() {
   const all = /** @type {BatchSetup[]} */ (await request('readonly', (s) => s.getAll()));
-  return all.sort((a, b) => a.id - b.id);
+  return inBatchOrder(all);
+}
+
+/**
+ * Setups in the batch's order (their place, else when saved).
+ * @template {{ id: number, order?: number }} T
+ * @param {T[]} setups
+ */
+export function inBatchOrder(setups) {
+  return [...setups].sort((a, b) => place(a) - place(b) || a.id - b.id);
+}
+
+/**
+ * The setups with one moved a place up (-1) or down (+1): each given its place (`order`) anew.
+ * @template {{ id: number, order?: number }} T
+ * @param {T[]} setups in the batch's order
+ * @param {number} id
+ * @param {-1 | 1} way
+ * @returns {T[]} those whose place changed
+ */
+export function movedInBatch(setups, id, way) {
+  const list = inBatchOrder(setups);
+  const k = list.findIndex((s) => s.id === id);
+  const j = k + way;
+  if (k < 0 || j < 0 || j >= list.length) return [];
+  [list[k], list[j]] = [list[j], list[k]];
+  // Every setup gets its place (0, 1, …), so the order holds; one saved later has none yet and
+  // stands at its save time (its id, in ms): after them.
+  return list.map((s, n) => ({ ...s, order: n })).filter((s, n) => setups.find((x) => x.id === s.id)?.order !== n);
+}
+
+/**
+ * Moves a setup a place up or down in the stored batch.
+ * @param {number} id
+ * @param {-1 | 1} way
+ */
+export async function moveBatchSetup(id, way) {
+  for (const s of movedInBatch(await batchSetups(), id, way)) await addBatchSetup(s);
 }
 
 /** @param {BatchSetup} setup */

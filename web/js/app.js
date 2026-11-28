@@ -16,7 +16,7 @@ import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
 import { CAMERA_VIEWS, cleanRender, fixtureOf, fixtureTakenOut, partsExtent } from './fixture.js';
 import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
-import { addBatchSetup, batchFileName, batchLine, batchPlanOf, batchSetups, nextBatchName, removeBatchSetup, setupsOfPlan } from './batch.js';
+import { addBatchSetup, batchFileName, batchLine, batchPlanOf, batchSetups, moveBatchSetup, nextBatchName, removeBatchSetup, setupsOfPlan } from './batch.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
 
@@ -1419,6 +1419,12 @@ const renderView = {
   listeners: /** @type {Set<(p: any) => void>} */ (new Set()),
 };
 
+/**
+ * The picture the Render view holds: how long it has rendered and whether it's saved (a long
+ * one not saved is asked about before it's let go), and how the view shows it (moved, zoomed).
+ */
+const picture = { seconds: 0, saved: false, zoom: 1, x: 0, y: 0 };
+
 /** The batch while it runs: where it is, to stop it. */
 const batch = {
   running: false,
@@ -1495,8 +1501,13 @@ function renderSnapshot(result, ctx = null) {
   return { paths, looks, fixture: fixtureFor(result, ctx) };
 }
 
-/** "1 min 05 s", "12 s". */
-const renderTime = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s` : `${Math.round(s)} s`);
+/** "2 h 05 min", "1 min 05 s", "12 s". */
+const renderTime = (s) =>
+  s >= 3600
+    ? `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')} min`
+    : s >= 60
+      ? `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s`
+      : `${Math.round(s)} s`;
 
 /** The status line and the buttons from what the renderer is doing. */
 function showRenderProgress(p) {
@@ -1513,7 +1524,20 @@ function showRenderProgress(p) {
     done: `${what} done · ${p.samples} samples${size} · ${renderTime(p.seconds || 0)}${denoised}`,
     stopped: `${what} stopped · ${p.samples} samples${size}${denoised}`,
   };
-  renderStatus(`${batch.label}${texts[p.state] || ''}`);
+  // A picture held: settings changed meanwhile wait for the next Preview or Render.
+  const holding = ['compiling', 'rendering', 'done', 'stopped', 'denoising'].includes(p.state);
+  renderStatus(`${batch.label}${texts[p.state] || ''}${holding && p.pending ? ' · settings changed' : ''}`);
+  if (p.state === 'compiling') picture.saved = false;
+  if (holding && p.seconds) picture.seconds = p.seconds;
+  if (!holding) {
+    picture.seconds = 0;
+    picture.saved = false;
+    showPictureAt(1, 0, 0);
+  }
+  $('render').toggleAttribute('data-held', holding);
+  $('renderNewView').toggleAttribute('disabled', !holding);
+  $('renderPreview').toggleAttribute('data-stale', holding && Boolean(p.pending));
+  $('renderFinal').toggleAttribute('data-stale', holding && Boolean(p.pending));
   const running = p.state === 'compiling' || p.state === 'rendering';
   const prepared = Boolean(renderView.api?.prepared);
   $('renderStop').toggleAttribute('disabled', !running);
@@ -1522,13 +1546,114 @@ function showRenderProgress(p) {
   $('renderSave').toggleAttribute('disabled', !(p.state === 'done' || p.state === 'stopped' || p.state === 'rendering'));
   // Denoise (a finished or stopped picture); once denoised, it switches between the denoised
   // picture and the one as rendered.
-  const picture = p.state === 'done' || p.state === 'stopped';
-  $('renderDenoised').toggleAttribute('disabled', !(picture || p.denoised));
+  const finished = p.state === 'done' || p.state === 'stopped';
+  $('renderDenoised').toggleAttribute('disabled', !(finished || p.denoised));
   $('renderDenoised').dataset.denoised = p.denoised ? '1' : '';
   $('renderDenoised').textContent = p.denoised ? 'Denoised' : 'Denoise';
   $('renderDenoised').setAttribute('aria-pressed', String(Boolean(p.denoised && p.showing)));
   $('renderPreview').setAttribute('aria-pressed', String(running && p.kind === 'preview'));
   $('renderFinal').setAttribute('aria-pressed', String(running && p.kind === 'final'));
+}
+
+/** The held picture, moved and zoomed in the view (1, 0, 0: as rendered, whole). */
+function showPictureAt(zoom, x, y) {
+  picture.zoom = zoom;
+  [picture.x, picture.y] = zoom === 1 ? [0, 0] : [x, y];
+  const canvas = /** @type {HTMLElement | null} */ (document.getElementById('renderCanvas'));
+  if (canvas) canvas.style.transform = zoom === 1 ? '' : `translate(${picture.x}px, ${picture.y}px) scale(${zoom})`;
+}
+
+/**
+ * Whether the held picture may go (for a new one, or the camera free again): yes when there's
+ * none, it's saved, or it took under a minute; else asked (Save PNG first, Throw away, Keep it).
+ * @returns {Promise<boolean>}
+ */
+async function letPictureGo() {
+  if (!renderView.api?.held || picture.saved || picture.seconds < 60) return true;
+  $('renderConfirmText').textContent = `Throw away this picture? ${renderTime(picture.seconds)} of rendering, not saved.`;
+  $('renderConfirm').hidden = false;
+  const answer = await new Promise((resolve) => {
+    const pick = (a) => () => resolve(a);
+    $('renderConfirmSave').onclick = pick('save');
+    $('renderConfirmDrop').onclick = pick('drop');
+    $('renderConfirmKeep').onclick = pick('keep');
+  });
+  $('renderConfirm').hidden = true;
+  if (answer === 'keep') return false;
+  if (answer === 'save') await saveRenderPng();
+  return true;
+}
+
+/** The picture as it shows, as a PNG. */
+async function saveRenderPng() {
+  if (!renderView.api?.rendered) return;
+  const blob = await (await fetch(renderView.api.capture())).blob();
+  download(`${saveName()}-render.png`, blob, 'image/png');
+  picture.saved = true;
+}
+
+/** Back to the scene: the picture let go (asked first when it's worth keeping). */
+async function newRenderView() {
+  if (!(await letPictureGo())) return false;
+  renderView.api?.discard();
+  return true;
+}
+
+/**
+ * Moving and zooming the held picture in the view: drag, the wheel, two fingers; a double click
+ * shows it whole again. (While no picture is held, the view orbits the camera instead.)
+ */
+function wirePictureView() {
+  const host = $('render');
+  const holding = () => Boolean(renderView.api?.held);
+  /** @type {Map<number, { x: number, y: number }>} */
+  const pointers = new Map();
+  /** Zooms by `f` about (cx, cy), a point in the view. */
+  const zoomAbout = (f, cx, cy) => {
+    const zoom = Math.min(16, Math.max(1, picture.zoom * f));
+    const k = zoom / picture.zoom;
+    showPictureAt(zoom, cx - (cx - picture.x) * k, cy - (cy - picture.y) * k);
+  };
+  const at = (e) => {
+    const r = host.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
+  host.addEventListener(
+    'wheel',
+    (e) => {
+      if (!holding()) return;
+      e.preventDefault();
+      const [cx, cy] = at(e);
+      zoomAbout(Math.exp(-e.deltaY * 0.0015), cx, cy);
+    },
+    { passive: false },
+  );
+  host.addEventListener('pointerdown', (e) => {
+    if (!holding() || /** @type {HTMLElement} */ (e.target).closest('.confirm')) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    host.setPointerCapture?.(e.pointerId);
+  });
+  host.addEventListener('pointermove', (e) => {
+    const was = pointers.get(e.pointerId);
+    if (!was || !holding()) return;
+    const now = { x: e.clientX, y: e.clientY };
+    if (pointers.size === 1) {
+      showPictureAt(picture.zoom, picture.x + now.x - was.x, picture.y + now.y - was.y);
+    } else if (pointers.size === 2) {
+      const other = [...pointers].find(([id]) => id !== e.pointerId)?.[1];
+      if (other) {
+        const before = Math.hypot(was.x - other.x, was.y - other.y);
+        const after = Math.hypot(now.x - other.x, now.y - other.y);
+        const [cx, cy] = at({ clientX: (now.x + other.x) / 2, clientY: (now.y + other.y) / 2 });
+        if (before > 0) zoomAbout(after / before, cx, cy);
+      }
+    }
+    pointers.set(e.pointerId, now);
+  });
+  const up = (e) => pointers.delete(e.pointerId);
+  host.addEventListener('pointerup', up);
+  host.addEventListener('pointercancel', up);
+  host.addEventListener('dblclick', () => holding() && showPictureAt(1, 0, 0));
 }
 
 /** Loads the renderer (and the path tracer with it) the first time the view opens. */
@@ -1543,7 +1668,7 @@ async function renderApi() {
       // Where the camera was left is kept with the project (nothing else changes).
       onCamera: (cam) => !batch.running && saveRender({ camera: { ...customColors().render.camera, ...cam } }),
       // The GPU was reset under the render: start afresh (Prepare again).
-      onLost: () => resetRender('The graphics card was reset: Prepare again (a smaller picture or fewer bounces is lighter on it)'),
+      onLost: (doing) => resetRender(`The graphics card was reset (while ${doing}): Prepare again (a smaller picture or fewer bounces is lighter on it)`),
     }),
   );
   try {
@@ -1748,7 +1873,7 @@ function renderPanel() {
     ['Camera', 'render:camera', [
       [renderParam('view', 'View (Fit frames it)', 'choice', { choices: views.map(([, v]) => v.label) }), CAMERA_VIEWS[r.camera.view].label],
       [renderParam('lens', 'Lens (full-frame)', 'number', { unit: 'mm', min: 10, max: 300, step: 1 }), r.camera.lens],
-      renderRow('Frame the lamp', Object.assign(el('button', { type: 'button', text: 'Fit', title: 'Frame the lamp from the view' }), { onclick: () => renderView.api?.fit() })),
+      renderRow('Frame the lamp', Object.assign(el('button', { type: 'button', text: 'Fit', title: 'Frame the lamp from the view' }), { onclick: async () => !batch.running && (await newRenderView()) && renderView.api?.fit() })),
     ]],
     ['Room', 'render:room', [
       [renderParam('wall', 'Wall behind', 'toggle'), r.wall.on],
@@ -1823,8 +1948,76 @@ function batchRows() {
   const run = el('button', { type: 'button', className: 'btn primary', id: 'batchRun', text: batch.running ? 'Stop batch' : 'Batch render', title: 'Render every setup in turn; each picture is downloaded as rendered and denoised' });
   run.addEventListener('click', () => runBatch());
   const list = el('div', { className: 'batch-list', id: 'batchList' });
+  const ask = el('div', { className: 'confirm', id: 'batchConfirm', role: 'alertdialog', hidden: true });
   refreshBatch();
-  return [renderRow('Name', name), renderRow('', saveSetup), list, renderRow('', run)];
+  return [renderRow('Name', name), renderRow('', saveSetup), ask, list, renderRow('', run)];
+}
+
+/**
+ * A question in the Batch group, its answer the key of the button pressed.
+ * @param {string} text
+ * @param {[string, string][]} choices [key, label], the first the main one
+ * @returns {Promise<string>}
+ */
+function askBatch(text, choices) {
+  const box = $('batchConfirm');
+  return new Promise((resolve) => {
+    const buttons = choices.map(([key, label], k) => {
+      const b = el('button', { type: 'button', className: k === 0 ? 'btn primary' : 'btn', text: label });
+      b.addEventListener('click', () => {
+        box.hidden = true;
+        resolve(key);
+      });
+      return b;
+    });
+    box.replaceChildren(el('p', { text }), el('div', { className: 'buttons' }, buttons));
+    box.hidden = false;
+    box.scrollIntoView?.({ block: 'nearest' });
+  });
+}
+
+/**
+ * Opens a saved setup to change it: its project (the recipe with its values), the parts' looks,
+ * the parts hidden, how far apart, and its render settings with the camera. Its name goes in
+ * the name field, so saving it again overwrites it (asked).
+ * @param {import('./batch.js').BatchSetup} setup
+ */
+async function openBatchSetup(setup) {
+  if (batch.running) return;
+  const lost = state.unsaved ? ' Changes to the project since you last saved it are lost.' : '';
+  const answer = await askBatch(`Open “${setup.name}”? Its project and render settings replace the ones now.${lost}`, [
+    ['open', 'Open'],
+    ['keep', 'Keep editing'],
+  ]);
+  if (answer !== 'open' || !(await letPictureGo())) return;
+  renderView.api?.discard();
+  const r = setup.recipe;
+  if (r) {
+    const nozzle = /** @type {HTMLSelectElement} */ ($('viewNozzle'));
+    if (Boolean(r.alongWall) !== Boolean(state.alongWall)) {
+      nozzle.value = r.alongWall ? 'wall' : 'upright';
+      viewport.setOrientation(/** @type {any} */ (nozzle.value));
+      save(NOZZLE_KEY, nozzle.value);
+      state.alongWall = Boolean(r.alongWall);
+    }
+    hiddenParts.clear();
+    for (const name of r.hidden || []) hiddenParts.add(name);
+    await openSource(r.source, 'opened');
+    const colors = customColors();
+    saveCustomColors({ ...colors, parts: r.colors?.parts || {}, hang: r.colors?.hang === 'up' ? 'up' : 'down', render: cleanRender(setup.render) });
+    applyCustomColors();
+    renderPartToggles(state.last);
+    setAssembly(r.u || 0);
+    autosave();
+  } else {
+    // Saved before setups kept their recipe: the render settings only.
+    saveRender(setup.render);
+  }
+  renderView.api?.setSettings(customColors().render);
+  renderPanel();
+  /** @type {HTMLInputElement} */ ($('batchName')).value = setup.name;
+  markRenderStale();
+  renderStatus(`Opened “${setup.name}”${r ? '' : ' (its render settings: saved before setups kept their project)'}`);
 }
 
 /** The saved setups, listed (each with a button to take it out), and the name field's next name. */
@@ -1845,7 +2038,27 @@ async function refreshBatch() {
         await removeBatchSetup(setup.id);
         refreshBatch();
       });
-      return el('div', { className: 'batch-setup' }, [el('strong', { text: setup.name }), el('span', { text: batchLine(setup, CAMERA_VIEWS) }), remove]);
+      const move = (way, text, label) => {
+        const b = el('button', { type: 'button', className: 'btn tiny batch-move', text, title: `${label}: ${setup.name}`, 'aria-label': `${label}: ${setup.name}` });
+        b.addEventListener('click', async () => {
+          if (batch.running) return;
+          await moveBatchSetup(setup.id, way);
+          refreshBatch();
+        });
+        return b;
+      };
+      const line = el('div', { className: 'batch-setup', title: `Open ${setup.name} to change it`, tabIndex: 0, role: 'button' }, [
+        el('strong', { text: setup.name }),
+        el('span', { text: batchLine(setup, CAMERA_VIEWS) }),
+        el('div', { className: 'batch-buttons' }, [move(-1, '↑', 'Earlier'), move(1, '↓', 'Later'), remove]),
+      ]);
+      line.addEventListener('click', (e) => {
+        if (!(/** @type {HTMLElement} */ (e.target).closest('button'))) openBatchSetup(setup);
+      });
+      line.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') openBatchSetup(setup);
+      });
+      return line;
     }),
   );
   const name = /** @type {HTMLInputElement | null} */ (document.getElementById('batchName'));
@@ -1871,9 +2084,31 @@ async function saveBatchSetup() {
   const field = /** @type {HTMLInputElement} */ ($('batchName'));
   try {
     const setups = await batchSetups();
-    const name = field.value.trim() || nextBatchName(setups);
+    let name = field.value.trim() || nextBatchName(setups);
+    let id = Date.now();
+    /** @type {number | undefined} */
+    let order;
+    // A name the batch has: overwrite that setup (in its place), or keep both.
+    const same = setups.find((x) => x.name === name);
+    if (same) {
+      const answer = await askBatch(`“${name}” is in the batch already.`, [
+        ['over', `Overwrite “${name}”`],
+        ['new', 'Save as new'],
+        ['cancel', 'Cancel'],
+      ]);
+      if (answer === 'cancel') return;
+      if (answer === 'over') {
+        id = same.id;
+        order = same.order;
+      }
+      else {
+        let k = 2;
+        while (setups.some((x) => x.name === `${name} ${k}`)) k++;
+        name = `${name} ${k}`;
+      }
+    }
     const recipe = { source: await currentSource(), alongWall: Boolean(state.alongWall), ...renderContext() };
-    await addBatchSetup({ id: Date.now(), name, project: projectName(), render: customColors().render, snapshot: renderSnapshot(state.last), saved: Date.now(), recipe });
+    await addBatchSetup({ id, name, project: projectName(), render: customColors().render, snapshot: renderSnapshot(state.last), saved: Date.now(), recipe, ...(order === undefined ? {} : { order }) });
     field.value = '';
     renderStatus(`Saved for the batch: ${name}`);
   } catch (err) {
@@ -1904,6 +2139,7 @@ async function downloadRender(name) {
   if (!api) return;
   const blob = await (await fetch(api.capture())).blob();
   download(name, blob, 'image/png');
+  picture.saved = true;
 }
 
 /**
@@ -1956,7 +2192,7 @@ async function runBatch() {
     return;
   }
   const setups = await batchSetups().catch(() => []);
-  if (!setups.length || renderView.busy) return;
+  if (!setups.length || renderView.busy || !(await letPictureGo())) return;
   batch.running = true;
   batch.stopping = false;
   $('batchRun').textContent = 'Stop batch';
@@ -2095,22 +2331,26 @@ function onRenderSetting(setting, value) {
 
 function wireRender() {
   $('viewRender').addEventListener('click', () => showRender(!renderOn()));
-  // While a batch runs, these leave its render alone (Stop stops the batch).
-  $('renderPrepare').addEventListener('click', () => !batch.running && prepareRender());
-  $('renderPreview').addEventListener('click', () => !batch.running && renderView.api?.start('preview'));
-  $('renderFinal').addEventListener('click', () => !batch.running && renderView.api?.start('final'));
+  // While a batch runs, these leave its render alone (Stop stops the batch). A picture held is
+  // let go only by these, asked first when it's worth keeping.
+  const fresh = (go) => async () => {
+    if (batch.running || !(await letPictureGo())) return;
+    showPictureAt(1, 0, 0);
+    go();
+  };
+  $('renderPrepare').addEventListener('click', fresh(() => prepareRender()));
+  $('renderPreview').addEventListener('click', fresh(() => renderView.api?.start('preview')));
+  $('renderFinal').addEventListener('click', fresh(() => renderView.api?.start('final')));
+  $('renderNewView').addEventListener('click', () => !batch.running && newRenderView());
   $('renderStop').addEventListener('click', () => (batch.running ? runBatch() : renderView.api?.stop()));
+  wirePictureView();
   $('renderDenoised').addEventListener('click', () => {
     const api = renderView.api;
     if (!api) return;
     if ($('renderDenoised').dataset.denoised) api.showDenoised($('renderDenoised').getAttribute('aria-pressed') !== 'true');
     else api.denoise();
   });
-  $('renderSave').addEventListener('click', async () => {
-    if (!renderView.api?.rendered) return;
-    const blob = await (await fetch(renderView.api.capture())).blob();
-    download(`${saveName()}-render.png`, blob, 'image/png');
-  });
+  $('renderSave').addEventListener('click', () => saveRenderPng());
 }
 
 function wire() {
@@ -2154,7 +2394,8 @@ function wire() {
   });
   // Fit what's shown of the toolpath and orbit round its centre: the Fit button, a double-click,
   // or on a phone a double-tap (touch doesn't make a dblclick everywhere).
-  $('viewFit').addEventListener('click', () => (renderOn() ? !batch.running && renderView.api?.fit() : planOn() ? fitPlan() : viewport.focus()));
+  const renderFit = async () => !batch.running && (await newRenderView()) && renderView.api?.fit();
+  $('viewFit').addEventListener('click', () => (renderOn() ? renderFit() : planOn() ? fitPlan() : viewport.focus()));
   // The view as a picture, sharper than the screen.
   // What's shown: the plan when it's up, else the 3D view (taken apart, when it is).
   $('viewSnap').addEventListener('click', async () => {
@@ -2194,9 +2435,14 @@ function wire() {
     b.addEventListener('click', () => {
       const view = /** @type {HTMLElement} */ (b).dataset.view || 'iso';
       if (renderOn()) {
-        changeRender({ camera: { ...customColors().render.camera, view: RENDER_VIEWS[view] ?? 'front', position: null, target: null } });
-        if (!batch.running) renderView.api?.fit();
-        renderPanel();
+        if (batch.running) return;
+        // A new camera: the picture held is let go (asked first when it's worth keeping).
+        newRenderView().then((ok) => {
+          if (!ok) return;
+          changeRender({ camera: { ...customColors().render.camera, view: RENDER_VIEWS[view] ?? 'front', position: null, target: null } });
+          renderView.api?.fit();
+          renderPanel();
+        });
         return;
       }
       viewport.view(/** @type {any} */ (view));

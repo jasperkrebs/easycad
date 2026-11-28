@@ -32,6 +32,8 @@ import { blendDenoised, takenDetail, tameFireflies } from './denoise-prep.js';
  * 'detailed' the large one (7.7 MB, slower, keeps fine detail better), 'fast' the standard one.
  */
 const UNETS = { detailed: 'rt_hdr_calb_cnrm_large.tza', fast: 'rt_hdr_calb_cnrm.tza' };
+/** The denoiser's settings: they change a picture already made (the rest wait for the next). */
+const DENOISE_KEYS = ['denoise', 'denoiseStrength', 'denoiseDetail', 'denoiseModel'];
 
 /** The recipe's millimetres in the scene's metres. */
 const MM = 0.001;
@@ -98,7 +100,7 @@ export class NoGraphicsError extends Error {
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ onProgress?: (p: Progress) => void, onCamera?: (camera: { position: number[], target: number[] }) => void, onLost?: () => void }} [hooks]
+ * @param {{ onProgress?: (p: Progress) => void, onCamera?: (camera: { position: number[], target: number[] }) => void, onLost?: (doing: string) => void }} [hooks]
  */
 export function createRenderer(canvas, hooks = {}) {
   // The context first, checked: after the GPU was reset (a Mac does that when a page's GPU work
@@ -146,7 +148,7 @@ export function createRenderer(canvas, hooks = {}) {
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     job = null;
-    hooks.onLost?.();
+    hooks.onLost?.(doing());
   });
 
   let settings = cleanRender(RENDER_DEFAULTS);
@@ -229,9 +231,29 @@ export function createRenderer(canvas, hooks = {}) {
     group.traverse((o) => /** @type {any} */ (o).geometry?.dispose());
   }
 
+  /** What the GPU was last given to do (said when it's reset, to tell what trips it). */
+  let task = 'nothing';
+  const doing = () => (job && task === 'rendering' ? `rendering (sample ${Math.floor(tracer.samples) + 1}, ${tracer.tiles.x}×${tracer.tiles.y} tiles)` : task);
+
+  /** The last progress reported (said again when what's waiting changes). */
+  let lastReport = /** @type {Progress} */ ({ state: 'empty' });
   function report(p) {
-    hooks.onProgress?.(p);
+    lastReport = p;
+    // A picture held (under way, done or stopped): the camera stays put; the view moves the picture.
+    controls.enabled = !held();
+    hooks.onProgress?.({ ...p, pending: Boolean(pendingSettings || pendingLooks) });
   }
+
+  // ---- The picture held: once a render has begun, nothing throws it away but `discard`, a new
+  // Preview or Render, or a new Prepare. Settings and looks changed meanwhile wait (`pending`)
+  // and apply then; the denoiser's apply to the picture at once.
+
+  /** Settings waiting for the next picture. @type {ReturnType<typeof cleanRender> | null} */
+  let pendingSettings = null;
+  /** Looks waiting for the next picture. @type {Look[] | null} */
+  let pendingLooks = null;
+  /** Whether the canvas holds a picture (under way, done or stopped). */
+  const held = () => Boolean(job) || shows === 'rendering' || shows === 'done' || shows === 'stopped' || shows === 'compiling';
 
   // ---- The picture's size: the CSS box stays; the drawing buffer is the render's pixels.
 
@@ -253,8 +275,9 @@ export function createRenderer(canvas, hooks = {}) {
     const now = box().join('x');
     if (now === lastBox) return;
     lastBox = now;
-    // A new shape for the picture: whatever was rendered no longer fits it.
-    if (job || shows === 'done' || shows === 'stopped') stop();
+    // A picture held keeps its pixels (the page shows it whole, `object-fit`); the draft, drawn
+    // again, takes the new shape.
+    if (held()) return;
     draft();
   });
   sizes.observe(canvas);
@@ -262,7 +285,7 @@ export function createRenderer(canvas, hooks = {}) {
   // ---- The camera: orbiting, a view to fit, a lens; where it was left goes back to the app.
 
   controls.addEventListener('change', () => {
-    if (job) stop();
+    if (held()) return;
     draft();
   });
   controls.addEventListener('end', () => saveCamera());
@@ -466,6 +489,7 @@ export function createRenderer(canvas, hooks = {}) {
   /** The plain grey draft (only while nothing rendered is showing). */
   function draft() {
     if (job || lost) return;
+    task = 'drawing the draft';
     clearDenoised();
     if (!snap) {
       renderer.clear();
@@ -531,6 +555,7 @@ export function createRenderer(canvas, hooks = {}) {
     if (!job || lost) return;
     if (tracer.isCompiling) {
       report({ state: 'compiling', kind: job.kind });
+      task = 'compiling the shaders';
       tracer.renderSample();
       frame = requestAnimationFrame(tick);
       return;
@@ -541,6 +566,7 @@ export function createRenderer(canvas, hooks = {}) {
     }
     retile();
     const t0 = performance.now();
+    task = 'rendering';
     tracer.renderSample();
     fence = { sync: /** @type {WebGLSync} */ (gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)), t0 };
     gl.flush();
@@ -709,6 +735,7 @@ export function createRenderer(canvas, hooks = {}) {
     const target = tracer.target;
     const [w, h] = [target.width, target.height];
     report({ ...p, state: 'denoising' });
+    task = 'denoising';
     const moot = () => run !== denoiseRun;
     try {
       let by = /** @type {'oidn' | 'smooth'} */ ('smooth');
@@ -794,6 +821,53 @@ export function createRenderer(canvas, hooks = {}) {
     }
   }
 
+  /** Settings applied: the room, the camera, the light; the draft shows them. */
+  function applySettings(next) {
+    const before = settings;
+    settings = next;
+    // Only the denoiser's settings changed: the picture stays, re-blended at the new strength.
+    const changed = Object.keys(settings).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(settings[k]));
+    if (changed.every((k) => DENOISE_KEYS.includes(k))) {
+      // Another network: the picture denoised again with it; else re-blended.
+      if (changed.includes('denoiseModel') && clean && !job && lastPicture) denoise(lastPicture);
+      else if (clean) {
+        blend();
+        present();
+      }
+      return;
+    }
+    stop();
+    const roomChanged = ['wall', 'floor', 'ceiling'].some((k) => JSON.stringify(before[k]) !== JSON.stringify(settings[k]));
+    if (snap && roomChanged) buildRoom();
+    if (before.camera.lens !== settings.camera.lens && snap) {
+      // A new lens keeps what's framed: the camera moves to keep the same width in view.
+      const old = Math.tan(THREE.MathUtils.degToRad(lensFov(before.camera.lens) / 2));
+      const now = Math.tan(THREE.MathUtils.degToRad(lensFov(settings.camera.lens) / 2));
+      const off = camera.position.clone().sub(controls.target).multiplyScalar(old / now);
+      camera.position.copy(controls.target).add(off);
+      camera.fov = lensFov(settings.camera.lens);
+      clip();
+      controls.update();
+      saveCamera();
+    } else if (snap && (!settings.camera.position || before.camera.view !== settings.camera.view)) {
+      placeCamera();
+    }
+    applyLight();
+    draft();
+  }
+
+  /** What waited for the next picture, applied (before a Preview or Render, or a new view). */
+  function applyPending() {
+    const [next, looks] = [pendingSettings, pendingLooks];
+    pendingSettings = null;
+    pendingLooks = null;
+    if (looks) {
+      for (const [part, pair] of partMaterials) setLook(pair, looks[part] || { color: '#f2f2f2', opacity: 1 });
+      if (snap) snap.looks = looks;
+    }
+    if (next) applySettings(next);
+  }
+
   return {
     /**
      * Prepares a snapshot for rendering: every toolpath swept into solid beads, the fittings.
@@ -804,6 +878,13 @@ export function createRenderer(canvas, hooks = {}) {
      */
     async prepare(next, onStep = () => {}) {
       stop();
+      clearDenoised();
+      lastPicture = null;
+      // What waited applies (the looks come with the snapshot).
+      if (pendingSettings) settings = pendingSettings;
+      pendingSettings = null;
+      pendingLooks = null;
+      shows = 'empty';
       snap = null;
       if (fixture) {
         fixture.parent?.remove(fixture);
@@ -826,6 +907,7 @@ export function createRenderer(canvas, hooks = {}) {
       let triangles = 0;
       for (let k = 0; k < next.paths.length; k++) {
         onStep(`Beads ${k + 1}/${next.paths.length}`);
+        task = 'preparing';
         await nextFrame();
         const p = next.paths[k];
         const n = p.points.length / 3;
@@ -909,37 +991,26 @@ export function createRenderer(canvas, hooks = {}) {
      * @param {ReturnType<typeof cleanRender>} next
      */
     setSettings(next) {
-      const before = settings;
-      settings = cleanRender(next);
-      // Only the denoiser's settings changed: the picture stays, re-blended at the new strength.
-      const changed = Object.keys(settings).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(settings[k]));
-      if (changed.every((k) => ['denoise', 'denoiseStrength', 'denoiseDetail', 'denoiseModel'].includes(k))) {
-        // Another network: the picture denoised again with it; else re-blended.
-        if (changed.includes('denoiseModel') && clean && !job && lastPicture) denoise(lastPicture);
-        else if (clean) {
-          blend();
-          present();
+      const incoming = cleanRender(next);
+      if (held()) {
+        // The denoiser's settings apply to the picture now; the rest wait for the next one.
+        const base = pendingSettings || settings;
+        const changed = Object.keys(incoming).filter((k) => JSON.stringify(base[k]) !== JSON.stringify(incoming[k]));
+        const now = changed.filter((k) => DENOISE_KEYS.includes(k));
+        if (now.length) {
+          const before = settings;
+          settings = { ...settings, ...Object.fromEntries(now.map((k) => [k, incoming[k]])) };
+          if (before.denoiseModel !== settings.denoiseModel && clean && !job && lastPicture) denoise(lastPicture);
+          else if (clean) {
+            blend();
+            present();
+          }
         }
+        if (changed.some((k) => !DENOISE_KEYS.includes(k)) || pendingSettings) pendingSettings = incoming;
+        report(lastReport);
         return;
       }
-      stop();
-      const roomChanged = ['wall', 'floor', 'ceiling'].some((k) => JSON.stringify(before[k]) !== JSON.stringify(settings[k]));
-      if (snap && roomChanged) buildRoom();
-      if (before.camera.lens !== settings.camera.lens && snap) {
-        // A new lens keeps what's framed: the camera moves to keep the same width in view.
-        const old = Math.tan(THREE.MathUtils.degToRad(lensFov(before.camera.lens) / 2));
-        const now = Math.tan(THREE.MathUtils.degToRad(lensFov(settings.camera.lens) / 2));
-        const off = camera.position.clone().sub(controls.target).multiplyScalar(old / now);
-        camera.position.copy(controls.target).add(off);
-        camera.fov = lensFov(settings.camera.lens);
-        clip();
-        controls.update();
-        saveCamera();
-      } else if (snap && (!settings.camera.position || before.camera.view !== settings.camera.view)) {
-        placeCamera();
-      }
-      applyLight();
-      draft();
+      applySettings(incoming);
     },
 
     /**
@@ -947,15 +1018,46 @@ export function createRenderer(canvas, hooks = {}) {
      * @param {Look[]} looks
      */
     setLooks(looks) {
-      stop();
+      if (held()) {
+        pendingLooks = looks;
+        report(lastReport);
+        return;
+      }
       for (const [part, pair] of partMaterials) setLook(pair, looks[part] || { color: '#f2f2f2', opacity: 1 });
       if (snap) snap.looks = looks;
       draft();
     },
 
+    /**
+     * Throws the picture away (a render under way stops): back to the draft, with whatever
+     * settings and looks waited, the camera free again.
+     */
+    discard() {
+      stop();
+      clearDenoised();
+      lastPicture = null;
+      shows = 'draft';
+      applyPending();
+      sizeFor(0);
+      draft();
+    },
+
+    /** Whether there's a picture held (under way, done or stopped). */
+    get held() {
+      return held();
+    },
+
+    /** Whether settings or looks wait for the next picture. */
+    get pending() {
+      return Boolean(pendingSettings || pendingLooks);
+    },
+
     /** Frames the lamp again from the view set (forgets where the camera was left). */
     fit() {
       stop();
+      clearDenoised();
+      shows = 'draft';
+      applyPending();
       fit(settings.camera.view);
       saveCamera();
       draft();
@@ -970,6 +1072,9 @@ export function createRenderer(canvas, hooks = {}) {
       if (!snap || lost) return;
       stop();
       clearDenoised();
+      // The picture before is let go; what waited for this one applies.
+      shows = 'draft';
+      applyPending();
       const q = kind === 'final' ? settings.final : settings.preview;
       sizeFor(q.size);
       applyLight();
@@ -979,6 +1084,7 @@ export function createRenderer(canvas, hooks = {}) {
         // each time without clearing the last time's: cleared here, or a second scene keeps the
         // first one's materials on its meshes.
         /** @type {any} */ (tracer)._generator?.geometry?.clearGroups?.();
+        task = 'loading the scene onto the GPU';
         tracer.setScene(scene, camera);
         sceneDirty = false;
       } else {

@@ -386,3 +386,16 @@ test("the Render's batch plan in a project file: this project's setups, recipes 
   assert.deepEqual(setupsOfPlan({ sources: [], setups: [{ name: 'x', render: {}, recipe: { source: 3 } }] }, [], 1), [], 'a recipe that is not there');
   assert.deepEqual(setupsOfPlan('nonsense', [], 1), []);
 });
+
+test("the Render's batch: setups moved up and down keep their places", async () => {
+  const { inBatchOrder, movedInBatch } = await import('../web/js/batch.js');
+  const setups = [{ id: 30 }, { id: 10 }, { id: 20 }];
+  assert.deepEqual(inBatchOrder(setups).map((s) => s.id), [10, 20, 30], 'as saved');
+  const moved = movedInBatch(setups, 30, -1);
+  const after = inBatchOrder(setups.map((s) => moved.find((m) => m.id === s.id) || s));
+  assert.deepEqual(after.map((s) => s.id), [10, 30, 20]);
+  assert.deepEqual(movedInBatch(after, 10, -1), [], 'the first goes no higher');
+  assert.deepEqual(movedInBatch(after, 20, 1), [], 'the last no lower');
+  // One saved later comes after the moved ones.
+  assert.deepEqual(inBatchOrder([...after, { id: 40 }]).map((s) => s.id), [10, 30, 20, 40]);
+});
