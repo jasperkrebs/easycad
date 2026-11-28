@@ -103,8 +103,9 @@ GPU watchdog. Other computers' pacing is unchanged.
 
 ## The camera
 
-The **Camera** group has where it looks from (Front, ¾, Side, Below, Above: **Fit** frames the lamp from
-there) and the **lens** (24 to 135 mm, as on a full-frame camera: a wide lens up close bends the
+The **Camera** group has where it looks from (Front, ¾, Side, Below, Above, Top: **Fit** frames the lamp from
+there; the view toolbar's 3D, Front, Side and Top snap the render's camera to ¾, Front, Side and
+Top, framed) and the **lens** (24 to 135 mm, as on a full-frame camera: a wide lens up close bends the
 lamp's lines, a long one far off keeps them straight). A new lens keeps the framing (the camera
 moves to keep the same width in view). Orbit, pan and zoom in the view as in the 3D view; where
 the camera is left is kept with the project (in its file too), so a render can be done again.
@@ -232,6 +233,28 @@ glass: solid in the picture, glowing when on. **PNG** saves the picture as it is
 
 On a phone it's slow (a lamp of a million triangles is fine on a laptop's GPU), but preparing,
 setting up and a small preview work anywhere.
+
+## The batch
+
+The Render tab's **Batch** group renders a list of setups one after another (overnight, say):
+
+- **Save current settings for batch** keeps one setup under the name typed (or the next free
+  number): the render's settings, the camera as it is, and the project as it is now (its beads
+  where the assembly row has them, the parts' looks, the fittings, hidden parts left out). Then
+  anything can change: settings, the camera, the project itself (another recipe value, another
+  project), Prepare and Preview again, and save the next setup. Setups from different projects
+  can share a batch.
+- The setups are kept in the browser (IndexedDB, `web/js/batch.js`: the beads are too big for
+  localStorage), so they survive a reload; **×** takes one out.
+- **Batch render** prepares each setup, renders it at its Render size and samples, downloads the
+  picture as rendered, then denoises it and downloads that too (`batch-<start>-<name>.png` and
+  `…-denoised.png`, so a batch's pictures sort together in the downloads folder). The status line
+  says which setup it's on. A GPU reset retries the setup once (a Mac then takes smaller pieces),
+  and a setup that still fails is named at the end; the rest go on. **Stop** (or Stop batch)
+  stops the batch.
+- While it runs, the screen is kept on where the browser allows (Wake Lock): a sleeping screen or
+  a hidden tab stops the page drawing, and the render with it. Changes to the settings meanwhile
+  are kept for later and leave the batch alone. A browser may ask once to allow several downloads.
 
 ## How it's built
 

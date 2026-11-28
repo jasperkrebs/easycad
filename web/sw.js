@@ -14,6 +14,7 @@ const ASSETS = [
   './config.json',
   './js/agent.js',
   './js/app.js',
+  './js/batch.js',
   './js/beads.js',
   './js/chat.js',
   './js/chat-text.js',

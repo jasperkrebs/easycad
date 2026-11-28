@@ -357,6 +357,47 @@ async function centreSpread(page, url) {
     await page
       .waitForFunction(() => /stopped .*· (denoised|smoothed|not denoised)/.test(document.getElementById('renderStatus').textContent), null, { timeout: 600000 })
       .catch(async () => failures.push(`Stop: ${await page.textContent('#renderStatus')}`));
+
+    // The batch: two setups saved (the second after the toolbar's Top, which snaps the render's
+    // camera), then rendered in turn: each picture downloaded as rendered and denoised.
+    await page.evaluate(async () => {
+      await new Promise((resolve) => {
+        const req = indexedDB.deleteDatabase('easycad-batch');
+        req.onsuccess = req.onerror = req.onblocked = () => resolve(undefined);
+      });
+      const project = document.getElementById('projectName').textContent;
+      const all = JSON.parse(localStorage.getItem('easycad.customColors') || '{}');
+      all[project].render = { ...all[project].render, final: { size: 160, samples: 3 } };
+      localStorage.setItem('easycad.customColors', JSON.stringify(all));
+    });
+    const saveSetup = async (name) => {
+      await page.evaluate((n) => {
+        /** @type {HTMLInputElement} */ (document.getElementById('batchName')).value = n;
+        document.getElementById('batchSave').click();
+      }, name);
+      await page.waitForFunction((n) => document.getElementById('renderStatus').textContent === `Saved for the batch: ${n}`, name, { timeout: 30000 });
+    };
+    await saveSetup('front view');
+    await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('[data-view="top"]')).click());
+    const view = await page.evaluate(() => {
+      const project = document.getElementById('projectName').textContent;
+      return JSON.parse(localStorage.getItem('easycad.customColors'))[project].render.camera.view;
+    });
+    if (view !== 'top') failures.push(`the toolbar's Top didn't snap the render's camera (view ${view})`);
+    await saveSetup('top view');
+    await page.waitForFunction(() => document.querySelectorAll('#batchList .batch-setup').length === 2, null, { timeout: 30000 });
+    const names = [];
+    page.on('download', (d) => names.push(d.suggestedFilename()));
+    await page.evaluate(() => document.getElementById('batchRun').click());
+    await page
+      .waitForFunction(() => /^Batch: \d+ of 2 rendered/.test(document.getElementById('renderStatus').textContent), null, { timeout: 1200000 })
+      .catch(() => {});
+    const status = await page.textContent('#renderStatus');
+    await page.waitForTimeout(1000);
+    console.log(`batch: ${status} · ${names.join(', ')}`);
+    if (!/^Batch: 2 of 2 rendered$/.test(status)) failures.push(`batch: ${status}`);
+    const expected = ['front view.png', 'front view-denoised.png', 'top view.png', 'top view-denoised.png'];
+    if (names.length !== 4 || !expected.every((e, k) => names[k]?.startsWith('batch-') && names[k].endsWith(`-${e}`))) failures.push(`batch downloads: ${names.join(', ')}`);
   } catch (err) {
     failures.push(String(err.stack || err));
   } finally {

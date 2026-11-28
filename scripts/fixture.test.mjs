@@ -314,3 +314,15 @@ test('a wall sliced along the surface: the turns sit on each other along the wal
   assert.equal(t.below[i], 1);
   assert.ok(Math.hypot(t.aboveAt[4 * i], t.aboveAt[4 * i + 1], t.aboveAt[4 * i + 2]) < 0.1, 'right on top of it, along the wall');
 });
+
+test("the Render's batch: next names, file names that sort together, a setup's line", async () => {
+  const { nextBatchName, batchFileName, batchLine } = await import('../web/js/batch.js');
+  const { CAMERA_VIEWS } = await import('../web/js/fixture.js');
+  assert.equal(nextBatchName([]), '1');
+  assert.equal(nextBatchName([{ name: '1' }, { name: 'side' }, { name: '3' }]), '2');
+  const at = new Date(2026, 10, 27, 22, 5);
+  assert.equal(batchFileName(at, 'side, wall', 'rendered'), 'batch-2026-11-27-2205-side, wall.png');
+  assert.equal(batchFileName(at, 'a/b:c', 'denoised'), 'batch-2026-11-27-2205-a-b-c-denoised.png');
+  assert.equal(batchFileName(at, '  ', 'rendered'), 'batch-2026-11-27-2205-render.png');
+  assert.equal(batchLine({ project: 'Lamp', render: { final: { size: 3000, samples: 500 }, light: false, camera: { view: 'top' } } }, CAMERA_VIEWS), 'Lamp · 3000 px · 500 spp · light off · Top');
+});

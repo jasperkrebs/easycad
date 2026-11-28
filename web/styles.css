@@ -2264,3 +2264,33 @@ body[data-render] .view-legend {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* The Render tab's batch: one line per saved setup (its name, what it is, a button to take it out). */
+.batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.batch-list:empty {
+  display: none;
+}
+.batch-setup {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card2);
+  font-size: 13px;
+}
+.batch-setup span {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.batch-remove {
+  min-width: 32px;
+}

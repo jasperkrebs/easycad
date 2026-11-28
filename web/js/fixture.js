@@ -386,6 +386,8 @@ export const CAMERA_VIEWS = {
   side: { label: 'Side', dir: [1, 0.06, 0] },
   below: { label: 'Below', dir: [0, -0.6, 0.8] },
   above: { label: 'Above', dir: [0, 0.65, 0.76] },
+  // Straight down (a hair off, so the camera's up stays defined).
+  top: { label: 'Top', dir: [0, 1, 0.002] },
 };
 
 /**

@@ -9,6 +9,18 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+## 2026-11-27: the Render's batch; the view buttons snap its camera (claude/lampshade-light-render-wcvx6x)
+
+- Render tab → **Batch**: save the current settings (camera too) and the project as it is as a
+  named setup; **Batch render** prepares, renders, downloads (as rendered and denoised) each in
+  turn. Setups in IndexedDB (`web/js/batch.js`); Wake Lock keeps the screen on; a GPU reset
+  retries a setup once. `docs/rendering.md` "The batch".
+- The view toolbar's 3D / Front / Side / Top (and Fit) work in the Render view: they snap the
+  render's camera (a new straight-down **Top** view). 
+- Tests: `scripts/fixture.test.mjs` (names), `scripts/render-test.cjs` (two setups, Top snapped,
+  four downloads).
+- Open: the batch isn't a command (the render isn't one yet); the agent can't fill it.
+
 ## 2026-11-27: the Render on a Mac learns from its GPU resets (claude/lampshade-light-render-wcvx6x)
 
 - The owner's Mac reset its GPU even in Previews. On a Mac only, each reset during a render
