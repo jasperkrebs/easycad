@@ -214,11 +214,13 @@ async function centreSpread(page, url) {
     // software: small pictures and few samples.
     await page.click('#viewRender');
     await page.waitForFunction(() => !document.getElementById('render').hidden, null, { timeout: 5000 });
-    const quick = { preview: { size: SIZE, samples: SAMPLES }, final: { size: SIZE, samples: 512 }, bounces: 12 };
+    // The Fast denoiser (the Detailed one, the large network, is slow on a software GPU: one
+    // small scene has it).
+    const quick = { preview: { size: SIZE, samples: SAMPLES }, final: { size: SIZE, samples: 512 }, bounces: 12, denoiseModel: 'fast' };
     const scenes = [
       { name: 'lampshade-pla-white', template: 'lampshade', project: 'Lampshade', part: 'path', look: { color: '#f4f1ea', opacity: 1, material: { plastic: 'pla' } }, render: { light: true } },
       { name: 'lampshade-petg-frosted', template: 'lampshade', project: 'Lampshade', part: 'path', look: { color: '#f6efe2', opacity: 0.4, material: { plastic: 'petg-frosted' } }, render: { light: true, wall: { on: true, distance: 250 }, floor: { on: true, distance: 400 } } },
-      { name: 'lamp-pc-amber-below', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#ffb347', opacity: 0.25, material: { plastic: 'pc' } }, render: { light: true, camera: { view: 'below', lens: 35, position: null, target: null } } },
+      { name: 'lamp-pc-amber-below', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#ffb347', opacity: 0.25, material: { plastic: 'pc' } }, render: { light: true, denoiseModel: 'detailed', camera: { view: 'below', lens: 35, position: null, target: null } } },
       { name: 'lamp-silk-gold-off', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#c9a227', opacity: 1, material: { plastic: 'pla-silk' } }, render: { light: false, camera: { view: 'three-quarter', lens: 50, position: null, target: null }, wall: { on: true, distance: 300 } } },
       // Wall, floor and ceiling all on, the camera above the ceiling: a cutaway (the lamp shows).
       { name: 'lamp-room-above', template: 'lamp', project: 'Lamp', part: 'main', look: { color: '#f4f1ea', opacity: 0.5, material: { plastic: 'petg-frosted' } }, render: { light: true, camera: { view: 'above', lens: 50, position: null, target: null }, wall: { on: true, distance: 300 }, floor: { on: true, distance: 400 }, ceiling: { on: true, distance: 200 } }, lampShows: true },
@@ -398,6 +400,32 @@ async function centreSpread(page, url) {
     if (!/^Batch: 2 of 2 rendered$/.test(status)) failures.push(`batch: ${status}`);
     const expected = ['front view.png', 'front view-denoised.png', 'top view.png', 'top view-denoised.png'];
     if (names.length !== 4 || !expected.every((e, k) => names[k]?.startsWith('batch-') && names[k].endsWith(`-${e}`))) failures.push(`batch downloads: ${names.join(', ')}`);
+
+    // The plan goes with the project file: saved, the batch emptied, the file opened (as on
+    // another computer: no beads, made again from the recipe), rendered again.
+    const [saved] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.evaluate(() => document.getElementById('saveProject').click())]);
+    const projectFile = await saved.path();
+    const text = fs.readFileSync(projectFile, 'utf8');
+    if (!/^#~ batch \{.*"front view".*"top view"/m.test(text)) failures.push('the saved project file has no batch plan');
+    await page.evaluate(async () => {
+      await new Promise((resolve) => {
+        const req = indexedDB.deleteDatabase('easycad-batch');
+        req.onsuccess = req.onerror = req.onblocked = () => resolve(undefined);
+      });
+    });
+    await page.setInputFiles('#projectFile', { name: 'with-plan.easycad', mimeType: 'text/plain', buffer: Buffer.from(text) });
+    await page.waitForFunction(() => /batch plan: 2 setups added/.test(document.getElementById('renderStatus').textContent), null, { timeout: 60000 }).catch(() => {});
+    const listed = await page.evaluate(() => document.querySelectorAll('#batchList .batch-setup').length);
+    if (listed !== 2) failures.push(`the opened file's plan: ${listed} setups listed, ${await page.textContent('#renderStatus')}`);
+    const before = names.length;
+    await page.evaluate(() => document.getElementById('batchRun').click());
+    await page
+      .waitForFunction(() => /^Batch: \d+ of 2 rendered/.test(document.getElementById('renderStatus').textContent), null, { timeout: 1200000 })
+      .catch(() => {});
+    const again = await page.textContent('#renderStatus');
+    await page.waitForTimeout(1000);
+    console.log(`batch from the file: ${again} · ${names.slice(before).join(', ')}`);
+    if (!/^Batch: 2 of 2 rendered$/.test(again) || names.length - before !== 4) failures.push(`batch from the file: ${again}, ${names.length - before} downloads`);
   } catch (err) {
     failures.push(String(err.stack || err));
   } finally {

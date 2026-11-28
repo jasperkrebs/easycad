@@ -139,6 +139,28 @@ export function withoutColors(text) {
   return { text: rest, colors: value };
 }
 
+/** The project file's line holding the Render's batch plan (its setups, without their beads). */
+const BATCH = '#~ batch ';
+
+/**
+ * The line that keeps the batch plan in a project file: each setup's name, render settings and
+ * what makes its picture (the recipe, looks, hidden parts, how far apart), recipes once each.
+ * @param {any} plan
+ */
+export function batchPlanLine(plan) {
+  return `${BATCH}${JSON.stringify(plan)}`;
+}
+
+/**
+ * A project file's batch plan (its `#~ batch` line), and the text without that line.
+ * @param {string} text
+ * @returns {{ text: string, plan: any }}
+ */
+export function withoutBatch(text) {
+  const { text: rest, value } = withoutLine(text, BATCH);
+  return { text: rest, plan: value && typeof value === 'object' && Array.isArray(value.setups) ? value : null };
+}
+
 /** The project file's line holding the printer's settings (a comment to the recipe). */
 const PRINTER = '#~ printer ';
 

@@ -9,14 +9,14 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
 import { foldout, layoutKey, renderSettings, settingRow } from './settings.js';
-import { colorsLine, fileNote, fingerprint, printerLine, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutPrinter, withoutValues } from './templates.js';
+import { batchPlanLine, colorsLine, fileNote, fingerprint, printerLine, projectOf, withPartsOf, withoutBatch, withoutColors, withoutFileNote, withoutPrinter, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, newProfile, printerFor, profileFrom, renderPrint, renderPrinterSettings, settingsOf } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
 import { CAMERA_VIEWS, cleanRender, fixtureOf, fixtureTakenOut, partsExtent } from './fixture.js';
 import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
-import { addBatchSetup, batchFileName, batchLine, batchSetups, nextBatchName, removeBatchSetup } from './batch.js';
+import { addBatchSetup, batchFileName, batchLine, batchPlanOf, batchSetups, nextBatchName, removeBatchSetup, setupsOfPlan } from './batch.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
 
@@ -1382,14 +1382,27 @@ async function openSketcher(data, name) {
  * Taken apart (the assembly row), they come apart too: the socket up past the highest shade,
  * the bulb down past the lowest.
  */
-function fixtureFor(result) {
+function fixtureFor(result, ctx = null) {
   if (!result) return null;
   const parts = sections(result);
-  const fx = fixtureOf(result.params, parts, customColors().hang);
-  if (!fx || !assembly.steps.length || !(assembly.u > 0)) return fx;
+  const fx = fixtureOf(result.params, parts, ctx ? ctx.colors.hang : customColors().hang);
+  const steps = ctx ? assemblySteps(result) : assembly.steps;
+  const u = ctx ? ctx.u : assembly.u;
+  if (!fx || !steps.length || !(u > 0)) return fx;
   // Where the shades are, taken apart as far as they are.
-  const offsets = new Map([...assemblyMotion(assembly.steps, assembly.u)].map(([name, m]) => [name, m.dz]));
-  return fixtureTakenOut(fx, assembly.u, partsExtent(parts, offsets));
+  const offsets = new Map([...assemblyMotion(steps, u)].map(([name, m]) => [name, m.dz]));
+  return fixtureTakenOut(fx, u, partsExtent(parts, offsets));
+}
+
+/**
+ * What a render's picture is made of besides the recipe: the parts' looks and the way it hangs
+ * (the custom colours' parts and hang), the parts hidden, how far it's taken apart. Now, or (a
+ * batch setup's) as saved.
+ * @returns {{ colors: { parts: Record<string, any>, hang?: string }, hidden: string[], u: number }}
+ */
+function renderContext() {
+  const c = customColors();
+  return { colors: { parts: c.parts, hang: c.hang }, hidden: [...hiddenParts], u: assembly.u };
 }
 
 const renderView = {
@@ -1444,11 +1457,12 @@ function renderLooks(result) {
  * the axis and moved along it, as the 3D view shows it; the socket and bulb stay), the parts'
  * looks and the fittings.
  */
-function renderSnapshot(result) {
+function renderSnapshot(result, ctx = null) {
   const { points, starts, widths, heights, ups, aids } = result.paths;
   const owner = result.parts?.paths || [];
   const prints = printsOf(result);
-  const motion = assemblyMotion(assembly.steps, assembly.u);
+  const hidden = ctx ? new Set(ctx.hidden) : hiddenParts;
+  const motion = ctx ? assemblyMotion(assemblySteps(result), ctx.u) : assemblyMotion(assembly.steps, assembly.u);
   /** Turns (degrees, counter-clockwise from above) and lifts (mm) x, y, z triples in place. */
   const move = (xyz, angle, dz, lift) => {
     const [c, s] = [Math.cos((angle * Math.PI) / 180), Math.sin((angle * Math.PI) / 180)];
@@ -1462,7 +1476,7 @@ function renderSnapshot(result) {
   const paths = [];
   for (let k = 0; k + 1 < starts.length; k++) {
     const part = owner[k] ?? -1;
-    if (part < 0 || !prints[part] || hiddenParts.has(prints[part].name)) continue;
+    if (part < 0 || !prints[part] || hidden.has(prints[part].name)) continue;
     const [a, b] = [starts[k], starts[k + 1]];
     if (b - a < 2) continue;
     const w = widths ? widths.slice(a, b) : new Float32Array(b - a).fill(1);
@@ -1477,7 +1491,8 @@ function renderSnapshot(result) {
     }
     paths.push({ points: pts, widths: w, heights: h, ups: up, part });
   }
-  return { paths, looks: renderLooks(result), fixture: fixtureFor(result) };
+  const looks = ctx ? prints.map((p, i) => partLook({ parts: {}, ...ctx.colors }, p.name, i)) : renderLooks(result);
+  return { paths, looks, fixture: fixtureFor(result, ctx) };
 }
 
 /** "1 min 05 s", "12 s". */
@@ -1698,6 +1713,9 @@ const renderRow = (label, control) => el('div', { className: 'setting text' }, [
 /** What the Render tab was last built for (its parts), so it's rebuilt only when they change. */
 let renderPanelKey = '';
 
+/** The denoiser's networks: [key, label]. */
+const DENOISERS = [['detailed', 'Detailed (slower)'], ['fast', 'Fast']];
+
 /** Where the Render's wall distance is measured from: [key, label]. */
 const WALL_FROM = [['axis', "the lamp's axis"], ['back', "the lamp's back"]];
 
@@ -1775,6 +1793,8 @@ function renderPanel() {
       [renderParam('bounces', 'Light bounces', 'number', { min: 1, max: 32, step: 1 }), r.bounces],
       [renderParam('denoise', 'Denoise by itself (when done or stopped)', 'toggle'), r.denoise],
       [renderParam('denoiseStrength', 'Denoise strength', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(r.denoiseStrength)],
+      [renderParam('denoiseDetail', 'Denoise: detail kept', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(r.denoiseDetail)],
+      [renderParam('denoiseModel', 'Denoiser', 'choice', { choices: DENOISERS.map(([, label]) => label) }), DENOISERS.find(([k]) => k === r.denoiseModel)?.[1]],
       [renderParam('previewSize', 'Preview: longer side', 'number', { unit: 'px', min: 160, max: 4096, step: 1 }), r.preview.size],
       [renderParam('previewSamples', 'Preview: samples', 'number', { unit: 'spp', min: 1, max: 4096, step: 1 }), r.preview.samples],
       [renderParam('finalSize', 'Render: longer side', 'number', { unit: 'px', min: 160, max: 4096, step: 1 }), r.final.size],
@@ -1833,6 +1853,18 @@ async function refreshBatch() {
   document.getElementById('batchRun')?.toggleAttribute('disabled', !setups.length && !batch.running);
 }
 
+/** A project file's batch plan, added to the batch (the setups it has already left out). */
+async function addBatchPlan(plan) {
+  try {
+    const fresh = setupsOfPlan(plan, await batchSetups(), Date.now());
+    for (const setup of fresh) await addBatchSetup(setup);
+    if (fresh.length) renderStatus(`The file's batch plan: ${fresh.length} ${fresh.length === 1 ? 'setup' : 'setups'} added`);
+  } catch {
+    // no IndexedDB here: the plan stays in the file
+  }
+  refreshBatch();
+}
+
 /** Saves the render's settings (the camera too) and the project as it is now as a batch setup. */
 async function saveBatchSetup() {
   if (!state.last) return;
@@ -1840,7 +1872,8 @@ async function saveBatchSetup() {
   try {
     const setups = await batchSetups();
     const name = field.value.trim() || nextBatchName(setups);
-    await addBatchSetup({ id: Date.now(), name, project: projectName(), render: customColors().render, snapshot: renderSnapshot(state.last), saved: Date.now() });
+    const recipe = { source: await currentSource(), alongWall: Boolean(state.alongWall), ...renderContext() };
+    await addBatchSetup({ id: Date.now(), name, project: projectName(), render: customColors().render, snapshot: renderSnapshot(state.last), saved: Date.now(), recipe });
     field.value = '';
     renderStatus(`Saved for the batch: ${name}`);
   } catch (err) {
@@ -1880,12 +1913,24 @@ async function downloadRender(name) {
  * @param {Date} started
  */
 async function renderSetup(setup, started) {
+  // From a project file (another computer's plan): its beads made from its recipe here.
+  let snapshot = setup.snapshot;
+  if (!snapshot && setup.recipe) {
+    renderStatus(`${batch.label}Making the project`);
+    let result = null;
+    // (A run of the project's own can replace this one: tried again.)
+    for (let k = 0; k < 5 && !result; k++) result = await engine.evaluate(setup.recipe.source, {}, 'final', null, setup.recipe.alongWall);
+    if (!result) throw new Error('the engine was busy');
+    if (result.diagnostics.some((d) => d.severity === 'error')) throw new Error('its recipe has a problem');
+    snapshot = renderSnapshot(result, setup.recipe);
+  }
+  if (!snapshot) throw new Error('nothing to render');
   const api = await renderApi();
   renderView.busy = true;
   try {
     // Denoised below, after the picture as rendered is saved.
     api.setSettings({ ...setup.render, denoise: false });
-    await api.prepare(setup.snapshot, (what) => renderStatus(`${batch.label}Preparing · ${what}`));
+    await api.prepare(snapshot, (what) => renderStatus(`${batch.label}Preparing · ${what}`));
   } finally {
     renderView.busy = false;
   }
@@ -2033,6 +2078,10 @@ function onRenderSetting(setting, value) {
       return changeRender({ denoise: value });
     case 'denoiseStrength':
       return changeRender({ denoiseStrength: value / 100 });
+    case 'denoiseDetail':
+      return changeRender({ denoiseDetail: value / 100 });
+    case 'denoiseModel':
+      return changeRender({ denoiseModel: DENOISERS.find(([, label]) => label === value)?.[0] ?? 'detailed' });
     case 'previewSize':
       return changeRender({ preview: { ...r.preview, size: value } });
     case 'previewSamples':
@@ -2307,7 +2356,8 @@ function wire() {
       if (sketch && isSketcherSettings(sketch)) {
         await openSketcher(sketch, picked?.name || 'thread-pendant');
       } else if (text !== null) {
-        const { text: withPrinter, colors } = withoutColors(withoutFileNote(text));
+        const { text: withBatch, colors } = withoutColors(withoutFileNote(text));
+        const { text: withPrinter, plan } = withoutBatch(withBatch);
         const { text: recipe, printer } = withoutPrinter(withPrinter);
         // The printer's settings are the file's (a file without them: the printer's defaults).
         state.profiles = printerSettingsOf(printer);
@@ -2317,6 +2367,7 @@ function wire() {
         setSaveName((picked?.name || '').replace(/\.easycad$/i, ''));
         autosave();
         checkTemplate();
+        if (plan) await addBatchPlan(plan);
       }
     } catch (err) {
       showSettingsError(`Could not open the project: ${err.message || err}`);
@@ -2327,7 +2378,9 @@ function wire() {
     const site = new URL('.', location.href).href;
     const colors = colorsToSave();
     const printer = printerLine(state.printer, settingsOf(state.printer, state.profile));
-    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${printer}\n${colors ? `${colorsLine(colors)}\n` : ''}\n${await currentSource()}`);
+    // The Render's batch plan goes with it (this project's setups), to render on another computer.
+    const plan = batchPlanOf(await batchSetups().catch(() => []), projectName());
+    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${printer}\n${colors ? `${colorsLine(colors)}\n` : ''}${plan ? `${batchPlanLine(plan)}\n` : ''}\n${await currentSource()}`);
     state.openedValues = { ...state.values };
     state.unsaved = false;
     autosave();

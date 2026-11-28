@@ -9,6 +9,20 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+## 2026-11-28: a kinder denoiser; the batch plan in the project file (claude/lampshade-light-render-wcvx6x)
+
+- Fixed: the denoise strength cleared the picture again (the renderer didn't keep where the
+  camera was moved, so every change looked like a new camera). Strength and the new detail
+  setting re-blend at once again.
+- The denoiser: fireflies brought down before the network (they made blotches and a brighter
+  picture); **Detailed** (the large Open Image Denoise network, 7.7 MB, the default) or
+  **Fast**; **Denoise: detail kept** adds back what the network took away, smoothed
+  (`web/js/denoise-prep.js`).
+- The project file keeps the Render's batch plan (`#~ batch`: setups without beads, made again
+  from their recipes on the computer that opens it).
+- Tests: `scripts/fixture.test.mjs` (fireflies, detail, the plan), `scripts/render-test.cjs`
+  (the plan through a saved file, rendered from it).
+
 ## 2026-11-27: the Render's batch; the view buttons snap its camera (claude/lampshade-light-render-wcvx6x)
 
 - Render tab → **Batch**: save the current settings (camera too) and the project as it is as a

@@ -15,7 +15,10 @@ const STORE = 'setups';
  *   render: any,
  *   snapshot: any,
  *   saved: number,
+ *   recipe?: { source: string, alongWall: boolean, hidden: string[], u: number, colors: any },
  * }} BatchSetup
+ * `snapshot`: the beads as saved (on this computer); `recipe`: what makes them (the project
+ * file's plan carries only this), with the parts' looks and the way it hangs.
  */
 
 /** @returns {Promise<IDBDatabase>} */
@@ -103,4 +106,61 @@ export function batchLine(setup, views) {
     views[r.camera?.view]?.label ?? '',
   ];
   return parts.filter(Boolean).join(' · ');
+}
+
+/**
+ * The batch plan a project file keeps: its setups (those saved from this project) without their
+ * beads, each recipe written once.
+ * @param {BatchSetup[]} setups
+ * @param {string} project
+ */
+export function batchPlanOf(setups, project) {
+  /** @type {string[]} */
+  const sources = [];
+  const planned = [];
+  for (const s of setups) {
+    if (s.project !== project || !s.recipe || typeof s.recipe.source !== 'string') continue;
+    let k = sources.indexOf(s.recipe.source);
+    if (k < 0) k = sources.push(s.recipe.source) - 1;
+    const { source, ...rest } = s.recipe;
+    planned.push({ name: s.name, project: s.project, render: s.render, recipe: { ...rest, source: k } });
+  }
+  return planned.length ? { sources, setups: planned } : null;
+}
+
+/**
+ * The setups of a file's batch plan, ready to add (no beads: the batch makes them from the
+ * recipe), each with an id after `firstId`. Setups the batch has already (same name, project,
+ * settings and recipe) are left out. Anything unreadable is left out.
+ * @param {any} plan
+ * @param {BatchSetup[]} have
+ * @param {number} firstId
+ * @returns {BatchSetup[]}
+ */
+export function setupsOfPlan(plan, have, firstId) {
+  if (!plan || !Array.isArray(plan.setups) || !Array.isArray(plan.sources)) return [];
+  const same = (a, b) => a.name === b.name && a.project === b.project && JSON.stringify(a.render) === JSON.stringify(b.render) && JSON.stringify(a.recipe) === JSON.stringify(b.recipe);
+  const out = [];
+  for (const p of plan.setups) {
+    const source = plan.sources[p?.recipe?.source];
+    if (typeof source !== 'string' || typeof p.name !== 'string' || !p.render || typeof p.render !== 'object') continue;
+    const r = p.recipe;
+    const setup = {
+      id: firstId + out.length,
+      name: p.name,
+      project: typeof p.project === 'string' ? p.project : '',
+      render: p.render,
+      snapshot: null,
+      saved: Date.now(),
+      recipe: {
+        source,
+        alongWall: Boolean(r.alongWall),
+        hidden: Array.isArray(r.hidden) ? r.hidden.filter((x) => typeof x === 'string') : [],
+        u: Number.isFinite(Number(r.u)) ? Math.min(1, Math.max(0, Number(r.u))) : 0,
+        colors: r.colors && typeof r.colors === 'object' ? r.colors : { parts: {} },
+      },
+    };
+    if (!have.some((h) => same(h, setup)) && !out.some((o) => same(o, setup))) out.push(setup);
+  }
+  return out;
 }

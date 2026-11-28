@@ -484,6 +484,10 @@ conversation {                               # optional; the engine ignores it
   printer, or an unreadable line, is left out). Nothing is kept per device: a new project from a
   template (which has no such line) starts from the printer's defaults, and the project left
   open keeps its own when the page reloads.
+- **The Render's batch plan** (28 Nov 2026): a comment line `#~ batch {"sources": […],
+  "setups": […]}`, the batch setups saved from this project, each with its render settings and
+  the recipe (with its values) that makes its picture (`docs/rendering.md`, "The batch"). The
+  engine ignores it; opening the file adds the setups to the Render's batch.
 - **"Save settings"** writes only the values (a small `.json`, like EasyGCode). "Load settings"
   puts them back into the open project.
 
