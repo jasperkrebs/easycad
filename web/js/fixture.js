@@ -363,6 +363,13 @@ export const RENDER_DEFAULTS = {
   denoise: false,
   denoiseStrength: 1,
   /**
+   * How much of what the denoiser took away comes back, smoothed (0: none; the light a
+   * see-through shade's layer lines and patterns bend, which its guides don't show), and which
+   * network: 'detailed' (Open Image Denoise's large one) or 'fast'.
+   */
+  denoiseDetail: 0.35,
+  denoiseModel: 'detailed',
+  /**
    * The camera: where it looks from (`view`, for Fit), its lens (mm, as on a full-frame camera),
    * and where it was left (the scene's metres; null: fitted).
    */
@@ -386,6 +393,8 @@ export const CAMERA_VIEWS = {
   side: { label: 'Side', dir: [1, 0.06, 0] },
   below: { label: 'Below', dir: [0, -0.6, 0.8] },
   above: { label: 'Above', dir: [0, 0.65, 0.76] },
+  // Straight down (a hair off, so the camera's up stays defined).
+  top: { label: 'Top', dir: [0, 1, 0.002] },
 };
 
 /**
@@ -420,6 +429,8 @@ export function cleanRender(raw) {
     final: quality(r.final, D.final),
     denoise: typeof r.denoise === 'boolean' ? r.denoise : D.denoise,
     denoiseStrength: num(r.denoiseStrength, 0, 1, D.denoiseStrength),
+    denoiseDetail: num(r.denoiseDetail, 0, 1, D.denoiseDetail),
+    denoiseModel: r.denoiseModel === 'fast' ? 'fast' : D.denoiseModel,
     camera: {
       view: Object.hasOwn(CAMERA_VIEWS, String(cam.view)) ? String(cam.view) : D.camera.view,
       lens: num(cam.lens, 10, 300, D.camera.lens),

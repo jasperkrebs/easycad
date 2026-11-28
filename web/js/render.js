@@ -25,6 +25,13 @@ import { touching } from './wall.js';
 import { fixtureGroup } from './fixture-mesh.js';
 import { CAMERA_VIEWS, CAP_SHOWS, RENDER_DEFAULTS, bulbCentre, cleanRender, kelvinColor } from './fixture.js';
 import { physicalOf } from './materials.js';
+import { blendDenoised, takenDetail, tameFireflies } from './denoise-prep.js';
+
+/**
+ * The denoiser's networks (Open Image Denoise 2.3's weights for clean albedo and normal guides):
+ * 'detailed' the large one (7.7 MB, slower, keeps fine detail better), 'fast' the standard one.
+ */
+const UNETS = { detailed: 'rt_hdr_calb_cnrm_large.tza', fast: 'rt_hdr_calb_cnrm.tza' };
 
 /** The recipe's millimetres in the scene's metres. */
 const MM = 0.001;
@@ -43,6 +50,31 @@ const DISPATCH_MS = 30;
 const MAX_TILES = 16;
 /** A Mac's (or iPhone's, iPad's) GPU resets a page whose GPU work runs long sooner than others. */
 const APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+/** On a Mac, up to this many tiles a side (the pieces smaller still, when its GPU has reset). */
+const MAX_TILES_APPLE = 32;
+/**
+ * A Mac's care: its pieces of GPU work are this many times smaller than the Mac's usual. Each
+ * reset of its GPU makes them 4 × smaller (remembered in this browser), each finished picture a
+ * little larger again. Other computers never use it.
+ */
+const CARE_KEY = 'easycad.renderCare';
+const CARE_MAX = 64;
+function care() {
+  try {
+    const c = Number(localStorage.getItem(CARE_KEY));
+    return Number.isFinite(c) && c >= 1 ? Math.min(CARE_MAX, c) : 1;
+  } catch {
+    return 1;
+  }
+}
+/** @param {number} c */
+function setCare(c) {
+  try {
+    localStorage.setItem(CARE_KEY, String(Math.min(CARE_MAX, Math.max(1, c))));
+  } catch {
+    // no storage: the care starts at 1 each time
+  }
+}
 
 /** Thrown when the browser has no working WebGL 2 context to give (`code` 'no-gl'). */
 export class NoGraphicsError extends Error {
@@ -108,6 +140,8 @@ export function createRenderer(canvas, hooks = {}) {
   let lost = false;
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
+    // A Mac whose GPU reset while rendering: smaller pieces from now on.
+    if (APPLE && job) setCare(care() * 4);
     lost = true;
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
@@ -130,7 +164,7 @@ export function createRenderer(canvas, hooks = {}) {
    * the path tracer's edge-aware smoothing where there's no WebGPU; and whether it's showing.
    * Open Image Denoise's keeps the picture as rendered and as denoised (floats), to blend by the
    * denoise strength.
-   * @type {{ texture: THREE.DataTexture | null, by: 'oidn' | 'smooth', on: boolean, last: Progress, raw?: Float32Array, den?: Float32Array } | null}
+   * @type {{ texture: THREE.DataTexture | null, by: 'oidn' | 'smooth', on: boolean, last: Progress, raw?: Float32Array, den?: Float32Array, taken?: Float32Array } | null}
    */
   let clean = null;
   /** The last finished or stopped picture (what Denoise works on). */
@@ -139,10 +173,8 @@ export function createRenderer(canvas, hooks = {}) {
   let denoiseRun = 0;
   /** @type {(() => void) | null} */
   let denoiseAbort = null;
-  /** @type {Promise<any> | null} */
-  let unetLoading = null;
-  /** @type {any} */
-  let unet = null;
+  /** The networks, each loaded once when first used. @type {Map<string, Promise<any>>} */
+  const unets = new Map();
 
   // Materials: the printed parts' (by part: the beads, and the faces inside the wall), the
   // fittings', the room's.
@@ -236,7 +268,12 @@ export function createRenderer(canvas, hooks = {}) {
   controls.addEventListener('end', () => saveCamera());
 
   function saveCamera() {
-    hooks.onCamera?.({ position: camera.position.toArray(), target: controls.target.toArray() });
+    const where = { position: camera.position.toArray(), target: controls.target.toArray() };
+    // Kept here too: the app saves it with the project and hands the settings back on the next
+    // change; not kept here, every change (the denoise strength too) looked like a new camera,
+    // and stopped the render and cleared the picture.
+    settings = cleanRender({ ...settings, camera: { ...settings.camera, ...where } });
+    hooks.onCamera?.(where);
   }
 
   function lensFov(lens) {
@@ -484,7 +521,7 @@ export function createRenderer(canvas, hooks = {}) {
     if (!lastMs || Math.abs(tracer.samples - Math.round(tracer.samples)) > 1e-6) return;
     const n = tracer.tiles.x;
     let next = n;
-    if (lastMs > 2 * DISPATCH_MS) next = Math.min(MAX_TILES, Math.ceil(n * Math.sqrt(lastMs / DISPATCH_MS)));
+    if (lastMs > 2 * DISPATCH_MS) next = Math.min(APPLE ? MAX_TILES_APPLE : MAX_TILES, Math.ceil(n * Math.sqrt(lastMs / DISPATCH_MS)));
     else if (lastMs < DISPATCH_MS * 0.6 && n > 1) next = n - 1;
     if (next !== n) tracer.tiles.set(next, next);
   }
@@ -515,6 +552,7 @@ export function createRenderer(canvas, hooks = {}) {
       job = null;
       shows = 'done';
       const p = /** @type {Progress} */ ({ state: 'done', kind, samples, target: samples, width: size.x, height: size.y, seconds });
+      if (APPLE) setCare(care() * 0.85);
       report(p);
       lastPicture = p;
       if (settings.denoise) denoise(p);
@@ -552,10 +590,8 @@ export function createRenderer(canvas, hooks = {}) {
    */
   function blend() {
     if (!clean?.texture || !clean.raw || !clean.den) return;
-    const t = Math.min(1, Math.max(0, settings.denoiseStrength));
     const data = /** @type {Float32Array} */ (clean.texture.image.data);
-    const { raw, den } = clean;
-    for (let i = 0; i < data.length; i++) data[i] = raw[i] + (den[i] - raw[i]) * t;
+    blendDenoised(data, clean.raw, clean.den, clean.taken ?? null, settings.denoiseStrength, settings.denoiseDetail);
     clean.texture.needsUpdate = true;
   }
 
@@ -567,20 +603,24 @@ export function createRenderer(canvas, hooks = {}) {
     clean = null;
   }
 
-  /** The network, loaded once (its weights are 1.8 MB). */
+  /** The network the settings ask for, loaded once. */
   async function loadUnet() {
-    if (unet) return unet;
-    unetLoading ||= import('oidn-web').then(({ initUNetFromURL }) =>
-      // The weights for clean guides (calb, cnrm): the albedo and normals here are drawn, not path
-      // traced, so free of noise; told so, the network keeps the detail they show (the beads'
-      // round faces: the layer lines) instead of smoothing it away with the noise.
-      initUNetFromURL(new URL('../vendor/oidn-web/rt_hdr_calb_cnrm.tza', import.meta.url).href, undefined, { aux: true, hdr: true }),
-    );
+    const file = UNETS[settings.denoiseModel] || UNETS.detailed;
+    if (!unets.has(file)) {
+      unets.set(
+        file,
+        import('oidn-web').then(({ initUNetFromURL }) =>
+          // The weights for clean guides (calb, cnrm): the albedo and normals here are drawn, not
+          // path traced, so free of noise; told so, the network keeps the detail they show (the
+          // beads' round faces: the layer lines) instead of smoothing it away with the noise.
+          initUNetFromURL(new URL(`../vendor/oidn-web/${file}`, import.meta.url).href, undefined, { aux: true, hdr: true }),
+        ),
+      );
+    }
     try {
-      unet = await unetLoading;
-      return unet;
+      return await unets.get(file);
     } catch (err) {
-      unetLoading = null;
+      unets.delete(file);
       throw err;
     }
   }
@@ -679,6 +719,8 @@ export function createRenderer(canvas, hooks = {}) {
       let denRaw;
       /** @type {Float32Array | undefined} */
       let denOut;
+      /** @type {Float32Array | undefined} */
+      let taken;
       if ('gpu' in navigator) {
         try {
           const net = await loadUnet();
@@ -692,6 +734,9 @@ export function createRenderer(canvas, hooks = {}) {
             const v = color[i];
             color[i] = v > 0 ? Math.min(v, 65504) : 0;
           }
+          // Fireflies brought down first (denoise-prep.js): spread by the network, they made
+          // blotches and a brighter picture.
+          tameFireflies(color, w, h);
           const { albedo, normal } = renderAux(w, h);
           const input = { color: { data: color, width: w, height: h }, albedo, normal };
           const rgb = /** @type {{ data: Float32Array }} */ (await execute(net, input));
@@ -720,6 +765,7 @@ export function createRenderer(canvas, hooks = {}) {
           }
           denRaw = color;
           denOut = out;
+          taken = takenDetail(color, out, w, h);
           texture = new THREE.DataTexture(new Float32Array(out.length), w, h, THREE.RGBAFormat, THREE.FloatType);
           // Read texel by texel (and float textures can't always be filtered: one that can't
           // reads as black).
@@ -737,7 +783,7 @@ export function createRenderer(canvas, hooks = {}) {
         texture?.dispose();
         return;
       }
-      clean = { texture, by, on: true, last: p, raw: denRaw, den: denOut };
+      clean = { texture, by, on: true, last: p, raw: denRaw, den: denOut, taken };
       blend();
       present();
       report({ ...p, denoised: by, showing: true, ...(reason ? { denoiseError: reason } : {}) });
@@ -867,8 +913,10 @@ export function createRenderer(canvas, hooks = {}) {
       settings = cleanRender(next);
       // Only the denoiser's settings changed: the picture stays, re-blended at the new strength.
       const changed = Object.keys(settings).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(settings[k]));
-      if (changed.every((k) => k === 'denoise' || k === 'denoiseStrength')) {
-        if (clean) {
+      if (changed.every((k) => ['denoise', 'denoiseStrength', 'denoiseDetail', 'denoiseModel'].includes(k))) {
+        // Another network: the picture denoised again with it; else re-blended.
+        if (changed.includes('denoiseModel') && clean && !job && lastPicture) denoise(lastPicture);
+        else if (clean) {
           blend();
           present();
         }
@@ -944,8 +992,8 @@ export function createRenderer(canvas, hooks = {}) {
       // A see-through part's paths go on through it (up to the transmissive bounces): more work.
       const seeThrough = [...partMaterials.values()].some(([outer]) => outer.transmission > 0);
       const work = px.x * px.y * (settings.bounces + 2 + (seeThrough ? tracer.transmissiveBounces / 2 : 0));
-      const budget = phone ? DISPATCH.phone : APPLE ? DISPATCH.apple : DISPATCH.other;
-      const n = Math.min(MAX_TILES, Math.max(1, Math.ceil(Math.sqrt(work / budget))));
+      const budget = phone ? DISPATCH.phone : APPLE ? DISPATCH.apple / care() : DISPATCH.other;
+      const n = Math.min(APPLE ? MAX_TILES_APPLE : MAX_TILES, Math.max(1, Math.ceil(Math.sqrt(work / budget))));
       tracer.tiles.set(n, n);
       clearFence();
       tracer.reset();

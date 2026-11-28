@@ -95,10 +95,17 @@ the scene. (Safari, once a page has reset the GPU, keeps WebGL off for that page
 and opened again: the status line says to restart the browser.) If the GPU is reset anyway (the browser takes the render's graphics
 context away), the status line says so and Prepare starts afresh. The render asks the browser for the high-performance GPU (on a laptop with two).
 
+On a Mac (only), the render learns: each GPU reset during a render makes its pieces 4 × smaller
+from then on (remembered in the browser, `easycad.renderCare`, up to 64 ×), and each finished
+picture makes them a little larger again (× 0.85); a Mac may also cut a sample into up to 32 × 32
+tiles (others 16 × 16). Smaller pieces are slower (one piece a frame) but don't trip the Mac's
+GPU watchdog. Other computers' pacing is unchanged.
+
 ## The camera
 
-The **Camera** group has where it looks from (Front, ¾, Side, Below, Above: **Fit** frames the lamp from
-there) and the **lens** (24 to 135 mm, as on a full-frame camera: a wide lens up close bends the
+The **Camera** group has where it looks from (Front, ¾, Side, Below, Above, Top: **Fit** frames the lamp from
+there; the view toolbar's 3D, Front, Side and Top snap the render's camera to ¾, Front, Side and
+Top, framed) and the **lens** (24 to 135 mm, as on a full-frame camera: a wide lens up close bends the
 lamp's lines, a long one far off keeps them straight). A new lens keeps the framing (the camera
 moves to keep the same width in view). Orbit, pan and zoom in the view as in the 3D view; where
 the camera is left is kept with the project (in its file too), so a render can be done again.
@@ -145,13 +152,27 @@ finished picture.
   layer-line test (a frosted lamp at 640 px, 24 samples) the brightness changes about 4 times (3.8–4.5) more
   from row to row than from column to column once denoised: the lines, sharper than through the
   grain (1.1, grain is the same both ways).
+- **Fireflies first.** A path that finds the bulb through a lens of plastic now and then brings
+  back a pixel tens of times too bright: the display clips it to a white speck, but the network
+  spread its light round it, blotches and a picture brighter than it looks as rendered. Before
+  the network, a pixel brighter than 4 × all but one of its neighbours is brought down to that
+  (`web/js/denoise-prep.js`; an edge, the bulb's outline, has a bright neighbour and stays).
+- **Denoiser: Detailed** (the default) is Open Image Denoise's large network
+  (`rt_hdr_calb_cnrm_large`, 7.7 MB, loaded the first time): slower, it keeps fine detail
+  better. **Fast** is the standard one (1.8 MB). Changing it denoises the picture again.
+- **Denoise: detail kept** (35 % by default): what the guides don't show, the network takes for
+  noise: the light a see-through shade's layer lines and a woven pattern bend, the glints along
+  the beads. What it took away, smoothed over a few pixels (the grain mostly cancels there, a
+  line several pixels long stays), is added back by this much. 0 %: the network's picture.
 - **Denoise strength** (Quality) blends the picture as rendered back in: 100 % all denoised,
-  less keeps some grain and every bit of detail. It changes the picture at once, without
-  rendering again.
+  less keeps some grain and every bit of detail. Strength and detail change the picture at once,
+  without rendering again. (They didn't for a while: moving the camera kept its place in the
+  project but not in the renderer, so the next change of anything looked like a new camera and
+  cleared the picture.)
 - Once denoised, the button switches between the denoised picture and the one as rendered; the
   PNG saves whichever shows.
 - The alpha is denoised too where a shade is see-through over the transparent background.
-- The network (1.8 MB) loads the first time it's needed and is then kept offline with the app.
+- The network loads the first time it's needed.
 - It needs enough to go on: at a few hundred samples nothing is guessed; at 16–32 on a tiny
   picture (a layer a pixel high) fine detail goes soft.
 - Where the browser has no WebGPU, the path tracer's own edge-aware smoothing is used instead
@@ -226,6 +247,34 @@ glass: solid in the picture, glowing when on. **PNG** saves the picture as it is
 
 On a phone it's slow (a lamp of a million triangles is fine on a laptop's GPU), but preparing,
 setting up and a small preview work anywhere.
+
+## The batch
+
+The Render tab's **Batch** group renders a list of setups one after another (overnight, say):
+
+- **Save current settings for batch** keeps one setup under the name typed (or the next free
+  number): the render's settings, the camera as it is, and the project as it is now (its beads
+  where the assembly row has them, the parts' looks, the fittings, hidden parts left out). Then
+  anything can change: settings, the camera, the project itself (another recipe value, another
+  project), Prepare and Preview again, and save the next setup. Setups from different projects
+  can share a batch.
+- The setups are kept in the browser (IndexedDB, `web/js/batch.js`: the beads are too big for
+  localStorage), so they survive a reload; **×** takes one out.
+- **Saving the project file keeps its batch plan** (a `#~ batch` line): the setups saved from
+  this project, each with its render settings and what makes its picture (the recipe with its
+  values, the parts' looks and how it hangs, the parts hidden, how far apart; each recipe once),
+  but not the beads. Opening the file on another computer adds its setups to the batch there
+  (ones it has already are left out); the batch makes their beads from the recipe when it gets
+  to them. So the plan can be made on one computer and rendered on another.
+- **Batch render** prepares each setup, renders it at its Render size and samples, downloads the
+  picture as rendered, then denoises it and downloads that too (`batch-<start>-<name>.png` and
+  `…-denoised.png`, so a batch's pictures sort together in the downloads folder). The status line
+  says which setup it's on. A GPU reset retries the setup once (a Mac then takes smaller pieces),
+  and a setup that still fails is named at the end; the rest go on. **Stop** (or Stop batch)
+  stops the batch.
+- While it runs, the screen is kept on where the browser allows (Wake Lock): a sleeping screen or
+  a hidden tab stops the page drawing, and the render with it. Changes to the settings meanwhile
+  are kept for later and leave the batch alone. A browser may ask once to allow several downloads.
 
 ## How it's built
 

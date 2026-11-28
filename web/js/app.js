@@ -9,13 +9,14 @@ import { createEngine } from './engine.js';
 import { createViewport } from './viewport.js';
 import { $, copyText, download, el, fmt, load, loadJSON, parseNumber, save, saveJSON, slug } from './dom.js';
 import { foldout, layoutKey, renderSettings, settingRow } from './settings.js';
-import { colorsLine, fileNote, fingerprint, printerLine, projectOf, withPartsOf, withoutColors, withoutFileNote, withoutPrinter, withoutValues } from './templates.js';
+import { batchPlanLine, colorsLine, fileNote, fingerprint, printerLine, projectOf, withPartsOf, withoutBatch, withoutColors, withoutFileNote, withoutPrinter, withoutValues } from './templates.js';
 import { PRINTERS, applyMaterial, isRobot, changeSettings, describePrinter, loadProfile, newProfile, printerFor, profileFrom, renderPrint, renderPrinterSettings, settingsOf } from './print.js';
 import { aiPrompt, renderProblems, renderSteps, selectLine } from './recipe.js';
 import { createChat } from './chat.js';
 import { assemblyMotion, assemblySteps, capturePlan, fitPlan, markKey, markToggles, newPartName, renderPlan, sections, shadeDefaults, shapeSwitch } from './parts.js';
 import { CAMERA_VIEWS, cleanRender, fixtureOf, fixtureTakenOut, partsExtent } from './fixture.js';
 import { PLASTICS, cleanMaterial, materialValues } from './materials.js';
+import { addBatchSetup, batchFileName, batchLine, batchPlanOf, batchSetups, nextBatchName, removeBatchSetup, setupsOfPlan } from './batch.js';
 import { beadExtremes, renderBeads } from './beads.js';
 import { SKETCHER_TEMPLATE, isSketcherSettings, sketcherToValues, valuesToSketcher } from './sketcher.js';
 
@@ -1381,14 +1382,27 @@ async function openSketcher(data, name) {
  * Taken apart (the assembly row), they come apart too: the socket up past the highest shade,
  * the bulb down past the lowest.
  */
-function fixtureFor(result) {
+function fixtureFor(result, ctx = null) {
   if (!result) return null;
   const parts = sections(result);
-  const fx = fixtureOf(result.params, parts, customColors().hang);
-  if (!fx || !assembly.steps.length || !(assembly.u > 0)) return fx;
+  const fx = fixtureOf(result.params, parts, ctx ? ctx.colors.hang : customColors().hang);
+  const steps = ctx ? assemblySteps(result) : assembly.steps;
+  const u = ctx ? ctx.u : assembly.u;
+  if (!fx || !steps.length || !(u > 0)) return fx;
   // Where the shades are, taken apart as far as they are.
-  const offsets = new Map([...assemblyMotion(assembly.steps, assembly.u)].map(([name, m]) => [name, m.dz]));
-  return fixtureTakenOut(fx, assembly.u, partsExtent(parts, offsets));
+  const offsets = new Map([...assemblyMotion(steps, u)].map(([name, m]) => [name, m.dz]));
+  return fixtureTakenOut(fx, u, partsExtent(parts, offsets));
+}
+
+/**
+ * What a render's picture is made of besides the recipe: the parts' looks and the way it hangs
+ * (the custom colours' parts and hang), the parts hidden, how far it's taken apart. Now, or (a
+ * batch setup's) as saved.
+ * @returns {{ colors: { parts: Record<string, any>, hang?: string }, hidden: string[], u: number }}
+ */
+function renderContext() {
+  const c = customColors();
+  return { colors: { parts: c.parts, hang: c.hang }, hidden: [...hiddenParts], u: assembly.u };
 }
 
 const renderView = {
@@ -1401,6 +1415,16 @@ const renderView = {
   busy: false,
   /** What was prepared: its size and how long it took. */
   info: '',
+  /** Whoever waits on the renderer (the batch): called with each progress, and `{ state: 'lost' }` on a GPU reset. */
+  listeners: /** @type {Set<(p: any) => void>} */ (new Set()),
+};
+
+/** The batch while it runs: where it is, to stop it. */
+const batch = {
+  running: false,
+  stopping: false,
+  /** "Batch 2/5 · name": put before the status line. */
+  label: '',
 };
 
 const renderOn = () => $('viewRender').getAttribute('aria-pressed') === 'true';
@@ -1433,11 +1457,12 @@ function renderLooks(result) {
  * the axis and moved along it, as the 3D view shows it; the socket and bulb stay), the parts'
  * looks and the fittings.
  */
-function renderSnapshot(result) {
+function renderSnapshot(result, ctx = null) {
   const { points, starts, widths, heights, ups, aids } = result.paths;
   const owner = result.parts?.paths || [];
   const prints = printsOf(result);
-  const motion = assemblyMotion(assembly.steps, assembly.u);
+  const hidden = ctx ? new Set(ctx.hidden) : hiddenParts;
+  const motion = ctx ? assemblyMotion(assemblySteps(result), ctx.u) : assemblyMotion(assembly.steps, assembly.u);
   /** Turns (degrees, counter-clockwise from above) and lifts (mm) x, y, z triples in place. */
   const move = (xyz, angle, dz, lift) => {
     const [c, s] = [Math.cos((angle * Math.PI) / 180), Math.sin((angle * Math.PI) / 180)];
@@ -1451,7 +1476,7 @@ function renderSnapshot(result) {
   const paths = [];
   for (let k = 0; k + 1 < starts.length; k++) {
     const part = owner[k] ?? -1;
-    if (part < 0 || !prints[part] || hiddenParts.has(prints[part].name)) continue;
+    if (part < 0 || !prints[part] || hidden.has(prints[part].name)) continue;
     const [a, b] = [starts[k], starts[k + 1]];
     if (b - a < 2) continue;
     const w = widths ? widths.slice(a, b) : new Float32Array(b - a).fill(1);
@@ -1466,7 +1491,8 @@ function renderSnapshot(result) {
     }
     paths.push({ points: pts, widths: w, heights: h, ups: up, part });
   }
-  return { paths, looks: renderLooks(result), fixture: fixtureFor(result) };
+  const looks = ctx ? prints.map((p, i) => partLook({ parts: {}, ...ctx.colors }, p.name, i)) : renderLooks(result);
+  return { paths, looks, fixture: fixtureFor(result, ctx) };
 }
 
 /** "1 min 05 s", "12 s". */
@@ -1487,7 +1513,7 @@ function showRenderProgress(p) {
     done: `${what} done · ${p.samples} samples${size} · ${renderTime(p.seconds || 0)}${denoised}`,
     stopped: `${what} stopped · ${p.samples} samples${size}${denoised}`,
   };
-  renderStatus(texts[p.state] || '');
+  renderStatus(`${batch.label}${texts[p.state] || ''}`);
   const running = p.state === 'compiling' || p.state === 'rendering';
   const prepared = Boolean(renderView.api?.prepared);
   $('renderStop').toggleAttribute('disabled', !running);
@@ -1510,9 +1536,12 @@ async function renderApi() {
   if (renderView.api) return renderView.api;
   renderView.loading ||= import('./render.js').then(({ createRenderer }) =>
     createRenderer(/** @type {HTMLCanvasElement} */ ($('renderCanvas')), {
-      onProgress: (p) => showRenderProgress(p),
+      onProgress: (p) => {
+        showRenderProgress(p);
+        for (const f of [...renderView.listeners]) f(p);
+      },
       // Where the camera was left is kept with the project (nothing else changes).
-      onCamera: (cam) => saveRender({ camera: { ...customColors().render.camera, ...cam } }),
+      onCamera: (cam) => !batch.running && saveRender({ camera: { ...customColors().render.camera, ...cam } }),
       // The GPU was reset under the render: start afresh (Prepare again).
       onLost: () => resetRender('The graphics card was reset: Prepare again (a smaller picture or fewer bounces is lighter on it)'),
     }),
@@ -1557,6 +1586,7 @@ function resetRender(message) {
   renderStatus(message);
   $('renderPrepare').removeAttribute('disabled');
   markRenderStale();
+  for (const f of [...renderView.listeners]) f({ state: 'lost' });
 }
 
 /** What the status line says when the render can't start or go on. */
@@ -1660,7 +1690,8 @@ function saveRender(update) {
 /** Changes the render's settings: kept, shown, and the renderer stops (Preview or Render again). */
 function changeRender(update) {
   const next = saveRender(update);
-  renderView.api?.setSettings(next);
+  // A batch running: the setting is kept for later, the batch's render goes on.
+  if (!batch.running) renderView.api?.setSettings(next);
 }
 
 /** The parts' looks changed (colour, solid, material): the 3D view and the render follow. */
@@ -1669,7 +1700,7 @@ function changeLook(name, i, update) {
   colors.parts[name] = { ...partLook(colors, name, i), ...update };
   saveCustomColors(colors);
   applyCustomColors();
-  if (state.last) renderView.api?.setLooks(renderLooks(state.last));
+  if (state.last && !batch.running) renderView.api?.setLooks(renderLooks(state.last));
 }
 
 /** A setting row as the settings window draws it (number field, unit, slider; switch; list). */
@@ -1681,6 +1712,9 @@ const renderRow = (label, control) => el('div', { className: 'setting text' }, [
 
 /** What the Render tab was last built for (its parts), so it's rebuilt only when they change. */
 let renderPanelKey = '';
+
+/** The denoiser's networks: [key, label]. */
+const DENOISERS = [['detailed', 'Detailed (slower)'], ['fast', 'Fast']];
 
 /** Where the Render's wall distance is measured from: [key, label]. */
 const WALL_FROM = [['axis', "the lamp's axis"], ['back', "the lamp's back"]];
@@ -1759,11 +1793,14 @@ function renderPanel() {
       [renderParam('bounces', 'Light bounces', 'number', { min: 1, max: 32, step: 1 }), r.bounces],
       [renderParam('denoise', 'Denoise by itself (when done or stopped)', 'toggle'), r.denoise],
       [renderParam('denoiseStrength', 'Denoise strength', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(r.denoiseStrength)],
+      [renderParam('denoiseDetail', 'Denoise: detail kept', 'number', { unit: '%', min: 0, max: 100, step: 1 }), pct(r.denoiseDetail)],
+      [renderParam('denoiseModel', 'Denoiser', 'choice', { choices: DENOISERS.map(([, label]) => label) }), DENOISERS.find(([k]) => k === r.denoiseModel)?.[1]],
       [renderParam('previewSize', 'Preview: longer side', 'number', { unit: 'px', min: 160, max: 4096, step: 1 }), r.preview.size],
       [renderParam('previewSamples', 'Preview: samples', 'number', { unit: 'spp', min: 1, max: 4096, step: 1 }), r.preview.samples],
       [renderParam('finalSize', 'Render: longer side', 'number', { unit: 'px', min: 160, max: 4096, step: 1 }), r.final.size],
       [renderParam('finalSamples', 'Render: samples', 'number', { unit: 'spp', min: 1, max: 10000, step: 1 }), r.final.samples],
     ]],
+    ['Batch', 'render:batch', batchRows()],
   ];
   host.replaceChildren(
     ...groups.map(([name, key, rows], g) => {
@@ -1774,6 +1811,197 @@ function renderPanel() {
       return f;
     }),
   );
+}
+
+// ---- The batch: setups saved one by one (batch.js), rendered one after another overnight.
+
+/** The Batch group's rows: a name and Save, the saved setups, Batch render. */
+function batchRows() {
+  const name = /** @type {HTMLInputElement} */ (el('input', { type: 'text', id: 'batchName', placeholder: 'Name', 'aria-label': 'Name for the batch setup' }));
+  const saveSetup = el('button', { type: 'button', className: 'btn', id: 'batchSave', text: 'Save current settings for batch', title: 'The render settings, the camera and the project as it is now, as one line of the batch' });
+  saveSetup.addEventListener('click', () => saveBatchSetup());
+  const run = el('button', { type: 'button', className: 'btn primary', id: 'batchRun', text: batch.running ? 'Stop batch' : 'Batch render', title: 'Render every setup in turn; each picture is downloaded as rendered and denoised' });
+  run.addEventListener('click', () => runBatch());
+  const list = el('div', { className: 'batch-list', id: 'batchList' });
+  refreshBatch();
+  return [renderRow('Name', name), renderRow('', saveSetup), list, renderRow('', run)];
+}
+
+/** The saved setups, listed (each with a button to take it out), and the name field's next name. */
+async function refreshBatch() {
+  let setups = [];
+  try {
+    setups = await batchSetups();
+  } catch {
+    // no IndexedDB (a private window): the batch stays empty
+  }
+  const list = document.getElementById('batchList');
+  if (!list) return;
+  list.replaceChildren(
+    ...setups.map((setup) => {
+      const remove = el('button', { type: 'button', className: 'btn tiny batch-remove', text: '×', title: `Take ${setup.name} out of the batch`, 'aria-label': `Take ${setup.name} out of the batch` });
+      remove.addEventListener('click', async () => {
+        if (batch.running) return;
+        await removeBatchSetup(setup.id);
+        refreshBatch();
+      });
+      return el('div', { className: 'batch-setup' }, [el('strong', { text: setup.name }), el('span', { text: batchLine(setup, CAMERA_VIEWS) }), remove]);
+    }),
+  );
+  const name = /** @type {HTMLInputElement | null} */ (document.getElementById('batchName'));
+  if (name && !name.value) name.placeholder = nextBatchName(setups);
+  document.getElementById('batchRun')?.toggleAttribute('disabled', !setups.length && !batch.running);
+}
+
+/** A project file's batch plan, added to the batch (the setups it has already left out). */
+async function addBatchPlan(plan) {
+  try {
+    const fresh = setupsOfPlan(plan, await batchSetups(), Date.now());
+    for (const setup of fresh) await addBatchSetup(setup);
+    if (fresh.length) renderStatus(`The file's batch plan: ${fresh.length} ${fresh.length === 1 ? 'setup' : 'setups'} added`);
+  } catch {
+    // no IndexedDB here: the plan stays in the file
+  }
+  refreshBatch();
+}
+
+/** Saves the render's settings (the camera too) and the project as it is now as a batch setup. */
+async function saveBatchSetup() {
+  if (!state.last) return;
+  const field = /** @type {HTMLInputElement} */ ($('batchName'));
+  try {
+    const setups = await batchSetups();
+    const name = field.value.trim() || nextBatchName(setups);
+    const recipe = { source: await currentSource(), alongWall: Boolean(state.alongWall), ...renderContext() };
+    await addBatchSetup({ id: Date.now(), name, project: projectName(), render: customColors().render, snapshot: renderSnapshot(state.last), saved: Date.now(), recipe });
+    field.value = '';
+    renderStatus(`Saved for the batch: ${name}`);
+  } catch (err) {
+    renderStatus(`Couldn't save for the batch: ${/** @type {any} */ (err)?.message || err}`);
+  }
+  refreshBatch();
+}
+
+/**
+ * The next progress the test accepts (or a GPU reset, `{ state: 'lost' }`).
+ * @param {(p: any) => boolean} test
+ * @returns {Promise<any>}
+ */
+function nextRender(test) {
+  return new Promise((resolve) => {
+    const f = (p) => {
+      if (p.state !== 'lost' && !test(p)) return;
+      renderView.listeners.delete(f);
+      resolve(p);
+    };
+    renderView.listeners.add(f);
+  });
+}
+
+/** The picture on the render's canvas, downloaded. */
+async function downloadRender(name) {
+  const api = renderView.api;
+  if (!api) return;
+  const blob = await (await fetch(api.capture())).blob();
+  download(name, blob, 'image/png');
+}
+
+/**
+ * One setup: prepared, rendered at its Render size and samples, downloaded as rendered, then
+ * denoised and downloaded again. 'done', 'stopped', or 'lost' (the GPU reset).
+ * @param {import('./batch.js').BatchSetup} setup
+ * @param {Date} started
+ */
+async function renderSetup(setup, started) {
+  // From a project file (another computer's plan): its beads made from its recipe here.
+  let snapshot = setup.snapshot;
+  if (!snapshot && setup.recipe) {
+    renderStatus(`${batch.label}Making the project`);
+    let result = null;
+    // (A run of the project's own can replace this one: tried again.)
+    for (let k = 0; k < 5 && !result; k++) result = await engine.evaluate(setup.recipe.source, {}, 'final', null, setup.recipe.alongWall);
+    if (!result) throw new Error('the engine was busy');
+    if (result.diagnostics.some((d) => d.severity === 'error')) throw new Error('its recipe has a problem');
+    snapshot = renderSnapshot(result, setup.recipe);
+  }
+  if (!snapshot) throw new Error('nothing to render');
+  const api = await renderApi();
+  renderView.busy = true;
+  try {
+    // Denoised below, after the picture as rendered is saved.
+    api.setSettings({ ...setup.render, denoise: false });
+    await api.prepare(snapshot, (what) => renderStatus(`${batch.label}Preparing · ${what}`));
+  } finally {
+    renderView.busy = false;
+  }
+  if (batch.stopping) return 'stopped';
+  const finished = nextRender((p) => p.state === 'done' || p.state === 'stopped');
+  api.start('final');
+  const p = await finished;
+  if (p.state !== 'done') return p.state;
+  await downloadRender(batchFileName(started, setup.name, 'rendered'));
+  const denoised = nextRender((q) => Boolean(q.denoised) || Boolean(q.denoiseError));
+  api.denoise();
+  const q = await denoised;
+  if (q.state === 'lost') return 'lost';
+  if (q.denoised) await downloadRender(batchFileName(started, setup.name, 'denoised'));
+  return 'done';
+}
+
+/** Renders every saved setup in turn (or stops the batch when it's running). */
+async function runBatch() {
+  if (batch.running) {
+    batch.stopping = true;
+    renderView.api?.stop();
+    return;
+  }
+  const setups = await batchSetups().catch(() => []);
+  if (!setups.length || renderView.busy) return;
+  batch.running = true;
+  batch.stopping = false;
+  $('batchRun').textContent = 'Stop batch';
+  const started = new Date();
+  // The screen kept on: a sleeping screen stops the page's drawing, and the render with it.
+  /** @type {any} */
+  let lock = null;
+  try {
+    lock = await /** @type {any} */ (navigator).wakeLock?.request('screen');
+  } catch {
+    // not offered: keep the screen on by hand
+  }
+  const failed = [];
+  let done = 0;
+  try {
+    for (const [k, setup] of setups.entries()) {
+      if (batch.stopping) break;
+      batch.label = `Batch ${k + 1}/${setups.length} · ${setup.name} · `;
+      // A GPU reset: tried once more (a Mac takes smaller pieces after one).
+      let result = 'lost';
+      for (let attempt = 0; attempt < 2 && result === 'lost' && !batch.stopping; attempt++) {
+        try {
+          result = await renderSetup(setup, started);
+        } catch (err) {
+          result = /** @type {any} */ (err)?.code === 'no-gl' ? 'lost' : 'failed';
+          if (result === 'failed') break;
+        }
+      }
+      if (result === 'done') done++;
+      else if (!batch.stopping) failed.push(setup.name);
+    }
+  } finally {
+    batch.running = false;
+    batch.label = '';
+    lock?.release?.().catch?.(() => {});
+    // The project as it is (the batch's last setup was prepared): Prepare again.
+    renderView.key = '';
+    renderView.api?.setSettings(customColors().render);
+    markRenderStale();
+    const run = document.getElementById('batchRun');
+    if (run) run.textContent = 'Batch render';
+    const stopped = batch.stopping ? ' · stopped' : '';
+    renderStatus(`Batch: ${done} of ${setups.length} rendered${failed.length ? ` · not rendered: ${failed.join(', ')}` : ''}${stopped}`);
+    batch.stopping = false;
+  }
 }
 
 /** A Render tab setting changed (dragged, typed or picked). */
@@ -1850,6 +2078,10 @@ function onRenderSetting(setting, value) {
       return changeRender({ denoise: value });
     case 'denoiseStrength':
       return changeRender({ denoiseStrength: value / 100 });
+    case 'denoiseDetail':
+      return changeRender({ denoiseDetail: value / 100 });
+    case 'denoiseModel':
+      return changeRender({ denoiseModel: DENOISERS.find(([, label]) => label === value)?.[0] ?? 'detailed' });
     case 'previewSize':
       return changeRender({ preview: { ...r.preview, size: value } });
     case 'previewSamples':
@@ -1863,10 +2095,11 @@ function onRenderSetting(setting, value) {
 
 function wireRender() {
   $('viewRender').addEventListener('click', () => showRender(!renderOn()));
-  $('renderPrepare').addEventListener('click', () => prepareRender());
-  $('renderPreview').addEventListener('click', () => renderView.api?.start('preview'));
-  $('renderFinal').addEventListener('click', () => renderView.api?.start('final'));
-  $('renderStop').addEventListener('click', () => renderView.api?.stop());
+  // While a batch runs, these leave its render alone (Stop stops the batch).
+  $('renderPrepare').addEventListener('click', () => !batch.running && prepareRender());
+  $('renderPreview').addEventListener('click', () => !batch.running && renderView.api?.start('preview'));
+  $('renderFinal').addEventListener('click', () => !batch.running && renderView.api?.start('final'));
+  $('renderStop').addEventListener('click', () => (batch.running ? runBatch() : renderView.api?.stop()));
   $('renderDenoised').addEventListener('click', () => {
     const api = renderView.api;
     if (!api) return;
@@ -1921,7 +2154,7 @@ function wire() {
   });
   // Fit what's shown of the toolpath and orbit round its centre: the Fit button, a double-click,
   // or on a phone a double-tap (touch doesn't make a dblclick everywhere).
-  $('viewFit').addEventListener('click', () => (planOn() ? fitPlan() : viewport.focus()));
+  $('viewFit').addEventListener('click', () => (renderOn() ? !batch.running && renderView.api?.fit() : planOn() ? fitPlan() : viewport.focus()));
   // The view as a picture, sharper than the screen.
   // What's shown: the plan when it's up, else the 3D view (taken apart, when it is).
   $('viewSnap').addEventListener('click', async () => {
@@ -1955,8 +2188,19 @@ function wire() {
   });
   viewport.listen('pointercancel', () => (touches = 0));
   // Set views, and parallel or perspective (remembered on this device).
+  // In the Render view they set the render's camera: snapped to that view and framed.
+  const RENDER_VIEWS = { iso: 'three-quarter', front: 'front', side: 'side', top: 'top' };
   document.querySelectorAll('[data-view]').forEach((b) =>
-    b.addEventListener('click', () => viewport.view(/** @type {any} */ (/** @type {HTMLElement} */ (b).dataset.view))),
+    b.addEventListener('click', () => {
+      const view = /** @type {HTMLElement} */ (b).dataset.view || 'iso';
+      if (renderOn()) {
+        changeRender({ camera: { ...customColors().render.camera, view: RENDER_VIEWS[view] ?? 'front', position: null, target: null } });
+        if (!batch.running) renderView.api?.fit();
+        renderPanel();
+        return;
+      }
+      viewport.view(/** @type {any} */ (view));
+    }),
   );
   const parallel = $('viewParallel');
   const setParallel = (on) => {
@@ -2112,7 +2356,8 @@ function wire() {
       if (sketch && isSketcherSettings(sketch)) {
         await openSketcher(sketch, picked?.name || 'thread-pendant');
       } else if (text !== null) {
-        const { text: withPrinter, colors } = withoutColors(withoutFileNote(text));
+        const { text: withBatch, colors } = withoutColors(withoutFileNote(text));
+        const { text: withPrinter, plan } = withoutBatch(withBatch);
         const { text: recipe, printer } = withoutPrinter(withPrinter);
         // The printer's settings are the file's (a file without them: the printer's defaults).
         state.profiles = printerSettingsOf(printer);
@@ -2122,6 +2367,7 @@ function wire() {
         setSaveName((picked?.name || '').replace(/\.easycad$/i, ''));
         autosave();
         checkTemplate();
+        if (plan) await addBatchPlan(plan);
       }
     } catch (err) {
       showSettingsError(`Could not open the project: ${err.message || err}`);
@@ -2132,7 +2378,9 @@ function wire() {
     const site = new URL('.', location.href).href;
     const colors = colorsToSave();
     const printer = printerLine(state.printer, settingsOf(state.printer, state.profile));
-    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${printer}\n${colors ? `${colorsLine(colors)}\n` : ''}\n${await currentSource()}`);
+    // The Render's batch plan goes with it (this project's setups), to render on another computer.
+    const plan = batchPlanOf(await batchSetups().catch(() => []), projectName());
+    download(`${saveName()}.easycad`, `${fileNote(site)}\n\n${printer}\n${colors ? `${colorsLine(colors)}\n` : ''}${plan ? `${batchPlanLine(plan)}\n` : ''}\n${await currentSource()}`);
     state.openedValues = { ...state.values };
     state.unsaved = false;
     autosave();

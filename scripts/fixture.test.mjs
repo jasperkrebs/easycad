@@ -314,3 +314,75 @@ test('a wall sliced along the surface: the turns sit on each other along the wal
   assert.equal(t.below[i], 1);
   assert.ok(Math.hypot(t.aboveAt[4 * i], t.aboveAt[4 * i + 1], t.aboveAt[4 * i + 2]) < 0.1, 'right on top of it, along the wall');
 });
+
+test("the Render's batch: next names, file names that sort together, a setup's line", async () => {
+  const { nextBatchName, batchFileName, batchLine } = await import('../web/js/batch.js');
+  const { CAMERA_VIEWS } = await import('../web/js/fixture.js');
+  assert.equal(nextBatchName([]), '1');
+  assert.equal(nextBatchName([{ name: '1' }, { name: 'side' }, { name: '3' }]), '2');
+  const at = new Date(2026, 10, 27, 22, 5);
+  assert.equal(batchFileName(at, 'side, wall', 'rendered'), 'batch-2026-11-27-2205-side, wall.png');
+  assert.equal(batchFileName(at, 'a/b:c', 'denoised'), 'batch-2026-11-27-2205-a-b-c-denoised.png');
+  assert.equal(batchFileName(at, '  ', 'rendered'), 'batch-2026-11-27-2205-render.png');
+  assert.equal(batchLine({ project: 'Lamp', render: { final: { size: 3000, samples: 500 }, light: false, camera: { view: 'top' } } }, CAMERA_VIEWS), 'Lamp · 3000 px · 500 spp · light off · Top');
+});
+
+test('the denoiser: fireflies brought down (edges kept), what it took away added back as asked', async () => {
+  const { tameFireflies, takenDetail, blendDenoised } = await import('../web/js/denoise-prep.js');
+  // 5 × 5 grey at 1, a firefly of 50 in the middle; a bright bulb edge (the right two columns at 20).
+  const w = 5;
+  const h = 5;
+  const c = new Float32Array(w * h * 4);
+  for (let p = 0; p < w * h; p++) c.set([1, 1, 1, 1], 4 * p);
+  c.set([50, 50, 50, 1], 4 * (2 * w + 2));
+  for (let y = 0; y < h; y++) for (const x of [3, 4]) c.set([20, 20, 20, 1], 4 * (y * w + x));
+  c.set([50, 50, 50, 1], 4 * (2 * w + 1));
+  const tamed = tameFireflies(c, w, h);
+  assert.equal(tamed, 1, 'the speck beside the edge only (its second-brightest neighbour is 1)');
+  assert.ok(Math.abs(c[4 * (2 * w + 1)] - 4) < 1e-5, 'down to 4 × that neighbour');
+  assert.equal(c[4 * (2 * w + 3)], 20, 'the edge stays');
+  // Detail: a line the network took away comes back, smoothed, by `detail`.
+  const raw = new Float32Array(16 * 4).fill(1);
+  const den = new Float32Array(16 * 4).fill(1);
+  for (let x = 0; x < 4; x++) raw.set([2, 2, 2, 1], 4 * (1 * 4 + x));
+  const taken = takenDetail(raw, den, 4, 4);
+  assert.ok(taken[4 * 4] > taken[0] && taken[4 * 4] < 1, 'the line, spread over its neighbours');
+  assert.equal(taken[3], 0, 'alpha not');
+  const out = new Float32Array(raw.length);
+  blendDenoised(out, raw, den, taken, 1, 0);
+  assert.deepEqual([...out], [...den], 'all denoised, no detail: the denoised picture');
+  blendDenoised(out, raw, den, taken, 1, 1);
+  assert.ok(Math.abs(out[4 * 4] - (1 + taken[4 * 4])) < 1e-6);
+  blendDenoised(out, raw, den, taken, 0, 1);
+  assert.deepEqual([...out], [...raw], 'strength 0: as rendered');
+});
+
+test("the Render's batch plan in a project file: this project's setups, recipes once, read back", async () => {
+  const { batchPlanOf, setupsOfPlan } = await import('../web/js/batch.js');
+  const { batchPlanLine, withoutBatch } = await import('../web/js/templates.js');
+  const recipe = (source, u = 0) => ({ source, alongWall: false, hidden: ['tube'], u, colors: { parts: { main: { color: '#ff0000', opacity: 0.5 } }, hang: 'up' } });
+  const setups = [
+    { id: 1, name: 'front', project: 'Lamp', render: { light: true }, snapshot: { big: true }, saved: 1, recipe: recipe('project "Lamp"\n') },
+    { id: 2, name: 'apart', project: 'Lamp', render: { light: false }, snapshot: { big: true }, saved: 2, recipe: recipe('project "Lamp"\n', 1) },
+    { id: 3, name: 'other', project: 'Lampshade', render: {}, snapshot: {}, saved: 3, recipe: recipe('project "Lampshade"\n') },
+    { id: 4, name: 'old', project: 'Lamp', render: {}, snapshot: {}, saved: 4 },
+  ];
+  const plan = batchPlanOf(setups, 'Lamp');
+  assert.equal(plan.sources.length, 1, 'the recipe once');
+  assert.deepEqual(plan.setups.map((s) => s.name), ['front', 'apart'], "this project's, with a recipe");
+  assert.ok(!JSON.stringify(plan).includes('big'), 'no beads');
+  assert.equal(batchPlanOf(setups, 'Nothing'), null);
+  // Through the file's line and back.
+  const file = `${batchPlanLine(plan)}\nproject "Lamp"\n`;
+  const { text, plan: read } = withoutBatch(file);
+  assert.equal(text, 'project "Lamp"\n');
+  const back = setupsOfPlan(read, [], 100);
+  assert.deepEqual(back.map((s) => [s.id, s.name, s.snapshot, s.recipe.source, s.recipe.u, s.recipe.colors.hang]), [
+    [100, 'front', null, 'project "Lamp"\n', 0, 'up'],
+    [101, 'apart', null, 'project "Lamp"\n', 1, 'up'],
+  ]);
+  // Opened again: nothing new.
+  assert.equal(setupsOfPlan(read, back, 200).length, 0);
+  assert.deepEqual(setupsOfPlan({ sources: [], setups: [{ name: 'x', render: {}, recipe: { source: 3 } }] }, [], 1), [], 'a recipe that is not there');
+  assert.deepEqual(setupsOfPlan('nonsense', [], 1), []);
+});

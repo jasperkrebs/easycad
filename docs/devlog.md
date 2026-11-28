@@ -9,6 +9,39 @@ Archives: [October 2026](devlog-2026-10.md), [November 1–14](devlog-2026-11.md
 
 
 
+## 2026-11-28: a kinder denoiser; the batch plan in the project file (claude/lampshade-light-render-wcvx6x)
+
+- Fixed: the denoise strength cleared the picture again (the renderer didn't keep where the
+  camera was moved, so every change looked like a new camera). Strength and the new detail
+  setting re-blend at once again.
+- The denoiser: fireflies brought down before the network (they made blotches and a brighter
+  picture); **Detailed** (the large Open Image Denoise network, 7.7 MB, the default) or
+  **Fast**; **Denoise: detail kept** adds back what the network took away, smoothed
+  (`web/js/denoise-prep.js`).
+- The project file keeps the Render's batch plan (`#~ batch`: setups without beads, made again
+  from their recipes on the computer that opens it).
+- Tests: `scripts/fixture.test.mjs` (fireflies, detail, the plan), `scripts/render-test.cjs`
+  (the plan through a saved file, rendered from it).
+
+## 2026-11-27: the Render's batch; the view buttons snap its camera (claude/lampshade-light-render-wcvx6x)
+
+- Render tab → **Batch**: save the current settings (camera too) and the project as it is as a
+  named setup; **Batch render** prepares, renders, downloads (as rendered and denoised) each in
+  turn. Setups in IndexedDB (`web/js/batch.js`); Wake Lock keeps the screen on; a GPU reset
+  retries a setup once. `docs/rendering.md` "The batch".
+- The view toolbar's 3D / Front / Side / Top (and Fit) work in the Render view: they snap the
+  render's camera (a new straight-down **Top** view). 
+- Tests: `scripts/fixture.test.mjs` (names), `scripts/render-test.cjs` (two setups, Top snapped,
+  four downloads).
+- Open: the batch isn't a command (the render isn't one yet); the agent can't fill it.
+
+## 2026-11-27: the Render on a Mac learns from its GPU resets (claude/lampshade-light-render-wcvx6x)
+
+- The owner's Mac reset its GPU even in Previews. On a Mac only, each reset during a render
+  makes the pieces of GPU work 4 × smaller from then on (stored in the browser), each finished
+  picture × 0.85 larger again, up to 32 × 32 tiles a sample. Other computers (the Lenovo)
+  unchanged. Not tried on a Mac yet.
+
 ## 2026-11-27: the Render's wall just behind the lamp (claude/lampshade-light-render-wcvx6x)
 
 - Render tab → Room → **Wall measured from**: the lamp's axis (as before) or its back (20 mm
