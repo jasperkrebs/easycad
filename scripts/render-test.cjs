@@ -173,6 +173,24 @@ async function centreSpread(page, url) {
     // WebGPU (software) for the denoiser, WebGL (software) for the path tracer.
     browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu'] });
     const page = await browser.newPage({ viewport: { width: 1000, height: 760 }, deviceScaleFactor: 1 });
+    // Chrome's folder picker, stood in for: cancelled, or a folder that records what's written.
+    await page.addInitScript(() => {
+      const w = /** @type {any} */ (window);
+      w.__folder = { mode: 'cancel', written: [] };
+      const dir = (path) => ({
+        getDirectoryHandle: async (name) => dir(`${path}/${name}`),
+        getFileHandle: async (name) => ({
+          createWritable: async () => ({
+            write: async (blob) => w.__folder.written.push(`${path}/${name}:${blob.size > 1000}`),
+            close: async () => {},
+          }),
+        }),
+      });
+      w.showDirectoryPicker = async () => {
+        if (w.__folder.mode === 'cancel') throw new DOMException('cancelled', 'AbortError');
+        return dir('picked');
+      };
+    });
     page.on('pageerror', (e) => failures.push(`page error: ${e.message}`));
     page.on('console', (m) => {
       if (m.type() === 'error') failures.push(`console: ${m.text()}`);
@@ -241,6 +259,7 @@ async function centreSpread(page, url) {
       { name: 'pendant-matte-white', template: 'thread-pendant', project: 'Thread pendant', part: 'path_out', look: { color: '#fbfaf7', opacity: 0.6, material: { plastic: 'pla-matte' } }, render: { light: true, ceiling: { on: true, distance: 300 }, wall: { on: true, distance: 350 } } },
     ];
     const only = process.env.RENDER_SCENES ? process.env.RENDER_SCENES.split(',') : null;
+    let heldChecked = false;
     for (const sc of scenes.filter((x) => !only || only.includes(x.name))) {
       const t0 = Date.now();
       await page.evaluate(({ project, part, look, render, hang }) => {
@@ -285,6 +304,41 @@ async function centreSpread(page, url) {
       const rendered = await page.textContent('#renderStatus');
       if (/denois/.test(rendered)) failures.push(`${sc.name}: denoised without asking: ${rendered}`);
       await shot(`${sc.name}-screen`);
+      if (!heldChecked) {
+        heldChecked = true;
+        // The picture is held: a long one not saved is asked about before New view lets it go
+        // (kept here); a setting changed waits for the next Preview; dragging and the wheel move
+        // and zoom the picture, not the camera.
+        await page.evaluate(() => document.getElementById('renderNewView').click());
+        await page.waitForTimeout(500);
+        if (await page.isVisible('#renderConfirm')) {
+          await page.click('#renderConfirmKeep');
+          console.log('  New view asked first (a long picture, not saved): kept');
+        }
+        await page.evaluate(() => {
+          const input = /** @type {HTMLInputElement} */ (document.getElementById('set-render-exposure'));
+          input.value = '2';
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        await page.waitForTimeout(500);
+        const box = await page.locator('#renderCanvas').boundingBox();
+        if (box) {
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 30, { steps: 5 });
+          await page.mouse.up();
+          await page.mouse.wheel(0, -400);
+        }
+        await page.waitForTimeout(500);
+        const held = await page.textContent('#renderStatus');
+        const transform = await page.evaluate(() => document.getElementById('renderCanvas').style.transform);
+        console.log(`  held: ${held} · ${transform}`);
+        if (!/done · .*settings changed/.test(held)) failures.push(`${sc.name}: the picture wasn't held through a setting and a drag: ${held}`);
+        if (!/scale/.test(transform)) failures.push(`${sc.name}: the wheel didn't zoom the held picture (${transform})`);
+        await page.evaluate(() => document.getElementById('set-render-exposure') && document.getElementById('renderCanvas').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+        if (await page.evaluate(() => document.getElementById('renderCanvas').style.transform)) failures.push(`${sc.name}: a double click didn't show the picture whole`);
+      }
       const [rawDownload] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#renderSave')]);
       const rawFile = await rawDownload.path();
       if (shots) fs.copyFileSync(rawFile, path.join(shots, `${sc.name}-raw.png`));
@@ -348,6 +402,9 @@ async function centreSpread(page, url) {
         if (!(lo === 0 && hi === 255)) failures.push(`${sc.name}: PNG alpha ${lo}..${hi}, expected a transparent background round the lamp`);
       }
     }
+    // New view: the picture let go (saved: not asked), the draft with the settings as they are.
+    await page.evaluate(() => document.getElementById('renderNewView').click());
+    await page.waitForFunction(() => /^Draft/.test(document.getElementById('renderStatus').textContent), null, { timeout: 30000 }).catch(async () => failures.push(`New view: ${await page.textContent('#renderStatus')}`));
     // Stop: the Render (512 samples: long), once it has a sample, stops; the picture so far stays
     // and can be denoised. (The page is busy between tiles on a software GPU: clicks go through
     // the page, which waits.)
@@ -379,6 +436,12 @@ async function centreSpread(page, url) {
       }, name);
       await page.waitForFunction((n) => document.getElementById('renderStatus').textContent === `Saved for the batch: ${n}`, name, { timeout: 30000 });
     };
+    const viewNow = () =>
+      page.evaluate(() => {
+        const project = document.getElementById('projectName').textContent;
+        return JSON.parse(localStorage.getItem('easycad.customColors'))[project].render.camera.view;
+      });
+    const firstView = await viewNow();
     await saveSetup('front view');
     await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('[data-view="top"]')).click());
     const view = await page.evaluate(() => {
@@ -388,6 +451,20 @@ async function centreSpread(page, url) {
     if (view !== 'top') failures.push(`the toolbar's Top didn't snap the render's camera (view ${view})`);
     await saveSetup('top view');
     await page.waitForFunction(() => document.querySelectorAll('#batchList .batch-setup').length === 2, null, { timeout: 30000 });
+    // ↑ on the second: it goes first.
+    await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('#batchList .batch-setup:nth-child(2) .batch-move')).click());
+    await page
+      .waitForFunction(() => document.querySelector('#batchList .batch-setup strong')?.textContent === 'top view', null, { timeout: 30000 })
+      .catch(() => failures.push("↑ didn't move the second setup first"));
+    // A setup clicked opens (asked first): its name in the name field.
+    await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('#batchList .batch-setup:nth-child(2) span')).click());
+    await page.waitForSelector('#batchConfirm:not([hidden]) .btn.primary', { state: 'attached', timeout: 30000 });
+    await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('#batchConfirm .btn.primary')).click());
+    await page
+      .waitForFunction(() => /^Opened “front view”/.test(document.getElementById('renderStatus').textContent) && /** @type {HTMLInputElement} */ (document.getElementById('batchName')).value === 'front view', null, { timeout: 60000 })
+      .catch(async () => failures.push(`opening a setup: ${await page.textContent('#renderStatus')}`));
+    const view2 = await viewNow();
+    if (view2 !== firstView) failures.push(`the opened setup's camera: ${view2}, saved with ${firstView}`);
     const names = [];
     page.on('download', (d) => names.push(d.suggestedFilename()));
     await page.evaluate(() => document.getElementById('batchRun').click());
@@ -398,7 +475,7 @@ async function centreSpread(page, url) {
     await page.waitForTimeout(1000);
     console.log(`batch: ${status} · ${names.join(', ')}`);
     if (!/^Batch: 2 of 2 rendered$/.test(status)) failures.push(`batch: ${status}`);
-    const expected = ['front view.png', 'front view-denoised.png', 'top view.png', 'top view-denoised.png'];
+    const expected = ['top view.png', 'top view-denoised.png', 'front view.png', 'front view-denoised.png'];
     if (names.length !== 4 || !expected.every((e, k) => names[k]?.startsWith('batch-') && names[k].endsWith(`-${e}`))) failures.push(`batch downloads: ${names.join(', ')}`);
 
     // The plan goes with the project file: saved, the batch emptied, the file opened (as on
@@ -406,7 +483,7 @@ async function centreSpread(page, url) {
     const [saved] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.evaluate(() => document.getElementById('saveProject').click())]);
     const projectFile = await saved.path();
     const text = fs.readFileSync(projectFile, 'utf8');
-    if (!/^#~ batch \{.*"front view".*"top view"/m.test(text)) failures.push('the saved project file has no batch plan');
+    if (!/^#~ batch \{.*"top view".*"front view"/m.test(text)) failures.push('the saved project file has no batch plan (in its order)');
     await page.evaluate(async () => {
       await new Promise((resolve) => {
         const req = indexedDB.deleteDatabase('easycad-batch');
@@ -417,15 +494,30 @@ async function centreSpread(page, url) {
     await page.waitForFunction(() => /batch plan: 2 setups added/.test(document.getElementById('renderStatus').textContent), null, { timeout: 60000 }).catch(() => {});
     const listed = await page.evaluate(() => document.querySelectorAll('#batchList .batch-setup').length);
     if (listed !== 2) failures.push(`the opened file's plan: ${listed} setups listed, ${await page.textContent('#renderStatus')}`);
+    // This time a folder is picked: the pictures are written into a folder for the batch in it,
+    // nothing downloaded.
     const before = names.length;
-    await page.evaluate(() => document.getElementById('batchRun').click());
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__folder.mode = 'pick';
+      document.getElementById('batchRun').click();
+    });
     await page
       .waitForFunction(() => /^Batch: \d+ of 2 rendered/.test(document.getElementById('renderStatus').textContent), null, { timeout: 1200000 })
       .catch(() => {});
     const again = await page.textContent('#renderStatus');
     await page.waitForTimeout(1000);
-    console.log(`batch from the file: ${again} · ${names.slice(before).join(', ')}`);
-    if (!/^Batch: 2 of 2 rendered$/.test(again) || names.length - before !== 4) failures.push(`batch from the file: ${again}, ${names.length - before} downloads`);
+    const written = await page.evaluate(() => /** @type {any} */ (window).__folder.written);
+    console.log(`batch from the file: ${again} · written ${written.join(', ')} · downloaded ${names.slice(before).join(', ') || 'nothing'}`);
+    if (!/^Batch: 2 of 2 rendered · in the folder batch-/.test(again) || names.length !== before) failures.push(`batch from the file: ${again}, ${names.length - before} downloads`);
+    if (written.length !== 4 || !written.every((w) => /^picked\/batch-[\d-]+\/batch-[\d-]+-(top|front) view(-denoised)?\.png:true$/.test(w))) failures.push(`batch into a folder: ${written.join(', ')}`);
+    // The pictures kept: Download all, one zip of them.
+    const [zip] = await Promise.all([
+      page.waitForEvent('download', { timeout: 60000 }),
+      page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('#batchPictures .btn')).click()),
+    ]);
+    const zipped = require('child_process').execFileSync('python3', ['-I', '-c', 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None; print(len(z.namelist()))', await zip.path()], { encoding: 'utf8' }).trim();
+    console.log(`Download all: ${zip.suggestedFilename()} · ${zipped} pictures`);
+    if (zipped !== '4' || !/^batch-.*\.zip$/.test(zip.suggestedFilename())) failures.push(`Download all: ${zip.suggestedFilename()}, ${zipped} pictures`);
   } catch (err) {
     failures.push(String(err.stack || err));
   } finally {

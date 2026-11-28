@@ -50,6 +50,18 @@ fittings placed as the lamp hangs; the render shows it hanging.
 
 ## Three steps: prepare, set up, render
 
+**A picture is kept until it's let go.** Once a Preview or Render has begun, the view holds it:
+dragging moves it and the wheel or two fingers zoom it (a double click shows it whole), the
+camera stays put, and the window changing shape keeps it (shown whole, `object-fit`). Settings
+changed meanwhile (the camera's view and lens, the light, the room, the materials) are kept and
+wait: the status line says "settings changed" and Preview and Render are ringed; they apply to
+the next picture. The denoiser's settings change the picture at once. Only these let it go:
+**New view** (back to the draft with the settings as they are, the camera free), Preview,
+Render, Prepare, the view toolbar's views and Fit, and Batch render. When the picture took a
+minute or more and isn't saved as a PNG, they ask first: **Save PNG first**, **Throw away**,
+**Keep it**. (Before, every setting, a nudge of the camera or a resized window threw it away,
+hours of rendering with it.)
+
 Nothing renders by itself: a slider or a camera move never starts the GPU. (Rendering live,
 every change restarted the path tracer at full size; on a Mac a big picture with many bounces
 ran the GPU out of memory and froze the browser.)
@@ -94,6 +106,10 @@ done (a fence), and the tiles resized between samples so each piece takes about 
 the scene. (Safari, once a page has reset the GPU, keeps WebGL off for that page until it's quit
 and opened again: the status line says to restart the browser.) If the GPU is reset anyway (the browser takes the render's graphics
 context away), the status line says so and Prepare starts afresh. The render asks the browser for the high-performance GPU (on a laptop with two).
+
+When the GPU is reset, the status line says what it was doing (preparing, loading the scene onto
+the GPU, compiling the shaders, rendering which sample at how many tiles, denoising), to tell what
+trips a computer.
 
 On a Mac (only), the render learns: each GPU reset during a render makes its pieces 4 × smaller
 from then on (remembered in the browser, `easycad.renderCare`, up to 64 ×), and each finished
@@ -259,16 +275,29 @@ The Render tab's **Batch** group renders a list of setups one after another (ove
   project), Prepare and Preview again, and save the next setup. Setups from different projects
   can share a batch.
 - The setups are kept in the browser (IndexedDB, `web/js/batch.js`: the beads are too big for
-  localStorage), so they survive a reload; **×** takes one out.
+  localStorage), so they survive a reload; **×** takes one out, **↑ ↓** move it earlier or later.
+- **Clicking a setup opens it** (asked first): its project (the recipe with its values), the
+  parts' looks, the parts hidden, how far apart, and its render settings with the camera replace
+  the ones now, and its name goes in the name field. Saving under a name the batch has asks:
+  **Overwrite** it (in its place), **Save as new** (the name with a number), or Cancel. Setups
+  saved before they kept their project open their render settings only.
 - **Saving the project file keeps its batch plan** (a `#~ batch` line): the setups saved from
   this project, each with its render settings and what makes its picture (the recipe with its
   values, the parts' looks and how it hangs, the parts hidden, how far apart; each recipe once),
   but not the beads. Opening the file on another computer adds its setups to the batch there
   (ones it has already are left out); the batch makes their beads from the recipe when it gets
   to them. So the plan can be made on one computer and rendered on another.
-- **Batch render** prepares each setup, renders it at its Render size and samples, downloads the
-  picture as rendered, then denoises it and downloads that too (`batch-<start>-<name>.png` and
-  `…-denoised.png`, so a batch's pictures sort together in the downloads folder). The status line
+- **Batch render** prepares each setup, renders it at its Render size and samples, saves the
+  picture as rendered, then denoises it and saves that too (`batch-<start>-<name>.png` and
+  `…-denoised.png`, so a batch's pictures sort together).
+- **Where they go.** In Chrome (or Edge) on a computer, Batch render first asks for a folder
+  and writes the pictures into a new folder for the batch in it (`batch-<start>/`): no downloads.
+  Cancelled, or in another browser, each picture is downloaded. A page may download one file by
+  itself; for more, Chrome asks once ("download multiple files"), and unanswered or refused it
+  blocks the rest, the PNG button's too, until allowed again (the site's settings, Automatic
+  downloads). So every batch picture is also **kept in the browser** (IndexedDB) as it's made:
+  the Batch group says how many, **Download all** gives them as one zip (a folder per batch:
+  one download, one click), **Forget** lets them go. The status line
   says which setup it's on. A GPU reset retries the setup once (a Mac then takes smaller pieces),
   and a setup that still fails is named at the end; the rest go on. **Stop** (or Stop batch)
   stops the batch.

@@ -47,6 +47,14 @@
           <div class="render" id="render" hidden>
             <canvas id="renderCanvas"></canvas>
             <div class="render-status" id="renderStatus" role="status"></div>
+            <div class="confirm render-confirm" id="renderConfirm" role="alertdialog" aria-labelledby="renderConfirmText" hidden>
+              <p id="renderConfirmText"></p>
+              <div class="buttons">
+                <button class="btn primary" type="button" id="renderConfirmSave">Save PNG first</button>
+                <button class="btn" type="button" id="renderConfirmDrop">Throw away</button>
+                <button class="btn" type="button" id="renderConfirmKeep">Keep it</button>
+              </div>
+            </div>
           </div>
         </div>
         <!-- The view's controls, pinned under it: nothing covers the model. -->
@@ -107,6 +115,7 @@
               <button type="button" class="render-go" id="renderPreview" title="A quick look: small, few samples" disabled>Preview</button>
               <button type="button" class="render-go" id="renderFinal" title="Render the picture at its size and samples" disabled>Render</button>
               <button type="button" id="renderStop" title="Stop rendering (the picture so far stays)" disabled>Stop</button>
+              <button type="button" id="renderNewView" title="Back to the scene: the camera free, the settings as they are now (the picture is let go)" disabled>New view</button>
               <button type="button" id="renderDenoised" aria-pressed="false" title="Denoise the picture; then: the denoised picture (on) or as rendered (off)" disabled>Denoise</button>
               <button type="button" id="renderSave" title="Save the picture as a PNG (transparent background)" disabled>PNG</button>
             </div>

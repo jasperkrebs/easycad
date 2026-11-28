@@ -386,3 +386,35 @@ test("the Render's batch plan in a project file: this project's setups, recipes 
   assert.deepEqual(setupsOfPlan({ sources: [], setups: [{ name: 'x', render: {}, recipe: { source: 3 } }] }, [], 1), [], 'a recipe that is not there');
   assert.deepEqual(setupsOfPlan('nonsense', [], 1), []);
 });
+
+test("the Render's batch: setups moved up and down keep their places", async () => {
+  const { inBatchOrder, movedInBatch } = await import('../web/js/batch.js');
+  const setups = [{ id: 30 }, { id: 10 }, { id: 20 }];
+  assert.deepEqual(inBatchOrder(setups).map((s) => s.id), [10, 20, 30], 'as saved');
+  const moved = movedInBatch(setups, 30, -1);
+  const after = inBatchOrder(setups.map((s) => moved.find((m) => m.id === s.id) || s));
+  assert.deepEqual(after.map((s) => s.id), [10, 30, 20]);
+  assert.deepEqual(movedInBatch(after, 10, -1), [], 'the first goes no higher');
+  assert.deepEqual(movedInBatch(after, 20, 1), [], 'the last no lower');
+  // One saved later comes after the moved ones.
+  assert.deepEqual(inBatchOrder([...after, { id: 40 }]).map((s) => s.id), [10, 30, 20, 40]);
+});
+
+test("the Render's batch pictures as one zip: files in a folder per batch, readable", async () => {
+  const { zipFiles, crc32, batchStamp } = await import('../web/js/batch.js');
+  const { writeFileSync, mkdtempSync } = await import('node:fs');
+  const { execFileSync } = await import('node:child_process');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  assert.equal(crc32(new TextEncoder().encode('123456789')), 0xcbf43926);
+  assert.equal(batchStamp(new Date(2026, 10, 28, 22, 5)), 'batch-2026-11-28-2205');
+  const bytes = (n) => Uint8Array.from({ length: n }, (_, k) => (k * 7) % 256);
+  const zip = zipFiles([
+    { path: 'batch-2026-11-28-2205/bulb on.png', bytes: bytes(1000) },
+    { path: 'batch-2026-11-28-2205/bulb on-denoised.png', bytes: bytes(10) },
+  ]);
+  const file = join(mkdtempSync(join(tmpdir(), 'zip-')), 'b.zip');
+  writeFileSync(file, zip);
+  const listed = execFileSync('python3', ['-I', '-c', 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None; print("|".join(f"{i.filename}:{i.file_size}" for i in z.infolist()))', file], { encoding: 'utf8' }).trim();
+  assert.equal(listed, 'batch-2026-11-28-2205/bulb on.png:1000|batch-2026-11-28-2205/bulb on-denoised.png:10');
+});
